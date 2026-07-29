@@ -1,0 +1,4 @@
+# Optional for local development.
+# Required only when manually testing Beds24 sync endpoints against the real API.
+# Do not commit real secrets in .dev.vars.
+BEDS24_LONG_LIFE_TOKEN=replace-with-local-development-token

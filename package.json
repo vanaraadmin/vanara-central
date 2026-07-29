@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "dev:prepare": "node server/scripts/prepare-local-dev.mjs",
+    "predev": "npm run dev:prepare",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
