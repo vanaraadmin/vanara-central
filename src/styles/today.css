@@ -1,0 +1,268 @@
+.today-page {
+  width: 100%;
+  max-width: 760px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px 18px 48px;
+  color: #173b2d;
+  background: #f7f4ee;
+}
+
+.today-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.today-header__eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #b28a46;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.today-header h1 {
+  margin: 0;
+  font-family: Marcellus, Georgia, serif;
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.today-header__date {
+  margin: 8px 0 0;
+  color: #5d6f67;
+  font-size: 0.94rem;
+  text-transform: capitalize;
+}
+
+.today-refresh-button,
+.today-error button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #173b2d;
+  border-radius: 999px;
+  color: #f7f4ee;
+  background: #173b2d;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.today-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.today-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 30px;
+}
+
+.today-summary-card {
+  padding: 18px;
+  border: 1px solid rgba(23, 59, 45, 0.12);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(23, 59, 45, 0.05);
+}
+
+.today-summary-card span,
+.today-summary-card small {
+  display: block;
+  color: #6b7a73;
+}
+
+.today-summary-card span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.today-summary-card strong {
+  display: block;
+  margin: 7px 0 2px;
+  font-family: Marcellus, Georgia, serif;
+  font-size: 2.2rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.today-summary-card small {
+  font-size: 0.78rem;
+}
+
+.today-section {
+  margin-top: 28px;
+}
+
+.today-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.today-section__header h2 {
+  margin: 0;
+  font-family: Marcellus, Georgia, serif;
+  font-size: 1.4rem;
+  font-weight: 400;
+}
+
+.today-section__count {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #2c5e47;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.today-reservation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.today-reservation-card {
+  padding: 16px;
+  border: 1px solid rgba(23, 59, 45, 0.1);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.today-reservation-card__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.today-reservation-card__type {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.today-reservation-card__type--arrival {
+  color: #2c5e47;
+}
+
+.today-reservation-card__type--departure {
+  color: #9c6538;
+}
+
+.today-reservation-card h3 {
+  margin: 0;
+  color: #173b2d;
+  font-size: 1rem;
+}
+
+.today-reservation-card__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 6px 0 0;
+  color: #718078;
+  font-size: 0.78rem;
+}
+
+.today-reservation-card__unit {
+  min-width: 105px;
+  text-align: right;
+}
+
+.today-reservation-card__unit strong,
+.today-reservation-card__unit span {
+  display: block;
+}
+
+.today-reservation-card__unit strong {
+  color: #173b2d;
+  font-size: 0.93rem;
+}
+
+.today-reservation-card__unit span {
+  margin-top: 3px;
+  color: #809087;
+  font-size: 0.7rem;
+}
+
+.today-empty,
+.today-loading,
+.today-error {
+  padding: 28px 20px;
+  border: 1px dashed rgba(23, 59, 45, 0.2);
+  border-radius: 16px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.today-empty p,
+.today-loading {
+  margin: 0;
+  color: #718078;
+}
+
+.today-error h2 {
+  margin-top: 0;
+}
+
+.today-error button {
+  margin-top: 12px;
+}
+
+.today-warning {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #74491f;
+  background: #f6e8d4;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.today-footer {
+  margin-top: 32px;
+  color: #8a9690;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .today-page {
+    padding: 20px 14px 40px;
+  }
+
+  .today-header {
+    align-items: center;
+  }
+
+  .today-refresh-button {
+    min-height: 38px;
+    padding: 0 13px;
+  }
+
+  .today-reservation-card__main {
+    align-items: flex-start;
+  }
+
+  .today-reservation-card__unit {
+    min-width: 92px;
+  }
+}

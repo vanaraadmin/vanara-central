@@ -1,0 +1,139 @@
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --vc-color-jungle-950: #10271e;
+  --vc-color-jungle-900: #173b2d;
+  --vc-color-jungle-800: #214b39;
+  --vc-color-jungle-700: #2c5e47;
+  --vc-color-jungle-600: #397458;
+  --vc-color-jungle-100: #dfe9e3;
+  --vc-color-jungle-50: #eef4f0;
+
+  --vc-color-sand-50: #fbfaf7;
+  --vc-color-sand-100: #f7f4ee;
+  --vc-color-sand-200: #eee8dd;
+  --vc-color-sand-300: #dfd5c4;
+
+  --vc-color-gold-700: #8f6b34;
+  --vc-color-gold-600: #a77f3f;
+  --vc-color-gold-500: #b28a46;
+  --vc-color-gold-100: #f1e7d3;
+
+  --vc-color-ink-950: #18211d;
+  --vc-color-ink-800: #33443c;
+  --vc-color-ink-600: #617168;
+  --vc-color-ink-500: #718078;
+  --vc-color-ink-400: #839088;
+
+  --vc-color-white: #ffffff;
+  --vc-color-black: #000000;
+  --vc-color-success: #2c6a4d;
+  --vc-color-warning: #9a6037;
+  --vc-color-danger: #a33f36;
+  --vc-color-info: #365f7d;
+
+  /* Semantic surfaces */
+  --vc-bg-app: var(--vc-color-sand-100);
+  --vc-bg-app-elevated: var(--vc-color-sand-50);
+  --vc-bg-surface: var(--vc-color-white);
+  --vc-bg-subtle: var(--vc-color-jungle-50);
+  --vc-bg-inverse: var(--vc-color-jungle-900);
+  --vc-text-primary: var(--vc-color-jungle-900);
+  --vc-text-secondary: var(--vc-color-ink-600);
+  --vc-text-muted: var(--vc-color-ink-400);
+  --vc-text-inverse: var(--vc-color-white);
+  --vc-border-subtle: rgba(23, 59, 45, 0.1);
+  --vc-border-strong: rgba(23, 59, 45, 0.22);
+  --vc-focus-ring: rgba(178, 138, 70, 0.45);
+
+  /* Typography */
+  --vc-font-display: "Marcellus", "Noto Serif Thai", Georgia, serif;
+  --vc-font-body: "Lato", "Noto Sans Thai", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --vc-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --vc-text-xs: 0.75rem;
+  --vc-text-sm: 0.875rem;
+  --vc-text-md: 1rem;
+  --vc-text-lg: 1.125rem;
+  --vc-text-xl: 1.375rem;
+  --vc-text-2xl: 1.75rem;
+  --vc-text-3xl: clamp(2.25rem, 8vw, 3.75rem);
+
+  --vc-line-tight: 1.08;
+  --vc-line-title: 1.2;
+  --vc-line-body: 1.55;
+  --vc-line-thai: 1.65;
+
+  --vc-weight-regular: 400;
+  --vc-weight-medium: 500;
+  --vc-weight-semibold: 600;
+  --vc-weight-bold: 700;
+  --vc-weight-heavy: 800;
+
+  /* Spacing — 4px base */
+  --vc-space-0: 0;
+  --vc-space-1: 0.25rem;
+  --vc-space-2: 0.5rem;
+  --vc-space-3: 0.75rem;
+  --vc-space-4: 1rem;
+  --vc-space-5: 1.25rem;
+  --vc-space-6: 1.5rem;
+  --vc-space-8: 2rem;
+  --vc-space-10: 2.5rem;
+  --vc-space-12: 3rem;
+  --vc-space-16: 4rem;
+
+  /* Shape */
+  --vc-radius-sm: 0.625rem;
+  --vc-radius-md: 0.875rem;
+  --vc-radius-lg: 1.125rem;
+  --vc-radius-xl: 1.375rem;
+  --vc-radius-2xl: 1.75rem;
+  --vc-radius-pill: 999px;
+
+  /* Elevation */
+  --vc-shadow-xs: 0 2px 8px rgba(23, 59, 45, 0.05);
+  --vc-shadow-sm: 0 8px 24px rgba(23, 59, 45, 0.07);
+  --vc-shadow-md: 0 14px 38px rgba(23, 59, 45, 0.1);
+  --vc-shadow-lg: 0 22px 54px rgba(16, 39, 30, 0.16);
+
+  /* Motion */
+  --vc-duration-fast: 120ms;
+  --vc-duration-normal: 180ms;
+  --vc-duration-slow: 320ms;
+  --vc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --vc-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Layout */
+  --vc-content-max: 820px;
+  --vc-touch-min: 44px;
+  --vc-safe-top: env(safe-area-inset-top, 0px);
+  --vc-safe-right: env(safe-area-inset-right, 0px);
+  --vc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --vc-safe-left: env(safe-area-inset-left, 0px);
+
+  /* Layers */
+  --vc-z-base: 0;
+  --vc-z-sticky: 20;
+  --vc-z-nav: 40;
+  --vc-z-overlay: 80;
+  --vc-z-modal: 100;
+  --vc-z-toast: 120;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --vc-bg-app: #10271e;
+  --vc-bg-app-elevated: #173b2d;
+  --vc-bg-surface: #214b39;
+  --vc-bg-subtle: #2c5e47;
+  --vc-bg-inverse: #f7f4ee;
+  --vc-text-primary: #f7f4ee;
+  --vc-text-secondary: #d7e0db;
+  --vc-text-muted: #aebdb5;
+  --vc-text-inverse: #173b2d;
+  --vc-border-subtle: rgba(255, 255, 255, 0.12);
+  --vc-border-strong: rgba(255, 255, 255, 0.24);
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "vanara-central",
+  "main": "server/src/index.ts",
+  "compatibility_date": "2026-07-28",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "BEDS24_BASE_URL": "https://api.beds24.com/v2"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vanara-central",
+      "database_id": "1f0c6fce-8a47-442a-8158-97708aefe6b1",
+      "migrations_dir": "server/migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",
+      "7,22,37,52 * * * *",
+      "3 20 * * *"
+    ]
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
