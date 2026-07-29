@@ -46,6 +46,9 @@ Useful local routes:
 /health
 /api/health
 /api/dashboard
+/api/availability
+/api/availability/unit/:id
+/api/availability/date/:yyyy-mm-dd
 /dashboard
 ```
 

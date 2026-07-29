@@ -1,0 +1,197 @@
+.room-detail-page {
+  width: min(100%, var(--vc-content-max));
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: calc(var(--vc-safe-top) + var(--vc-space-4)) var(--vc-space-3)
+    calc(96px + var(--vc-safe-bottom));
+}
+
+.room-detail-header,
+.room-refresh,
+.room-badges,
+.room-badges span,
+.room-section header,
+.room-actions,
+.room-placeholder,
+.stay-card {
+  display: flex;
+}
+
+.room-detail-header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+  margin-bottom: var(--vc-space-3);
+}
+
+.room-detail-header span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.room-detail-header h1 {
+  margin: var(--vc-space-1) 0 0;
+  color: var(--vc-text-primary);
+  font-family: var(--vc-font-display);
+  font-size: clamp(2.3rem, 12vw, 3.3rem);
+  line-height: 0.95;
+}
+
+.room-refresh {
+  width: var(--vc-touch-min);
+  min-height: var(--vc-touch-min);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-pill);
+  background: var(--vc-bg-surface);
+  color: var(--vc-text-primary);
+}
+
+.room-refresh svg {
+  width: 18px;
+  height: 18px;
+}
+
+.room-badges {
+  gap: var(--vc-space-2);
+  overflow-x: auto;
+  margin-bottom: var(--vc-space-3);
+  scrollbar-width: none;
+}
+
+.room-badges::-webkit-scrollbar {
+  display: none;
+}
+
+.room-badges span {
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--vc-space-2);
+  padding: 0 var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-pill);
+  background: var(--vc-bg-surface);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-badges svg {
+  width: 18px;
+  height: 18px;
+}
+
+.room-section {
+  margin-bottom: var(--vc-space-3);
+  padding: var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-xl);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.room-section header {
+  align-items: center;
+  gap: var(--vc-space-2);
+  margin-bottom: var(--vc-space-3);
+}
+
+.room-section header svg {
+  width: 22px;
+  height: 22px;
+  color: var(--vc-text-secondary);
+}
+
+.room-section h2 {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+  line-height: var(--vc-line-title);
+}
+
+.room-vacant,
+.stay-card,
+.room-placeholder,
+.status-grid div {
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-app-elevated);
+}
+
+.room-vacant {
+  padding: var(--vc-space-4);
+  color: var(--vc-text-secondary);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.stay-card,
+.room-placeholder {
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--vc-space-3);
+}
+
+.stay-card strong,
+.room-placeholder strong,
+.status-grid strong {
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.stay-card span,
+.room-placeholder span,
+.status-grid span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.status-grid {
+  display: grid;
+  gap: var(--vc-space-2);
+}
+
+.status-grid div {
+  display: grid;
+  gap: 4px;
+  min-height: 74px;
+  align-content: center;
+  padding: var(--vc-space-3);
+}
+
+.room-actions {
+  gap: var(--vc-space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.room-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.room-actions button {
+  min-height: var(--vc-touch-min);
+  flex: 1 0 142px;
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+  opacity: 0.64;
+}
+
+@media (min-width: 720px) {
+  .room-detail-page {
+    padding-inline: var(--vc-space-5);
+  }
+
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

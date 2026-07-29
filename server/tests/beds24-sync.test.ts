@@ -9,6 +9,7 @@ import {
 } from "../src/services/bookings-sync.service.ts";
 import { sanitizeLogMessage } from "../src/services/log-safety.service.ts";
 import { SyncMetrics } from "../src/services/sync-metrics.service.ts";
+import { buildAvailabilityCacheRows } from "../src/services/availability-cache.service.ts";
 
 const env = {
   BEDS24_BASE_URL: "https://beds24.test/v2",
@@ -183,4 +184,121 @@ test("booking group normalization is deterministic and duplicate-safe", () => {
 
   assert.deepEqual(first, second);
   assert.equal(first.length, 1);
+});
+
+test("availability cache projects room calendar counts onto deterministic unit rows", () => {
+  const records = buildAvailabilityCacheRows(
+    [
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1001,
+        unit_name: "Bungalow 1",
+        position: 1,
+      },
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1002,
+        unit_name: "Bungalow 2",
+        position: 2,
+      },
+    ],
+    [
+      {
+        propertyId: 100,
+        roomId: 200,
+        calendar: [
+          { from: "2026-08-01", to: "2026-08-01", numAvail: 1, minStay: 2, maxStay: 7 },
+        ],
+      },
+    ],
+    [],
+    "2026-08-01",
+    "2026-08-01",
+  );
+
+  assert.deepEqual(
+    records.map((record) => ({ unitId: record.unitId, availability: record.availability })),
+    [
+      { unitId: 1001, availability: 1 },
+      { unitId: 1002, availability: 0 },
+    ],
+  );
+  assert.equal(records[0].minimumStay, 2);
+  assert.equal(records[0].maximumStay, 7);
+});
+
+test("availability cache marks booked units unavailable before assigning remaining availability", () => {
+  const records = buildAvailabilityCacheRows(
+    [
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1001,
+        unit_name: "Bungalow 1",
+        position: 1,
+      },
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1002,
+        unit_name: "Bungalow 2",
+        position: 2,
+      },
+    ],
+    [{ propertyId: 100, roomId: 200, calendar: { "2026-08-01": { numAvail: 1 } } }],
+    [{ unit_id: 1001, arrival_date: "2026-08-01", departure_date: "2026-08-02" }],
+    "2026-08-01",
+    "2026-08-01",
+  );
+
+  assert.deepEqual(
+    records.map((record) => ({ unitId: record.unitId, availability: record.availability })),
+    [
+      { unitId: 1001, availability: 0 },
+      { unitId: 1002, availability: 1 },
+    ],
+  );
+});
+
+test("availability cache uses unknown when Beds24 calendar data is missing", () => {
+  const records = buildAvailabilityCacheRows(
+    [
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1001,
+        unit_name: "Bungalow 1",
+        position: 1,
+      },
+    ],
+    [],
+    [],
+    "2026-08-01",
+    "2026-08-01",
+  );
+
+  assert.equal(records[0].availability, null);
+  assert.match(records[0].rawJson, /missing-room-calendar/);
 });

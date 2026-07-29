@@ -1,0 +1,228 @@
+﻿import type { FormEvent } from "react";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageLoading } from "../components/AsyncState";
+import { addMaintenanceNote, addMaintenancePhoto, loadMaintenanceTicket, updateMaintenanceTicket } from "../services/maintenance.service";
+import type { MaintenancePriority, MaintenanceStatus, MaintenanceTicketDetail } from "../types/maintenance";
+import "../styles/MaintenancePage.css";
+
+const statuses: MaintenanceStatus[] = ["Open", "Assigned", "In Progress", "Waiting Parts", "Resolved", "Closed"];
+const priorities: MaintenancePriority[] = ["Low", "Medium", "High", "Critical"];
+
+function formatDate(value: string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (status: MaintenanceStatus) => updateMaintenanceTicket(ticket.id, { status }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] }),
+        queryClient.invalidateQueries({ queryKey: ["maintenance", "tickets"] }),
+      ]);
+    },
+  });
+
+  return (
+    <section className="maintenance-panel">
+      <h2>Status lifecycle</h2>
+      <div className="maintenance-status-actions">
+        {statuses.map((status) => (
+          <button key={status} className={status === ticket.status ? "is-active" : ""} type="button" onClick={() => mutation.mutate(status)} disabled={mutation.isPending || status === ticket.status}>{status}</button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AssignmentPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
+  const [name, setName] = useState(ticket.assignedUserName ?? "");
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => updateMaintenanceTicket(ticket.id, {
+      assignedUserName: name || null,
+      assignedUserId: name ? name.toLowerCase().replaceAll(" ", "-") : null,
+      status: name && ticket.status === "Open" ? "Assigned" : ticket.status,
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] }),
+        queryClient.invalidateQueries({ queryKey: ["maintenance", "tickets"] }),
+      ]);
+    },
+  });
+
+  return (
+    <section className="maintenance-panel">
+      <h2>Assigned technician</h2>
+      <div className="maintenance-inline-form">
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Technician name" />
+        <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Assign</button>
+      </div>
+    </section>
+  );
+}
+
+function PriorityPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (priority: MaintenancePriority) => updateMaintenanceTicket(ticket.id, { priority }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] });
+    },
+  });
+
+  return (
+    <section className="maintenance-panel">
+      <h2>Priority</h2>
+      <div className="maintenance-status-actions">
+        {priorities.map((priority) => (
+          <button key={priority} className={priority === ticket.priority ? "is-active" : ""} type="button" onClick={() => mutation.mutate(priority)} disabled={mutation.isPending || priority === ticket.priority}>{priority}</button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function NotesPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
+  const [body, setBody] = useState("");
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => addMaintenanceNote(ticket.id, body),
+    onSuccess: async () => {
+      setBody("");
+      await queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] });
+    },
+  });
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!body.trim() || mutation.isPending) return;
+    mutation.mutate();
+  }
+
+  return (
+    <section className="maintenance-panel">
+      <h2>Notes</h2>
+      <form className="maintenance-note-form" onSubmit={submit}>
+        <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="Add an operational note…" />
+        <button type="submit" disabled={!body.trim() || mutation.isPending}>Add Note</button>
+      </form>
+      <div className="maintenance-timeline-list">
+        {ticket.notes.length ? ticket.notes.map((note) => (
+          <article key={note.id}>
+            <strong>{note.authorName}</strong>
+            <span>{formatDate(note.createdAt)}</span>
+            <p>{note.body}</p>
+          </article>
+        )) : <p className="maintenance-muted">No notes yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+function PhotosPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
+  const [reference, setReference] = useState("");
+  const [caption, setCaption] = useState("");
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => addMaintenancePhoto(ticket.id, { localReference: reference, caption }),
+    onSuccess: async () => {
+      setReference("");
+      setCaption("");
+      await queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] });
+    },
+  });
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!reference.trim() || mutation.isPending) return;
+    mutation.mutate();
+  }
+
+  return (
+    <section className="maintenance-panel">
+      <h2>Photos</h2>
+      <form className="maintenance-note-form" onSubmit={submit}>
+        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Local photo reference or future storage key" />
+        <input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Caption optional" />
+        <button type="submit" disabled={!reference.trim() || mutation.isPending}>Attach Photo Reference</button>
+      </form>
+      <div className="maintenance-photo-grid">
+        {ticket.photos.length ? ticket.photos.map((photo) => (
+          <article key={photo.id}>
+            <span aria-hidden="true">📷</span>
+            <strong>{photo.caption ?? "Maintenance photo"}</strong>
+            <p>{photo.localReference ?? photo.url}</p>
+          </article>
+        )) : <p className="maintenance-muted">No photos attached.</p>}
+      </div>
+    </section>
+  );
+}
+
+export default function MaintenanceDetailPage() {
+  const ticketId = Number(useParams().issueId);
+  const query = useQuery({
+    queryKey: ["maintenance", "ticket", ticketId],
+    queryFn: ({ signal }) => loadMaintenanceTicket(ticketId, signal),
+    enabled: Number.isInteger(ticketId) && ticketId > 0,
+  });
+
+  if (query.isLoading) return <PageLoading />;
+  if (query.isError || !Number.isInteger(ticketId) || ticketId <= 0) return <PageError onRetry={() => void query.refetch()} />;
+  if (!query.data) return <PageError onRetry={() => void query.refetch()} />;
+  const ticket = query.data;
+
+  return (
+    <main className="maintenance-page maintenance-detail-page">
+      <header className={`maintenance-detail-hero priority-${ticket.priority.toLowerCase()}`}>
+        <Link to="/maintenance">← Maintenance</Link>
+        <p>{ticket.category}</p>
+        <h1>{ticket.title}</h1>
+        <div>
+          <span>{ticket.status}</span>
+          <span>{ticket.priority}</span>
+          <span>{ticket.roomName ?? ticket.accommodationName ?? "No room"}</span>
+        </div>
+      </header>
+
+      <section className="maintenance-panel">
+        <h2>Description</h2>
+        <p>{ticket.description}</p>
+        <dl className="maintenance-facts">
+          <div><dt>Reported by</dt><dd>{ticket.reportedByName}</dd></div>
+          <div><dt>Created</dt><dd>{formatDate(ticket.createdAt)}</dd></div>
+          <div><dt>Resolved</dt><dd>{formatDate(ticket.resolvedAt)}</dd></div>
+        </dl>
+      </section>
+
+      <StatusPanel ticket={ticket} />
+      <PriorityPanel ticket={ticket} />
+      <AssignmentPanel ticket={ticket} />
+      <NotesPanel ticket={ticket} />
+      <PhotosPanel ticket={ticket} />
+
+      <section className="maintenance-panel">
+        <h2>Timeline</h2>
+        <div className="maintenance-timeline-list">
+          {ticket.timeline.length ? ticket.timeline.map((event) => (
+            <article key={event.id}>
+              <strong>{event.eventType.replaceAll("_", " ")}</strong>
+              <span>{formatDate(event.createdAt)}</span>
+              {(event.fromValue || event.toValue) && <p>{event.fromValue ?? "—"} → {event.toValue ?? "—"}</p>}
+            </article>
+          )) : <p className="maintenance-muted">No timeline events yet.</p>}
+        </div>
+      </section>
+    </main>
+  );
+}

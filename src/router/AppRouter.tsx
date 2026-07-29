@@ -1,25 +1,22 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import PagePlaceholder, { type PlaceholderLink } from "../components/PagePlaceholder";
 import AppLayout from "../layouts/AppLayout";
+import ChatPage from "../pages/ChatPage";
+import CreateMaintenancePage from "../pages/CreateMaintenancePage";
 import DashboardPage from "../pages/DashboardPage";
+import MaintenanceDetailPage from "../pages/MaintenanceDetailPage";
+import MaintenancePage from "../pages/MaintenancePage";
+import HousekeepingPage from "../pages/HousekeepingPage";
+import MovementsPage from "../pages/MovementsPage";
+import ProcurementDetailPage from "../pages/ProcurementDetailPage";
+import ProcurementPage from "../pages/ProcurementPage";
+import SupplyRequestPage from "../pages/SupplyRequestPage";
+import RoomDetailPage from "../pages/RoomDetailPage";
 
 const roomsLinks: PlaceholderLink[] = [
-  { labelKey: "roomDetail", to: "/rooms/bungalow-4" },
+  { labelKey: "roomDetail", to: "/rooms/1" },
 ];
-const housekeepingLinks: PlaceholderLink[] = [
-  { labelKey: "readyChecklist", to: "/housekeeping/checklist/bungalow-4" },
-];
-const maintenanceLinks: PlaceholderLink[] = [
-  { labelKey: "createMaintenance", to: "/maintenance/new" },
-  { labelKey: "maintenanceDetail", to: "/maintenance/example-issue" },
-];
-const procurementLinks: PlaceholderLink[] = [
-  { labelKey: "createProcurement", to: "/procurement/new" },
-  { labelKey: "procurementDetail", to: "/procurement/example-request" },
-];
-const chatLinks: PlaceholderLink[] = [
-  { labelKey: "conversation", to: "/chat/example-conversation" },
-];
+
 const moreLinks: PlaceholderLink[] = [
   { labelKey: "arrivalsDepartures", to: "/movements" },
   { labelKey: "housekeeping", to: "/housekeeping" },
@@ -58,19 +55,19 @@ export default function AppRouter() {
           <Route index element={<Navigate replace to="/dashboard" />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="rooms" element={<Placeholder titleKey="roomWorkspace" descriptionKey="roomsPlaceholder" links={roomsLinks} />} />
-          <Route path="rooms/:roomId" element={<Placeholder titleKey="roomDetail" descriptionKey="roomDetailPlaceholder" />} />
-          <Route path="movements" element={<Placeholder titleKey="arrivalsDepartures" descriptionKey="movementsPlaceholder" />} />
-          <Route path="housekeeping" element={<Placeholder titleKey="housekeeping" descriptionKey="housekeepingPlaceholder" links={housekeepingLinks} />} />
+          <Route path="rooms/:roomId" element={<RoomDetailPage />} />
+          <Route path="movements" element={<MovementsPage />} />
+          <Route path="housekeeping" element={<HousekeepingPage />} />
           <Route path="housekeeping/checklist/:roomId" element={<Placeholder titleKey="readyChecklist" descriptionKey="checklistPlaceholder" />} />
           <Route path="availability" element={<Placeholder titleKey="availability" descriptionKey="availabilityPlaceholder" />} />
-          <Route path="maintenance" element={<Placeholder titleKey="maintenance" descriptionKey="maintenancePlaceholder" links={maintenanceLinks} />} />
-          <Route path="maintenance/new" element={<Placeholder titleKey="createMaintenance" descriptionKey="createMaintenancePlaceholder" />} />
-          <Route path="maintenance/:issueId" element={<Placeholder titleKey="maintenanceDetail" descriptionKey="maintenanceDetailPlaceholder" />} />
-          <Route path="procurement" element={<Placeholder titleKey="procurement" descriptionKey="procurementPlaceholder" links={procurementLinks} />} />
-          <Route path="procurement/new" element={<Placeholder titleKey="createProcurement" descriptionKey="createProcurementPlaceholder" />} />
-          <Route path="procurement/:requestId" element={<Placeholder titleKey="procurementDetail" descriptionKey="procurementDetailPlaceholder" />} />
-          <Route path="chat" element={<Placeholder titleKey="chat" descriptionKey="chatPlaceholder" links={chatLinks} />} />
-          <Route path="chat/:conversationId" element={<Placeholder titleKey="conversation" descriptionKey="conversationPlaceholder" />} />
+          <Route path="maintenance" element={<MaintenancePage />} />
+          <Route path="maintenance/new" element={<CreateMaintenancePage />} />
+          <Route path="maintenance/:issueId" element={<MaintenanceDetailPage />} />
+          <Route path="procurement" element={<ProcurementPage />} />
+          <Route path="procurement/new" element={<SupplyRequestPage />} />
+          <Route path="procurement/:requestId" element={<ProcurementDetailPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          <Route path="chat/:conversationId" element={<ChatPage />} />
           <Route path="notifications" element={<Placeholder titleKey="notifications" descriptionKey="notificationsPlaceholder" />} />
           <Route path="more" element={<Placeholder titleKey="more" descriptionKey="morePlaceholder" links={moreLinks} />} />
           <Route path="assistant" element={<Placeholder titleKey="askWaraporn" descriptionKey="assistantPlaceholder" />} />

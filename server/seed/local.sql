@@ -176,3 +176,81 @@ ON CONFLICT(beds24_booking_id) DO UPDATE SET
   api_source = excluded.api_source,
   raw_json = excluded.raw_json,
   updated_at = datetime('now');
+
+INSERT INTO unit_availability_cache (
+  property_id,
+  room_type_id,
+  unit_id,
+  stay_date,
+  availability,
+  closed,
+  minimum_stay,
+  maximum_stay,
+  restrictions,
+  raw_json,
+  synced_at,
+  created_at,
+  updated_at
+) VALUES (
+  (SELECT property_id FROM properties WHERE beds24_property_id = 999001),
+  (SELECT room_type_id FROM room_types WHERE beds24_room_id = 999101),
+  (
+    SELECT unit_id
+    FROM units
+    WHERE room_type_id = (SELECT room_type_id FROM room_types WHERE beds24_room_id = 999101)
+      AND beds24_unit_id = 1
+  ),
+  date('now'),
+  0,
+  0,
+  1,
+  14,
+  '{"source":"local-dev-seed"}',
+  '{"source":"local-dev-seed","note":"Sample unit is unavailable because the local sample booking occupies it today."}',
+  datetime('now'),
+  datetime('now'),
+  datetime('now')
+)
+ON CONFLICT(unit_id, stay_date) DO UPDATE SET
+  property_id = excluded.property_id,
+  room_type_id = excluded.room_type_id,
+  availability = excluded.availability,
+  closed = excluded.closed,
+  minimum_stay = excluded.minimum_stay,
+  maximum_stay = excluded.maximum_stay,
+  restrictions = excluded.restrictions,
+  raw_json = excluded.raw_json,
+  synced_at = excluded.synced_at,
+  updated_at = datetime('now');
+
+-- Local chat seed: fake operational data persisted through D1, never used as frontend source of truth.
+INSERT INTO chat_messages (
+  conversation_id,
+  author_id,
+  author_display_name,
+  author_role,
+  body,
+  body_language,
+  translated_body,
+  translated_language,
+  created_at
+)
+SELECT
+  'general-operations',
+  'local-reception',
+  'Reception',
+  'Operations',
+  'Morning handover is open. Use this space for real operational notes during local development.',
+  'en',
+  'เปิดส่งต่องานตอนเช้า ใช้พื้นที่นี้สำหรับบันทึกงานระหว่างการพัฒนาในเครื่อง',
+  'th',
+  datetime('now')
+WHERE EXISTS (
+  SELECT 1 FROM chat_conversations WHERE conversation_id = 'general-operations'
+)
+AND NOT EXISTS (
+  SELECT 1 FROM chat_messages
+  WHERE conversation_id = 'general-operations'
+    AND author_id = 'local-reception'
+    AND body = 'Morning handover is open. Use this space for real operational notes during local development.'
+);
