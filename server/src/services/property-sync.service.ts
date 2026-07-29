@@ -1,7 +1,13 @@
-import {
+﻿import {
   beds24Get,
   type Beds24Bindings,
 } from "./beds24-client.service.js";
+import { sanitizeLogMessage } from "./log-safety.service.js";
+import {
+  acquireSyncLock,
+  recordSkippedSyncRun,
+  releaseSyncLock,
+} from "./sync-lock.service.js";
 
 export interface PropertySyncBindings extends Beds24Bindings {
   DB: D1Database;
@@ -69,6 +75,8 @@ export interface PropertySyncResult {
   recordsWritten: number;
   startedAt: string;
   finishedAt: string;
+  skipped?: boolean;
+  skippedReason?: string;
 }
 
 function normalizeUnitType(
@@ -113,6 +121,23 @@ export async function syncProperties(
   env: PropertySyncBindings,
 ): Promise<PropertySyncResult> {
   const startedAt = new Date().toISOString();
+  const lock = await acquireSyncLock(env, "properties", startedAt, 5 * 60 * 1_000);
+  if (!lock) {
+    const reason = "Properties synchronization already running.";
+    await recordSkippedSyncRun(env, "properties", startedAt, reason);
+    return {
+      ok: true,
+      propertyCount: 0,
+      roomTypeCount: 0,
+      unitCount: 0,
+      offerCount: 0,
+      recordsWritten: 0,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      skipped: true,
+      skippedReason: reason,
+    };
+  }
 
   try {
     const response = await fetchProperties(env);
@@ -375,10 +400,7 @@ export async function syncProperties(
     };
   } catch (error) {
     const finishedAt = new Date().toISOString();
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown properties sync error";
+    const message = sanitizeLogMessage(error, "Unknown properties sync error");
 
     try {
       await env.DB.prepare(`
@@ -400,9 +422,13 @@ export async function syncProperties(
         message,
       ).run();
     } catch (logError) {
-      console.error("Unable to record failed properties sync:", logError);
+      console.error("Unable to record failed properties sync:", sanitizeLogMessage(logError, "Unknown D1 logging error"));
     }
 
     throw error;
+  } finally {
+    if (lock) {
+      await releaseSyncLock(env, lock);
+    }
   }
 }

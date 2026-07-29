@@ -1,7 +1,13 @@
-import {
+﻿import {
   beds24Get,
   type Beds24Bindings,
 } from "./beds24-client.service.js";
+import { sanitizeLogMessage } from "./log-safety.service.js";
+import {
+  acquireSyncLock,
+  recordSkippedSyncRun,
+  releaseSyncLock,
+} from "./sync-lock.service.js";
 
 export interface OfferPricesSyncBindings extends Beds24Bindings {
   DB: D1Database;
@@ -54,6 +60,8 @@ export interface OfferPricesSyncResult {
   recordsWritten: number;
   startedAt: string;
   finishedAt: string;
+  skipped?: boolean;
+  skippedReason?: string;
 }
 
 const HORIZON_DAYS = 30;
@@ -148,6 +156,26 @@ export async function syncOfferPrices(
   let apiRequests = 0;
   let recordsRead = 0;
   let recordsWritten = 0;
+  const lock = await acquireSyncLock(env, "offer_prices", startedAt, 12 * 60 * 1_000);
+  if (!lock) {
+    const reason = "Offer prices synchronization already running.";
+    await recordSkippedSyncRun(env, "offer_prices", startedAt, reason);
+    return {
+      ok: true,
+      horizonDays: HORIZON_DAYS,
+      batchDays,
+      startOffset,
+      nextOffset: startOffset,
+      datesProcessed: 0,
+      apiRequests: 0,
+      recordsRead: 0,
+      recordsWritten: 0,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      skipped: true,
+      skippedReason: reason,
+    };
+  }
 
   try {
     const roomTypes = await getRoomTypes(env);
@@ -298,7 +326,7 @@ export async function syncOfferPrices(
     };
   } catch (error) {
     const finishedAt = new Date().toISOString();
-    const message = error instanceof Error ? error.message : "Unknown offer prices sync error";
+    const message = sanitizeLogMessage(error, "Unknown offer prices sync error");
     try {
       await env.DB.prepare(`
         INSERT INTO sync_runs (
@@ -307,8 +335,12 @@ export async function syncOfferPrices(
         ) VALUES (?, ?, ?, 'failed', ?, ?, 1, ?)
       `).bind("offer_prices", startedAt, finishedAt, recordsRead, recordsWritten, message).run();
     } catch (logError) {
-      console.error("Unable to record failed offer prices sync:", logError);
+      console.error("Unable to record failed offer prices sync:", sanitizeLogMessage(logError, "Unknown D1 logging error"));
     }
     throw error;
+  } finally {
+    if (lock) {
+      await releaseSyncLock(env, lock);
+    }
   }
 }
