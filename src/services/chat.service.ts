@@ -11,6 +11,7 @@ import type {
 async function sendJson<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
+    credentials: "same-origin",
     headers: {
       accept: "application/json",
       "content-type": "application/json",

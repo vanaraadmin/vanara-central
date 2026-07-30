@@ -1,3 +1,5 @@
+import { operationalBookingStatusSql } from "./booking-status.service.js";
+
 export interface TodayBindings { DB: D1Database; }
 
 export interface TodayReservation {
@@ -68,7 +70,7 @@ export async function getTodayDashboard(env: TodayBindings): Promise<TodayDashbo
     FROM bookings b
     JOIN room_types rt ON rt.room_type_id = b.room_type_id
     LEFT JOIN units u ON u.unit_id = b.unit_id
-    WHERE lower(b.status) NOT IN ('cancelled', 'canceled')
+    WHERE ${operationalBookingStatusSql("b.status")}
   `;
   const [arrivalRows, departureRows] = await Promise.all([
     env.DB.prepare(`${baseSql} AND b.arrival_date = ? ORDER BY u.position, u.unit_name`).bind(date).all<Row>(),

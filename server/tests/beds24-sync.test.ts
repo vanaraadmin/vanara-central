@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { beds24Get, Beds24ApiError } from "../src/services/beds24-client.service.ts";
 import {
+  bookingSyncQueries,
   normalizeBookingFields,
   normalizeBookingGroupMembers,
   shouldAdvanceBookingsCursor,
@@ -147,6 +148,24 @@ test("records_failed remains distinct from records_skipped", () => {
 test("bookings cursor advances only after success", () => {
   assert.equal(shouldAdvanceBookingsCursor("success"), true);
   assert.equal(shouldAdvanceBookingsCursor("failed"), false);
+});
+
+test("booking sync explicitly includes cancelled updates in addition to the default incremental feed", () => {
+  assert.deepEqual(bookingSyncQueries("2026-07-30T11:00:00.000Z"), [
+    {
+      modifiedFrom: "2026-07-30T11:00:00.000Z",
+      includeBookingGroup: true,
+      includeGuests: true,
+      includeInfoItems: true,
+    },
+    {
+      modifiedFrom: "2026-07-30T11:00:00.000Z",
+      includeBookingGroup: true,
+      includeGuests: true,
+      includeInfoItems: true,
+      status: "cancelled",
+    },
+  ]);
 });
 
 test("sanitized logs and Beds24 API errors do not expose secrets or response bodies", async () => {

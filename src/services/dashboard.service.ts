@@ -1,5 +1,5 @@
 import { requestJson } from "./api.client";
-import type { DashboardData, DashboardResponse } from "../types/dashboard";
+import type { DashboardData, DashboardOverview, DashboardOverviewResponse, DashboardResponse } from "../types/dashboard";
 
 export async function loadDashboard(
   signal?: AbortSignal,
@@ -11,6 +11,16 @@ export async function loadDashboard(
 
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Dashboard data is unavailable");
+  }
+
+  return response.data;
+}
+
+export async function loadDashboardOverview(signal?: AbortSignal): Promise<DashboardOverview> {
+  const response = await requestJson<DashboardOverviewResponse>("/api/dashboard/overview", signal);
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Dashboard overview is unavailable");
   }
 
   return response.data;

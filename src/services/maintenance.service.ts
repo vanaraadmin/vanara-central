@@ -1,6 +1,8 @@
 ﻿import { ApiError, requestJson } from "./api.client";
 import type {
   CreateMaintenanceTicketPayload,
+  MaintenanceAssignableOptions,
+  MaintenanceAssignableUsersResponse,
   MaintenanceDetailResponse,
   MaintenanceListResponse,
   MaintenanceNoteResponse,
@@ -9,11 +11,13 @@ import type {
   MaintenanceTicketDetail,
   MaintenanceTicketSummary,
   UpdateMaintenanceTicketPayload,
+  UpdateMaintenanceAssignmentPayload,
 } from "../types/maintenance";
 
 async function sendJson<T>(path: string, method: "POST" | "PATCH", payload: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method,
+    credentials: "same-origin",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
@@ -61,9 +65,33 @@ export async function createMaintenanceTicket(payload: CreateMaintenanceTicketPa
   return response.data;
 }
 
+export async function loadMaintenanceAssignableUsers(signal?: AbortSignal): Promise<MaintenanceAssignableOptions> {
+  const response = await requestJson<MaintenanceAssignableUsersResponse>("/api/maintenance/assignable-users", signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Assignable maintenance users are unavailable");
+  return response.data;
+}
+
 export async function updateMaintenanceTicket(id: number, payload: UpdateMaintenanceTicketPayload, signal?: AbortSignal): Promise<MaintenanceTicketDetail> {
   const response = await sendJson<MaintenanceDetailResponse>(`/api/maintenance/tickets/${id}`, "PATCH", payload, signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance ticket could not be updated");
+  return response.data;
+}
+
+export async function assignMaintenanceTicket(id: number, payload: UpdateMaintenanceAssignmentPayload, signal?: AbortSignal): Promise<MaintenanceTicketDetail> {
+  const response = await sendJson<MaintenanceDetailResponse>(`/api/maintenance/tickets/${id}/assignment`, "PATCH", payload, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance assignment could not be updated");
+  return response.data;
+}
+
+export async function transitionMaintenanceTicket(id: number, status: MaintenanceStatus, reason?: string | null, signal?: AbortSignal): Promise<MaintenanceTicketDetail> {
+  const response = await sendJson<MaintenanceDetailResponse>(`/api/maintenance/tickets/${id}/status`, "PATCH", { status, reason: reason ?? null }, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance status could not be updated");
+  return response.data;
+}
+
+export async function updateMaintenanceOutOfService(id: number, outOfService: boolean, signal?: AbortSignal): Promise<MaintenanceTicketDetail> {
+  const response = await sendJson<MaintenanceDetailResponse>(`/api/maintenance/tickets/${id}/out-of-service`, "PATCH", { outOfService }, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Out of Service could not be updated");
   return response.data;
 }
 

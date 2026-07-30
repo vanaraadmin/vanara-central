@@ -1,0 +1,696 @@
+.reception-page {
+  width: 100%;
+}
+
+.reception-date-picker,
+.reception-date-picker__trigger,
+.reception-today-chip,
+.reception-date-picker__panel .rdp-root,
+.reception-summary,
+.reception-section > header,
+.reception-section > header div,
+.reception-card__top,
+.reception-room-chip,
+.reception-guest,
+.reception-stay-facts,
+.reception-completion,
+.reception-modal__actions,
+.reception-note-form__actions {
+  display: flex;
+}
+
+.reception-date-actions {
+  gap: 10px;
+}
+
+.reception-today-chip {
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(247, 244, 238, 0.22);
+  border-radius: 999px;
+  background: rgba(247, 244, 238, 0.12);
+  color: #f7f4ee;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 0 16px;
+  text-transform: uppercase;
+}
+
+.reception-today-chip:disabled {
+  opacity: 0.42;
+}
+
+.reception-date-picker {
+  position: relative;
+  align-items: center;
+}
+
+.reception-date-picker__trigger {
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(247, 244, 238, 0.22);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(247, 244, 238, 0.18), rgba(247, 244, 238, 0.08));
+  color: #f7f4ee;
+  font: inherit;
+  padding: 8px 14px;
+  box-shadow: 0 14px 30px rgba(5, 20, 13, 0.16);
+}
+
+.reception-date-picker__trigger span {
+  color: rgba(247, 244, 238, 0.72);
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.reception-date-picker__trigger strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.reception-date-picker__panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(92vw, 420px);
+  border: 1px solid rgba(247, 244, 238, 0.24);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(247, 244, 238, 0.94), rgba(232, 221, 204, 0.9));
+  box-shadow: 0 28px 80px rgba(3, 14, 10, 0.38);
+  padding: 16px;
+  backdrop-filter: blur(22px);
+}
+
+.reception-date-picker__panel .rdp-root {
+  width: 100%;
+  flex-direction: column;
+  gap: 14px;
+  color: #173b2d;
+  --rdp-accent-color: #173b2d;
+  --rdp-day_button-width: 44px;
+  --rdp-day_button-height: 44px;
+  --rdp-day-width: 46px;
+  --rdp-day-height: 46px;
+}
+
+.reception-date-picker__panel .rdp-months,
+.reception-date-picker__panel .rdp-month,
+.reception-date-picker__panel .rdp-caption,
+.reception-date-picker__panel .rdp-nav,
+.reception-date-picker__panel .rdp-dropdowns {
+  width: 100%;
+}
+
+.reception-date-picker__panel .rdp-caption {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reception-date-picker__panel .rdp-dropdowns {
+  display: flex;
+  gap: 8px;
+}
+
+.reception-date-picker__panel .rdp-dropdown {
+  min-height: 44px;
+  border: 1px solid rgba(23, 59, 45, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.54);
+  color: #173b2d;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.reception-date-picker__panel .rdp-dropdown_root .rdp-caption_label {
+  display: none;
+}
+
+.reception-date-picker__panel .rdp-dropdown_root .rdp-chevron {
+  display: none;
+}
+
+.reception-date-picker__panel .rdp-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.reception-date-picker__panel .rdp-button_previous,
+.reception-date-picker__panel .rdp-button_next {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(23, 59, 45, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  color: #173b2d;
+}
+
+.reception-date-picker__panel table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.reception-date-picker__panel .rdp-weekday {
+  color: rgba(23, 59, 45, 0.54);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reception-date-picker__panel .rdp-day_button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #173b2d;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.reception-date-picker__panel .rdp-day_button:hover {
+  background: rgba(23, 59, 45, 0.08);
+}
+
+.reception-date-picker__panel .rdp-selected .rdp-day_button {
+  background: #173b2d;
+  color: #f7f4ee;
+}
+
+.reception-date-picker__panel .rdp-disabled .rdp-day_button {
+  color: rgba(23, 59, 45, 0.22);
+}
+
+.reception-date-picker__panel .rdp-outside {
+  opacity: 0.35;
+}
+
+.reception-summary {
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.reception-summary div {
+  min-width: 0;
+  flex: 1 1 0;
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid rgba(247, 244, 238, 0.16);
+  border-radius: 24px;
+  background: rgba(247, 244, 238, 0.1);
+  box-shadow: 0 18px 36px rgba(5, 20, 13, 0.18);
+}
+
+.reception-summary span {
+  color: rgba(247, 244, 238, 0.78);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reception-summary strong {
+  color: #f7f4ee;
+  font-size: clamp(2.4rem, 15vw, 4.2rem);
+  line-height: 0.9;
+}
+
+.reception-agenda,
+.reception-section,
+.reception-list,
+.reception-card,
+.reception-note-form,
+.reception-note-form label {
+  display: grid;
+}
+
+.reception-agenda {
+  gap: 24px;
+}
+
+.reception-section {
+  gap: 12px;
+}
+
+.reception-section > header {
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.reception-section > header div {
+  align-items: center;
+  gap: 10px;
+}
+
+.reception-section svg {
+  width: 21px;
+  height: 21px;
+  color: rgba(247, 244, 238, 0.72);
+}
+
+.reception-section h2 {
+  margin: 0;
+  color: #f7f4ee;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.reception-list {
+  gap: 12px;
+}
+
+.reception-card,
+.reception-empty {
+  border: 1px solid rgba(247, 244, 238, 0.14);
+  border-radius: 24px;
+  box-shadow: 0 20px 44px rgba(7, 30, 20, 0.18);
+}
+
+.reception-card {
+  background: #f6f2ea;
+  gap: 16px;
+  padding: 18px;
+}
+
+.reception-empty {
+  background: rgba(247, 244, 238, 0.92);
+}
+
+.reception-card--skeleton {
+  min-height: 178px;
+  justify-content: center;
+}
+
+.reception-card__top,
+.reception-room-chip,
+.reception-guest {
+  align-items: center;
+}
+
+.reception-room-chip {
+  min-width: 0;
+  gap: 8px;
+  color: #173b2d;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.reception-room-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reception-room-chip svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: #173b2d;
+}
+
+.reception-guest {
+  gap: 12px;
+}
+
+.reception-guest > svg {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 10px;
+  border-radius: 999px;
+  background: #f7f4ee;
+  color: #173b2d;
+}
+
+.reception-guest h3,
+.reception-guest p {
+  margin: 0;
+}
+
+.reception-guest h3 {
+  color: #173b2d;
+  font-size: 1.32rem;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+}
+
+.reception-nationality-flag {
+  width: 24px;
+  height: 18px;
+  display: inline-block;
+  margin-left: 10px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(23, 59, 45, 0.12);
+  object-fit: cover;
+  vertical-align: 0.02em;
+}
+
+.reception-guest p {
+  margin-top: 3px;
+  color: rgba(23, 59, 45, 0.62);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.reception-stay-facts {
+  gap: 10px;
+  margin: 0;
+}
+
+.reception-stay-facts div {
+  min-width: 0;
+  flex: 1 1 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(23, 59, 45, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.46);
+  padding: 12px;
+}
+
+.reception-stay-facts dt,
+.reception-stay-facts dd {
+  margin: 0;
+}
+
+.reception-stay-facts dt {
+  color: rgba(23, 59, 45, 0.52);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.reception-stay-facts dd {
+  color: #173b2d;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.reception-completion {
+  min-height: 54px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(23, 59, 45, 0.14);
+  border-radius: 18px;
+  background: rgba(23, 59, 45, 0.08);
+  color: #173b2d;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+button.reception-completion {
+  cursor: pointer;
+}
+
+button.reception-completion:active {
+  transform: scale(0.99);
+}
+
+.reception-completion--locked {
+  background: rgba(23, 59, 45, 0.06);
+  color: rgba(23, 59, 45, 0.48);
+}
+
+.reception-note-details {
+  border-top: 1px solid rgba(23, 59, 45, 0.1);
+  padding-top: 4px;
+}
+
+.reception-note-details summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: rgba(23, 59, 45, 0.58);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.reception-note-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.reception-note-details summary::before {
+  content: "▸";
+  margin-right: 8px;
+  transition: transform 160ms ease;
+}
+
+.reception-note-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.reception-note-form {
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.reception-note-form label {
+  gap: 7px;
+  color: rgba(23, 59, 45, 0.72);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reception-note-form textarea {
+  width: 100%;
+  border: 1px solid rgba(23, 59, 45, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #173b2d;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.45;
+  padding: 11px;
+  resize: vertical;
+  text-transform: none;
+}
+
+.reception-note-form__actions {
+  align-items: center;
+  gap: 10px;
+}
+
+.reception-note-form button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: #173b2d;
+  color: #f7f4ee;
+  font-weight: 850;
+  padding: 0 16px;
+}
+
+.reception-note-form button:disabled {
+  opacity: 0.62;
+}
+
+.reception-note-form__actions span {
+  color: rgba(23, 59, 45, 0.62);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.reception-note-form__actions .is-error {
+  color: #9f3b2f;
+}
+
+.reception-empty {
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: rgba(23, 59, 45, 0.62);
+  font-weight: 850;
+}
+
+.reception-skeleton {
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(23, 59, 45, 0.08), rgba(23, 59, 45, 0.15), rgba(23, 59, 45, 0.08));
+  background-size: 220% 100%;
+  animation: reception-skeleton 1.2s ease-in-out infinite;
+}
+
+.reception-skeleton--room {
+  width: 46%;
+  height: 24px;
+}
+
+.reception-skeleton--guest {
+  width: 76%;
+  height: 48px;
+}
+
+.reception-skeleton--action {
+  width: 100%;
+  height: 54px;
+  border-radius: 18px;
+}
+
+@keyframes reception-skeleton {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.reception-modal {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 24, 17, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.reception-modal__panel {
+  width: min(100%, 440px);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  border: 1px solid rgba(247, 244, 238, 0.28);
+  border-radius: 34px;
+  background: linear-gradient(145deg, rgba(247, 244, 238, 0.94), rgba(232, 221, 204, 0.9));
+  box-shadow: 0 32px 100px rgba(3, 14, 10, 0.46);
+  padding: 30px 22px 22px;
+  text-align: center;
+}
+
+.reception-modal__icon {
+  font-size: 2.6rem;
+}
+
+.reception-modal h2,
+.reception-modal p {
+  margin: 0;
+}
+
+.reception-modal h2 {
+  color: #173b2d;
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+
+.reception-modal strong {
+  color: rgba(23, 59, 45, 0.82);
+  font-size: 1.18rem;
+  font-weight: 900;
+}
+
+.reception-modal p {
+  max-width: 320px;
+  color: rgba(23, 59, 45, 0.68);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.reception-modal__guest {
+  color: #173b2d !important;
+  font-size: 1.16rem !important;
+  font-weight: 900 !important;
+}
+
+.reception-modal__warning {
+  color: #8a4a28 !important;
+}
+
+.reception-modal__error {
+  color: #9f3b2f !important;
+}
+
+.reception-modal__actions {
+  width: 100%;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.reception-modal__actions button {
+  min-height: 56px;
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.reception-modal__actions button:first-child {
+  background: rgba(23, 59, 45, 0.08);
+  color: rgba(23, 59, 45, 0.72);
+}
+
+.reception-modal__actions button:last-child {
+  background: #173b2d;
+  color: #f7f4ee;
+}
+
+.reception-modal__actions button:disabled {
+  opacity: 0.62;
+}
+
+@media (max-width: 380px) {
+  .reception-date-actions {
+    align-items: flex-start;
+  }
+
+  .reception-date-picker,
+  .reception-date-picker__trigger {
+    width: 100%;
+  }
+
+  .reception-date-picker__trigger {
+    justify-content: center;
+  }
+
+  .reception-date-picker__panel {
+    right: auto;
+    left: 0;
+    width: calc(100vw - 36px);
+  }
+
+  .reception-summary {
+    gap: 10px;
+  }
+
+  .reception-summary div,
+  .reception-card {
+    border-radius: 20px;
+    padding: 15px;
+  }
+}
+
+@media (min-width: 840px) {
+  .reception-summary {
+    max-width: 620px;
+  }
+}

@@ -3,16 +3,16 @@ import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
 import {
   createChatMessage,
   loadChatConversation,
   loadChatConversations,
   loadChatMessages,
 } from "../services/chat.service";
+import { loadCurrentUser } from "../services/auth.service";
 import type { ChatConversation, ChatLanguage, ChatMessage } from "../types/chat";
 import "../styles/ChatPage.css";
-
-const TEMPORARY_CURRENT_USER_ID = "local-reception";
 
 function inferLanguage(value: string): ChatLanguage {
   return /[\u0E00-\u0E7F]/.test(value) ? "th" : "en";
@@ -68,8 +68,8 @@ function ContextCard({ conversation }: { conversation: ChatConversation }) {
   );
 }
 
-function MessageBubble({ message, grouped }: { message: ChatMessage; grouped: boolean }) {
-  const isCurrentUser = message.author.id === TEMPORARY_CURRENT_USER_ID;
+function MessageBubble({ message, grouped, currentUserId }: { message: ChatMessage; grouped: boolean; currentUserId: string }) {
+  const isCurrentUser = message.author.id === currentUserId;
   const tone = isCurrentUser ? "owner" : "staff";
 
   return (
@@ -175,6 +175,10 @@ export default function ChatPage() {
     queryFn: ({ signal }) => loadChatMessages(activeConversationId, signal),
     enabled: Boolean(activeConversationId),
   });
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => loadCurrentUser(signal),
+  });
 
   const retry = () => {
     void conversationsQuery.refetch();
@@ -184,36 +188,32 @@ export default function ChatPage() {
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
   const conversation = conversationQuery.data;
-  const isLoading = conversationsQuery.isLoading || conversationQuery.isLoading || messagesQuery.isLoading;
-  const isError = conversationsQuery.isError || conversationQuery.isError || messagesQuery.isError;
+  const isLoading = conversationsQuery.isLoading || conversationQuery.isLoading || messagesQuery.isLoading || currentUserQuery.isLoading;
+  const isError = conversationsQuery.isError || conversationQuery.isError || messagesQuery.isError || currentUserQuery.isError;
 
   const groupedMessages = useMemo(() => messages.map((message, index) => ({
     message,
     grouped: index > 0 && messages[index - 1]?.author.id === message.author.id,
   })), [messages]);
 
-  if (isLoading) return <PageLoading />;
-  if (isError) return <PageError onRetry={retry} />;
+  if (isLoading) return <WorkspaceShell title="Chat" workspace="chat"><PageLoading /></WorkspaceShell>;
+  if (isError) return <WorkspaceShell title="Chat" workspace="chat"><PageError onRetry={retry} /></WorkspaceShell>;
 
   if (!conversation) {
     return (
-      <main className="chat-page">
+      <WorkspaceShell title="Chat" workspace="chat" bodyClassName="chat-page">
         <div className="chat-empty-state chat-empty-state--page">
           <span aria-hidden="true">🌿</span>
           <h2>No operational conversations</h2>
           <p>Run local migrations or create the first conversation through the backend.</p>
         </div>
-      </main>
+      </WorkspaceShell>
     );
   }
 
   return (
-    <main className="chat-page">
-      <div className="chat-page__header">
-        <div>
-          <p className="chat-page__eyebrow">Operational memory</p>
-          <h2>Context Chat</h2>
-        </div>
+    <WorkspaceShell title="Chat" workspace="chat" bodyClassName="chat-page">
+      <div className="workspace-body-actions">
         <span>{conversation.messageCount} note{conversation.messageCount === 1 ? "" : "s"}</span>
       </div>
 
@@ -223,7 +223,7 @@ export default function ChatPage() {
         <div className="chat-day-marker">Resort time · Asia/Bangkok</div>
         {groupedMessages.length > 0 ? (
           groupedMessages.map(({ message, grouped }) => (
-            <MessageBubble key={message.id} message={message} grouped={grouped} />
+            <MessageBubble key={message.id} message={message} grouped={grouped} currentUserId={currentUserQuery.data?.id ?? ""} />
           ))
         ) : (
           <EmptyConversation />
@@ -231,6 +231,6 @@ export default function ChatPage() {
       </section>
 
       <Composer conversationId={conversation.id} />
-    </main>
+    </WorkspaceShell>
   );
 }

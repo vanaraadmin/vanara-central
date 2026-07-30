@@ -1,0 +1,45 @@
+<svg width="960" height="320" viewBox="0 0 960 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fade" x1="480" y1="0" x2="480" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#071B12" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#06170F" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#020A07"/>
+    </linearGradient>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="0.8"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="320" fill="url(#fade)"/>
+
+  <g opacity="0.72" fill="#06150E" filter="url(#soft)">
+    <path d="M0 145C74 128 105 166 142 216C86 205 45 220 0 245V145Z"/>
+    <path d="M0 86C49 90 78 120 95 171C48 147 23 151 0 162V86Z"/>
+    <path d="M960 116C887 111 848 148 821 205C876 185 920 198 960 225V116Z"/>
+    <path d="M960 64C906 71 879 100 866 151C903 134 936 135 960 147V64Z"/>
+  </g>
+
+  <g fill="#04110B" opacity="0.9">
+    <path d="M26 320C39 262 58 219 83 191C70 246 76 281 100 320H26Z"/>
+    <path d="M65 320C82 239 115 177 165 134C132 204 132 266 155 320H65Z"/>
+    <path d="M135 320C160 246 204 193 266 160C217 220 202 273 211 320H135Z"/>
+    <path d="M235 320C269 253 320 213 388 196C332 238 304 280 302 320H235Z"/>
+    <path d="M352 320C389 259 435 228 493 215C452 251 435 286 438 320H352Z"/>
+    <path d="M454 320C496 258 548 229 610 220C565 252 546 287 549 320H454Z"/>
+    <path d="M568 320C611 248 667 204 736 186C682 232 658 277 659 320H568Z"/>
+    <path d="M681 320C716 235 763 180 824 151C783 210 775 268 788 320H681Z"/>
+    <path d="M793 320C816 239 849 185 893 157C866 216 866 272 886 320H793Z"/>
+    <path d="M872 320C889 268 911 228 938 201C922 246 928 283 955 320H872Z"/>
+  </g>
+
+  <g stroke="#071B12" stroke-width="6" stroke-linecap="round" opacity="0.78">
+    <path d="M89 320C94 249 122 194 172 154"/>
+    <path d="M190 320C205 251 240 206 296 185"/>
+    <path d="M307 320C326 271 360 237 409 219"/>
+    <path d="M548 320C574 264 616 225 674 204"/>
+    <path d="M695 320C719 250 756 204 806 182"/>
+    <path d="M826 320C842 252 870 207 910 184"/>
+  </g>
+
+  <rect y="286" width="960" height="34" fill="#020A07"/>
+</svg>

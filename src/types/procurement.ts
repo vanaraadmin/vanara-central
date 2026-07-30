@@ -1,11 +1,6 @@
 ﻿export type ProcurementStatus = "requested" | "reviewed" | "ordered" | "received" | "rejected";
 
-export interface CurrentUserView {
-  id: string;
-  displayName: string;
-  role: string;
-  isOwner: boolean;
-}
+export type { CurrentUserView } from "./auth";
 
 export interface ProcurementItem {
   id: number;

@@ -1,4 +1,4 @@
-import { resolveCurrentUser, type CurrentUser } from "./current-user.service.js";
+import type { CurrentUser } from "./current-user.service.js";
 
 export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
 export type ChatLanguage = "en" | "th";
@@ -72,10 +72,6 @@ export interface CreateChatMessageInput {
   bodyLanguage?: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
-}
-
-export function resolveCurrentChatUser(c: Parameters<typeof resolveCurrentUser>[0]): CurrentChatUser {
-  return resolveCurrentUser(c);
 }
 
 function normalizeLanguage(value: unknown, fallback: ChatLanguage): ChatLanguage {

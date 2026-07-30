@@ -7,14 +7,18 @@
     "enabled": true
   },
   "vars": {
-    "BEDS24_BASE_URL": "https://api.beds24.com/v2"
+    "BEDS24_BASE_URL": "https://api.beds24.com/v2",
+    "VANARA_DATABASE_ENVIRONMENT": "production",
+    "VANARA_DATABASE_NAME": "vanara-central",
+    "VANARA_DATABASE_ID": "1f0c6fce-8a47-442a-8158-97708aefe6b1"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "vanara-central",
       "database_id": "1f0c6fce-8a47-442a-8158-97708aefe6b1",
-      "migrations_dir": "server/migrations"
+      "migrations_dir": "server/migrations",
+      "remote": true
     }
   ],
   "triggers": {

@@ -1,16 +1,26 @@
-﻿export type MaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
+export type MaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
 export type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
 export type MaintenanceCategory =
   | "Electrical"
-  | "Plumbing"
-  | "Cleaning"
-  | "Furniture"
   | "Air Conditioning"
+  | "Water"
+  | "Furniture"
+  | "Bathroom"
   | "Garden"
-  | "Pool"
-  | "Restaurant"
-  | "IT"
+  | "Cleaning Equipment"
+  | "Internet / Network"
+  | "Appliance"
   | "Other";
+export type MaintenanceAssignmentType = "INTERNAL" | "EXTERNAL";
+
+export interface MaintenanceAssignment {
+  type: MaintenanceAssignmentType | null;
+  assignedUserId: string | null;
+  assignedUserName: string | null;
+  externalAssigneeLabel: string | null;
+  externalAssigneeNote: string | null;
+  assignedAt: string | null;
+}
 
 export interface MaintenanceTicketSummary {
   id: number;
@@ -23,13 +33,24 @@ export interface MaintenanceTicketSummary {
   roomName: string | null;
   accommodationId: number | null;
   accommodationName: string | null;
+  locationArea: string | null;
   assignedUserId: string | null;
   assignedUserName: string | null;
+  assignment: MaintenanceAssignment;
   reportedBy: string;
   reportedByName: string;
   createdAt: string;
   updatedAt: string;
+  assignedAt: string | null;
+  startedAt: string | null;
   resolvedAt: string | null;
+  closedAt: string | null;
+  resolvedBy: string | null;
+  resolvedByName: string | null;
+  closedBy: string | null;
+  closedByName: string | null;
+  outOfService: boolean;
+  waitingReason: string | null;
   noteCount: number;
   photoCount: number;
 }
@@ -73,6 +94,18 @@ export interface MaintenanceTicketDetail extends MaintenanceTicketSummary {
   timeline: MaintenanceEvent[];
 }
 
+export interface MaintenanceAssignableUser {
+  id: string;
+  displayName: string;
+  role: string;
+}
+
+export interface MaintenanceAssignableOptions {
+  users: MaintenanceAssignableUser[];
+  externalAssignees: string[];
+  externalFallbackAvailable: boolean;
+}
+
 export interface CreateMaintenanceTicketPayload {
   title: string;
   description: string;
@@ -80,8 +113,12 @@ export interface CreateMaintenanceTicketPayload {
   priority: MaintenancePriority;
   roomId?: number | null;
   accommodationId?: number | null;
+  locationArea?: string | null;
+  assignmentType?: MaintenanceAssignmentType | null;
   assignedUserId?: string | null;
-  assignedUserName?: string | null;
+  externalAssigneeLabel?: string | null;
+  externalAssigneeNote?: string | null;
+  outOfService?: boolean;
 }
 
 export interface UpdateMaintenanceTicketPayload {
@@ -89,11 +126,16 @@ export interface UpdateMaintenanceTicketPayload {
   description?: string;
   category?: MaintenanceCategory;
   priority?: MaintenancePriority;
-  status?: MaintenanceStatus;
   roomId?: number | null;
   accommodationId?: number | null;
+  locationArea?: string | null;
+}
+
+export interface UpdateMaintenanceAssignmentPayload {
+  assignmentType?: MaintenanceAssignmentType | null;
   assignedUserId?: string | null;
-  assignedUserName?: string | null;
+  externalAssigneeLabel?: string | null;
+  externalAssigneeNote?: string | null;
 }
 
 export interface MaintenanceListResponse {
@@ -105,6 +147,12 @@ export interface MaintenanceListResponse {
 export interface MaintenanceDetailResponse {
   success: boolean;
   data?: MaintenanceTicketDetail;
+  error?: string;
+}
+
+export interface MaintenanceAssignableUsersResponse {
+  success: boolean;
+  data?: MaintenanceAssignableOptions;
   error?: string;
 }
 

@@ -1,6 +1,7 @@
 ﻿import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
 import { loadProcurementRequest, updateProcurementRequest } from "../services/procurement.service";
 import type { ProcurementStatus } from "../types/procurement";
 import "../styles/ProcurementPage.css";
@@ -26,20 +27,16 @@ export default function ProcurementDetailPage() {
     },
   });
 
-  if (query.isLoading) return <PageLoading />;
-  if (query.isError || !query.data) return <PageError onRetry={() => void query.refetch()} />;
+  if (query.isLoading) return <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
+  if (query.isError || !query.data) return <WorkspaceShell title="Procurement" workspace="procurement"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
   const request = query.data;
 
   return (
-    <main className="procurement-page">
-      <header className="supply-hero owner-hero">
-        <div>
-          <p>Supply request</p>
-          <h1>Request #{request.id}</h1>
-          <span>{request.requestedByName} · {formatDate(request.createdAt)}</span>
-        </div>
+    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+      <div className="workspace-body-actions">
+        <span>Request #{request.id} · {request.requestedByName} · {formatDate(request.createdAt)}</span>
         <Link to="/procurement">Back</Link>
-      </header>
+      </div>
 
       <section className="procurement-detail-card">
         <h2>Requested items</h2>
@@ -67,6 +64,6 @@ export default function ProcurementDetailPage() {
           <div><dt>Rejected</dt><dd>{formatDate(request.rejectedAt)}</dd></div>
         </dl>
       </section>
-    </main>
+    </WorkspaceShell>
   );
 }

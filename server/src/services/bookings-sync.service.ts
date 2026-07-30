@@ -214,6 +214,7 @@ const CURSOR_NAME = "bookings_modified_cursor";
 const SYNC_TYPE = "bookings";
 const INITIAL_FROM = "2000-01-01T00:00:00Z";
 const OVERLAP_MS = 5 * 60 * 1000;
+const BOOKING_SYNC_STATUS_FILTERS = [null, "cancelled"] as const;
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -355,6 +356,16 @@ export function normalizeBookingFields(booking: Beds24Booking): NormalizedBookin
 
 export function shouldAdvanceBookingsCursor(status: "success" | "failed"): boolean {
   return status === "success";
+}
+
+export function bookingSyncQueries(modifiedFrom: string): Record<string, string | boolean>[] {
+  return BOOKING_SYNC_STATUS_FILTERS.map((status) => ({
+    modifiedFrom,
+    includeBookingGroup: true,
+    includeGuests: true,
+    includeInfoItems: true,
+    ...(status ? { status } : {}),
+  }));
 }
 
 async function loadMaps(env: BookingsSyncBindings) {
@@ -581,35 +592,32 @@ export async function syncBookings(env: BookingsSyncBindings): Promise<BookingsS
       throw new Error("No active property/room mappings found. Run POST /sync/properties first.");
     }
 
-    let response = await beds24Get<Beds24BookingsResponse>(env, "/bookings", {
-      modifiedFrom,
-      includeBookingGroup: true,
-      includeGuests: true,
-      includeInfoItems: true,
-    });
+    for (const query of bookingSyncQueries(modifiedFrom)) {
+      let response = await beds24Get<Beds24BookingsResponse>(env, "/bookings", query);
 
-    while (true) {
-      pagesRead += 1;
-      if (response.success === false) {
-        throw new Error(response.error ?? "Beds24 bookings returned success=false");
-      }
-
-      for (const booking of response.data ?? []) {
-        metrics.read();
-        const changes = await upsertBooking(env, booking, maps, startedAt);
-        if (changes === 0) {
-          metrics.skipped();
-        } else {
-          metrics.written(changes);
+      while (true) {
+        pagesRead += 1;
+        if (response.success === false) {
+          throw new Error(response.error ?? "Beds24 bookings returned success=false");
         }
-      }
 
-      const next = response.pages?.nextPageExists ? response.pages.nextPageLink : null;
-      if (!next) {
-        break;
-      }
+        for (const booking of response.data ?? []) {
+          metrics.read();
+          const changes = await upsertBooking(env, booking, maps, startedAt);
+          if (changes === 0) {
+            metrics.skipped();
+          } else {
+            metrics.written(changes);
+          }
+        }
 
-      response = await beds24GetAbsolute<Beds24BookingsResponse>(env, next);
+        const next = response.pages?.nextPageExists ? response.pages.nextPageLink : null;
+        if (!next) {
+          break;
+        }
+
+        response = await beds24GetAbsolute<Beds24BookingsResponse>(env, next);
+      }
     }
 
     const finishedAt = new Date().toISOString();

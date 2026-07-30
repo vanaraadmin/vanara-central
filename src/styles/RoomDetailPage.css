@@ -8,12 +8,16 @@
 
 .room-detail-header,
 .room-refresh,
+.room-hero-card,
 .room-badges,
 .room-badges span,
 .room-section header,
 .room-actions,
-.room-placeholder,
-.stay-card {
+.room-section-summary,
+.stay-card,
+.maintenance-ticket-card,
+.room-ticket-form button,
+.timeline-event {
   display: flex;
 }
 
@@ -24,10 +28,23 @@
   margin-bottom: var(--vc-space-3);
 }
 
-.room-detail-header span {
+.room-detail-header span,
+.room-section-summary span,
+.stay-card dt,
+.stay-card dd,
+.room-operation-card dt,
+.room-operation-card dd,
+.room-note-card span,
+.timeline-event small,
+.maintenance-ticket-card span,
+.maintenance-ticket-card small {
   color: var(--vc-text-secondary);
-  font-size: var(--vc-text-xs);
+  font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-bold);
+}
+
+.room-detail-header > div > span {
+  font-size: var(--vc-text-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -52,9 +69,46 @@
   color: var(--vc-text-primary);
 }
 
-.room-refresh svg {
+.room-refresh svg,
+.room-badges svg,
+.room-section header svg,
+.room-ticket-form button svg {
   width: 18px;
   height: 18px;
+}
+
+.room-hero-card {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+  margin-bottom: var(--vc-space-3);
+  padding: var(--vc-space-4);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-2xl);
+  background: linear-gradient(135deg, var(--vc-bg-surface), var(--vc-bg-app-elevated));
+  box-shadow: var(--vc-shadow-sm);
+}
+
+.room-hero-card div {
+  display: grid;
+  gap: var(--vc-space-1);
+}
+
+.room-hero-card strong {
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-xl);
+  line-height: var(--vc-line-title);
+}
+
+.room-hero-card small {
+  color: var(--vc-text-secondary);
+  font-weight: var(--vc-weight-bold);
+}
+
+.room-hero-card > svg {
+  width: 42px;
+  height: 42px;
+  color: var(--vc-color-gold-600);
 }
 
 .room-badges {
@@ -64,7 +118,8 @@
   scrollbar-width: none;
 }
 
-.room-badges::-webkit-scrollbar {
+.room-badges::-webkit-scrollbar,
+.room-actions::-webkit-scrollbar {
   display: none;
 }
 
@@ -80,11 +135,6 @@
   color: var(--vc-text-primary);
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-heavy);
-}
-
-.room-badges svg {
-  width: 18px;
-  height: 18px;
 }
 
 .room-section {
@@ -115,75 +165,269 @@
   line-height: var(--vc-line-title);
 }
 
-.room-vacant,
+.room-empty-state,
 .stay-card,
-.room-placeholder,
-.status-grid div {
+.room-operation-card,
+.room-section-summary,
+.room-note-card,
+.maintenance-ticket-card,
+.room-ticket-form,
+.room-note-form,
+.timeline-event {
   border-radius: var(--vc-radius-lg);
   background: var(--vc-bg-app-elevated);
 }
 
-.room-vacant {
+.room-empty-state {
   padding: var(--vc-space-4);
   color: var(--vc-text-secondary);
   font-weight: var(--vc-weight-heavy);
 }
 
 .stay-card,
-.room-placeholder {
+.room-section-summary {
   flex-direction: column;
-  gap: 4px;
+  gap: var(--vc-space-2);
   padding: var(--vc-space-3);
 }
 
 .stay-card strong,
-.room-placeholder strong,
-.status-grid strong {
+.room-section-summary strong,
+.maintenance-ticket-card strong,
+.room-note-card strong,
+.timeline-event strong {
   color: var(--vc-text-primary);
   font-weight: var(--vc-weight-heavy);
 }
 
-.stay-card span,
-.room-placeholder span,
-.status-grid span {
-  color: var(--vc-text-secondary);
-  font-size: var(--vc-text-sm);
-  font-weight: var(--vc-weight-bold);
-}
-
-.status-grid {
+.stay-card dl,
+.room-operation-card dl {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--vc-space-2);
+  margin: 0;
 }
 
-.status-grid div {
+.stay-card div,
+.room-operation-card div {
   display: grid;
-  gap: 4px;
-  min-height: 74px;
-  align-content: center;
+  gap: 2px;
+}
+
+.stay-card dt,
+.room-operation-card dt {
+  text-transform: uppercase;
+  font-size: var(--vc-text-xs);
+}
+
+.stay-card dd,
+.room-operation-card dd {
+  margin: 0;
+  color: var(--vc-text-primary);
+}
+
+.room-operation-card {
+  display: grid;
+  gap: var(--vc-space-3);
   padding: var(--vc-space-3);
+}
+
+.room-status-badge {
+  width: fit-content;
+  border-radius: var(--vc-radius-pill);
+  padding: 7px 11px;
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.room-status-badge.is-ready,
+.room-status-badge.is-low {
+  background: rgba(35, 134, 84, 0.12);
+  color: #1c6d45;
+}
+
+.room-status-badge.is-dirty,
+.room-status-badge.is-to-clean,
+.room-status-badge.is-high {
+  background: rgba(186, 84, 36, 0.13);
+  color: #95401c;
+}
+
+.room-status-badge.is-cleaning,
+.room-status-badge.is-cleaning-in-progress,
+.room-status-badge.is-medium {
+  background: rgba(189, 137, 39, 0.15);
+  color: #88611b;
+}
+
+.room-status-badge.is-maintenance,
+.room-status-badge.is-critical {
+  background: rgba(155, 43, 43, 0.14);
+  color: #842424;
+}
+
+.room-status-badge.is-occupied {
+  background: rgba(27, 72, 66, 0.11);
+  color: var(--vc-color-jungle-900);
 }
 
 .room-actions {
   gap: var(--vc-space-2);
   overflow-x: auto;
+  margin-top: var(--vc-space-3);
   scrollbar-width: none;
 }
 
-.room-actions::-webkit-scrollbar {
-  display: none;
+.room-actions button,
+.room-ticket-form button,
+.room-note-form button {
+  min-height: var(--vc-touch-min);
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
 }
 
 .room-actions button {
-  min-height: var(--vc-touch-min);
   flex: 1 0 142px;
-  border: 0;
-  border-radius: var(--vc-radius-lg);
+  padding: 0 var(--vc-space-3);
+}
+
+.room-actions button:disabled {
   background: var(--vc-bg-subtle);
   color: var(--vc-text-muted);
+  opacity: 0.72;
+}
+
+.room-actions button.is-selected {
+  background: var(--vc-color-gold-100);
+  color: var(--vc-text-primary);
+}
+
+.maintenance-ticket-list,
+.room-note-list,
+.room-reception-notes,
+.room-timeline {
+  display: grid;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-3);
+}
+
+.room-reception-notes p {
+  margin: 0;
+  padding: var(--vc-space-2);
+  border-left: 3px solid rgba(178, 138, 70, 0.48);
+  border-radius: var(--vc-radius-md);
+  background: rgba(178, 138, 70, 0.08);
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.maintenance-ticket-card {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-2);
+  padding: var(--vc-space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.maintenance-ticket-card div {
+  display: grid;
+  gap: 3px;
+}
+
+.room-ticket-form,
+.room-note-form {
+  display: grid;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-3);
+  padding: var(--vc-space-3);
+}
+
+.room-ticket-form label,
+.room-note-form label {
+  display: grid;
+  gap: var(--vc-space-1);
+  color: var(--vc-text-primary);
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-heavy);
-  opacity: 0.64;
+}
+
+.room-ticket-form input,
+.room-ticket-form select,
+.room-ticket-form textarea,
+.room-note-form textarea {
+  width: 100%;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-md);
+  background: var(--vc-bg-surface);
+  color: var(--vc-text-primary);
+  font: inherit;
+  padding: var(--vc-space-2);
+}
+
+.room-ticket-form textarea,
+.room-note-form textarea {
+  resize: vertical;
+}
+
+.room-form-grid {
+  display: grid;
+  gap: var(--vc-space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.room-ticket-form button {
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+}
+
+.room-note-form button {
+  padding: 0 var(--vc-space-3);
+}
+
+.room-form-error {
+  margin: 0;
+  color: #842424;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.room-note-card {
+  padding: var(--vc-space-3);
+}
+
+.room-note-card p,
+.timeline-event p {
+  margin: var(--vc-space-1) 0;
+  color: var(--vc-text-primary);
+  line-height: var(--vc-line-body);
+}
+
+.timeline-event {
+  align-items: flex-start;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-3);
+}
+
+.timeline-event > span {
+  flex: 0 0 auto;
+  border-radius: var(--vc-radius-pill);
+  padding: 6px 9px;
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  text-transform: uppercase;
 }
 
 @media (min-width: 720px) {
@@ -191,7 +435,7 @@
     padding-inline: var(--vc-space-5);
   }
 
-  .status-grid {
+  .room-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

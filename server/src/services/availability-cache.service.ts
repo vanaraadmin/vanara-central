@@ -3,6 +3,7 @@ import {
   type Beds24Bindings,
   type Beds24RequestOptions,
 } from "./beds24-client.service.js";
+import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { sanitizeLogMessage } from "./log-safety.service.js";
 import {
   acquireSyncLock,
@@ -379,7 +380,7 @@ async function getBookedUnits(
     WHERE unit_id IS NOT NULL
       AND arrival_date <= ?
       AND departure_date > ?
-      AND lower(status) NOT IN ('cancelled', 'canceled', 'no show', 'noshow')
+      AND ${operationalBookingStatusSql("status")}
   `).bind(toDate, fromDate).all<BookingOccupancyRow>();
   return result.results ?? [];
 }

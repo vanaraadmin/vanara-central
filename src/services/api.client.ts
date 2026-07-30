@@ -13,6 +13,7 @@ export async function requestJson<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(path, {
+    credentials: "same-origin",
     headers: { accept: "application/json" },
     signal,
   });

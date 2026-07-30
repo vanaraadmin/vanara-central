@@ -11,8 +11,34 @@ import {
   updateProcurementRequestStatus,
 } from "../src/services/procurement.service.ts";
 
-const employee: CurrentUser = { id: "nun", displayName: "Nun", role: "Housekeeping" };
-const owner: CurrentUser = { id: "stefano", displayName: "Stefano", role: "Owner" };
+function user(overrides: Partial<CurrentUser>): CurrentUser {
+  return {
+    id: "nun",
+    displayName: "Nun",
+    fullName: "Nun",
+    profilePhotoUrl: null,
+    role: "Housekeeping",
+    preferredLanguage: "th",
+    username: "nun",
+    email: null,
+    status: "active",
+    views: ["staff"],
+    permissions: [],
+    lastLoginAt: null,
+    ...overrides,
+  };
+}
+
+const employee: CurrentUser = user({});
+const owner: CurrentUser = user({
+  id: "stefano",
+  displayName: "Stefano",
+  fullName: "Stefano",
+  role: "Owner",
+  preferredLanguage: "en",
+  username: "owner",
+  views: ["owner", "staff"],
+});
 
 type RequestRecord = {
   request_id: number; requested_by: string; requested_by_name: string; status: string; custom_item_text: string | null; note: string | null;

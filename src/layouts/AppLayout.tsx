@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { primaryNavigation } from "../config/navigation";
+import { Outlet } from "react-router-dom";
+import FloatingTeamChat from "../components/FloatingTeamChat";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { useLanguage } from "../providers/language.context";
 import "../styles/OperationsShell.css";
@@ -20,23 +20,7 @@ export default function AppLayout() {
         <Outlet />
       </div>
 
-      <nav className="operations-nav" aria-label={translate("mainNavigation")}>
-        {primaryNavigation.map(({ key, labelKey, path, Icon }) => (
-          <NavLink
-            className={({ isActive }) =>
-              isActive
-                ? "operations-nav__item is-active"
-                : "operations-nav__item"
-            }
-            end={path === "/dashboard"}
-            key={key}
-            to={path}
-          >
-            <Icon />
-            <span>{translate(labelKey)}</span>
-          </NavLink>
-        ))}
-      </nav>
+      <FloatingTeamChat />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
-import { getDashboard } from "./services/dashboard.service.js";
-import { getRoomDetail, type RoomDetailBindings } from "./services/room-detail.service.js";
+import { getDashboard, getDashboardOverview } from "./services/dashboard.service.js";
+import { getStaffOverview, type StaffOverviewBindings } from "./services/staff-overview.service.js";
+import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
 import { getTodayDashboard } from "./services/today.service.js";
 import { syncProperties, type PropertySyncBindings } from "./services/property-sync.service.js";
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
@@ -8,15 +9,44 @@ import { syncBookings, type BookingsSyncBindings } from "./services/bookings-syn
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { getAvailability } from "./services/availability-read.service.js";
 import { getArrivalsDeparturesAgenda, type MovementsBindings } from "./services/arrivals-departures.service.js";
-import { getHousekeepingOverview, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
-import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, resolveCurrentChatUser, type ChatBindings } from "./services/chat.service.js";
-import { addMaintenanceNote, addMaintenancePhoto, createMaintenanceTicket, getMaintenanceTicket, listMaintenanceTickets, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceNoteInput, normalizeMaintenancePhotoInput, normalizeUpdateMaintenanceTicketInput, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
+import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normalizeReceptionCheckInInput, normalizeReceptionCheckOutInput, normalizeReceptionNotesInput, receptionCompletionErrorStatus, updateReceptionAction, updateReceptionNotes, type ReceptionBindings } from "./services/reception.service.js";
+import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
+import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
+import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
-import { ForbiddenError, publicCurrentUser, resolveCurrentUser } from "./services/current-user.service.js";
+import {
+  AuthenticationError,
+  ForbiddenError,
+  authOptions,
+  createInitialOwner,
+  createUser,
+  disableUser,
+  listUsers,
+  login,
+  logout,
+  makeExpiredSessionCookie,
+  makeSessionCookie,
+  normalizeCreateUserInput,
+  normalizeLoginInput,
+  normalizeUpdateUserInput,
+  publicCurrentUser,
+  requireActionPermission,
+  requireModulePermission,
+  requireOwner,
+  requireView,
+  resolveCurrentUser,
+  updateUser,
+  type AuthBindings,
+  type CurrentUser,
+  type ModuleKey,
+} from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, RoomDetailBindings, ChatBindings, MaintenanceBindings, ProcurementBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
+  VANARA_DATABASE_ENVIRONMENT: string;
+  VANARA_DATABASE_NAME: string;
+  VANARA_DATABASE_ID: string;
   DB: D1Database;
 }
 
@@ -29,8 +59,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-function apiErrorStatus(error: unknown): 400 | 403 {
+function apiErrorStatus(error: unknown): 400 | 401 | 403 {
+  if (error instanceof AuthenticationError) return 401;
   return error instanceof ForbiddenError ? 403 : 400;
+}
+function protectedErrorStatus(error: unknown): 401 | 403 | 500 {
+  if (error instanceof AuthenticationError) return 401;
+  if (error instanceof ForbiddenError) return 403;
+  return 500;
 }
 function configured(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
@@ -68,6 +104,20 @@ function positiveIntegerParam(value: string, name: string): number {
   return parsed;
 }
 
+async function authenticated(c: AppContext, module: ModuleKey, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  requireView(user, module === "settings" || module === "owner-dashboard" ? "owner" : "staff");
+  requireModulePermission(user, module, action);
+  return user;
+}
+
+async function owner(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  requireOwner(user);
+  requireModulePermission(user, "settings", action);
+  return user;
+}
+
 async function healthHandler(c: AppContext) {
   let d1: { status: "ok" } | { status: "error"; message: string };
 
@@ -77,7 +127,7 @@ async function healthHandler(c: AppContext) {
   } catch (error) {
     d1 = {
       status: "error",
-      message: `${errorMessage(error)}. Run "npm run dev:prepare" to initialize the local D1 database.`,
+      message: `${errorMessage(error)}. The runtime must connect to the configured production D1 database; local fallback databases are disabled.`,
     };
   }
 
@@ -101,6 +151,11 @@ async function healthHandler(c: AppContext) {
     config: {
       beds24BaseUrl: baseUrlValid ? "configured" : "invalid",
       beds24Token: configured(c.env.BEDS24_LONG_LIFE_TOKEN) ? "configured" : "missing-local-only",
+      databaseEnvironment: c.env.VANARA_DATABASE_ENVIRONMENT,
+      databaseName: c.env.VANARA_DATABASE_NAME,
+      databaseId: c.env.VANARA_DATABASE_ID,
+      databaseBinding: "DB",
+      databaseType: "Cloudflare D1",
     },
   }, ok ? 200 : 503);
 }
@@ -108,42 +163,135 @@ async function healthHandler(c: AppContext) {
 app.get("/", (c) => c.json({ status: "ok", project: "Vanara Central" }));
 app.get("/health", healthHandler);
 app.get("/api/health", healthHandler);
-app.get("/api/current-user", (c) => c.json({ success: true, data: publicCurrentUser(resolveCurrentUser(c)) }));
+app.post("/api/auth/bootstrap-owner", async (c) => {
+  try {
+    const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM users").first<{ total: number }>();
+    if ((count?.total ?? 0) > 0) throw new ForbiddenError("Bootstrap is available only before the first user exists.");
+    const payload = await c.req.json().catch(() => null);
+    if (!payload || typeof payload !== "object") throw new Error("Bootstrap payload is required.");
+    const input = normalizeCreateUserInput({
+      fullName: "fullName" in payload ? payload.fullName : undefined,
+      profilePhotoUrl: "profilePhotoUrl" in payload ? payload.profilePhotoUrl : null,
+      role: "Owner",
+      preferredLanguage: "preferredLanguage" in payload ? payload.preferredLanguage : "en",
+      username: "username" in payload ? payload.username : undefined,
+      email: "email" in payload ? payload.email : null,
+      password: "password" in payload ? payload.password : undefined,
+      status: "active",
+      views: ["owner", "staff"],
+      permissions: authOptions.modules.map((module) => ({ module, canAccess: true, canEdit: true })),
+    });
+    return c.json({ success: true, data: await createInitialOwner(c.env, input) }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+app.post("/api/auth/login", async (c) => {
+  try {
+    const payload = await c.req.json().catch(() => null);
+    const session = await login(c.env, normalizeLoginInput(payload));
+    c.header("Set-Cookie", makeSessionCookie(session.token, session.expiresAt, new URL(c.req.url).protocol === "https:"));
+    return c.json({ success: true, data: publicCurrentUser(session.user) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/auth/logout", async (c) => {
+  await logout(c);
+  c.header("Set-Cookie", makeExpiredSessionCookie(new URL(c.req.url).protocol === "https:"));
+  return c.json({ success: true });
+});
+
+app.get("/api/current-user", async (c) => {
+  try {
+    return c.json({ success: true, data: publicCurrentUser(await resolveCurrentUser(c)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/users", async (c) => {
+  try {
+    await owner(c, "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listUsers(c.env) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/users", async (c) => {
+  try {
+    await owner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await createUser(c.env, normalizeCreateUserInput(payload)) }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.patch("/api/users/:id", async (c) => {
+  try {
+    await owner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const user = await updateUser(c.env, c.req.param("id"), normalizeUpdateUserInput(payload));
+    if (!user) return c.json({ success: false, error: "User not found" }, 404);
+    return c.json({ success: true, data: user });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/users/:id/disable", async (c) => {
+  try {
+    await owner(c, "edit");
+    const user = await disableUser(c.env, c.req.param("id"));
+    if (!user) return c.json({ success: false, error: "User not found" }, 404);
+    return c.json({ success: true, data: user });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
 
 app.get("/api/availability", async (c) => {
   try {
+    await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
     const from = c.req.query("from");
     const to = c.req.query("to");
     return c.json({ success: true, data: await getAvailability(c.env, { from, to }) });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/availability/unit/:id", async (c) => {
   try {
+    await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
     const unitId = positiveIntegerParam(c.req.param("id"), "unit id");
     const from = c.req.query("from");
     const to = c.req.query("to");
     return c.json({ success: true, data: await getAvailability(c.env, { unitId, from, to }) });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/availability/date/:date", async (c) => {
   try {
+    await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await getAvailability(c.env, { date: c.req.param("date") }) });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/dashboard", async (c) => {
   try {
+    await authenticated(c, "dashboard", "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await getDashboard(c.env) });
   } catch (error) {
@@ -154,8 +302,45 @@ app.get("/api/dashboard", async (c) => {
     }));
     return c.json({
       success: false,
-      error: "Dashboard data is temporarily unavailable",
-    }, 500);
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Dashboard data is temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/dashboard/overview", async (c) => {
+  try {
+    await authenticated(c, "owner-dashboard", "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getDashboardOverview(c.env) });
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "Dashboard overview request failed",
+      error: errorMessage(error),
+      path: "/api/dashboard/overview",
+    }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Dashboard overview is temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/staff/overview", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    requireView(user, "staff");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getStaffOverview(c.env, user) });
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "Staff overview request failed",
+      error: errorMessage(error),
+      path: "/api/staff/overview",
+    }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Staff overview is temporarily unavailable",
+    }, protectedErrorStatus(error));
   }
 });
 
@@ -164,6 +349,7 @@ app.get("/api/dashboard", async (c) => {
 
 app.get("/api/rooms/:id", async (c) => {
   try {
+    await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
     const roomId = positiveIntegerParam(c.req.param("id"), "room id");
     const room = await getRoomDetail(c.env, roomId);
@@ -174,11 +360,54 @@ app.get("/api/rooms/:id", async (c) => {
 
     return c.json({ success: true, data: room });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.patch("/api/rooms/:id/housekeeping", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "access");
+    requireModulePermission(user, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const room = await updateRoomHousekeepingStatus(c.env, roomId, normalizeRoomHousekeepingInput(payload), user);
+    if (!room) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : housekeepingWorkflowErrorStatus(error));
+  }
+});
+
+app.post("/api/rooms/:id/notes", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const note = await createRoomNote(c.env, roomId, normalizeRoomNoteInput(payload), user);
+    if (!note) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: note }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/rooms/:id/maintenance/tickets", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "access");
+    requireModulePermission(user, "maintenance", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const ticket = await createRoomMaintenanceTicket(c.env, roomId, payload, user);
+    if (!ticket) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: ticket }, 201);
+  } catch (error) {
+    const status = errorMessage(error) === "Room not found." ? 404 : apiErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
   }
 });
 app.get("/api/movements", async (c) => {
   try {
+    await authenticated(c, "movements", "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await getArrivalsDeparturesAgenda(c.env) });
   } catch (error) {
@@ -189,12 +418,105 @@ app.get("/api/movements", async (c) => {
     }));
     return c.json({
       success: false,
-      error: "Arrivals and departures are temporarily unavailable",
-    }, 500);
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Arrivals and departures are temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/reception", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getReceptionOverview(c.env, c.req.query("date")) });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Reception overview request failed", error: errorMessage(error), path: "/api/reception" }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Reception data is temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/reception/stays/:bookingId", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    c.header("Cache-Control", "no-store");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await getReceptionStay(c.env, bookingId);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.patch("/api/reception/stays/:bookingId/check-in", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "edit");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const payload = await c.req.json().catch(() => null);
+    const stay = await updateReceptionAction(c.env, bookingId, normalizeReceptionCheckInInput(payload), user);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/check-in-completed", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "access");
+    requireActionPermission(user, "can_complete_checkin_checkout");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await completeReceptionEvent(c.env, bookingId, "check-in", user);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : receptionCompletionErrorStatus(error));
+  }
+});
+
+app.patch("/api/reception/stays/:bookingId/check-out", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "edit");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const payload = await c.req.json().catch(() => null);
+    const stay = await updateReceptionAction(c.env, bookingId, normalizeReceptionCheckOutInput(payload), user);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/check-out-completed", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "access");
+    requireActionPermission(user, "can_complete_checkin_checkout");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await completeReceptionEvent(c.env, bookingId, "check-out", user);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : receptionCompletionErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/notes", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "edit");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const payload = await c.req.json().catch(() => null);
+    const stay = await updateReceptionNotes(c.env, bookingId, normalizeReceptionNotesInput(payload), user);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 app.get("/api/housekeeping", async (c) => {
   try {
+    await authenticated(c, "housekeeping", "access");
     c.header("Cache-Control", "no-store");
     return c.json({
       success: true,
@@ -208,17 +530,70 @@ app.get("/api/housekeeping", async (c) => {
     }));
     return c.json({
       success: false,
-      error: "Housekeeping data is temporarily unavailable",
-    }, 500);
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Housekeeping data is temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/housekeeping/assignable-users", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listAssignableHousekeepingUsers(c.env, user) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : housekeepingWorkflowErrorStatus(error));
+  }
+});
+
+app.patch("/api/housekeeping/rooms/:id", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const overview = await updateHousekeepingWorkflow(c.env, roomId, normalizeHousekeepingWorkflowInput(payload), user);
+    if (!overview) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: overview });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : housekeepingWorkflowErrorStatus(error));
+  }
+});
+
+app.patch("/api/housekeeping/rooms/:id/assignment", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const overview = await updateHousekeepingAssignment(c.env, roomId, normalizeHousekeepingAssignmentInput(payload), user);
+    if (!overview) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: overview });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : housekeepingWorkflowErrorStatus(error));
+  }
+});
+
+app.patch("/api/housekeeping/rooms/:id/checklist", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const overview = await updateHousekeepingChecklist(c.env, roomId, normalizeHousekeepingChecklistInput(payload), user);
+    if (!overview) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: overview });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 app.get("/api/procurement/items", async (c) => {
   try {
+    await authenticated(c, "procurement", "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listActiveProcurementItems(c.env) });
   } catch (error) {
     console.error(JSON.stringify({ message: "Procurement items request failed", error: errorMessage(error), path: "/api/procurement/items" }));
-    return c.json({ success: false, error: "Supply items are temporarily unavailable" }, 500);
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Supply items are temporarily unavailable",
+    }, protectedErrorStatus(error));
   }
 });
 
@@ -226,18 +601,18 @@ app.post("/api/procurement/requests", async (c) => {
   try {
     const payload = await c.req.json().catch(() => null);
     const input = normalizeCreateProcurementRequestInput(payload);
-    const user = resolveCurrentUser(c);
+    const user = await authenticated(c, "procurement", "edit");
     const request = await createProcurementRequest(c.env, input, user);
     return c.json({ success: true, data: request }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/procurement/requests", async (c) => {
   try {
     c.header("Cache-Control", "no-store");
-    const user = resolveCurrentUser(c);
+    const user = await authenticated(c, "procurement", "access");
     const status = c.req.query("status") as ProcurementStatus | "all" | undefined;
     return c.json({ success: true, data: await listProcurementRequests(c.env, user, status) });
   } catch (error) {
@@ -248,7 +623,7 @@ app.get("/api/procurement/requests", async (c) => {
 app.get("/api/procurement/requests/:id", async (c) => {
   try {
     c.header("Cache-Control", "no-store");
-    const user = resolveCurrentUser(c);
+    const user = await authenticated(c, "procurement", "access");
     const requestId = positiveIntegerParam(c.req.param("id"), "request id");
     const request = await getOwnerProcurementRequest(c.env, requestId, user);
     if (!request) return c.json({ success: false, error: "Supply request not found" }, 404);
@@ -260,7 +635,7 @@ app.get("/api/procurement/requests/:id", async (c) => {
 
 app.patch("/api/procurement/requests/:id", async (c) => {
   try {
-    const user = resolveCurrentUser(c);
+    const user = await authenticated(c, "procurement", "edit");
     const requestId = positiveIntegerParam(c.req.param("id"), "request id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeUpdateProcurementRequestInput(payload);
@@ -273,6 +648,7 @@ app.patch("/api/procurement/requests/:id", async (c) => {
 });
 app.get("/api/maintenance/tickets", async (c) => {
   try {
+    await authenticated(c, "maintenance", "access");
     c.header("Cache-Control", "no-store");
     const status = c.req.query("status") as MaintenanceStatus | "All" | undefined;
     const search = c.req.query("search");
@@ -283,19 +659,33 @@ app.get("/api/maintenance/tickets", async (c) => {
       error: errorMessage(error),
       path: "/api/maintenance/tickets",
     }));
-    return c.json({ success: false, error: "Maintenance tickets are temporarily unavailable" }, 500);
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Maintenance tickets are temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/maintenance/assignable-users", async (c) => {
+  try {
+    await authenticated(c, "maintenance", "edit");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listAssignableMaintenanceUsers(c.env) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/maintenance/tickets/:id", async (c) => {
   try {
+    await authenticated(c, "maintenance", "access");
     c.header("Cache-Control", "no-store");
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const ticket = await getMaintenanceTicket(c.env, ticketId);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
@@ -303,11 +693,12 @@ app.post("/api/maintenance/tickets", async (c) => {
   try {
     const payload = await c.req.json().catch(() => null);
     const input = normalizeCreateMaintenanceTicketInput(payload);
-    const user = resolveCurrentChatUser(c);
+    const user = await authenticated(c, "maintenance", "edit");
     const ticket = await createMaintenanceTicket(c.env, input, user);
     return c.json({ success: true, data: ticket }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    const status = errorMessage(error) === "Room not found." ? 404 : apiErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
   }
 });
 
@@ -316,12 +707,54 @@ app.patch("/api/maintenance/tickets/:id", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeUpdateMaintenanceTicketInput(payload);
-    const user = resolveCurrentChatUser(c);
+    const user = await authenticated(c, "maintenance", "edit");
     const ticket = await updateMaintenanceTicket(c.env, ticketId, input, user);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
+  }
+});
+
+app.patch("/api/maintenance/tickets/:id/assignment", async (c) => {
+  try {
+    const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
+    const payload = await c.req.json().catch(() => null);
+    const input = normalizeMaintenanceAssignmentInput(payload);
+    const user = await authenticated(c, "maintenance", "edit");
+    const ticket = await assignMaintenanceTicket(c.env, ticketId, input, user);
+    if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
+    return c.json({ success: true, data: ticket });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
+  }
+});
+
+app.patch("/api/maintenance/tickets/:id/status", async (c) => {
+  try {
+    const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
+    const payload = await c.req.json().catch(() => null);
+    const input = normalizeMaintenanceStatusInput(payload);
+    const user = await authenticated(c, "maintenance", "edit");
+    const ticket = await transitionMaintenanceTicket(c.env, ticketId, input, user);
+    if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
+    return c.json({ success: true, data: ticket });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
+  }
+});
+
+app.patch("/api/maintenance/tickets/:id/out-of-service", async (c) => {
+  try {
+    const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
+    const payload = await c.req.json().catch(() => null);
+    const input = normalizeMaintenanceOutOfServiceInput(payload);
+    const user = await authenticated(c, "maintenance", "edit");
+    const ticket = await updateMaintenanceOutOfService(c.env, ticketId, input, user);
+    if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
+    return c.json({ success: true, data: ticket });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
   }
 });
 
@@ -330,12 +763,12 @@ app.post("/api/maintenance/tickets/:id/notes", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenanceNoteInput(payload);
-    const user = resolveCurrentChatUser(c);
+    const user = await authenticated(c, "maintenance", "edit");
     const note = await addMaintenanceNote(c.env, ticketId, input, user);
     if (!note) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: note }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
@@ -344,16 +777,17 @@ app.post("/api/maintenance/tickets/:id/photos", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenancePhotoInput(payload);
-    const user = resolveCurrentChatUser(c);
+    const user = await authenticated(c, "maintenance", "edit");
     const photo = await addMaintenancePhoto(c.env, ticketId, input, user);
     if (!photo) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: photo }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 app.get("/api/chat/conversations", async (c) => {
   try {
+    await authenticated(c, "chat", "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listChatConversations(c.env) });
   } catch (error) {
@@ -362,12 +796,16 @@ app.get("/api/chat/conversations", async (c) => {
       error: errorMessage(error),
       path: "/api/chat/conversations",
     }));
-    return c.json({ success: false, error: "Chat conversations are temporarily unavailable" }, 500);
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Chat conversations are temporarily unavailable",
+    }, protectedErrorStatus(error));
   }
 });
 
 app.get("/api/chat/conversations/:id", async (c) => {
   try {
+    await authenticated(c, "chat", "access");
     c.header("Cache-Control", "no-store");
     const conversationId = conversationIdParam(c.req.param("id"));
     const conversation = await getChatConversation(c.env, conversationId);
@@ -378,12 +816,13 @@ app.get("/api/chat/conversations/:id", async (c) => {
 
     return c.json({ success: true, data: conversation });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/api/chat/conversations/:id/messages", async (c) => {
   try {
+    await authenticated(c, "chat", "access");
     c.header("Cache-Control", "no-store");
     const conversationId = conversationIdParam(c.req.param("id"));
     const conversation = await getChatConversation(c.env, conversationId);
@@ -394,7 +833,7 @@ app.get("/api/chat/conversations/:id/messages", async (c) => {
 
     return c.json({ success: true, data: await listChatMessages(c.env, conversationId) });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, 400);
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
@@ -403,61 +842,63 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     const conversationId = conversationIdParam(c.req.param("id"));
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMessageInput(payload);
-    const user = resolveCurrentChatUser(c);
+    const user = await authenticated(c, "chat", "edit");
     const message = await createChatMessage(c.env, conversationId, user, input);
     return c.json({ success: true, data: message }, 201);
   } catch (error) {
     const message = errorMessage(error);
-    const status = message === "Conversation not found." ? 404 : 400;
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Conversation not found." ? 404 : 400;
     return c.json({ success: false, error: message }, status);
   }
 });
 app.get("/today", async (c) => {
-  try { return c.json(await getTodayDashboard(c.env)); }
+  try { await authenticated(c, "dashboard", "access"); return c.json(await getTodayDashboard(c.env)); }
   catch (error) {
     console.error("Today dashboard failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.post("/sync/properties", async (c) => {
-  try { validateSyncConfig(c.env); return c.json(await syncProperties(c.env)); }
+  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncProperties(c.env)); }
   catch (error) {
     console.error("Properties sync failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.post("/sync/offers", async (c) => {
-  try { validateSyncConfig(c.env); return c.json(await syncOfferPrices(c.env, { batchDays: 30, startOffset: 0 })); }
+  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncOfferPrices(c.env, { batchDays: 30, startOffset: 0 })); }
   catch (error) {
     console.error("Offer prices sync failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.post("/sync/bookings", async (c) => {
-  try { validateSyncConfig(c.env); return c.json(await syncBookings(c.env)); }
+  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncBookings(c.env)); }
   catch (error) {
     console.error("Bookings sync failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.post("/sync/availability", async (c) => {
   try {
+    await owner(c, "edit");
     validateSyncConfig(c.env);
     const batchDays = c.req.query("batchDays") ? Number(c.req.query("batchDays")) : undefined;
     const startOffset = c.req.query("startOffset") ? Number(c.req.query("startOffset")) : undefined;
     return c.json(await syncAvailabilityCache(c.env, { batchDays, startOffset }));
   } catch (error) {
     console.error("Availability cache sync failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.post("/sync/bootstrap", async (c) => {
   try {
+    await owner(c, "edit");
     validateSyncConfig(c.env);
     const properties = await syncProperties(c.env);
     const bookings = await syncBookings(c.env);
@@ -465,11 +906,13 @@ app.post("/sync/bootstrap", async (c) => {
     return c.json({ ok: true, properties, bookings, offers });
   } catch (error) {
     console.error("Bootstrap sync failed:", error);
-    return c.json({ ok: false, error: errorMessage(error) }, 500);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 
 app.get("/sync/status", async (c) => {
+  try {
+  await owner(c);
   const [runs, counts, cursors] = await Promise.all([
     c.env.DB.prepare(`
       SELECT sync_type, started_at, finished_at, status, records_read, records_written, records_failed, error_message
@@ -490,6 +933,9 @@ app.get("/sync/status", async (c) => {
     c.env.DB.prepare("SELECT cursor_name, cursor_value, updated_at FROM sync_cursors ORDER BY cursor_name").all(),
   ]);
   return c.json({ ok: true, counts, cursors: cursors.results ?? [], latestRuns: runs.results ?? [] });
+  } catch (error) {
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
 });
 
 app.notFound((c) => c.json({ success: false, error: "Not found" }, 404));

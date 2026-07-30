@@ -1,4 +1,5 @@
 import { getHousekeepingOverview, type CheckoutCompletionSource, type HousekeepingBindings } from "./housekeeping-overview.service.js";
+import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { getBangkokDate } from "./today.service.js";
 
 export interface MovementsBindings extends HousekeepingBindings {
@@ -132,7 +133,7 @@ export async function getArrivalsDeparturesAgenda(env: MovementsBindings): Promi
     FROM bookings b
     JOIN room_types rt ON rt.room_type_id = b.room_type_id
     LEFT JOIN units u ON u.unit_id = b.unit_id
-    WHERE lower(b.status) NOT IN ('cancelled', 'canceled')
+    WHERE ${operationalBookingStatusSql("b.status")}
   `;
 
   const [arrivalRows, departureRows] = await Promise.all([

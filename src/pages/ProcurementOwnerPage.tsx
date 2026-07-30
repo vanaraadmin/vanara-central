@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
 import { loadProcurementRequests } from "../services/procurement.service";
 import type { ProcurementRequest, ProcurementStatus } from "../types/procurement";
 import "../styles/ProcurementPage.css";
@@ -23,19 +24,15 @@ export default function ProcurementOwnerPage() {
   const query = useQuery({ queryKey: ["procurement", "requests", status], queryFn: ({ signal }) => loadProcurementRequests(status, signal) });
   const requests = useMemo(() => query.data ?? [], [query.data]);
 
-  if (query.isLoading) return <PageLoading />;
-  if (query.isError) return <PageError onRetry={() => void query.refetch()} />;
+  if (query.isLoading) return <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
+  if (query.isError) return <WorkspaceShell title="Procurement" workspace="procurement"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
 
   return (
-    <main className="procurement-page">
-      <header className="supply-hero owner-hero">
-        <div>
-          <p>Supply requests</p>
-          <h1>Team requests</h1>
-          <span>{requests.length} visible request{requests.length === 1 ? "" : "s"}</span>
-        </div>
+    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+      <div className="workspace-body-actions">
+        <span>{requests.length} visible request{requests.length === 1 ? "" : "s"}</span>
         <Link to="/procurement/new">Request supplies</Link>
-      </header>
+      </div>
 
       <section className="owner-filters" aria-label="Request status filter">
         {statuses.map((option) => <button key={option} className={option === status ? "is-active" : ""} type="button" onClick={() => setStatus(option)}>{option}</button>)}
@@ -53,6 +50,6 @@ export default function ProcurementOwnerPage() {
           <div className="supply-success supply-success--empty"><span aria-hidden="true">🌿</span><h2>No requests</h2><p>No supply requests match this status.</p></div>
         )}
       </section>
-    </main>
+    </WorkspaceShell>
   );
 }

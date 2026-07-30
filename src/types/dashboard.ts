@@ -52,3 +52,41 @@ export interface DashboardResponse {
   data?: DashboardData;
   error?: string;
 }
+
+export interface DashboardOverviewMetric {
+  id: string;
+  label: string;
+  value: number | string;
+  href: string;
+  tone: "neutral" | "success" | "warning" | "danger" | "info";
+}
+
+export interface DashboardOverviewAlert {
+  id: string;
+  label: string;
+  value: number;
+  href: string;
+  tone: "warning" | "danger";
+}
+
+export interface DashboardQuickLink {
+  id: string;
+  label: string;
+  href: string;
+}
+
+export interface DashboardOverview {
+  date: string;
+  alerts: DashboardOverviewAlert[];
+  housekeeping: Record<string, DashboardOverviewMetric>;
+  maintenance: Record<string, DashboardOverviewMetric>;
+  today: Record<string, DashboardOverviewMetric>;
+  staff: Record<string, DashboardOverviewMetric>;
+  quickLinks: DashboardQuickLink[];
+}
+
+export interface DashboardOverviewResponse {
+  success: boolean;
+  data?: DashboardOverview;
+  error?: string;
+}

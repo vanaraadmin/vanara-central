@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
 import { AlertIcon, CheckInIcon, CheckOutIcon, RefreshIcon } from "../components/OperationsIcons";
 import { loadArrivalsDepartures } from "../services/movements.service";
 import type { ArrivalMovement, DepartureMovement } from "../types/movements";
@@ -76,13 +77,9 @@ export default function MovementsPage() {
   });
 
   return (
-    <main className="movements-page">
-      <header className="movements-header">
-        <div>
-          <span>RECEPTION AGENDA</span>
-          <h1>Arrivals & Departures</h1>
-          <p>{movements.data ? formatDate(movements.data.date) : "Loading today"}</p>
-        </div>
+    <WorkspaceShell title="Check-In / Out" workspace="reception" bodyClassName="movements-page">
+      <div className="workspace-body-actions">
+        <span>{movements.data ? formatDate(movements.data.date) : "Loading today"}</span>
         <button
           aria-label="Refresh arrivals and departures"
           className="movements-refresh"
@@ -93,7 +90,7 @@ export default function MovementsPage() {
           <RefreshIcon className={movements.isFetching ? "is-spinning" : ""} />
           <span>Refresh</span>
         </button>
-      </header>
+      </div>
 
       {movements.isLoading && <PageLoading />}
       {movements.isError && !movements.data && <PageError onRetry={() => void movements.refetch()} />}
@@ -125,6 +122,6 @@ export default function MovementsPage() {
           </section>
         </div>
       )}
-    </main>
+    </WorkspaceShell>
   );
 }

@@ -7,7 +7,6 @@ export default defineConfig({
     react(),
     cloudflare({
       configPath: "./wrangler.jsonc",
-      persistState: { path: "./server/.wrangler/state" },
     }),
   ],
 });

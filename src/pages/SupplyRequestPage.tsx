@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
 import { createProcurementRequest, loadProcurementItems } from "../services/procurement.service";
 import "../styles/ProcurementPage.css";
 
@@ -38,19 +39,20 @@ export default function SupplyRequestPage({ embedded = false }: { embedded?: boo
     mutation.mutate();
   }
 
-  if (itemsQuery.isLoading) return <PageLoading />;
-  if (itemsQuery.isError) return <PageError onRetry={() => void itemsQuery.refetch()} />;
+  if (itemsQuery.isLoading) {
+    return embedded ? <PageLoading /> : <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
+  }
+  if (itemsQuery.isError) {
+    const errorState = <PageError onRetry={() => void itemsQuery.refetch()} />;
+    return embedded ? errorState : <WorkspaceShell title="Procurement" workspace="procurement">{errorState}</WorkspaceShell>;
+  }
 
-  return (
-    <main className="procurement-page">
-      <header className="supply-hero">
-        <div>
-          <p>Supplies</p>
-          <h1>What is running out?</h1>
-          <span>Tell the owners in about 15 seconds.</span>
-        </div>
+  const content = (
+    <>
+      <div className="workspace-body-actions">
+        <span>Tell the owners in about 15 seconds.</span>
         {!embedded && <Link to="/procurement">Back</Link>}
-      </header>
+      </div>
 
       {submittedId ? (
         <section className="supply-success">
@@ -76,6 +78,16 @@ export default function SupplyRequestPage({ embedded = false }: { embedded?: boo
           <button className="supply-submit" type="submit" disabled={!canSubmit || mutation.isPending}>{mutation.isPending ? "Sending…" : "Tell the owners"}</button>
         </form>
       )}
-    </main>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="procurement-page">{content}</div>;
+  }
+
+  return (
+    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+      {content}
+    </WorkspaceShell>
   );
 }

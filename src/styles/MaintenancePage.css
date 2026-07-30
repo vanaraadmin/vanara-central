@@ -122,6 +122,25 @@
   resize: vertical;
 }
 
+.maintenance-inline-form select,
+.maintenance-inline-form textarea,
+.maintenance-waiting-reason textarea {
+  width: 100%;
+  min-height: var(--vc-touch-min);
+  padding: 0.85rem 1rem;
+  color: var(--vc-text-primary);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.maintenance-inline-form--stacked,
+.maintenance-waiting-reason {
+  display: grid;
+  gap: var(--vc-space-2);
+}
+
 .maintenance-filter-row,
 .maintenance-status-actions {
   display: flex;

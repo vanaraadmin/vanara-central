@@ -109,38 +109,3 @@ CREATE INDEX idx_maintenance_ticket_photos_ticket
 
 CREATE INDEX idx_maintenance_ticket_events_ticket
     ON maintenance_ticket_events(ticket_id, created_at);
-
-INSERT INTO maintenance_tickets (
-    title,
-    description,
-    category,
-    priority,
-    status,
-    room_id,
-    accommodation_id,
-    assigned_user_id,
-    assigned_user_name,
-    reported_by,
-    reported_by_name,
-    created_at,
-    updated_at,
-    metadata_json
-)
-SELECT
-    'Air conditioning check',
-    'Local development ticket for validating the real maintenance workflow.',
-    'Air Conditioning',
-    'High',
-    'Open',
-    (SELECT unit_id FROM units ORDER BY unit_id LIMIT 1),
-    (SELECT room_type_id FROM room_types ORDER BY room_type_id LIMIT 1),
-    NULL,
-    NULL,
-    'local-reception',
-    'Reception',
-    datetime('now'),
-    datetime('now'),
-    '{"source":"local-dev-seed"}'
-WHERE NOT EXISTS (
-    SELECT 1 FROM maintenance_tickets WHERE title = 'Air conditioning check'
-);

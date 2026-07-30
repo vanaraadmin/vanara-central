@@ -2,9 +2,11 @@
 import test from "node:test";
 
 import {
+  normalizeMaintenanceAssignmentInput,
   normalizeCreateMaintenanceTicketInput,
   normalizeMaintenanceNoteInput,
   normalizeMaintenancePhotoInput,
+  normalizeMaintenanceStatusInput,
   normalizeUpdateMaintenanceTicketInput,
 } from "../src/services/maintenance.service.ts";
 
@@ -12,22 +14,37 @@ test("maintenance ticket create input supports the required production fields", 
   const input = normalizeCreateMaintenanceTicketInput({
     title: "Pool pump noise",
     description: "Pump is louder than usual near the restaurant side.",
-    category: "Pool",
+    category: "Appliance",
     priority: "High",
     roomId: null,
     accommodationId: null,
-    assignedUserId: "pon",
-    assignedUserName: "Pon",
+    locationArea: "Pond",
+    assignmentType: "EXTERNAL",
+    externalAssigneeLabel: "General contractor",
   });
 
   assert.equal(input.title, "Pool pump noise");
-  assert.equal(input.category, "Pool");
+  assert.equal(input.category, "Appliance");
   assert.equal(input.priority, "High");
-  assert.equal(input.assignedUserName, "Pon");
+  assert.equal(input.assignment?.assignmentType, "EXTERNAL");
 });
 
 test("maintenance ticket rejects invalid lifecycle status", () => {
-  assert.throws(() => normalizeUpdateMaintenanceTicketInput({ status: "Almost Done" }), /Status is invalid/);
+  assert.throws(() => normalizeMaintenanceStatusInput({ status: "Almost Done" }), /Status is invalid/);
+  assert.throws(() => normalizeUpdateMaintenanceTicketInput({ status: "Closed" }), /unsupported field/);
+});
+
+test("maintenance assignment separates internal and external assignees", () => {
+  assert.deepEqual(normalizeMaintenanceAssignmentInput({ assignmentType: "INTERNAL", assignedUserId: "maintenance-1" }), {
+    assignmentType: "INTERNAL",
+    assignedUserId: "maintenance-1",
+  });
+  assert.deepEqual(normalizeMaintenanceAssignmentInput({ assignmentType: "EXTERNAL", externalAssigneeLabel: "Electrician", externalAssigneeNote: "Called" }), {
+    assignmentType: "EXTERNAL",
+    externalAssigneeLabel: "Electrician",
+    externalAssigneeNote: "Called",
+  });
+  assert.throws(() => normalizeMaintenanceAssignmentInput({ assignmentType: "EXTERNAL", assignedUserId: "fake", externalAssigneeLabel: "Electrician" }), /cannot include assignedUserId/);
 });
 
 test("maintenance note requires a real body", () => {
