@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import warningIcon from "../assets/img/warning-circle-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
-import { AlertIcon, AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
+import { AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
 import { addRoomNote, createRoomMaintenanceTicket, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping } from "../services/room-detail.service";
 import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
 import type { RoomCurrentStay, RoomDetail, RoomHousekeepingStatus, RoomTimelineEvent } from "../types/room-detail";
@@ -90,7 +91,7 @@ function ReceptionPanel({ room }: { room: RoomDetail }) {
         <div className="room-alert-list" aria-label="Reception alerts">
           {room.reception.alerts.map((alert) => (
             <button disabled={mutation.isPending} key={alert.id} onClick={() => mutation.mutate(alert)} type="button">
-              <AlertIcon />
+              <img alt="" src={warningIcon} />
               <span>{alert.title}</span>
               <strong>{alert.actionLabel}</strong>
             </button>
@@ -285,7 +286,7 @@ function NotesPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
 function TimelinePanel({ events }: { events: RoomTimelineEvent[] }) {
   return (
     <section className="room-section" aria-label="Operational timeline">
-      <header><AlertIcon /><h2>Timeline</h2></header>
+      <header><img alt="" src={warningIcon} /><h2>Timeline</h2></header>
       <div className="room-timeline">
         {events.length === 0 && <div className="room-empty-state">No operational history yet</div>}
         {events.map((event) => (

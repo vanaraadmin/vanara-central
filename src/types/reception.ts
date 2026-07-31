@@ -37,6 +37,8 @@ export interface ReceptionStay {
   children: number;
   bookingSource: string | null;
   bookingReference: string | null;
+  phone: string | null;
+  email: string | null;
   bookingStatus: string;
   roomStatus: string;
   checkIn: Record<ReceptionCheckInField, boolean>;

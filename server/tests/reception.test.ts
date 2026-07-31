@@ -56,6 +56,9 @@ const BOOKING = {
   channel: "Beds24",
   api_source: "Beds24",
   api_reference: "B24-9001",
+  email: "guest@example.com",
+  phone: "+66 81 234 5678",
+  mobile: null,
   country: "Thailand",
   country_code: "TH",
   status: "Confirmed",
@@ -386,8 +389,10 @@ test("reception endpoints enforce authentication and movements permissions direc
 
   const overview = await request("/api/reception", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([movementsAccess]));
   assert.equal(overview.status, 200);
-  const overviewPayload = (await json(overview)).data as { arrivals: Array<{ nationality: string | null; nationalityFlag: string | null; nationalityFlagUrl: string | null }>; summary: { arrivals: number } };
+  const overviewPayload = (await json(overview)).data as { arrivals: Array<{ email: string | null; phone: string | null; nationality: string | null; nationalityFlag: string | null; nationalityFlagUrl: string | null }>; summary: { arrivals: number } };
   assert.equal(overviewPayload.summary.arrivals, 1);
+  assert.equal(overviewPayload.arrivals[0]?.email, "guest@example.com");
+  assert.equal(overviewPayload.arrivals[0]?.phone, "+66 81 234 5678");
   assert.equal(overviewPayload.arrivals[0]?.nationality, "Thailand");
   assert.equal(overviewPayload.arrivals[0]?.nationalityFlag, "🇹🇭");
   assert.equal(overviewPayload.arrivals[0]?.nationalityFlagUrl, "https://flagcdn.com/24x18/th.png");

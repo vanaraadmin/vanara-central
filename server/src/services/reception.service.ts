@@ -27,6 +27,9 @@ interface BookingRow {
   channel: string | null;
   api_source: string | null;
   api_reference: string | null;
+  email: string | null;
+  phone: string | null;
+  mobile: string | null;
   country: string | null;
   country_code: string | null;
   status: string;
@@ -130,6 +133,8 @@ export interface ReceptionStay {
   children: number;
   bookingSource: string | null;
   bookingReference: string | null;
+  phone: string | null;
+  email: string | null;
   bookingStatus: string;
   nationalityCode: string | null;
   roomStatus: string;
@@ -303,7 +308,7 @@ async function loadBookingRow(env: ReceptionBindings, bookingId: number): Promis
   return env.DB.prepare(`
     SELECT b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
            b.adults, b.children, b.arrival_date, b.departure_date, b.channel, b.api_source, b.api_reference,
-           b.country, b.country_code, b.status
+           b.email, b.phone, b.mobile, b.country, b.country_code, b.status
     FROM bookings b
     JOIN room_types rt ON rt.room_type_id = b.room_type_id
     LEFT JOIN units u ON u.unit_id = b.unit_id
@@ -457,6 +462,8 @@ async function mapStay(env: ReceptionBindings, row: BookingRow): Promise<Recepti
     children: row.children,
     bookingSource: row.api_source || row.channel,
     bookingReference: row.api_reference,
+    phone: row.mobile || row.phone,
+    email: row.email,
     bookingStatus: row.status,
     roomStatus: status,
     checkIn: {
@@ -548,7 +555,7 @@ async function loadBookingRows(env: ReceptionBindings, where: string, params: st
   const rows = await env.DB.prepare(`
     SELECT b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
            b.adults, b.children, b.arrival_date, b.departure_date, b.channel, b.api_source, b.api_reference,
-           b.country, b.country_code, b.status
+           b.email, b.phone, b.mobile, b.country, b.country_code, b.status
     FROM bookings b
     JOIN room_types rt ON rt.room_type_id = b.room_type_id
     LEFT JOIN units u ON u.unit_id = b.unit_id

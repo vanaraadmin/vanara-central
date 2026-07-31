@@ -12,6 +12,7 @@
 .reception-card__top,
 .reception-room-chip,
 .reception-guest,
+.reception-contact-trigger,
 .reception-stay-facts,
 .reception-completion,
 .reception-modal__actions,
@@ -281,8 +282,8 @@
 
 .reception-card {
   background: #f6f2ea;
-  gap: 16px;
-  padding: 18px;
+  gap: 18px;
+  padding: 20px;
 }
 
 .reception-empty {
@@ -298,6 +299,11 @@
 .reception-room-chip,
 .reception-guest {
   align-items: center;
+}
+
+.reception-card__top {
+  justify-content: space-between;
+  gap: 14px;
 }
 
 .reception-room-chip {
@@ -321,8 +327,38 @@
   color: #173b2d;
 }
 
+.reception-contact-trigger {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0;
+  opacity: 0.48;
+  transition: opacity 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.reception-contact-trigger img {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.reception-contact-trigger:hover {
+  background: rgba(23, 59, 45, 0.05);
+  opacity: 0.82;
+  transform: scale(1.04);
+}
+
+.reception-contact-trigger:active {
+  transform: scale(0.96);
+}
+
 .reception-guest {
-  gap: 12px;
+  gap: 14px;
 }
 
 .reception-guest > svg {
@@ -686,12 +722,12 @@ button.reception-completion:active {
   width: min(100%, 540px);
   justify-self: center;
   display: grid;
-  gap: 18px;
+  gap: 20px;
   border: 1px solid rgba(247, 244, 238, 0.32);
   border-radius: 30px 30px 0 0;
   background: linear-gradient(145deg, rgba(247, 244, 238, 0.98), rgba(232, 221, 204, 0.94));
   box-shadow: 0 -26px 90px rgba(3, 14, 10, 0.42);
-  padding: 12px 18px calc(18px + var(--vc-safe-bottom));
+  padding: 14px 20px calc(20px + var(--vc-safe-bottom));
   animation: reception-sheet-in 180ms ease-out;
 }
 
@@ -735,21 +771,36 @@ button.reception-completion:active {
 
 .reception-sheet__checks {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .reception-sheet__checks label {
-  min-height: 56px;
+  min-height: 62px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
   border: 1px solid rgba(23, 59, 45, 0.1);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.5);
   color: #173b2d;
   font-weight: 850;
-  padding: 0 14px;
+  padding: 0 16px;
+}
+
+.reception-sheet__checks label span,
+.reception-contact-actions button span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reception-sheet-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  opacity: 0.68;
 }
 
 .reception-sheet__checks input {
@@ -778,7 +829,48 @@ button.reception-completion:active {
   font-size: 0.95rem;
   font-weight: 800;
   line-height: 1.45;
-  padding: 14px;
+  padding: 16px;
+}
+
+.reception-contact-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.reception-contact-actions button {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(23, 59, 45, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.52);
+  color: #173b2d;
+  font: inherit;
+  font-size: 1.02rem;
+  font-weight: 880;
+  padding: 0 18px;
+  text-align: left;
+  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.reception-contact-actions button:hover {
+  border-color: rgba(23, 59, 45, 0.16);
+  background: rgba(255, 255, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+.reception-contact-feedback {
+  border-radius: 16px;
+  background: rgba(159, 59, 47, 0.08);
+  color: #9f3b2f !important;
+  font-size: 0.94rem;
+  font-weight: 820 !important;
+  padding: 12px 14px;
+}
+
+.reception-sheet__actions--single button {
+  max-width: none;
 }
 
 .reception-sheet__actions {

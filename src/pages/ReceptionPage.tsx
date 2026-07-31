@@ -1,6 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import addressBookIcon from "../assets/img/address-book-light.svg";
+import emailIcon from "../assets/img/envelope-light.svg";
+import depositIcon from "../assets/img/hand-coins-light.svg";
+import passportIcon from "../assets/img/identification-card-light.svg";
+import keysIcon from "../assets/img/key-light.svg";
+import roomInspectedIcon from "../assets/img/magnifying-glass-light.svg";
+import whatsappIcon from "../assets/img/whatsapp-logo-light.svg";
 import { PageError } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { CalendarIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
@@ -10,6 +17,7 @@ import type { ReceptionOverview, ReceptionStay } from "../types/reception";
 import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
+type ContactFeedback = "email" | "phone" | null;
 type CompletionDraft = {
   passportRegistrationCompleted: boolean;
   depositCollected: boolean;
@@ -80,6 +88,11 @@ function stayDuration(arrival: string, departure: string): string {
   return `${nights} ${nights === 1 ? "night" : "nights"}`;
 }
 
+function normalizeWhatsappPhone(phone: string | null): string | null {
+  const digits = phone?.replace(/\D/g, "") ?? "";
+  return digits.length >= 7 ? digits : null;
+}
+
 function hasCompletionPermission(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
   return Boolean(user?.actionPermissions?.some((permission) => permission.action === "can_complete_checkin_checkout" && permission.allowed));
 }
@@ -94,6 +107,10 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   if (value.includes("trip")) return "Trip.com";
   if (value.includes("direct")) return "Direct";
   return stay.bookingSource || "Direct";
+}
+
+function SheetIcon({ alt = "", src }: { alt?: string; src: string }) {
+  return <img alt={alt} className="reception-sheet-icon" src={src} />;
 }
 
 function upsertStay(data: ReceptionOverview, updated: ReceptionStay): ReceptionOverview {
@@ -176,6 +193,7 @@ function CompletionAction({
 function StayCard({
   canComplete,
   isToday,
+  onContactRequest,
   onCompletionRequest,
   queryKey,
   stay,
@@ -183,6 +201,7 @@ function StayCard({
 }: {
   canComplete: boolean;
   isToday: boolean;
+  onContactRequest: (stay: ReceptionStay) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
   queryKey: readonly ["reception", string];
   stay: ReceptionStay;
@@ -195,6 +214,9 @@ function StayCard({
           <RoomIcon />
           <span>{stay.roomName}</span>
         </div>
+        <button aria-label={`Contact ${stay.guestName}`} className="reception-contact-trigger" onClick={() => onContactRequest(stay)} type="button">
+          <img alt="" src={addressBookIcon} />
+        </button>
       </div>
 
       <div className="reception-guest">
@@ -295,6 +317,7 @@ function ReceptionSection({
   empty,
   isToday,
   items,
+  onContactRequest,
   onCompletionRequest,
   queryKey,
   showSkeleton,
@@ -305,6 +328,7 @@ function ReceptionSection({
   empty: string;
   isToday: boolean;
   items: ReceptionStay[];
+  onContactRequest: (stay: ReceptionStay) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
   queryKey: readonly ["reception", string];
   showSkeleton: boolean;
@@ -327,6 +351,7 @@ function ReceptionSection({
             canComplete={canComplete}
             isToday={isToday}
             key={`${type}-${stay.bookingId}`}
+            onContactRequest={onContactRequest}
             onCompletionRequest={onCompletionRequest}
             queryKey={queryKey}
             stay={stay}
@@ -375,29 +400,29 @@ function CompletionModal({
           {isArrival ? (
             <>
               <label>
-                <span>Passport registration completed</span>
+                <span><SheetIcon src={passportIcon} />Passport registration completed</span>
                 <input checked={draft.passportRegistrationCompleted} onChange={(event) => onDraftChange({ ...draft, passportRegistrationCompleted: event.target.checked })} type="checkbox" />
               </label>
               <label>
-                <span>Deposit collected</span>
+                <span><SheetIcon src={depositIcon} />Deposit collected</span>
                 <input checked={draft.depositCollected} onChange={(event) => onDraftChange({ ...draft, depositCollected: event.target.checked, depositReturned: event.target.checked ? draft.depositReturned : false })} type="checkbox" />
               </label>
             </>
           ) : (
             <>
               <label>
-                <span>Room inspected</span>
+                <span><SheetIcon src={roomInspectedIcon} />Room inspected</span>
                 <input checked={draft.roomInspected} onChange={(event) => onDraftChange({ ...draft, roomInspected: event.target.checked })} type="checkbox" />
               </label>
               <label>
-                <span>Keys returned</span>
+                <span><SheetIcon src={keysIcon} />Keys returned</span>
                 <input checked={draft.keysReturned} onChange={(event) => onDraftChange({ ...draft, keysReturned: event.target.checked })} type="checkbox" />
               </label>
               <div className="reception-sheet__deposit">
                 <span>Deposit</span>
                 {hasDeposit ? (
                   <label>
-                    <span>Deposit returned</span>
+                    <span><SheetIcon src={depositIcon} />Deposit returned</span>
                     <input checked={draft.depositReturned} onChange={(event) => onDraftChange({ ...draft, depositReturned: event.target.checked })} type="checkbox" />
                   </label>
                 ) : (
@@ -417,12 +442,75 @@ function CompletionModal({
   );
 }
 
+function ContactSheet({
+  feedback,
+  onCancel,
+  onFeedback,
+  stay,
+}: {
+  feedback: ContactFeedback;
+  onCancel: () => void;
+  onFeedback: (feedback: ContactFeedback) => void;
+  stay: ReceptionStay | null;
+}) {
+  if (!stay) return null;
+  const whatsappPhone = normalizeWhatsappPhone(stay.phone);
+  const email = stay.email?.trim() || null;
+
+  function openWhatsapp() {
+    if (!whatsappPhone) {
+      onFeedback("phone");
+      return;
+    }
+    window.open(`https://wa.me/${whatsappPhone}`, "_blank", "noopener,noreferrer");
+  }
+
+  function openEmail() {
+    if (!email) {
+      onFeedback("email");
+      return;
+    }
+    window.location.href = `mailto:${email}`;
+  }
+
+  return (
+    <div aria-modal="true" className="reception-sheet reception-contact-sheet" role="dialog">
+      <button aria-label="Cancel" className="reception-sheet__scrim" onClick={onCancel} type="button" />
+      <div className="reception-sheet__panel">
+        <div className="reception-sheet__handle" />
+        <header>
+          <span>{stay.roomName}</span>
+          <h2>Contact Guest</h2>
+          <p>{stay.guestName}</p>
+        </header>
+        <div className="reception-contact-actions">
+          <button onClick={openWhatsapp} type="button">
+            <SheetIcon src={whatsappIcon} />
+            <span>WhatsApp</span>
+          </button>
+          <button onClick={openEmail} type="button">
+            <SheetIcon src={emailIcon} />
+            <span>Email</span>
+          </button>
+        </div>
+        {feedback === "phone" && <p className="reception-contact-feedback">Phone number not available</p>}
+        {feedback === "email" && <p className="reception-contact-feedback">Email not available</p>}
+        <div className="reception-sheet__actions reception-sheet__actions--single">
+          <button onClick={onCancel} type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReceptionPage() {
   const today = bangkokToday();
   const [selectedDate, setSelectedDate] = useState(today);
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
   const [completionDraft, setCompletionDraft] = useState<CompletionDraft>(emptyCompletionDraft);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [contactRequest, setContactRequest] = useState<ReceptionStay | null>(null);
+  const [contactFeedback, setContactFeedback] = useState<ContactFeedback>(null);
   const queryKey = ["reception", selectedDate] as const;
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal) });
   const reception = useQuery({
@@ -478,8 +566,8 @@ export default function ReceptionPage() {
       {reception.isError && !reception.data && <PageError onRetry={() => void reception.refetch()} />}
 
       <div className="reception-agenda" aria-busy={reception.isFetching}>
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" />
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} />
       </div>
 
       <CompletionModal
@@ -497,6 +585,15 @@ export default function ReceptionPage() {
         }}
         onDraftChange={setCompletionDraft}
         request={completionRequest}
+      />
+      <ContactSheet
+        feedback={contactFeedback}
+        onCancel={() => {
+          setContactRequest(null);
+          setContactFeedback(null);
+        }}
+        onFeedback={setContactFeedback}
+        stay={contactRequest}
       />
     </WorkspaceShell>
   );
