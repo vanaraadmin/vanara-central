@@ -214,10 +214,15 @@ const CURSOR_NAME = "bookings_modified_cursor";
 const SYNC_TYPE = "bookings";
 const INITIAL_FROM = "2000-01-01T00:00:00Z";
 const OVERLAP_MS = 5 * 60 * 1000;
+const CANCELLED_BOOKING_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const BOOKING_SYNC_STATUS_FILTERS = [null, "cancelled"] as const;
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizedText(value: unknown): string | null {
+  return text(value)?.toLowerCase() ?? null;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -240,6 +245,15 @@ function channelName(booking: Beds24Booking): string | null {
 function cursorWithOverlap(cursor: string): string {
   const parsed = Date.parse(cursor);
   return Number.isFinite(parsed) ? new Date(parsed - OVERLAP_MS).toISOString() : INITIAL_FROM;
+}
+
+function cancelledModifiedFrom(modifiedFrom: string): string {
+  if (modifiedFrom === INITIAL_FROM) {
+    return modifiedFrom;
+  }
+
+  const parsed = Date.parse(modifiedFrom);
+  return Number.isFinite(parsed) ? new Date(parsed - CANCELLED_BOOKING_LOOKBACK_MS).toISOString() : modifiedFrom;
 }
 
 function countryCodeFrom(value: { countryCode?: string; country2?: string }): string | null {
@@ -286,6 +300,16 @@ function normalizeInfoItems(booking: Beds24Booking): Beds24InfoItem[] {
   return Array.isArray(booking.infoItems) ? booking.infoItems : [];
 }
 
+function bookingGroupRootMasterId(payload: Beds24BookingGroupPayload | undefined): number | null {
+  if (!payload || Array.isArray(payload)) {
+    return null;
+  }
+
+  const rootId = numberOrNull(payload.masterId) ?? numberOrNull(payload.bookingId) ?? numberOrNull(payload.id);
+  const hasNestedBookings = Array.isArray(payload.bookings) && payload.bookings.length > 0;
+  return hasNestedBookings || booleanOrFalse(payload.isMaster) ? rootId : null;
+}
+
 function groupItemsFrom(payload: Beds24BookingGroupPayload | undefined): Beds24BookingGroupItem[] {
   if (!payload) {
     return [];
@@ -296,12 +320,13 @@ function groupItemsFrom(payload: Beds24BookingGroupPayload | undefined): Beds24B
   }
 
   const nested = Array.isArray(payload.bookings) ? payload.bookings : [];
-  return nested.length > 0 ? nested : [payload];
+  return nested.length > 0 ? [payload, ...nested] : [payload];
 }
 
 export function normalizeBookingGroupMembers(booking: Beds24Booking): BookingGroupMember[] {
   const members: BookingGroupMember[] = [];
   const seen = new Set<string>();
+  const rootMasterId = bookingGroupRootMasterId(booking.bookingGroup);
 
   if (typeof booking.masterId === "number") {
     const key = `${booking.masterId}:${booking.id}`;
@@ -319,6 +344,7 @@ export function normalizeBookingGroupMembers(booking: Beds24Booking): BookingGro
     const masterId =
       numberOrNull(item.masterId) ??
       numberOrNull(booking.masterId) ??
+      rootMasterId ??
       (booleanOrFalse(item.isMaster) ? memberId : null);
 
     if (memberId === null || masterId === null) {
@@ -354,13 +380,51 @@ export function normalizeBookingFields(booking: Beds24Booking): NormalizedBookin
   };
 }
 
+export function isCancelledBeds24BookingStatus(status: unknown): boolean {
+  const normalized = normalizedText(status);
+  return normalized === "cancelled" || normalized === "canceled";
+}
+
+export function cancellationPropagationTargets(
+  booking: Beds24Booking,
+  normalized: NormalizedBookingFields = normalizeBookingFields(booking),
+): { masterBeds24BookingIds: number[]; memberBeds24BookingIds: number[] } {
+  if (!isCancelledBeds24BookingStatus(booking.status)) {
+    return { masterBeds24BookingIds: [], memberBeds24BookingIds: [] };
+  }
+
+  const masters = new Set<number>([booking.id]);
+  const directMasterId = numberOrNull(booking.masterId);
+  if (directMasterId !== null && directMasterId === booking.id) {
+    masters.add(directMasterId);
+  }
+
+  for (const member of normalized.bookingGroupMembers) {
+    if (member.masterBeds24BookingId === booking.id || (member.memberBeds24BookingId === booking.id && member.isMaster)) {
+      masters.add(member.masterBeds24BookingId);
+    }
+  }
+
+  const members = new Set<number>([booking.id]);
+  for (const member of normalized.bookingGroupMembers) {
+    if (masters.has(member.masterBeds24BookingId)) {
+      members.add(member.memberBeds24BookingId);
+    }
+  }
+
+  return {
+    masterBeds24BookingIds: [...masters],
+    memberBeds24BookingIds: [...members],
+  };
+}
+
 export function shouldAdvanceBookingsCursor(status: "success" | "failed"): boolean {
   return status === "success";
 }
 
 export function bookingSyncQueries(modifiedFrom: string): Record<string, string | boolean>[] {
   return BOOKING_SYNC_STATUS_FILTERS.map((status) => ({
-    modifiedFrom,
+    modifiedFrom: status ? cancelledModifiedFrom(modifiedFrom) : modifiedFrom,
     includeBookingGroup: true,
     includeGuests: true,
     includeInfoItems: true,
@@ -381,6 +445,70 @@ async function loadMaps(env: BookingsSyncBindings) {
     units: new Map((units.results ?? []).map((row) => [`${row.room_type_id}:${row.beds24_unit_id}`, row.unit_id])),
     offers: new Map((offers.results ?? []).map((row) => [`${row.room_type_id}:${row.beds24_offer_id}`, row.offer_id])),
   };
+}
+
+function bindListPlaceholders(values: number[]): string {
+  return values.map(() => "?").join(", ");
+}
+
+async function propagateGroupCancellation(
+  env: BookingsSyncBindings,
+  booking: Beds24Booking,
+  normalized: NormalizedBookingFields,
+  syncedAt: string,
+): Promise<number> {
+  const targets = cancellationPropagationTargets(booking, normalized);
+  if (targets.masterBeds24BookingIds.length === 0 && targets.memberBeds24BookingIds.length === 0) {
+    return 0;
+  }
+
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (targets.memberBeds24BookingIds.length > 0) {
+    clauses.push(`beds24_booking_id IN (${bindListPlaceholders(targets.memberBeds24BookingIds)})`);
+    params.push(...targets.memberBeds24BookingIds);
+  }
+
+  if (targets.masterBeds24BookingIds.length > 0) {
+    clauses.push(`master_beds24_booking_id IN (${bindListPlaceholders(targets.masterBeds24BookingIds)})`);
+    params.push(...targets.masterBeds24BookingIds);
+
+    clauses.push(`
+      beds24_booking_id IN (
+        SELECT member_beds24_booking_id
+        FROM booking_group_members
+        WHERE master_beds24_booking_id IN (${bindListPlaceholders(targets.masterBeds24BookingIds)})
+      )
+    `);
+    params.push(...targets.masterBeds24BookingIds);
+  }
+
+  const result = await env.DB.prepare(`
+    UPDATE bookings
+    SET
+      status = ?,
+      sub_status = COALESCE(?, sub_status),
+      status_code = COALESCE(?, status_code),
+      cancellation_type = COALESCE(?, cancellation_type),
+      cancellation_days_before_arrival = COALESCE(?, cancellation_days_before_arrival),
+      modified_time = COALESCE(?, modified_time),
+      cancel_time = COALESCE(?, cancel_time),
+      updated_at = ?
+    WHERE ${clauses.map((clause) => `(${clause})`).join(" OR ")}
+  `).bind(
+    text(booking.status) ?? "cancelled",
+    text(booking.subStatus),
+    numberOrNull(booking.statusCode),
+    normalized.cancellationType,
+    normalized.cancellationDaysBeforeArrival,
+    text(booking.modifiedTime),
+    text(booking.cancelTime),
+    syncedAt,
+    ...params,
+  ).run();
+
+  return result.meta?.changes ?? 0;
 }
 
 async function upsertBooking(
@@ -546,7 +674,8 @@ async function upsertBooking(
   }
 
   const results = await env.DB.batch(statements);
-  return results.reduce((sum, row) => sum + (row.meta?.changes ?? 0), 0);
+  const groupCancellationChanges = await propagateGroupCancellation(env, booking, normalized, syncedAt);
+  return results.reduce((sum, row) => sum + (row.meta?.changes ?? 0), 0) + groupCancellationChanges;
 }
 
 function skippedResult(

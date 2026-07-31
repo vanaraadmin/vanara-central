@@ -8,6 +8,7 @@ import {
   normalizeReceptionNotesInput,
 } from "../src/services/reception.service.ts";
 import { countryCodeFrom, countryFlagUrlFrom } from "../src/services/country-flags.service.ts";
+import { getBangkokDate } from "../src/services/today.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
@@ -28,6 +29,16 @@ const ACTIVE_RECEPTION_USER = {
   last_login_at: null,
 };
 
+const TODAY = getBangkokDate();
+const YESTERDAY = addDateOnlyDays(TODAY, -1);
+const TOMORROW = addDateOnlyDays(TODAY, 1);
+
+function addDateOnlyDays(date: string, days: number): string {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
 const BOOKING = {
   booking_id: 501,
   beds24_booking_id: 9001,
@@ -38,8 +49,8 @@ const BOOKING = {
   room_type_name: "Garden Villa",
   adults: 2,
   children: 1,
-  arrival_date: "2026-07-30",
-  departure_date: "2026-07-31",
+  arrival_date: TODAY,
+  departure_date: TOMORROW,
   channel: "Beds24",
   api_source: "Beds24",
   api_reference: "B24-9001",
@@ -47,6 +58,7 @@ const BOOKING = {
   country_code: "TH",
   status: "Confirmed",
 };
+type TestBooking = typeof BOOKING;
 
 class FakeStmt {
   private params: unknown[] = [];
@@ -65,7 +77,19 @@ class FakeReceptionDB {
   notes: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
 
-  constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private booking = BOOKING) {}
+  constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private bookingInput: TestBooking | TestBooking[] = BOOKING) {}
+
+  private get bookings() {
+    return Array.isArray(this.bookingInput) ? this.bookingInput : [this.bookingInput];
+  }
+
+  private get booking() {
+    return this.bookings[0] ?? BOOKING;
+  }
+
+  private operationalBookings() {
+    return this.bookings.filter((booking) => ["confirmed", "new"].includes(booking.status.trim().toLowerCase()));
+  }
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
   async batch(stmts: Array<{ run: () => Promise<unknown> }>) {
@@ -99,7 +123,7 @@ class FakeReceptionDB {
       };
     }
     if (sql.includes("FROM bookings b") && sql.includes("ORDER BY u.position")) {
-      return { results: [this.booking] as T[] };
+      return { results: this.operationalBookings() as T[] };
     }
     if (sql.includes("FROM reception_guest_notes")) return { results: [...this.notes].reverse() as T[] };
     if (sql.includes("FROM reception_events")) return { results: [...this.events].reverse() as T[] };
@@ -117,13 +141,14 @@ class FakeReceptionDB {
       } as T;
     }
     if (sql.includes("SELECT beds24_booking_id") && sql.includes("FROM bookings") && sql.includes("WHERE beds24_booking_id")) {
-      return Number(params[0]) === this.booking.beds24_booking_id ? { beds24_booking_id: this.booking.beds24_booking_id } as T : null;
+      const booking = this.operationalBookings().find((item) => item.beds24_booking_id === Number(params[0]));
+      return booking ? { beds24_booking_id: booking.beds24_booking_id } as T : null;
     }
     if (sql.includes("SELECT * FROM reception_stays WHERE beds24_booking_id")) {
       return (this.stays.get(Number(params[0])) ?? null) as T | null;
     }
     if (sql.includes("FROM bookings b") && sql.includes("WHERE b.beds24_booking_id")) {
-      return Number(params[0]) === this.booking.beds24_booking_id ? this.booking as T : null;
+      return (this.operationalBookings().find((item) => item.beds24_booking_id === Number(params[0])) ?? null) as T | null;
     }
     return null;
   }
@@ -220,7 +245,7 @@ class FakeReceptionDB {
   }
 }
 
-function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking = BOOKING) {
+function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking: TestBooking | TestBooking[] = BOOKING) {
   return {
     DB: new FakeReceptionDB(permissions, authenticated, actionPermissions, booking) as unknown as D1Database,
     BEDS24_BASE_URL: "https://api.beds24.com/v2",
@@ -287,6 +312,44 @@ test("reception endpoints enforce authentication and movements permissions direc
   }, env([movementsAccess]))).status, 403);
 });
 
+test("reception overview excludes every cancelled group room while unrelated active bookings remain", async () => {
+  const cancelledGroup = [88628736, 88628737, 88628738, 88628739, 88628740].map((bookingId, index) => ({
+    ...BOOKING,
+    booking_id: 800 + index,
+    beds24_booking_id: bookingId,
+    guest_name: "Cristiana Colac",
+    unit_id: index + 1,
+    unit_name: `Bungalow ${index + 1}`,
+    arrival_date: "2026-12-27",
+    departure_date: "2027-01-02",
+    api_reference: `B24-${bookingId}`,
+    status: "Cancelled",
+  }));
+  const activeUnrelated = {
+    ...BOOKING,
+    booking_id: 900,
+    beds24_booking_id: 99000001,
+    guest_name: "Active Guest",
+    unit_id: 20,
+    unit_name: "Villa 20",
+    arrival_date: "2026-12-27",
+    departure_date: "2027-01-02",
+    api_reference: "B24-99000001",
+    status: "Confirmed",
+  };
+
+  const response = await request(
+    "/api/reception?date=2026-12-27",
+    { method: "GET", headers: { cookie: "vanara_session=x" } },
+    env([movementsAccess], true, [], [...cancelledGroup, activeUnrelated]),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await json(response)).data as { arrivals: Array<{ bookingId: number }>; summary: { arrivals: number } };
+  assert.equal(payload.summary.arrivals, 1);
+  assert.deepEqual(payload.arrivals.map((stay) => stay.bookingId), [99000001]);
+});
+
 test("reception completion endpoints require dedicated action permission", async () => {
   const response = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
@@ -310,7 +373,7 @@ test("reception completion endpoints persist irreversible today's operational ev
   }, data);
   assert.equal(duplicate.status, 409);
 
-  const checkOutData = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: "2026-07-29", departure_date: "2026-07-30" });
+  const checkOutData = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
   const checkOut = await request("/api/reception/stays/9001/check-out-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },
@@ -322,7 +385,7 @@ test("reception completion endpoints persist irreversible today's operational ev
 });
 
 test("reception completion rejects future booking dates server-side", async () => {
-  const data = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: "2026-07-31", departure_date: "2026-08-02" });
+  const data = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: TOMORROW, departure_date: addDateOnlyDays(TOMORROW, 2) });
   const response = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },

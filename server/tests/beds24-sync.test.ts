@@ -4,6 +4,8 @@ import test from "node:test";
 import { beds24Get, Beds24ApiError } from "../src/services/beds24-client.service.ts";
 import {
   bookingSyncQueries,
+  cancellationPropagationTargets,
+  isCancelledBeds24BookingStatus,
   normalizeBookingFields,
   normalizeBookingGroupMembers,
   shouldAdvanceBookingsCursor,
@@ -73,6 +75,39 @@ test("bookingGroup object is normalized without requiring an array", () => {
   );
 });
 
+test("nested bookingGroup object uses the root group id for child rows", () => {
+  const members = normalizeBookingGroupMembers({
+    id: 88628736,
+    propertyId: 1,
+    roomId: 2,
+    bookingGroup: {
+      id: 88628736,
+      bookings: [
+        { bookingId: 88628736, isMaster: true },
+        { bookingId: 88628737 },
+        { bookingId: 88628738 },
+        { bookingId: 88628739 },
+        { bookingId: 88628740 },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    members.map((member) => ({
+      master: member.masterBeds24BookingId,
+      member: member.memberBeds24BookingId,
+      isMaster: member.isMaster,
+    })),
+    [
+      { master: 88628736, member: 88628736, isMaster: true },
+      { master: 88628736, member: 88628737, isMaster: false },
+      { master: 88628736, member: 88628738, isMaster: false },
+      { master: 88628736, member: 88628739, isMaster: false },
+      { master: 88628736, member: 88628740, isMaster: false },
+    ],
+  );
+});
+
 test("bookingGroup null produces no group members unless masterId is present", () => {
   const normalized = normalizeBookingFields({
     id: 30,
@@ -82,6 +117,55 @@ test("bookingGroup null produces no group members unless masterId is present", (
   });
 
   assert.deepEqual(normalized.bookingGroupMembers, []);
+});
+
+test("cancelled master booking propagates only through Beds24 group identifiers", () => {
+  const booking = {
+    id: 88628736,
+    masterId: 88628736,
+    propertyId: 1,
+    roomId: 2,
+    status: "Cancelled",
+    arrival: "2026-12-27",
+    departure: "2027-01-02",
+    firstName: "Cristiana",
+    lastName: "Colac",
+    email: "colac.297165@guest.booking.com",
+    bookingGroup: [
+      { bookingId: 88628736, masterId: 88628736, isMaster: true },
+      { bookingId: 88628737, masterId: 88628736 },
+      { bookingId: 88628738, masterId: 88628736 },
+      { bookingId: 88628739, masterId: 88628736 },
+      { bookingId: 88628740, masterId: 88628736 },
+    ],
+  };
+
+  const targets = cancellationPropagationTargets(booking);
+
+  assert.equal(isCancelledBeds24BookingStatus(" Cancelled "), true);
+  assert.deepEqual(targets.masterBeds24BookingIds, [88628736]);
+  assert.deepEqual(targets.memberBeds24BookingIds, [
+    88628736,
+    88628737,
+    88628738,
+    88628739,
+    88628740,
+  ]);
+});
+
+test("cancelled child booking does not fan out to siblings only because it shares a master id", () => {
+  const targets = cancellationPropagationTargets({
+    id: 88628737,
+    masterId: 88628736,
+    propertyId: 1,
+    roomId: 2,
+    status: "Cancelled",
+    arrival: "2026-12-27",
+    departure: "2027-01-02",
+  });
+
+  assert.deepEqual(targets.masterBeds24BookingIds, [88628737]);
+  assert.deepEqual(targets.memberBeds24BookingIds, [88628737]);
 });
 
 test("temporary Beds24 errors retry with Retry-After and then succeed", async () => {
@@ -150,7 +234,7 @@ test("bookings cursor advances only after success", () => {
   assert.equal(shouldAdvanceBookingsCursor("failed"), false);
 });
 
-test("booking sync explicitly includes cancelled updates in addition to the default incremental feed", () => {
+test("booking sync includes cancelled updates with a focused recovery lookback", () => {
   assert.deepEqual(bookingSyncQueries("2026-07-30T11:00:00.000Z"), [
     {
       modifiedFrom: "2026-07-30T11:00:00.000Z",
@@ -159,7 +243,25 @@ test("booking sync explicitly includes cancelled updates in addition to the defa
       includeInfoItems: true,
     },
     {
-      modifiedFrom: "2026-07-30T11:00:00.000Z",
+      modifiedFrom: "2026-07-28T11:00:00.000Z",
+      includeBookingGroup: true,
+      includeGuests: true,
+      includeInfoItems: true,
+      status: "cancelled",
+    },
+  ]);
+});
+
+test("initial booking sync does not shift the cancelled query before the bootstrap floor", () => {
+  assert.deepEqual(bookingSyncQueries("2000-01-01T00:00:00Z"), [
+    {
+      modifiedFrom: "2000-01-01T00:00:00Z",
+      includeBookingGroup: true,
+      includeGuests: true,
+      includeInfoItems: true,
+    },
+    {
+      modifiedFrom: "2000-01-01T00:00:00Z",
       includeBookingGroup: true,
       includeGuests: true,
       includeInfoItems: true,
