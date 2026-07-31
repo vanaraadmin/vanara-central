@@ -17,6 +17,7 @@ import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcure
 import { extractPassportData, PassportOcrError, type PassportOcrBindings } from "./services/passport-ocr.service.js";
 import { uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
 import { normalizePassportImageFormData, PassportUploadError } from "./services/passport-upload.service.js";
+import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -44,7 +45,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -476,6 +477,47 @@ app.post("/api/reception/passports/ocr", async (c) => {
     const passport = await extractPassportData(c.env, {
       image: upload.bytes,
       contentType: upload.contentType,
+    });
+
+    return c.json({
+      success: true,
+      objectKey: stored.objectKey,
+      passport,
+    });
+  } catch (error) {
+    return c.json({ success: false, error: passportUploadError(error) }, passportUploadErrorStatus(error));
+  }
+});
+
+app.get("/api/reception/stays/:bookingId/passports", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    c.header("Cache-Control", "no-store");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await getReceptionStay(c.env, bookingId);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: await listBookingPassports(c.env, bookingId) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await getReceptionStay(c.env, bookingId);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const stored = await storePassportUpload(c.env, upload);
+    const passport = await extractPassportData(c.env, {
+      image: upload.bytes,
+      contentType: upload.contentType,
+    });
+    await createBookingPassport(c.env, {
+      bookingId,
+      objectKey: stored.objectKey,
+      passport,
     });
 
     return c.json({

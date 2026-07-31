@@ -10,6 +10,7 @@ import {
   normalizeReceptionNotesInput,
 } from "../src/services/reception.service.ts";
 import { extractPassportData, PassportOcrError } from "../src/services/passport-ocr.service.ts";
+import { createBookingPassport, listBookingPassports } from "../src/services/booking-passports.service.ts";
 import { countryCodeFrom, countryFlagUrlFrom } from "../src/services/country-flags.service.ts";
 import { getBangkokDate } from "../src/services/today.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
@@ -97,6 +98,7 @@ class FakeReceptionDB {
   notes: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
   alerts: Array<Record<string, unknown>> = [];
+  passports: Array<Record<string, unknown>> = [];
 
   constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private bookingInput: TestBooking | TestBooking[] = BOOKING) {}
 
@@ -149,6 +151,10 @@ class FakeReceptionDB {
     if (sql.includes("FROM reception_guest_notes")) return { results: [...this.notes].reverse() as T[] };
     if (sql.includes("FROM reception_events")) return { results: [...this.events].reverse() as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: this.alerts.filter((alert) => alert.status === "active") as T[] };
+    if (sql.includes("FROM booking_passports")) {
+      const bookingId = Number(_params[0]);
+      return { results: this.passports.filter((passport) => passport.booking_id === bookingId) as T[] };
+    }
     if (sql.includes("FROM maintenance_tickets") && sql.includes("WHERE room_id =")) return { results: [] as T[] };
     return { results: [] as T[] };
   }
@@ -327,6 +333,23 @@ class FakeReceptionDB {
         });
       }
       return { meta: { changes: 1, last_row_id: this.alerts.length } };
+    }
+    if (sql.includes("INSERT INTO booking_passports")) {
+      const id = this.passports.length + 1;
+      this.passports.push({
+        id,
+        booking_id: params[0],
+        object_key: params[1],
+        first_name: params[2],
+        middle_name: params[3],
+        last_name: params[4],
+        passport_number: params[5],
+        nationality: params[6],
+        gender: params[7],
+        birth_date: params[8],
+        created_at: params[9],
+      });
+      return { meta: { changes: 1, last_row_id: id } };
     }
     if (sql.includes("UPDATE reception_room_alerts")) {
       const alert = this.alerts.find((item) => item.beds24_booking_id === params[4] && item.alert_type === params[5] && item.status === "active");
@@ -623,6 +646,108 @@ test("passport OCR service passes an abort signal and returns a structured timeo
     ),
     (error: unknown) => error instanceof PassportOcrError && error.code === "openai_timeout",
   );
+});
+
+test("booking passports repository persists and retrieves passports by booking id", async () => {
+  const data = env([movementsAccess]);
+  const passport = await createBookingPassport(data, {
+    bookingId: 9001,
+    objectKey: "passports/2026-07-31/test-one.jpg",
+    passport: {
+      firstName: "MALI",
+      middleName: null,
+      lastName: "GUEST",
+      passportNumber: "AB1234567",
+      nationality: "THAI",
+      gender: "F",
+      birthDate: "1990-01-15",
+    },
+  });
+
+  assert.equal(passport.id, 1);
+  assert.equal(passport.bookingId, 9001);
+  assert.equal(passport.objectKey, "passports/2026-07-31/test-one.jpg");
+  assert.deepEqual(await listBookingPassports(data, 9001), [passport]);
+});
+
+test("booking passports retrieval supports multiple and zero passport bookings", async () => {
+  const data = env([movementsAccess]);
+  await createBookingPassport(data, {
+    bookingId: 9001,
+    objectKey: "passports/2026-07-31/test-one.jpg",
+    passport: {
+      firstName: "MALI",
+      middleName: null,
+      lastName: "GUEST",
+      passportNumber: "AB1234567",
+      nationality: "THAI",
+      gender: "F",
+      birthDate: "1990-01-15",
+    },
+  });
+  await createBookingPassport(data, {
+    bookingId: 9001,
+    objectKey: "passports/2026-07-31/test-two.jpg",
+    passport: {
+      firstName: "NOK",
+      middleName: null,
+      lastName: "GUEST",
+      passportNumber: "CD7654321",
+      nationality: "THAI",
+      gender: "F",
+      birthDate: "1992-04-20",
+    },
+  });
+
+  assert.equal((await listBookingPassports(data, 9001)).length, 2);
+  assert.deepEqual(await listBookingPassports(data, 9002), []);
+});
+
+test("booking scoped passport OCR endpoint persists the extracted passport after OCR success", async (t) => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const db = data.DB as unknown as FakeReceptionDB;
+  const extractedPassport = {
+    firstName: "MALI",
+    middleName: null,
+    lastName: "GUEST",
+    passportNumber: "AB1234567",
+    nationality: "THAI",
+    gender: "F",
+    birthDate: "1990-01-15",
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/stays/9001/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 200);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, true);
+  assert.equal(db.passports.length, 1);
+  assert.equal(db.passports[0]?.booking_id, 9001);
+  assert.equal(db.passports[0]?.object_key, payload.objectKey);
+  assert.equal(db.passports[0]?.passport_number, "AB1234567");
+
+  const saved = await request("/api/reception/stays/9001/passports", {
+    method: "GET",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+  assert.equal(saved.status, 200);
+  const savedPayload = await saved.json() as { success: boolean; data?: Array<{ bookingId: number; objectKey: string }> };
+  assert.equal(savedPayload.success, true);
+  assert.deepEqual(savedPayload.data?.map((passport) => [passport.bookingId, passport.objectKey]), [[9001, payload.objectKey]]);
 });
 
 test("reception completion endpoints require dedicated action permission", async () => {
