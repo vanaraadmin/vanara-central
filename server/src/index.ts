@@ -9,7 +9,7 @@ import { syncBookings, type BookingsSyncBindings } from "./services/bookings-syn
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { getAvailability } from "./services/availability-read.service.js";
 import { getArrivalsDeparturesAgenda, type MovementsBindings } from "./services/arrivals-departures.service.js";
-import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normalizeReceptionCheckInInput, normalizeReceptionCheckOutInput, normalizeReceptionNotesInput, receptionCompletionErrorStatus, updateReceptionAction, updateReceptionNotes, type ReceptionBindings } from "./services/reception.service.js";
+import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normalizeCompleteReceptionCheckInInput, normalizeCompleteReceptionCheckOutInput, normalizeReceptionCheckInInput, normalizeReceptionCheckOutInput, normalizeReceptionNotesInput, receptionCompletionErrorStatus, resolveReceptionRoomAlert, updateReceptionAction, updateReceptionNotes, type ReceptionAlertType, type ReceptionBindings } from "./services/reception.service.js";
 import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
@@ -468,7 +468,8 @@ app.post("/api/reception/stays/:bookingId/check-in-completed", async (c) => {
     const user = await authenticated(c, "movements", "access");
     requireActionPermission(user, "can_complete_checkin_checkout");
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
-    const stay = await completeReceptionEvent(c.env, bookingId, "check-in", user);
+    const payload = await c.req.json().catch(() => ({}));
+    const stay = await completeReceptionEvent(c.env, bookingId, "check-in", user, normalizeCompleteReceptionCheckInInput(payload));
     if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
     return c.json({ success: true, data: stay });
   } catch (error) {
@@ -494,7 +495,23 @@ app.post("/api/reception/stays/:bookingId/check-out-completed", async (c) => {
     const user = await authenticated(c, "movements", "access");
     requireActionPermission(user, "can_complete_checkin_checkout");
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
-    const stay = await completeReceptionEvent(c.env, bookingId, "check-out", user);
+    const payload = await c.req.json().catch(() => ({}));
+    const stay = await completeReceptionEvent(c.env, bookingId, "check-out", user, normalizeCompleteReceptionCheckOutInput(payload));
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    return c.json({ success: true, data: stay });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : receptionCompletionErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/alerts/:type/resolve", async (c) => {
+  try {
+    const user = await authenticated(c, "movements", "access");
+    requireActionPermission(user, "can_complete_checkin_checkout");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const type = c.req.param("type") as ReceptionAlertType;
+    if (type !== "passport_missing" && type !== "deposit_pending") throw new Error("Reception alert type is invalid.");
+    const stay = await resolveReceptionRoomAlert(c.env, bookingId, type, user);
     if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
     return c.json({ success: true, data: stay });
   } catch (error) {

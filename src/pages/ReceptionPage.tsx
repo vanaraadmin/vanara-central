@@ -10,6 +10,23 @@ import type { ReceptionOverview, ReceptionStay } from "../types/reception";
 import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
+type CompletionDraft = {
+  passportPhotographed: boolean;
+  depositCollected: boolean;
+  roomInspected: boolean;
+  keysReturned: boolean;
+  depositReturned: boolean;
+};
+
+function emptyCompletionDraft(): CompletionDraft {
+  return {
+    passportPhotographed: false,
+    depositCollected: false,
+    roomInspected: false,
+    keysReturned: false,
+    depositReturned: false,
+  };
+}
 
 function bangkokToday() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -65,6 +82,18 @@ function stayDuration(arrival: string, departure: string): string {
 
 function hasCompletionPermission(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
   return Boolean(user?.actionPermissions?.some((permission) => permission.action === "can_complete_checkin_checkout" && permission.allowed));
+}
+
+function bookingSourceLabel(stay: ReceptionStay): string {
+  const raw = stay.bookingSource || stay.bookingReference || "";
+  const value = raw.toLowerCase();
+  if (value.includes("booking")) return "Booking.com";
+  if (value.includes("airbnb")) return "Airbnb";
+  if (value.includes("agoda")) return "Agoda";
+  if (value.includes("traveloka")) return "Traveloka";
+  if (value.includes("trip")) return "Trip.com";
+  if (value.includes("direct")) return "Direct";
+  return stay.bookingSource || "Direct";
 }
 
 function upsertStay(data: ReceptionOverview, updated: ReceptionStay): ReceptionOverview {
@@ -175,6 +204,7 @@ function StayCard({
             {stay.guestName}
             {stay.nationalityFlagUrl && <img alt={stay.nationality ? `${stay.nationality} flag` : "Guest nationality"} className="reception-nationality-flag" src={stay.nationalityFlagUrl} />}
           </h3>
+          <p className="reception-booking-source">{bookingSourceLabel(stay)}</p>
         </div>
       </div>
 
@@ -309,41 +339,78 @@ function ReceptionSection({
 }
 
 function CompletionModal({
+  draft,
   error,
   isPending,
   onCancel,
   onConfirm,
+  onDraftChange,
   request,
 }: {
+  draft: CompletionDraft;
   error: string | null;
   isPending: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  onDraftChange: (draft: CompletionDraft) => void;
   request: { stay: ReceptionStay; type: ReceptionCardType } | null;
 }) {
   if (!request) return null;
   const isArrival = request.type === "arrival";
+  const hasDeposit = request.stay.checkIn.depositCollected || draft.depositCollected;
+  const canComplete = isArrival || (draft.roomInspected && draft.keysReturned && (!hasDeposit || draft.depositReturned));
+  const title = isArrival ? "Complete Check-in" : "Complete Check-out";
 
   return (
-    <div aria-modal="true" className="reception-modal" role="dialog">
-      <div className="reception-modal__panel">
-        <span className="reception-modal__icon">{isArrival ? "🏡" : "👋"}</span>
-        <h2>{isArrival ? "Check-In Completed?" : "Check-Out Completed?"}</h2>
-        <strong>{request.stay.roomName}</strong>
-        <p className="reception-modal__guest">
-          {request.stay.guestName}
-          {request.stay.nationalityFlagUrl && <img alt={request.stay.nationality ? `${request.stay.nationality} flag` : "Guest nationality"} className="reception-nationality-flag" src={request.stay.nationalityFlagUrl} />}
-        </p>
-        <p>
-          {isArrival
-            ? "This action confirms that the guest has arrived."
-            : "This action confirms that the guest has left the resort."}
-        </p>
-        <p className="reception-modal__warning">This action cannot be undone.</p>
+    <div aria-modal="true" className="reception-sheet" role="dialog">
+      <button aria-label="Cancel" className="reception-sheet__scrim" disabled={isPending} onClick={onCancel} type="button" />
+      <div className="reception-sheet__panel">
+        <div className="reception-sheet__handle" />
+        <header>
+          <span>{request.stay.roomName}</span>
+          <h2>{title}</h2>
+          <p>{request.stay.guestName}</p>
+        </header>
+        <div className="reception-sheet__checks">
+          {isArrival ? (
+            <>
+              <label>
+                <span>Passport photographed</span>
+                <input checked={draft.passportPhotographed} onChange={(event) => onDraftChange({ ...draft, passportPhotographed: event.target.checked })} type="checkbox" />
+              </label>
+              <label>
+                <span>Deposit collected</span>
+                <input checked={draft.depositCollected} onChange={(event) => onDraftChange({ ...draft, depositCollected: event.target.checked, depositReturned: event.target.checked ? draft.depositReturned : false })} type="checkbox" />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>Room inspected</span>
+                <input checked={draft.roomInspected} onChange={(event) => onDraftChange({ ...draft, roomInspected: event.target.checked })} type="checkbox" />
+              </label>
+              <label>
+                <span>Keys returned</span>
+                <input checked={draft.keysReturned} onChange={(event) => onDraftChange({ ...draft, keysReturned: event.target.checked })} type="checkbox" />
+              </label>
+              <div className="reception-sheet__deposit">
+                <span>Deposit</span>
+                {hasDeposit ? (
+                  <label>
+                    <span>Deposit returned</span>
+                    <input checked={draft.depositReturned} onChange={(event) => onDraftChange({ ...draft, depositReturned: event.target.checked })} type="checkbox" />
+                  </label>
+                ) : (
+                  <p>Deposit not collected<br />No refund required</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         {error && <p className="reception-modal__error">{error}</p>}
-        <div className="reception-modal__actions">
-          <button disabled={isPending} onClick={onCancel} type="button">Not yet</button>
-          <button disabled={isPending} onClick={onConfirm} type="button">{isPending ? "Saving…" : "✓ Confirm"}</button>
+        <div className="reception-sheet__actions">
+          <button disabled={isPending} onClick={onCancel} type="button">Cancel</button>
+          <button disabled={isPending || !canComplete} onClick={onConfirm} type="button">{isPending ? "Saving..." : title}</button>
         </div>
       </div>
     </div>
@@ -354,6 +421,7 @@ export default function ReceptionPage() {
   const today = bangkokToday();
   const [selectedDate, setSelectedDate] = useState(today);
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
+  const [completionDraft, setCompletionDraft] = useState<CompletionDraft>(emptyCompletionDraft);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const queryKey = ["reception", selectedDate] as const;
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal) });
@@ -366,11 +434,21 @@ export default function ReceptionPage() {
   const queryClient = useQueryClient();
   const completion = useMutation({
     mutationFn: async ({ stay, type }: { stay: ReceptionStay; type: ReceptionCardType }) => (
-      type === "arrival" ? completeReceptionCheckIn(stay.bookingId) : completeReceptionCheckOut(stay.bookingId)
+      type === "arrival"
+        ? completeReceptionCheckIn(stay.bookingId, {
+          passportPhotographed: completionDraft.passportPhotographed,
+          depositCollected: completionDraft.depositCollected,
+        })
+        : completeReceptionCheckOut(stay.bookingId, {
+          roomInspected: completionDraft.roomInspected,
+          keysReturned: completionDraft.keysReturned,
+          depositReturned: stay.checkIn.depositCollected || completionDraft.depositCollected ? completionDraft.depositReturned : undefined,
+        })
     ),
     onSuccess: (updated) => {
       queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
       setCompletionRequest(null);
+      setCompletionDraft(emptyCompletionDraft());
       setCompletionError(null);
     },
     onError: (error) => {
@@ -400,19 +478,24 @@ export default function ReceptionPage() {
       {reception.isError && !reception.data && <PageError onRetry={() => void reception.refetch()} />}
 
       <div className="reception-agenda" aria-busy={reception.isFetching}>
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" />
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" />
       </div>
 
       <CompletionModal
+        draft={completionDraft}
         error={completionError}
         isPending={completion.isPending}
         onCancel={() => {
-          if (!completion.isPending) setCompletionRequest(null);
+          if (!completion.isPending) {
+            setCompletionRequest(null);
+            setCompletionDraft(emptyCompletionDraft());
+          }
         }}
         onConfirm={() => {
           if (completionRequest) completion.mutate(completionRequest);
         }}
+        onDraftChange={setCompletionDraft}
         request={completionRequest}
       />
     </WorkspaceShell>

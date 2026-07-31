@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { AlertIcon, AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
-import { addRoomNote, createRoomMaintenanceTicket, loadRoomDetail, updateRoomHousekeeping } from "../services/room-detail.service";
+import { addRoomNote, createRoomMaintenanceTicket, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping } from "../services/room-detail.service";
 import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
 import type { RoomCurrentStay, RoomDetail, RoomHousekeepingStatus, RoomTimelineEvent } from "../types/room-detail";
 import "../styles/RoomDetailPage.css";
@@ -75,9 +75,28 @@ function CurrentStay({ stay }: { stay: RoomCurrentStay | null }) {
 }
 
 function ReceptionPanel({ room }: { room: RoomDetail }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (alert: RoomDetail["reception"]["alerts"][number]) => resolveReceptionRoomAlert(alert),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["room-detail", String(room.unitId)] });
+    },
+  });
+
   return (
     <section className="room-section" aria-label="Reception summary">
       <header><CheckInIcon /><h2>Reception</h2></header>
+      {room.reception.alerts.length > 0 && (
+        <div className="room-alert-list" aria-label="Reception alerts">
+          {room.reception.alerts.map((alert) => (
+            <button disabled={mutation.isPending} key={alert.id} onClick={() => mutation.mutate(alert)} type="button">
+              <AlertIcon />
+              <span>{alert.title}</span>
+              <strong>{alert.actionLabel}</strong>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="room-operation-card">
         {room.reception.guestSummary ? <strong>{room.reception.guestSummary}</strong> : <strong>No active guest</strong>}
         <dl>
@@ -91,6 +110,7 @@ function ReceptionPanel({ room }: { room: RoomDetail }) {
         {room.reception.notes.length === 0 && <div className="room-empty-state">No reception notes</div>}
         {room.reception.notes.map((note) => <p key={note}>{note}</p>)}
       </div>
+      {mutation.isError && <p className="room-form-error">Reception alert could not be completed.</p>}
     </section>
   );
 }

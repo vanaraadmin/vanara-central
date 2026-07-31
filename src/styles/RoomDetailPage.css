@@ -13,6 +13,7 @@
 .room-badges span,
 .room-section header,
 .room-actions,
+.room-alert-list button,
 .room-section-summary,
 .stay-card,
 .maintenance-ticket-card,
@@ -311,12 +312,51 @@
 }
 
 .maintenance-ticket-list,
+.room-alert-list,
 .room-note-list,
 .room-reception-notes,
 .room-timeline {
   display: grid;
   gap: var(--vc-space-2);
   margin-top: var(--vc-space-3);
+}
+
+.room-alert-list {
+  margin-bottom: var(--vc-space-3);
+}
+
+.room-alert-list button {
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  gap: var(--vc-space-2);
+  border: 1px solid rgba(149, 64, 28, 0.18);
+  border-radius: var(--vc-radius-lg);
+  background: rgba(186, 84, 36, 0.1);
+  color: var(--vc-text-primary);
+  font: inherit;
+  padding: 0 var(--vc-space-3);
+  text-align: left;
+}
+
+.room-alert-list svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: #95401c;
+}
+
+.room-alert-list span {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-alert-list strong {
+  color: rgba(23, 59, 45, 0.62);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  text-transform: uppercase;
 }
 
 .room-reception-notes p {

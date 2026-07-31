@@ -12,6 +12,7 @@ export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBind
 export type ReceptionCheckInField = "guestArrived" | "passportCollected" | "depositCollected" | "welcomeCompleted" | "keysDelivered";
 export type ReceptionCheckOutField = "guestLeft" | "keysReturned" | "depositReturned" | "roomReleased";
 export type ReceptionCompletionType = "check-in" | "check-out";
+export type ReceptionAlertType = "passport_missing" | "deposit_pending";
 
 interface BookingRow {
   beds24_booking_id: number;
@@ -29,6 +30,11 @@ interface BookingRow {
   country: string | null;
   country_code: string | null;
   status: string;
+}
+
+interface BookingAlertContextRow {
+  beds24_booking_id: number;
+  unit_id: number | null;
 }
 
 interface ReceptionStayRow {
@@ -71,6 +77,17 @@ interface ReceptionEventRow {
 export interface ReceptionActionInput {
   field: ReceptionCheckInField | ReceptionCheckOutField;
   completed: boolean;
+}
+
+export interface CompleteReceptionCheckInInput {
+  passportPhotographed: boolean;
+  depositCollected: boolean;
+}
+
+export interface CompleteReceptionCheckOutInput {
+  roomInspected: boolean;
+  keysReturned: boolean;
+  depositReturned?: boolean;
 }
 
 export interface ReceptionNotesInput {
@@ -174,6 +191,10 @@ function optionalString(value: unknown, max: number): string | null {
   return trimmed ? trimmed.slice(0, max) : null;
 }
 
+function optionalBoolean(payload: object, key: string): boolean {
+  return key in payload && payload[key as keyof typeof payload] === true;
+}
+
 function normalizeOperationalDate(value: string | null | undefined): string {
   const today = getBangkokDate();
   if (!value) return today;
@@ -213,6 +234,25 @@ export function normalizeReceptionNotesInput(payload: unknown): ReceptionNotesIn
   return {
     body: "body" in payload ? requiredString(payload.body, "Note", 2000) : undefined,
     specialNotes: "specialNotes" in payload ? optionalString(payload.specialNotes, 2000) : undefined,
+  };
+}
+
+export function normalizeCompleteReceptionCheckInInput(payload: unknown): CompleteReceptionCheckInInput {
+  if (!payload || typeof payload !== "object") throw new Error("Complete check-in payload is required.");
+  assertPayloadKeys(payload, ["passportPhotographed", "depositCollected"], "Complete check-in payload");
+  return {
+    passportPhotographed: optionalBoolean(payload, "passportPhotographed"),
+    depositCollected: optionalBoolean(payload, "depositCollected"),
+  };
+}
+
+export function normalizeCompleteReceptionCheckOutInput(payload: unknown): CompleteReceptionCheckOutInput {
+  if (!payload || typeof payload !== "object") throw new Error("Complete check-out payload is required.");
+  assertPayloadKeys(payload, ["roomInspected", "keysReturned", "depositReturned"], "Complete check-out payload");
+  return {
+    roomInspected: optionalBoolean(payload, "roomInspected"),
+    keysReturned: optionalBoolean(payload, "keysReturned"),
+    depositReturned: "depositReturned" in payload ? payload.depositReturned === true : undefined,
   };
 }
 
@@ -277,6 +317,70 @@ async function recordEvent(env: ReceptionBindings, bookingId: number, action: st
     INSERT INTO reception_events (beds24_booking_id, action, from_value, to_value, actor_id, actor_name, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).bind(bookingId, action, fromValue, toValue, user.id, user.displayName, now).run();
+}
+
+async function loadBookingAlertContext(env: ReceptionBindings, bookingId: number): Promise<BookingAlertContextRow | null> {
+  return env.DB.prepare(`
+    SELECT beds24_booking_id, unit_id
+    FROM bookings
+    WHERE beds24_booking_id = ?
+      AND ${operationalBookingStatusSql("status")}
+  `).bind(bookingId).first<BookingAlertContextRow>();
+}
+
+function alertTitle(type: ReceptionAlertType): string {
+  return type === "passport_missing" ? "Passport missing" : "Deposit pending";
+}
+
+async function upsertReceptionAlert(env: ReceptionBindings, bookingId: number, unitId: number | null, type: ReceptionAlertType, user: CurrentUser, now: string): Promise<void> {
+  if (!unitId) return;
+  await env.DB.prepare(`
+    INSERT INTO reception_room_alerts (
+      beds24_booking_id, unit_id, alert_type, title, status,
+      created_by, created_by_name, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+    ON CONFLICT (beds24_booking_id, alert_type)
+    DO UPDATE SET
+      unit_id = excluded.unit_id,
+      title = excluded.title,
+      status = 'active',
+      resolved_by = NULL,
+      resolved_by_name = NULL,
+      resolved_at = NULL,
+      updated_at = excluded.updated_at
+  `).bind(bookingId, unitId, type, alertTitle(type), user.id, user.displayName, now, now).run();
+}
+
+async function resolveReceptionAlert(env: ReceptionBindings, bookingId: number, type: ReceptionAlertType, user: CurrentUser, now: string): Promise<void> {
+  await env.DB.prepare(`
+    UPDATE reception_room_alerts
+    SET status = 'resolved', resolved_by = ?, resolved_by_name = ?, resolved_at = ?, updated_at = ?
+    WHERE beds24_booking_id = ?
+      AND alert_type = ?
+      AND status = 'active'
+  `).bind(user.id, user.displayName, now, now, bookingId, type).run();
+}
+
+export async function resolveReceptionRoomAlert(env: ReceptionBindings, bookingId: number, type: ReceptionAlertType, user: CurrentUser): Promise<ReceptionStay | null> {
+  const context = await loadBookingAlertContext(env, bookingId);
+  if (!context) return null;
+  const now = new Date().toISOString();
+  const local = await ensureReceptionStay(env, bookingId);
+
+  if (type === "passport_missing") {
+    if (local.passport_collected !== 1) {
+      await env.DB.prepare("UPDATE reception_stays SET passport_collected = 1, updated_at = ? WHERE beds24_booking_id = ?").bind(now, bookingId).run();
+      await recordEvent(env, bookingId, "passportPhotographed", "false", "true", user, now);
+    }
+  } else {
+    if (local.deposit_collected !== 1) {
+      await env.DB.prepare("UPDATE reception_stays SET deposit_collected = 1, updated_at = ? WHERE beds24_booking_id = ?").bind(now, bookingId).run();
+      await recordEvent(env, bookingId, "depositCollected", "false", "true", user, now);
+    }
+  }
+
+  await resolveReceptionAlert(env, bookingId, type, user, now);
+  return getReceptionStay(env, bookingId);
 }
 
 function mapNote(row: ReceptionNoteRow): ReceptionGuestNote {
@@ -383,7 +487,7 @@ export function receptionCompletionErrorStatus(error: unknown): 400 | 409 {
   return error instanceof ReceptionConflictError ? 409 : 400;
 }
 
-export async function completeReceptionEvent(env: ReceptionBindings, bookingId: number, type: ReceptionCompletionType, user: CurrentUser): Promise<ReceptionStay | null> {
+export async function completeReceptionEvent(env: ReceptionBindings, bookingId: number, type: ReceptionCompletionType, user: CurrentUser, input: CompleteReceptionCheckInInput | CompleteReceptionCheckOutInput): Promise<ReceptionStay | null> {
   const booking = await loadBookingRow(env, bookingId);
   if (!booking) return null;
   if (!isOperationalBookingStatus(booking.status)) return null;
@@ -399,16 +503,42 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
 
   if (type === "check-in") {
     if (local.guest_arrived === 1) completionError("Check-in has already been completed.");
-    await env.DB.prepare("UPDATE reception_stays SET guest_arrived = 1, updated_at = ? WHERE beds24_booking_id = ?")
-      .bind(now, bookingId)
+    const checkInInput = input as CompleteReceptionCheckInInput;
+    await env.DB.prepare(`
+      UPDATE reception_stays
+      SET guest_arrived = 1, passport_collected = ?, deposit_collected = ?, welcome_completed = 1, keys_delivered = 1, updated_at = ?
+      WHERE beds24_booking_id = ?
+    `)
+      .bind(checkInInput.passportPhotographed ? 1 : 0, checkInInput.depositCollected ? 1 : 0, now, bookingId)
       .run();
     await recordEvent(env, bookingId, "checkInCompleted", "false", "true", user, now);
+    if (checkInInput.passportPhotographed) {
+      await resolveReceptionAlert(env, bookingId, "passport_missing", user, now);
+    } else {
+      await upsertReceptionAlert(env, bookingId, booking.unit_id, "passport_missing", user, now);
+    }
+    if (checkInInput.depositCollected) {
+      await resolveReceptionAlert(env, bookingId, "deposit_pending", user, now);
+    } else {
+      await upsertReceptionAlert(env, bookingId, booking.unit_id, "deposit_pending", user, now);
+    }
   } else {
     if (local.guest_left === 1 || local.room_released === 1) completionError("Check-out has already been completed.");
-    await env.DB.prepare("UPDATE reception_stays SET guest_left = 1, room_released = 1, updated_at = ? WHERE beds24_booking_id = ?")
-      .bind(now, bookingId)
+    const checkOutInput = input as CompleteReceptionCheckOutInput;
+    if (!checkOutInput.roomInspected) completionError("Room inspection is required.");
+    if (!checkOutInput.keysReturned) completionError("Keys returned is required.");
+    if (local.deposit_collected === 1 && checkOutInput.depositReturned !== true) completionError("Deposit return is required.");
+    await env.DB.prepare(`
+      UPDATE reception_stays
+      SET guest_left = 1, keys_returned = 1, deposit_returned = ?, room_released = 1, updated_at = ?
+      WHERE beds24_booking_id = ?
+    `)
+      .bind(local.deposit_collected === 1 ? 1 : 0, now, bookingId)
       .run();
     await recordEvent(env, bookingId, "checkOutCompleted", "false", "true", user, now);
+    if (local.deposit_collected !== 1) {
+      await resolveReceptionAlert(env, bookingId, "deposit_pending", user, now);
+    }
   }
 
   return mapStay(env, booking);

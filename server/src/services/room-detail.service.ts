@@ -61,6 +61,15 @@ interface ChatContextRow {
   conversation_id: string;
 }
 
+interface ReceptionRoomAlertRow {
+  alert_id: number;
+  beds24_booking_id: number;
+  unit_id: number;
+  alert_type: "passport_missing" | "deposit_pending";
+  title: string;
+  created_at: string;
+}
+
 export interface RoomCurrentStay {
   bookingId: number;
   beds24BookingId: number;
@@ -95,6 +104,16 @@ export interface RoomNote {
   body: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReceptionRoomAlert {
+  id: number;
+  bookingId: number;
+  unitId: number;
+  type: "passport_missing" | "deposit_pending";
+  title: string;
+  actionLabel: string;
+  createdAt: string;
 }
 
 export interface RoomTimelineEvent {
@@ -145,6 +164,7 @@ export interface RoomDetail {
     departure: string | null;
     checkInStatus: string;
     checkOutStatus: string;
+    alerts: ReceptionRoomAlert[];
     notes: string[];
   };
   notes: RoomNote[];
@@ -253,6 +273,27 @@ async function loadRoomNotes(env: RoomDetailBindings, unitId: number): Promise<R
     body: row.body,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }));
+}
+
+async function loadReceptionRoomAlerts(env: RoomDetailBindings, unitId: number): Promise<ReceptionRoomAlert[]> {
+  const rows = await env.DB.prepare(`
+    SELECT alert_id, beds24_booking_id, unit_id, alert_type, title, created_at
+    FROM reception_room_alerts
+    WHERE unit_id = ?
+      AND status = 'active'
+    ORDER BY created_at ASC, alert_id ASC
+    LIMIT 12
+  `).bind(unitId).all<ReceptionRoomAlertRow>();
+
+  return (rows.results ?? []).map((row) => ({
+    id: row.alert_id,
+    bookingId: row.beds24_booking_id,
+    unitId: row.unit_id,
+    type: row.alert_type,
+    title: row.title,
+    actionLabel: row.alert_type === "passport_missing" ? "Passport photographed" : "Deposit collected",
+    createdAt: row.created_at,
   }));
 }
 
@@ -429,13 +470,14 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number): Promis
   if (!unit) return null;
 
   const today = getBangkokDate();
-  const [stayRow, housekeepingOverview, latestHousekeeping, tickets, notes, chatContext] = await Promise.all([
+  const [stayRow, housekeepingOverview, latestHousekeeping, tickets, notes, chatContext, receptionAlerts] = await Promise.all([
     loadCurrentStay(env, unit.unit_id, today),
     getHousekeepingOverview(env),
     loadLatestHousekeeping(env, unit.unit_id),
     listOpenMaintenanceTicketDetailsForRoom(env, unit.unit_id),
     loadRoomNotes(env, unit.unit_id),
     loadChatContext(env, unit),
+    loadReceptionRoomAlerts(env, unit.unit_id),
   ]);
 
   const currentStay = mapStay(stayRow);
@@ -475,6 +517,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number): Promis
       departure: reception?.departure ?? currentStay?.departure ?? null,
       checkInStatus: reception ? `${Object.values(reception.checkIn).filter(Boolean).length}/5` : "Not Available",
       checkOutStatus: reception ? `${Object.values(reception.checkOut).filter(Boolean).length}/4` : "Not Available",
+      alerts: receptionAlerts,
       notes: reception ? [reception.specialNotes, ...reception.notes.slice(0, 3).map((note) => note.body)].filter((note): note is string => Boolean(note)) : [],
     },
     notes,

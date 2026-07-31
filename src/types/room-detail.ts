@@ -40,6 +40,16 @@ export interface RoomNote {
   updatedAt: string;
 }
 
+export interface ReceptionRoomAlert {
+  id: number;
+  bookingId: number;
+  unitId: number;
+  type: "passport_missing" | "deposit_pending";
+  title: string;
+  actionLabel: string;
+  createdAt: string;
+}
+
 export interface RoomTimelineEvent {
   id: string;
   type: RoomTimelineType;
@@ -65,6 +75,7 @@ export interface RoomReceptionSummary {
   departure: string | null;
   checkInStatus: string;
   checkOutStatus: string;
+  alerts: ReceptionRoomAlert[];
   notes: string[];
 }
 

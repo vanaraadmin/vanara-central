@@ -3,6 +3,8 @@ import test from "node:test";
 
 import worker from "../src/index.ts";
 import {
+  normalizeCompleteReceptionCheckInInput,
+  normalizeCompleteReceptionCheckOutInput,
   normalizeReceptionCheckInInput,
   normalizeReceptionCheckOutInput,
   normalizeReceptionNotesInput,
@@ -76,6 +78,7 @@ class FakeReceptionDB {
   stays = new Map<number, Record<string, unknown>>();
   notes: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
+  alerts: Array<Record<string, unknown>> = [];
 
   constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private bookingInput: TestBooking | TestBooking[] = BOOKING) {}
 
@@ -127,6 +130,7 @@ class FakeReceptionDB {
     }
     if (sql.includes("FROM reception_guest_notes")) return { results: [...this.notes].reverse() as T[] };
     if (sql.includes("FROM reception_events")) return { results: [...this.events].reverse() as T[] };
+    if (sql.includes("FROM reception_room_alerts")) return { results: this.alerts.filter((alert) => alert.status === "active") as T[] };
     if (sql.includes("FROM maintenance_tickets") && sql.includes("WHERE room_id =")) return { results: [] as T[] };
     return { results: [] as T[] };
   }
@@ -173,6 +177,18 @@ class FakeReceptionDB {
       });
       return { meta: { changes: 1, last_row_id: 1 } };
     }
+    if (sql.includes("SET guest_arrived = 1, passport_collected")) {
+      const row = this.stays.get(Number(params[3]));
+      if (row) {
+        row.guest_arrived = 1;
+        row.passport_collected = params[0];
+        row.deposit_collected = params[1];
+        row.welcome_completed = 1;
+        row.keys_delivered = 1;
+        row.updated_at = params[2];
+      }
+      return { meta: { changes: row ? 1 : 0, last_row_id: 0 } };
+    }
     if (sql.includes("UPDATE reception_stays SET guest_arrived = 1")) {
       const row = this.stays.get(Number(params[1]));
       if (row) {
@@ -185,6 +201,33 @@ class FakeReceptionDB {
       const row = this.stays.get(Number(params[2]));
       if (row) {
         row.guest_arrived = params[0];
+        row.updated_at = params[1];
+      }
+      return { meta: { changes: row ? 1 : 0, last_row_id: 0 } };
+    }
+    if (sql.includes("UPDATE reception_stays SET passport_collected = 1")) {
+      const row = this.stays.get(Number(params[1]));
+      if (row) {
+        row.passport_collected = 1;
+        row.updated_at = params[0];
+      }
+      return { meta: { changes: row ? 1 : 0, last_row_id: 0 } };
+    }
+    if (sql.includes("UPDATE reception_stays SET deposit_collected = 1")) {
+      const row = this.stays.get(Number(params[1]));
+      if (row) {
+        row.deposit_collected = 1;
+        row.updated_at = params[0];
+      }
+      return { meta: { changes: row ? 1 : 0, last_row_id: 0 } };
+    }
+    if (sql.includes("SET guest_left = 1, keys_returned = 1")) {
+      const row = this.stays.get(Number(params[2]));
+      if (row) {
+        row.guest_left = 1;
+        row.keys_returned = 1;
+        row.deposit_returned = params[0];
+        row.room_released = 1;
         row.updated_at = params[1];
       }
       return { meta: { changes: row ? 1 : 0, last_row_id: 0 } };
@@ -241,6 +284,43 @@ class FakeReceptionDB {
       });
       return { meta: { changes: 1, last_row_id: event_id } };
     }
+    if (sql.includes("INSERT INTO reception_room_alerts")) {
+      const existing = this.alerts.find((alert) => alert.beds24_booking_id === params[0] && alert.alert_type === params[2]);
+      if (existing) {
+        existing.unit_id = params[1];
+        existing.title = params[3];
+        existing.status = "active";
+        existing.resolved_by = null;
+        existing.resolved_by_name = null;
+        existing.resolved_at = null;
+        existing.updated_at = params[7];
+      } else {
+        this.alerts.push({
+          alert_id: this.alerts.length + 1,
+          beds24_booking_id: params[0],
+          unit_id: params[1],
+          alert_type: params[2],
+          title: params[3],
+          status: "active",
+          created_by: params[4],
+          created_by_name: params[5],
+          created_at: params[6],
+          updated_at: params[7],
+        });
+      }
+      return { meta: { changes: 1, last_row_id: this.alerts.length } };
+    }
+    if (sql.includes("UPDATE reception_room_alerts")) {
+      const alert = this.alerts.find((item) => item.beds24_booking_id === params[4] && item.alert_type === params[5] && item.status === "active");
+      if (alert) {
+        alert.status = "resolved";
+        alert.resolved_by = params[0];
+        alert.resolved_by_name = params[1];
+        alert.resolved_at = params[2];
+        alert.updated_at = params[3];
+      }
+      return { meta: { changes: alert ? 1 : 0, last_row_id: 0 } };
+    }
     return { meta: { changes: 0, last_row_id: 0 } };
   }
 }
@@ -288,9 +368,16 @@ test("reception DTO normalizers accept only server-owned workflow fields", () =>
     body: "Guest prefers quiet check-in.",
     specialNotes: undefined,
   });
+  assert.deepEqual(normalizeCompleteReceptionCheckInInput({}), { passportPhotographed: false, depositCollected: false });
+  assert.deepEqual(normalizeCompleteReceptionCheckOutInput({ roomInspected: true, keysReturned: true, depositReturned: true }), {
+    roomInspected: true,
+    keysReturned: true,
+    depositReturned: true,
+  });
   assert.throws(() => normalizeReceptionCheckInInput({ field: "roomReady", completed: true }), /Check-in field is invalid/);
   assert.throws(() => normalizeReceptionCheckOutInput({ field: "keysReturned", completed: "yes" }), /completed is required/);
   assert.throws(() => normalizeReceptionNotesInput({ body: " ", authorId: "fake" }), /unsupported field/);
+  assert.throws(() => normalizeCompleteReceptionCheckOutInput({ roomInspected: true, keysReturned: true, actor: "fake" }), /unsupported field/);
 });
 
 test("reception endpoints enforce authentication and movements permissions directly", async () => {
@@ -376,12 +463,85 @@ test("reception completion endpoints persist irreversible today's operational ev
   const checkOutData = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
   const checkOut = await request("/api/reception/stays/9001/check-out-completed", {
     method: "POST",
-    headers: { cookie: "vanara_session=x" },
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true }),
   }, checkOutData);
   assert.equal(checkOut.status, 200);
   const payload = (await json(checkOut)).data as { checkOut: { guestLeft: boolean; roomReleased: boolean } };
   assert.equal(payload.checkOut.guestLeft, true);
   assert.equal(payload.checkOut.roomReleased, true);
+});
+
+test("complete check-in creates persistent room alerts and resolving them updates the stay", async () => {
+  const data = env([movementsAccess], true, [receptionCompletion]);
+  const db = data.DB as unknown as FakeReceptionDB;
+  const checkIn = await request("/api/reception/stays/9001/check-in-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ passportPhotographed: false, depositCollected: false }),
+  }, data);
+
+  assert.equal(checkIn.status, 200);
+  assert.deepEqual(db.alerts.map((alert) => [alert.beds24_booking_id, alert.unit_id, alert.alert_type, alert.status]), [
+    [9001, 1, "passport_missing", "active"],
+    [9001, 1, "deposit_pending", "active"],
+  ]);
+
+  const passport = await request("/api/reception/stays/9001/alerts/passport_missing/resolve", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+
+  assert.equal(passport.status, 200);
+  assert.equal(db.stays.get(9001)?.passport_collected, 1);
+  assert.equal(db.alerts.find((alert) => alert.alert_type === "passport_missing")?.status, "resolved");
+
+  const deposit = await request("/api/reception/stays/9001/alerts/deposit_pending/resolve", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+
+  assert.equal(deposit.status, 200);
+  assert.equal(db.stays.get(9001)?.deposit_collected, 1);
+  assert.equal(db.alerts.find((alert) => alert.alert_type === "deposit_pending")?.status, "resolved");
+});
+
+test("complete check-out enforces inspection keys and collected deposit return", async () => {
+  const data = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const db = data.DB as unknown as FakeReceptionDB;
+  db.stays.set(9001, {
+    beds24_booking_id: 9001,
+    guest_arrived: 1,
+    passport_collected: 1,
+    deposit_collected: 1,
+    welcome_completed: 1,
+    keys_delivered: 1,
+    guest_left: 0,
+    keys_returned: 0,
+    deposit_returned: 0,
+    room_released: 0,
+    special_notes: null,
+    created_at: "2026-07-31T00:00:00.000Z",
+    updated_at: "2026-07-31T00:00:00.000Z",
+  });
+
+  const missingDeposit = await request("/api/reception/stays/9001/check-out-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true }),
+  }, data);
+  assert.equal(missingDeposit.status, 409);
+
+  const completed = await request("/api/reception/stays/9001/check-out-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true, depositReturned: true }),
+  }, data);
+  assert.equal(completed.status, 200);
+  assert.equal(db.stays.get(9001)?.guest_left, 1);
+  assert.equal(db.stays.get(9001)?.keys_returned, 1);
+  assert.equal(db.stays.get(9001)?.deposit_returned, 1);
+  assert.equal(db.stays.get(9001)?.room_released, 1);
 });
 
 test("reception completion rejects future booking dates server-side", async () => {
