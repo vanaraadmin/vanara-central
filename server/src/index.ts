@@ -14,6 +14,7 @@ import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignabl
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
+import type { R2StorageBindings } from "./services/r2-storage.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -41,7 +42,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, R2StorageBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
