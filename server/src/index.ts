@@ -14,10 +14,11 @@ import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignabl
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
-import { extractPassportData, PassportOcrError, type PassportOcrBindings } from "./services/passport-ocr.service.js";
-import { uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
+import { extractPassportData, PassportOcrError, type PassportData, type PassportOcrBindings } from "./services/passport-ocr.service.js";
+import { deletePassport, uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
 import { normalizePassportImageFormData, PassportUploadError } from "./services/passport-upload.service.js";
 import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
+import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentionBindings } from "./services/passport-retention.service.js";
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import {
   AuthenticationError,
@@ -46,7 +47,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, Tm30Bindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -100,6 +101,26 @@ async function storePassportUpload(env: Bindings, upload: { bytes: ArrayBuffer; 
     });
   } catch {
     throw new PassportUploadError("Passport image storage failed.", "passport_storage_failed");
+  }
+}
+
+async function rollbackPassportUpload(env: Bindings, objectKey: string, reason: "ocr_failed" | "passport_persistence_failed"): Promise<void> {
+  try {
+    await deletePassport(env, objectKey);
+    console.log(JSON.stringify({
+      event: "passport_orphan_rollback",
+      objectKey,
+      reason,
+      status: "deleted",
+    }));
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "passport_orphan_rollback_failed",
+      objectKey,
+      reason,
+      level: "warning",
+      error: errorMessage(error),
+    }));
   }
 }
 
@@ -503,10 +524,16 @@ app.post("/api/reception/passports/ocr", async (c) => {
     await authenticated(c, "movements", "access");
     const upload = await normalizePassportImageFormData(await c.req.formData());
     const stored = await storePassportUpload(c.env, upload);
-    const passport = await extractPassportData(c.env, {
-      image: upload.bytes,
-      contentType: upload.contentType,
-    });
+    let passport: PassportData;
+    try {
+      passport = await extractPassportData(c.env, {
+        image: upload.bytes,
+        contentType: upload.contentType,
+      });
+    } catch (error) {
+      await rollbackPassportUpload(c.env, stored.objectKey, "ocr_failed");
+      throw error;
+    }
 
     return c.json({
       success: true,
@@ -539,15 +566,21 @@ app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
     if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
     const upload = await normalizePassportImageFormData(await c.req.formData());
     const stored = await storePassportUpload(c.env, upload);
-    const passport = await extractPassportData(c.env, {
-      image: upload.bytes,
-      contentType: upload.contentType,
-    });
-    await createBookingPassport(c.env, {
-      bookingId,
-      objectKey: stored.objectKey,
-      passport,
-    });
+    let passport: PassportData;
+    try {
+      passport = await extractPassportData(c.env, {
+        image: upload.bytes,
+        contentType: upload.contentType,
+      });
+      await createBookingPassport(c.env, {
+        bookingId,
+        objectKey: stored.objectKey,
+        passport,
+      });
+    } catch (error) {
+      await rollbackPassportUpload(c.env, stored.objectKey, error instanceof PassportOcrError ? "ocr_failed" : "passport_persistence_failed");
+      throw error;
+    }
 
     return c.json({
       success: true,
@@ -1084,6 +1117,10 @@ export default {
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
     if (controller.cron === "3 20 * * *") {
       ctx.waitUntil(syncProperties(env).then(() => undefined));
+      return;
+    }
+    if (controller.cron === PASSPORT_RETENTION_CRON) {
+      ctx.waitUntil(cleanupExpiredPassports(env).then(() => undefined));
       return;
     }
     if (controller.cron === "7,22,37,52 * * * *") {

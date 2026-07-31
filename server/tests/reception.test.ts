@@ -99,6 +99,7 @@ class FakeReceptionDB {
   events: Array<Record<string, unknown>> = [];
   alerts: Array<Record<string, unknown>> = [];
   passports: Array<Record<string, unknown>> = [];
+  failPassportInsert = false;
 
   constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private bookingInput: TestBooking | TestBooking[] = BOOKING) {}
 
@@ -335,6 +336,7 @@ class FakeReceptionDB {
       return { meta: { changes: 1, last_row_id: this.alerts.length } };
     }
     if (sql.includes("INSERT INTO booking_passports")) {
+      if (this.failPassportInsert) throw new Error("D1 unavailable");
       const id = this.passports.length + 1;
       this.passports.push({
         id,
@@ -368,7 +370,7 @@ class FakeReceptionDB {
 
 class FakePassportR2 {
   objects = new Map<string, { body: R2PutValue; options?: R2PutOptions }>();
-  constructor(private failPut = false) {}
+  constructor(private failPut = false, private failDelete = false) {}
 
   async put(key: string, body: R2PutValue, options?: R2PutOptions) {
     if (this.failPut) throw new Error("R2 unavailable");
@@ -380,7 +382,9 @@ class FakePassportR2 {
     return null;
   }
 
-  async delete() {
+  async delete(key: string) {
+    if (this.failDelete) throw new Error("R2 delete unavailable");
+    this.objects.delete(key);
     return undefined;
   }
 
@@ -634,6 +638,68 @@ test("passport OCR endpoint rejects OpenAI output that does not match the strict
   assert.equal(payload.error?.code, "passport_schema_invalid");
 });
 
+test("passport OCR endpoint rolls back the R2 image after OCR failure", async (t) => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const logs: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify({ firstName: "MALI", extra: "not allowed" }) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  console.log = (message?: unknown) => {
+    logs.push(String(message));
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.png", { type: "image/png" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 502);
+  assert.equal(r2.objects.size, 0);
+  assert.ok(logs.some((line) => line.includes("passport_orphan_rollback") && line.includes("ocr_failed")));
+});
+
+test("passport OCR rollback logs deletion failure without masking the OCR error", async (t) => {
+  const r2 = new FakePassportR2(false, true);
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const warnings: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify({ firstName: "MALI", extra: "not allowed" }) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.png", { type: "image/png" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+  const payload = await response.json() as PassportOcrPayload;
+
+  assert.equal(response.status, 502);
+  assert.equal(payload.error?.code, "passport_schema_invalid");
+  assert.equal(r2.objects.size, 1);
+  assert.ok(warnings.some((line) => line.includes("passport_orphan_rollback_failed") && line.includes("R2 delete unavailable")));
+});
+
 test("passport OCR service passes an abort signal and returns a structured timeout error", async () => {
   await assert.rejects(
     extractPassportData(
@@ -748,6 +814,44 @@ test("booking scoped passport OCR endpoint persists the extracted passport after
   const savedPayload = await saved.json() as { success: boolean; data?: Array<{ bookingId: number; objectKey: string }> };
   assert.equal(savedPayload.success, true);
   assert.deepEqual(savedPayload.data?.map((passport) => [passport.bookingId, passport.objectKey]), [[9001, payload.objectKey]]);
+});
+
+test("booking scoped passport OCR endpoint rolls back R2 after persistence failure", async (t) => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const db = data.DB as unknown as FakeReceptionDB;
+  db.failPassportInsert = true;
+  const extractedPassport = {
+    firstName: "MALI",
+    middleName: null,
+    lastName: "GUEST",
+    passportNumber: "AB1234567",
+    nationality: "THAI",
+    gender: "F",
+    birthDate: "1990-01-15",
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/stays/9001/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+  const payload = await response.json() as PassportOcrPayload;
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.success, false);
+  assert.equal(payload.error?.message, "D1 unavailable");
+  assert.equal(r2.objects.size, 0);
+  assert.equal(db.passports.length, 0);
 });
 
 test("reception completion endpoints require dedicated action permission", async () => {
