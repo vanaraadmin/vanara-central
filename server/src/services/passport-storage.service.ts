@@ -5,34 +5,49 @@ export interface PassportStorageBindings {
 export type PassportStorageBody = ReadableStream | ArrayBuffer | ArrayBufferView | string | Blob;
 
 export interface UploadPassportInput {
-  key: string;
   body: PassportStorageBody;
-  contentType?: string;
+  contentType: string;
   metadata?: Record<string, string>;
 }
 
-const PASSPORTS_PREFIX = "passports/";
+export interface UploadedPassport {
+  objectKey: string;
+}
 
-function passportObjectKey(key: string): string {
+const PASSPORTS_PREFIX = "passports/";
+const PASSPORT_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+};
+
+function storageLookupKey(key: string): string {
   const normalized = key.replace(/^\/+/, "");
   return `${PASSPORTS_PREFIX}${normalized.replace(new RegExp(`^${PASSPORTS_PREFIX}`), "")}`;
 }
 
-export async function uploadPassport(env: PassportStorageBindings, input: UploadPassportInput): Promise<R2Object> {
-  return env.R2_STORAGE.put(passportObjectKey(input.key), input.body, {
+function createPassportObjectKey(contentType: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const extension = PASSPORT_IMAGE_EXTENSIONS[contentType] ?? "bin";
+  return `${PASSPORTS_PREFIX}${today}/${crypto.randomUUID()}.${extension}`;
+}
+
+export async function uploadPassport(env: PassportStorageBindings, input: UploadPassportInput): Promise<UploadedPassport> {
+  const objectKey = createPassportObjectKey(input.contentType);
+  await env.R2_STORAGE.put(objectKey, input.body, {
     httpMetadata: input.contentType ? { contentType: input.contentType } : undefined,
     customMetadata: input.metadata,
   });
+  return { objectKey };
 }
 
 export async function getPassport(env: PassportStorageBindings, key: string): Promise<R2ObjectBody | null> {
-  return env.R2_STORAGE.get(passportObjectKey(key));
+  return env.R2_STORAGE.get(storageLookupKey(key));
 }
 
 export async function deletePassport(env: PassportStorageBindings, key: string): Promise<void> {
-  await env.R2_STORAGE.delete(passportObjectKey(key));
+  await env.R2_STORAGE.delete(storageLookupKey(key));
 }
 
 export async function existsPassport(env: PassportStorageBindings, key: string): Promise<boolean> {
-  return (await env.R2_STORAGE.head(passportObjectKey(key))) !== null;
+  return (await env.R2_STORAGE.head(storageLookupKey(key))) !== null;
 }

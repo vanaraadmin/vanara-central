@@ -14,7 +14,9 @@ import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignabl
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
-import type { PassportStorageBindings } from "./services/passport-storage.service.js";
+import { extractPassportData, PassportOcrError, type PassportOcrBindings } from "./services/passport-ocr.service.js";
+import { uploadPassport, type PassportStorageBindings } from "./services/passport-storage.service.js";
+import { normalizePassportImageFormData } from "./services/passport-upload.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -42,7 +44,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -69,6 +71,20 @@ function protectedErrorStatus(error: unknown): 401 | 403 | 500 {
   if (error instanceof ForbiddenError) return 403;
   return 500;
 }
+
+function passportUploadErrorStatus(error: unknown): 400 | 401 | 403 | 502 {
+  if (error instanceof AuthenticationError) return 401;
+  if (error instanceof ForbiddenError) return 403;
+  return error instanceof PassportOcrError ? 502 : 400;
+}
+
+function passportUploadError(error: unknown): { code: string; message: string } {
+  if (error instanceof PassportOcrError) return { code: error.code, message: error.message };
+  if (error instanceof AuthenticationError) return { code: "authentication_required", message: error.message };
+  if (error instanceof ForbiddenError) return { code: "forbidden", message: error.message };
+  return { code: "passport_upload_invalid", message: errorMessage(error) };
+}
+
 function configured(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -435,6 +451,30 @@ app.get("/api/reception", async (c) => {
       success: false,
       error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Reception data is temporarily unavailable",
     }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/passports/ocr", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const stored = await uploadPassport(c.env, {
+      body: upload.bytes,
+      contentType: upload.contentType,
+      metadata: upload.fileName === null ? undefined : { originalFilename: upload.fileName },
+    });
+    const passport = await extractPassportData(c.env, {
+      image: upload.bytes,
+      contentType: upload.contentType,
+    });
+
+    return c.json({
+      success: true,
+      objectKey: stored.objectKey,
+      passport,
+    });
+  } catch (error) {
+    return c.json({ success: false, error: passportUploadError(error) }, passportUploadErrorStatus(error));
   }
 });
 

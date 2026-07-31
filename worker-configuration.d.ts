@@ -4,6 +4,7 @@
 interface __BaseEnv_Env {
 	R2_STORAGE: R2Bucket;
 	DB: D1Database;
+	OPENAI_API_KEY: string;
 	BEDS24_BASE_URL: "https://api.beds24.com/v2";
 	VANARA_DATABASE_ENVIRONMENT: "production";
 	VANARA_DATABASE_NAME: "vanara-central";

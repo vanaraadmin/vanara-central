@@ -15,6 +15,20 @@ import type { ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
 type ActionPermission = { action_key: "can_complete_checkin_checkout"; allowed: number };
+type PassportOcrPayload = {
+  success: boolean;
+  objectKey?: string;
+  passport?: {
+    firstName: string | null;
+    middleName: string | null;
+    lastName: string | null;
+    passportNumber: string | null;
+    nationality: string | null;
+    gender: string | null;
+    birthDate: string | null;
+  };
+  error?: { code: string; message: string };
+};
 
 const ACTIVE_RECEPTION_USER = {
   user_id: "reception-1",
@@ -328,9 +342,32 @@ class FakeReceptionDB {
   }
 }
 
-function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking: TestBooking | TestBooking[] = BOOKING) {
+class FakePassportR2 {
+  objects = new Map<string, { body: R2PutValue; options?: R2PutOptions }>();
+
+  async put(key: string, body: R2PutValue, options?: R2PutOptions) {
+    this.objects.set(key, { body, options });
+    return { key } as R2Object;
+  }
+
+  async get() {
+    return null;
+  }
+
+  async delete() {
+    return undefined;
+  }
+
+  async head() {
+    return null;
+  }
+}
+
+function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking: TestBooking | TestBooking[] = BOOKING, r2 = new FakePassportR2()) {
   return {
     DB: new FakeReceptionDB(permissions, authenticated, actionPermissions, booking) as unknown as D1Database,
+    R2_STORAGE: r2 as unknown as R2Bucket,
+    OPENAI_API_KEY: "test-openai-key",
     BEDS24_BASE_URL: "https://api.beds24.com/v2",
     BEDS24_LONG_LIFE_TOKEN: "test",
   };
@@ -440,6 +477,100 @@ test("reception overview excludes every cancelled group room while unrelated act
   const payload = (await json(response)).data as { arrivals: Array<{ bookingId: number }>; summary: { arrivals: number } };
   assert.equal(payload.summary.arrivals, 1);
   assert.deepEqual(payload.arrivals.map((stay) => stay.bookingId), [99000001]);
+});
+
+test("passport OCR endpoint stores one image and returns strict passport data", async (t) => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const extractedPassport = {
+    firstName: "MALI",
+    middleName: null,
+    lastName: "GUEST",
+    passportNumber: "AB1234567",
+    nationality: "THAI",
+    gender: "F",
+    birthDate: "1990-01-15",
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), "https://api.openai.com/v1/responses");
+    assert.equal(init?.method, "POST");
+    assert.equal((init?.headers as Record<string, string>).authorization, "Bearer test-openai-key");
+    const body = JSON.parse(String(init?.body)) as {
+      temperature: number;
+      input: Array<{ content: Array<{ type: string; image_url?: string }> }>;
+      text: { format: { type: string; strict: boolean; schema: { additionalProperties: boolean } } };
+    };
+    assert.equal(body.temperature, 0);
+    assert.equal(body.input[0]?.content[1]?.type, "input_image");
+    assert.ok(body.input[0]?.content[1]?.image_url?.startsWith("data:image/jpeg;base64,"));
+    assert.equal(body.text.format.type, "json_schema");
+    assert.equal(body.text.format.strict, true);
+    assert.equal(body.text.format.schema.additionalProperties, false);
+    return new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 200);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, true);
+  assert.ok(payload.objectKey?.startsWith("passports/"));
+  assert.deepEqual([...r2.objects.keys()], [payload.objectKey]);
+  assert.deepEqual(payload.passport, extractedPassport);
+});
+
+test("passport OCR endpoint rejects unsupported formats before storage and OCR", async () => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const formData = new FormData();
+  formData.set("passport", new File(["not an image"], "passport.pdf", { type: "application/pdf" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 400);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, false);
+  assert.equal(payload.error?.code, "passport_upload_invalid");
+  assert.equal(r2.objects.size, 0);
+});
+
+test("passport OCR endpoint rejects OpenAI output that does not match the strict passport schema", async (t) => {
+  const data = env([movementsAccess]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify({ firstName: "MALI", extra: "not allowed" }) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.png", { type: "image/png" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 502);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, false);
+  assert.equal(payload.error?.code, "passport_schema_invalid");
 });
 
 test("reception completion endpoints require dedicated action permission", async () => {
