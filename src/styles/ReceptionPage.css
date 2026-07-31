@@ -333,28 +333,44 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 0;
+  border: 1px solid rgba(23, 59, 45, 0.08);
   border-radius: 999px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.4);
   padding: 0;
-  opacity: 0.48;
-  transition: opacity 160ms ease, transform 160ms ease, background 160ms ease;
+  opacity: 0.72;
+  box-shadow: 0 8px 18px rgba(23, 59, 45, 0.05);
+  cursor: pointer;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .reception-contact-trigger img {
   width: 20px;
   height: 20px;
   display: block;
+  opacity: 0.82;
 }
 
 .reception-contact-trigger:hover {
-  background: rgba(23, 59, 45, 0.05);
-  opacity: 0.82;
-  transform: scale(1.04);
+  border-color: rgba(23, 59, 45, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 22px rgba(23, 59, 45, 0.09);
+  opacity: 1;
+  transform: translateY(-1px) scale(1.02);
 }
 
 .reception-contact-trigger:active {
+  box-shadow: 0 4px 10px rgba(23, 59, 45, 0.06);
   transform: scale(0.96);
+}
+
+.reception-contact-trigger:focus-visible {
+  outline: 3px solid rgba(178, 138, 70, 0.28);
+  outline-offset: 2px;
 }
 
 .reception-guest {
@@ -443,10 +459,11 @@
 }
 
 .reception-completion {
-  min-height: 54px;
+  min-height: 56px;
   width: 100%;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   border: 1px solid rgba(23, 59, 45, 0.14);
   border-radius: 18px;
   background: rgba(23, 59, 45, 0.08);
@@ -459,15 +476,49 @@
 
 button.reception-completion {
   cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button.reception-completion:hover {
+  border-color: rgba(23, 59, 45, 0.2);
+  background: rgba(23, 59, 45, 0.12);
+  box-shadow: 0 10px 22px rgba(23, 59, 45, 0.07);
 }
 
 button.reception-completion:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
+}
+
+button.reception-completion:focus-visible {
+  outline: 3px solid rgba(178, 138, 70, 0.28);
+  outline-offset: 2px;
 }
 
 .reception-completion--locked {
-  background: rgba(23, 59, 45, 0.06);
-  color: rgba(23, 59, 45, 0.48);
+  background: rgba(23, 59, 45, 0.055);
+  color: rgba(23, 59, 45, 0.5);
+}
+
+.reception-completion__status {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: #173b2d;
+  color: #f7f4ee;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.reception-completion__status--open {
+  border: 2px solid rgba(23, 59, 45, 0.42);
+  background: transparent;
 }
 
 .reception-note-details {
@@ -720,12 +771,21 @@ button.reception-completion:active {
 .reception-sheet__panel {
   position: relative;
   width: min(100%, 540px);
+  max-height: min(88dvh, 760px);
   justify-self: center;
   display: grid;
   gap: 20px;
-  border: 1px solid rgba(247, 244, 238, 0.32);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(247, 244, 238, 0.36);
   border-radius: 30px 30px 0 0;
-  background: linear-gradient(145deg, rgba(247, 244, 238, 0.98), rgba(232, 221, 204, 0.94));
+  background:
+    linear-gradient(
+      145deg,
+      rgba(249, 246, 240, 0.99),
+      rgba(234, 225, 210, 0.97)
+    );
   box-shadow: 0 -26px 90px rgba(3, 14, 10, 0.42);
   padding: 14px 20px calc(20px + var(--vc-safe-bottom));
   animation: reception-sheet-in 180ms ease-out;
@@ -769,30 +829,21 @@ button.reception-completion:active {
   font-weight: 800;
 }
 
+.reception-sheet__header p,
+.reception-contact-header p {
+  color: rgba(23, 59, 45, 0.62);
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
+.reception-sheet__header p strong,
+.reception-contact-header p strong {
+  color: #173b2d;
+  font-weight: 900;
+}
+
 .reception-sheet__checks {
   display: grid;
-  gap: 12px;
-}
-
-.reception-sheet__checks label {
-  min-height: 62px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  border: 1px solid rgba(23, 59, 45, 0.1);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.5);
-  color: #173b2d;
-  font-weight: 850;
-  padding: 0 16px;
-}
-
-.reception-sheet__checks label span,
-.reception-contact-actions button span {
-  min-width: 0;
-  display: flex;
-  align-items: center;
   gap: 12px;
 }
 
@@ -803,10 +854,126 @@ button.reception-completion:active {
   opacity: 0.68;
 }
 
-.reception-sheet__checks input {
-  width: 24px;
-  height: 24px;
-  accent-color: #173b2d;
+.reception-check-row {
+  position: relative;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 59, 45, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.52);
+  color: #173b2d;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.reception-check-row:hover {
+  border-color: rgba(23, 59, 45, 0.16);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.reception-check-row:active {
+  transform: scale(0.992);
+}
+
+.reception-check-row.is-checked {
+  border-color: rgba(23, 59, 45, 0.2);
+  background: rgba(23, 59, 45, 0.075);
+  box-shadow: inset 0 0 0 1px rgba(23, 59, 45, 0.035);
+}
+
+.reception-check-row:focus-within {
+  outline: 3px solid rgba(178, 138, 70, 0.25);
+  outline-offset: 2px;
+}
+
+.reception-check-row__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reception-check-row__content {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.reception-check-row__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(23, 59, 45, 0.07);
+}
+
+.reception-check-row__icon .reception-sheet-icon {
+  width: 23px;
+  height: 23px;
+  opacity: 0.72;
+}
+
+.reception-check-row__label {
+  min-width: 0;
+  color: #173b2d;
+  font-size: 0.98rem;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.reception-check-row__control {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid rgba(23, 59, 45, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.reception-check-row__control svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: #f7f4ee;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform: scale(0.65);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.reception-check-row.is-checked .reception-check-row__control {
+  border-color: #173b2d;
+  background: #173b2d;
+  transform: scale(1.02);
+}
+
+.reception-check-row.is-checked .reception-check-row__control svg {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .reception-sheet__deposit {
@@ -822,51 +989,202 @@ button.reception-completion:active {
   text-transform: uppercase;
 }
 
-.reception-sheet__deposit p {
+.reception-sheet__deposit-empty {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(23, 59, 45, 0.08);
+  border-radius: 20px;
+  background: rgba(23, 59, 45, 0.055);
+  padding: 13px 15px;
+}
+
+.reception-sheet__deposit-empty-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(23, 59, 45, 0.11);
+  color: #173b2d;
+  font-size: 0.85rem;
+  font-weight: 950;
+}
+
+.reception-sheet__deposit-empty p {
+  display: grid;
+  gap: 3px;
+  color: #173b2d;
+  line-height: 1.35;
+}
+
+.reception-sheet__deposit-empty strong {
+  font-size: 0.96rem;
+  font-weight: 900;
+}
+
+.reception-sheet__deposit-empty p span {
+  color: rgba(23, 59, 45, 0.62);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.reception-contact-sheet__panel {
+  gap: 18px;
+}
+
+.reception-contact-header {
+  display: flex !important;
+  align-items: center;
+  gap: 15px;
+}
+
+.reception-contact-header__icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(23, 59, 45, 0.08);
   border-radius: 18px;
-  background: rgba(23, 59, 45, 0.07);
-  color: rgba(23, 59, 45, 0.64);
-  font-size: 0.95rem;
-  font-weight: 800;
-  line-height: 1.45;
-  padding: 16px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 10px 24px rgba(23, 59, 45, 0.06);
+}
+
+.reception-contact-header__icon img {
+  width: 25px;
+  height: 25px;
+  opacity: 0.78;
+}
+
+.reception-contact-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.reception-contact-header > div > span {
+  color: rgba(23, 59, 45, 0.5);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.reception-contact-header h2 {
+  margin: 0;
 }
 
 .reception-contact-actions {
   display: grid;
-  gap: 12px;
+  gap: 11px;
 }
 
-.reception-contact-actions button {
-  min-height: 66px;
+.reception-contact-action {
+  min-height: 72px;
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 13px;
   border: 1px solid rgba(23, 59, 45, 0.1);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.55);
   color: #173b2d;
   font: inherit;
-  font-size: 1.02rem;
-  font-weight: 880;
-  padding: 0 18px;
+  padding: 10px 14px;
   text-align: left;
-  transition: background 160ms ease, transform 160ms ease, border-color 160ms ease;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.reception-contact-actions button:hover {
+.reception-contact-action--primary {
   border-color: rgba(23, 59, 45, 0.16);
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(23, 59, 45, 0.075);
+}
+
+.reception-contact-action:hover {
+  border-color: rgba(23, 59, 45, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 24px rgba(23, 59, 45, 0.07);
   transform: translateY(-1px);
 }
 
+.reception-contact-action--primary:hover {
+  background: rgba(23, 59, 45, 0.105);
+}
+
+.reception-contact-action:active {
+  box-shadow: none;
+  transform: scale(0.99);
+}
+
+.reception-contact-action:focus-visible {
+  outline: 3px solid rgba(178, 138, 70, 0.28);
+  outline-offset: 2px;
+}
+
+.reception-contact-action__icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(23, 59, 45, 0.07);
+}
+
+.reception-contact-action__icon .reception-sheet-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.78;
+}
+
+.reception-contact-action__copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 3px;
+}
+
+.reception-contact-action__copy strong {
+  color: #173b2d;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.reception-contact-action__copy small {
+  overflow: hidden;
+  color: rgba(23, 59, 45, 0.58);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reception-contact-action__arrow {
+  flex: 0 0 auto;
+  color: rgba(23, 59, 45, 0.38);
+  font-size: 1.7rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
 .reception-contact-feedback {
+  margin: -2px 0 0;
+  border: 1px solid rgba(159, 59, 47, 0.1);
   border-radius: 16px;
-  background: rgba(159, 59, 47, 0.08);
+  background: rgba(159, 59, 47, 0.07);
   color: #9f3b2f !important;
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 820 !important;
-  padding: 12px 14px;
+  padding: 11px 13px;
 }
 
 .reception-sheet__actions--single button {
@@ -884,6 +1202,11 @@ button.reception-completion:active {
   border-radius: 18px;
   font: inherit;
   font-weight: 900;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    opacity 160ms ease;
 }
 
 .reception-sheet__actions button:first-child {
@@ -897,7 +1220,17 @@ button.reception-completion:active {
 }
 
 .reception-sheet__actions button:disabled {
+  cursor: not-allowed;
   opacity: 0.48;
+}
+
+.reception-sheet__actions button:not(:disabled):active {
+  transform: scale(0.985);
+}
+
+.reception-sheet__actions button:focus-visible {
+  outline: 3px solid rgba(178, 138, 70, 0.28);
+  outline-offset: 2px;
 }
 
 @keyframes reception-sheet-in {
@@ -941,10 +1274,60 @@ button.reception-completion:active {
     border-radius: 20px;
     padding: 15px;
   }
+
+  .reception-sheet__panel {
+    gap: 16px;
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+
+  .reception-check-row {
+    min-height: 64px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .reception-check-row__icon,
+  .reception-contact-action__icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .reception-contact-header__icon {
+    width: 50px;
+    height: 50px;
+  }
 }
 
 @media (min-width: 840px) {
   .reception-summary {
     max-width: 620px;
+  }
+}
+
+@media (hover: none) {
+  .reception-contact-trigger:hover,
+  .reception-check-row:hover,
+  .reception-contact-action:hover,
+  button.reception-completion:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reception-sheet__panel,
+  .reception-skeleton {
+    animation: none;
+  }
+
+  .reception-contact-trigger,
+  .reception-check-row,
+  .reception-check-row__control,
+  .reception-check-row__control svg,
+  .reception-contact-action,
+  .reception-completion,
+  .reception-sheet__actions button {
+    transition: none;
   }
 }

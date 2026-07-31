@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import addressBookIcon from "../assets/img/address-book-light.svg";
@@ -89,7 +89,18 @@ function stayDuration(arrival: string, departure: string): string {
 }
 
 function normalizeWhatsappPhone(phone: string | null): string | null {
-  const digits = phone?.replace(/\D/g, "") ?? "";
+  const raw = phone?.trim() ?? "";
+  if (!raw) return null;
+
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+
+  // Beds24 may contain Thai local numbers such as 0812345678.
+  // WhatsApp requires the international format without "+" or spaces.
+  if (digits.startsWith("0") && digits.length >= 9 && digits.length <= 10) {
+    digits = `66${digits.slice(1)}`;
+  }
+
   return digits.length >= 7 ? digits : null;
 }
 
@@ -111,6 +122,55 @@ function bookingSourceLabel(stay: ReceptionStay): string {
 
 function SheetIcon({ alt = "", src }: { alt?: string; src: string }) {
   return <img alt={alt} className="reception-sheet-icon" src={src} />;
+}
+
+function useSheetScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [active]);
+}
+
+function ChecklistRow({
+  checked,
+  icon,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  icon: string;
+  label: ReactNode;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={`reception-check-row${checked ? " is-checked" : ""}`}>
+      <input
+        checked={checked}
+        className="reception-check-row__input"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+
+      <span className="reception-check-row__content">
+        <span className="reception-check-row__icon">
+          <SheetIcon src={icon} />
+        </span>
+        <span className="reception-check-row__label">{label}</span>
+      </span>
+
+      <span aria-hidden="true" className="reception-check-row__control">
+        <svg viewBox="0 0 24 24">
+          <path d="m6.5 12.5 3.5 3.5 7.5-8" />
+        </svg>
+      </span>
+    </label>
+  );
 }
 
 function upsertStay(data: ReceptionOverview, updated: ReceptionStay): ReceptionOverview {
@@ -174,18 +234,37 @@ function CompletionAction({
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
-  const completed = type === "arrival" ? stay.checkIn.guestArrived : stay.checkOut.guestLeft || stay.checkOut.roomReleased;
-  const label = type === "arrival" ? "Check-In Completed" : "Check-Out Completed";
+  const completed = type === "arrival"
+    ? stay.checkIn.guestArrived
+    : stay.checkOut.guestLeft || stay.checkOut.roomReleased;
+
+  const completedLabel = type === "arrival"
+    ? "Check-In Completed"
+    : "Check-Out Completed";
+
+  const actionLabel = type === "arrival"
+    ? "Complete Check-In"
+    : "Complete Check-Out";
 
   if (completed) {
-    return <div className="reception-completion reception-completion--locked">✓ {label}</div>;
+    return (
+      <div className="reception-completion reception-completion--locked">
+        <span aria-hidden="true" className="reception-completion__status">✓</span>
+        <span>{completedLabel}</span>
+      </div>
+    );
   }
 
   if (!isToday || !canComplete) return null;
 
   return (
-    <button className="reception-completion" onClick={() => onRequest(stay, type)} type="button">
-      ☐ {label}
+    <button
+      className="reception-completion"
+      onClick={() => onRequest(stay, type)}
+      type="button"
+    >
+      <span aria-hidden="true" className="reception-completion__status reception-completion__status--open" />
+      <span>{actionLabel}</span>
     </button>
   );
 }
@@ -380,62 +459,136 @@ function CompletionModal({
   onDraftChange: (draft: CompletionDraft) => void;
   request: { stay: ReceptionStay; type: ReceptionCardType } | null;
 }) {
+  useSheetScrollLock(Boolean(request));
+
   if (!request) return null;
+
   const isArrival = request.type === "arrival";
   const hasDeposit = request.stay.checkIn.depositCollected || draft.depositCollected;
-  const canComplete = isArrival || (draft.roomInspected && draft.keysReturned && (!hasDeposit || draft.depositReturned));
-  const title = isArrival ? "Complete Check-in" : "Complete Check-out";
+  const canComplete = isArrival
+    || (
+      draft.roomInspected
+      && draft.keysReturned
+      && (!hasDeposit || draft.depositReturned)
+    );
+
+  const title = isArrival ? "Complete Check-In" : "Complete Check-Out";
+  const eyebrow = isArrival ? "Arrival Checklist" : "Departure Checklist";
 
   return (
-    <div aria-modal="true" className="reception-sheet" role="dialog">
-      <button aria-label="Cancel" className="reception-sheet__scrim" disabled={isPending} onClick={onCancel} type="button" />
+    <div
+      aria-labelledby="reception-completion-title"
+      aria-modal="true"
+      className="reception-sheet"
+      role="dialog"
+    >
+      <button
+        aria-label="Close checklist"
+        className="reception-sheet__scrim"
+        disabled={isPending}
+        onClick={onCancel}
+        type="button"
+      />
+
       <div className="reception-sheet__panel">
         <div className="reception-sheet__handle" />
-        <header>
-          <span>{request.stay.roomName}</span>
-          <h2>{title}</h2>
-          <p>{request.stay.guestName}</p>
+
+        <header className="reception-sheet__header">
+          <span>{eyebrow}</span>
+          <h2 id="reception-completion-title">{title}</h2>
+          <p>
+            <strong>{request.stay.guestName}</strong>
+            <span aria-hidden="true"> · </span>
+            {request.stay.roomName}
+          </p>
         </header>
+
         <div className="reception-sheet__checks">
           {isArrival ? (
             <>
-              <label>
-                <span><SheetIcon src={passportIcon} />Passport registration completed</span>
-                <input checked={draft.passportRegistrationCompleted} onChange={(event) => onDraftChange({ ...draft, passportRegistrationCompleted: event.target.checked })} type="checkbox" />
-              </label>
-              <label>
-                <span><SheetIcon src={depositIcon} />Deposit collected</span>
-                <input checked={draft.depositCollected} onChange={(event) => onDraftChange({ ...draft, depositCollected: event.target.checked, depositReturned: event.target.checked ? draft.depositReturned : false })} type="checkbox" />
-              </label>
+              <ChecklistRow
+                checked={draft.passportRegistrationCompleted}
+                icon={passportIcon}
+                label="Passport registration completed"
+                onChange={(checked) => onDraftChange({
+                  ...draft,
+                  passportRegistrationCompleted: checked,
+                })}
+              />
+
+              <ChecklistRow
+                checked={draft.depositCollected}
+                icon={depositIcon}
+                label="Deposit collected"
+                onChange={(checked) => onDraftChange({
+                  ...draft,
+                  depositCollected: checked,
+                  depositReturned: checked ? draft.depositReturned : false,
+                })}
+              />
             </>
           ) : (
             <>
-              <label>
-                <span><SheetIcon src={roomInspectedIcon} />Room inspected</span>
-                <input checked={draft.roomInspected} onChange={(event) => onDraftChange({ ...draft, roomInspected: event.target.checked })} type="checkbox" />
-              </label>
-              <label>
-                <span><SheetIcon src={keysIcon} />Keys returned</span>
-                <input checked={draft.keysReturned} onChange={(event) => onDraftChange({ ...draft, keysReturned: event.target.checked })} type="checkbox" />
-              </label>
-              <div className="reception-sheet__deposit">
+              <ChecklistRow
+                checked={draft.roomInspected}
+                icon={roomInspectedIcon}
+                label="Room inspected"
+                onChange={(checked) => onDraftChange({
+                  ...draft,
+                  roomInspected: checked,
+                })}
+              />
+
+              <ChecklistRow
+                checked={draft.keysReturned}
+                icon={keysIcon}
+                label="Keys returned"
+                onChange={(checked) => onDraftChange({
+                  ...draft,
+                  keysReturned: checked,
+                })}
+              />
+
+              <section className="reception-sheet__deposit" aria-label="Deposit status">
                 <span>Deposit</span>
+
                 {hasDeposit ? (
-                  <label>
-                    <span><SheetIcon src={depositIcon} />Deposit returned</span>
-                    <input checked={draft.depositReturned} onChange={(event) => onDraftChange({ ...draft, depositReturned: event.target.checked })} type="checkbox" />
-                  </label>
+                  <ChecklistRow
+                    checked={draft.depositReturned}
+                    icon={depositIcon}
+                    label="Deposit returned"
+                    onChange={(checked) => onDraftChange({
+                      ...draft,
+                      depositReturned: checked,
+                    })}
+                  />
                 ) : (
-                  <p>Deposit not collected<br />No refund required</p>
+                  <div className="reception-sheet__deposit-empty">
+                    <span aria-hidden="true" className="reception-sheet__deposit-empty-icon">✓</span>
+                    <p>
+                      <strong>No deposit collected</strong>
+                      <span>No refund is required for this booking.</span>
+                    </p>
+                  </div>
                 )}
-              </div>
+              </section>
             </>
           )}
         </div>
-        {error && <p className="reception-modal__error">{error}</p>}
+
+        {error && (
+          <p className="reception-modal__error" role="alert">
+            {error}
+          </p>
+        )}
+
         <div className="reception-sheet__actions">
-          <button disabled={isPending} onClick={onCancel} type="button">Cancel</button>
-          <button disabled={isPending || !canComplete} onClick={onConfirm} type="button">{isPending ? "Saving..." : title}</button>
+          <button disabled={isPending} onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button disabled={isPending || !canComplete} onClick={onConfirm} type="button">
+            {isPending ? "Saving..." : title}
+          </button>
         </div>
       </div>
     </div>
@@ -453,7 +606,10 @@ function ContactSheet({
   onFeedback: (feedback: ContactFeedback) => void;
   stay: ReceptionStay | null;
 }) {
+  useSheetScrollLock(Boolean(stay));
+
   if (!stay) return null;
+
   const whatsappPhone = normalizeWhatsappPhone(stay.phone);
   const email = stay.email?.trim() || null;
 
@@ -462,7 +618,13 @@ function ContactSheet({
       onFeedback("phone");
       return;
     }
-    window.open(`https://wa.me/${whatsappPhone}`, "_blank", "noopener,noreferrer");
+
+    onFeedback(null);
+    window.open(
+      `https://wa.me/${whatsappPhone}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   function openEmail() {
@@ -470,33 +632,96 @@ function ContactSheet({
       onFeedback("email");
       return;
     }
+
+    onFeedback(null);
     window.location.href = `mailto:${email}`;
   }
 
   return (
-    <div aria-modal="true" className="reception-sheet reception-contact-sheet" role="dialog">
-      <button aria-label="Cancel" className="reception-sheet__scrim" onClick={onCancel} type="button" />
-      <div className="reception-sheet__panel">
+    <div
+      aria-labelledby="reception-contact-title"
+      aria-modal="true"
+      className="reception-sheet reception-contact-sheet"
+      role="dialog"
+    >
+      <button
+        aria-label="Close contact options"
+        className="reception-sheet__scrim"
+        onClick={onCancel}
+        type="button"
+      />
+
+      <div className="reception-sheet__panel reception-contact-sheet__panel">
         <div className="reception-sheet__handle" />
-        <header>
-          <span>{stay.roomName}</span>
-          <h2>Contact Guest</h2>
-          <p>{stay.guestName}</p>
+
+        <header className="reception-contact-header">
+          <span className="reception-contact-header__icon" aria-hidden="true">
+            <img alt="" src={addressBookIcon} />
+          </span>
+
+          <div>
+            <span>Guest Contact</span>
+            <h2 id="reception-contact-title">Contact Guest</h2>
+            <p>
+              <strong>{stay.guestName}</strong>
+              <span aria-hidden="true"> · </span>
+              {stay.roomName}
+            </p>
+          </div>
         </header>
+
         <div className="reception-contact-actions">
-          <button onClick={openWhatsapp} type="button">
-            <SheetIcon src={whatsappIcon} />
-            <span>WhatsApp</span>
+          <button
+            className="reception-contact-action reception-contact-action--primary"
+            onClick={openWhatsapp}
+            type="button"
+          >
+            <span className="reception-contact-action__icon">
+              <SheetIcon src={whatsappIcon} />
+            </span>
+
+            <span className="reception-contact-action__copy">
+              <strong>WhatsApp</strong>
+              <small>{whatsappPhone ? "Open guest conversation" : "Phone number unavailable"}</small>
+            </span>
+
+            <span aria-hidden="true" className="reception-contact-action__arrow">›</span>
           </button>
-          <button onClick={openEmail} type="button">
-            <SheetIcon src={emailIcon} />
-            <span>Email</span>
+
+          <button
+            className="reception-contact-action"
+            onClick={openEmail}
+            type="button"
+          >
+            <span className="reception-contact-action__icon">
+              <SheetIcon src={emailIcon} />
+            </span>
+
+            <span className="reception-contact-action__copy">
+              <strong>Email</strong>
+              <small>{email ? email : "Email address unavailable"}</small>
+            </span>
+
+            <span aria-hidden="true" className="reception-contact-action__arrow">›</span>
           </button>
         </div>
-        {feedback === "phone" && <p className="reception-contact-feedback">Phone number not available</p>}
-        {feedback === "email" && <p className="reception-contact-feedback">Email not available</p>}
+
+        {feedback === "phone" && (
+          <p className="reception-contact-feedback" role="status">
+            Phone number not available
+          </p>
+        )}
+
+        {feedback === "email" && (
+          <p className="reception-contact-feedback" role="status">
+            Email not available
+          </p>
+        )}
+
         <div className="reception-sheet__actions reception-sheet__actions--single">
-          <button onClick={onCancel} type="button">Cancel</button>
+          <button onClick={onCancel} type="button">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
