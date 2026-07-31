@@ -13,6 +13,12 @@ The runtime application uses one authoritative data source: the production Cloud
 
 Do not store real secrets in Git. Local secrets belong in a root `.dev.vars` file, which is ignored by Git.
 
+Required Worker secrets are managed outside source code with Wrangler:
+
+```bash
+wrangler secret put BEDS24_WEBHOOK_SECRET
+```
+
 ## First install
 
 ```bash

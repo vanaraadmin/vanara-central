@@ -2,3 +2,4 @@
 # Required only when manually testing Beds24 sync endpoints against the real API.
 # Do not commit real secrets in .dev.vars.
 BEDS24_LONG_LIFE_TOKEN=replace-with-local-development-token
+BEDS24_WEBHOOK_SECRET=replace-with-local-webhook-secret

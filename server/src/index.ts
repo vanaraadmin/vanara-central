@@ -20,6 +20,7 @@ import { normalizePassportImageFormData, PassportUploadError } from "./services/
 import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
 import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentionBindings } from "./services/passport-retention.service.js";
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
+import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -47,7 +48,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -225,6 +226,22 @@ async function loadTm30Template(c: AppContext): Promise<ArrayBuffer> {
 app.get("/", (c) => c.json({ status: "ok", project: "Vanara Central" }));
 app.get("/health", healthHandler);
 app.get("/api/health", healthHandler);
+
+app.all("/api/webhooks/beds24", async (c) => {
+  try {
+    validateBeds24WebhookMethod(c.req.method);
+    await authenticateBeds24Webhook(c.env, c.req.header(WEBHOOK_SECRET_HEADER) ?? null);
+    const input = await parseBeds24WebhookRequest(c.req.raw);
+    await recordBeds24Webhook(c.env, input);
+    return c.json({ success: true });
+  } catch (error) {
+    if (error instanceof Beds24WebhookError) {
+      return c.json({ success: false, error: { code: error.code, message: error.message } }, error.status);
+    }
+    logBeds24WebhookFailure(error);
+    return c.json({ success: false, error: { code: "webhook_internal_error", message: "Webhook could not be processed." } }, 500);
+  }
+});
 app.post("/api/auth/bootstrap-owner", async (c) => {
   try {
     const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM users").first<{ total: number }>();
