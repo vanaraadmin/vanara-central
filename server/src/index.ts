@@ -18,6 +18,7 @@ import { extractPassportData, PassportOcrError, type PassportOcrBindings } from 
 import { uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
 import { normalizePassportImageFormData, PassportUploadError } from "./services/passport-upload.service.js";
 import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
+import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -45,19 +46,21 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, Tm30Bindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
   VANARA_DATABASE_NAME: string;
   VANARA_DATABASE_ID: string;
   DB: D1Database;
+  ASSETS: { fetch: typeof fetch };
 }
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
 const app = new Hono<{ Bindings: Bindings }>();
 const DEFAULT_BEDS24_BASE_URL = "https://api.beds24.com/v2";
+const TM30_TEMPLATE_ASSET_PATH = "/TM30_template/Template-InformAccom-ImportExcel.xlsx";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -190,6 +193,12 @@ async function healthHandler(c: AppContext) {
       databaseType: "Cloudflare D1",
     },
   }, ok ? 200 : 503);
+}
+
+async function loadTm30Template(c: AppContext): Promise<ArrayBuffer> {
+  const response = await c.env.ASSETS.fetch(new Request(new URL(TM30_TEMPLATE_ASSET_PATH, c.req.url)));
+  if (!response.ok) throw new Error("Official TM30 template is unavailable.");
+  return response.arrayBuffer();
 }
 
 app.get("/", (c) => c.json({ status: "ok", project: "Vanara Central" }));
@@ -354,6 +363,26 @@ app.get("/api/dashboard/overview", async (c) => {
       success: false,
       error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Dashboard overview is temporarily unavailable",
     }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/owner/tm30/export", async (c) => {
+  try {
+    await authenticated(c, "owner-dashboard", "access");
+    const date = normalizeTm30Date(c.req.query("date"));
+    const template = await loadTm30Template(c);
+    const rows = await listTm30PassportRows(c.env, date);
+    const exportResult = await generateTm30Workbook(template, rows);
+    if (exportResult.missingFields.length > 0) {
+      return c.json({ success: false, error: "TM30 export has missing required fields.", missingFields: exportResult.missingFields }, 422);
+    }
+    c.header("Cache-Control", "no-store");
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="TM30-${date}.xlsx"`);
+    const body = exportResult.workbook.buffer.slice(exportResult.workbook.byteOffset, exportResult.workbook.byteOffset + exportResult.workbook.byteLength) as ArrayBuffer;
+    return c.body(body);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
   }
 });
 

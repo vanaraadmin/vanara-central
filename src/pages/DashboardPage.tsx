@@ -117,6 +117,9 @@ export default function DashboardPage() {
         </div>
         <div className="dashboard-header__actions">
           <LanguageSwitch />
+          <a className="dashboard-download" href="/api/owner/tm30/export">
+            Download TM30
+          </a>
           <button
             aria-label={translate("refresh")}
             className="dashboard-refresh"

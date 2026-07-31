@@ -8,6 +8,7 @@
 
 .dashboard-header,
 .dashboard-header__actions,
+.dashboard-download,
 .dashboard-refresh,
 .control-alert,
 .control-card,
@@ -51,6 +52,7 @@
   gap: var(--vc-space-2);
 }
 
+.dashboard-download,
 .dashboard-refresh {
   min-height: var(--vc-touch-min);
   align-items: center;
@@ -61,6 +63,10 @@
   background: var(--vc-bg-surface);
   color: var(--vc-text-primary);
   font-weight: var(--vc-weight-bold);
+}
+
+.dashboard-download {
+  text-decoration: none;
 }
 
 .dashboard-refresh svg {

@@ -14,8 +14,8 @@ export class PassportUploadError extends Error {
 }
 
 function isSupportedPassportImage(file: File): file is File & { type: "image/jpeg" | "image/png" } {
-  const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : null;
-  const supportedExtension = extension === null || ACCEPTED_EXTENSIONS.has(extension);
+  const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() ?? "" : "";
+  const supportedExtension = extension === "" || ACCEPTED_EXTENSIONS.has(extension);
   return ACCEPTED_MIME_TYPES.has(file.type) && supportedExtension;
 }
 
