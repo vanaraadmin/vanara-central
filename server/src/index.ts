@@ -1132,7 +1132,7 @@ app.notFound((c) => c.json({ success: false, error: "Not found" }, 404));
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
-    if (controller.cron === "3 20 * * *") {
+    if (controller.cron === "15 3 1 * *") {
       ctx.waitUntil(syncProperties(env).then(() => undefined));
       return;
     }
@@ -1140,11 +1140,11 @@ export default {
       ctx.waitUntil(cleanupExpiredPassports(env).then(() => undefined));
       return;
     }
-    if (controller.cron === "*/10 * * * *") {
+    if (controller.cron === "*/5 * * * *") {
       ctx.waitUntil(syncBookings(env).then(() => undefined));
       return;
     }
-    if (controller.cron === "*/15 * * * *") {
+    if (controller.cron === "2 * * * *") {
       ctx.waitUntil(syncOfferPrices(env, { batchDays: 30, startOffset: 0 }).then(() => undefined));
     }
   },
