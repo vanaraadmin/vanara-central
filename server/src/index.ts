@@ -15,8 +15,8 @@ import { createChatMessage, getChatConversation, listChatConversations, listChat
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { extractPassportData, PassportOcrError, type PassportOcrBindings } from "./services/passport-ocr.service.js";
-import { uploadPassport, type PassportStorageBindings } from "./services/passport-storage.service.js";
-import { normalizePassportImageFormData } from "./services/passport-upload.service.js";
+import { uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
+import { normalizePassportImageFormData, PassportUploadError } from "./services/passport-upload.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -72,17 +72,31 @@ function protectedErrorStatus(error: unknown): 401 | 403 | 500 {
   return 500;
 }
 
-function passportUploadErrorStatus(error: unknown): 400 | 401 | 403 | 502 {
+function passportUploadErrorStatus(error: unknown): 400 | 401 | 403 | 413 | 502 {
   if (error instanceof AuthenticationError) return 401;
   if (error instanceof ForbiddenError) return 403;
+  if (error instanceof PassportUploadError && error.code === "passport_upload_too_large") return 413;
+  if (error instanceof PassportUploadError && error.code === "passport_storage_failed") return 502;
   return error instanceof PassportOcrError ? 502 : 400;
 }
 
 function passportUploadError(error: unknown): { code: string; message: string } {
   if (error instanceof PassportOcrError) return { code: error.code, message: error.message };
+  if (error instanceof PassportUploadError) return { code: error.code, message: error.message };
   if (error instanceof AuthenticationError) return { code: "authentication_required", message: error.message };
   if (error instanceof ForbiddenError) return { code: "forbidden", message: error.message };
   return { code: "passport_upload_invalid", message: errorMessage(error) };
+}
+
+async function storePassportUpload(env: Bindings, upload: { bytes: ArrayBuffer; contentType: "image/jpeg" | "image/png" }): Promise<UploadedPassport> {
+  try {
+    return await uploadPassport(env, {
+      body: upload.bytes,
+      contentType: upload.contentType,
+    });
+  } catch {
+    throw new PassportUploadError("Passport image storage failed.", "passport_storage_failed");
+  }
 }
 
 function configured(value: string | undefined): boolean {
@@ -458,11 +472,7 @@ app.post("/api/reception/passports/ocr", async (c) => {
   try {
     await authenticated(c, "movements", "access");
     const upload = await normalizePassportImageFormData(await c.req.formData());
-    const stored = await uploadPassport(c.env, {
-      body: upload.bytes,
-      contentType: upload.contentType,
-      metadata: upload.fileName === null ? undefined : { originalFilename: upload.fileName },
-    });
+    const stored = await storePassportUpload(c.env, upload);
     const passport = await extractPassportData(c.env, {
       image: upload.bytes,
       contentType: upload.contentType,

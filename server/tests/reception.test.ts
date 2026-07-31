@@ -9,6 +9,7 @@ import {
   normalizeReceptionCheckOutInput,
   normalizeReceptionNotesInput,
 } from "../src/services/reception.service.ts";
+import { extractPassportData, PassportOcrError } from "../src/services/passport-ocr.service.ts";
 import { countryCodeFrom, countryFlagUrlFrom } from "../src/services/country-flags.service.ts";
 import { getBangkokDate } from "../src/services/today.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
@@ -344,8 +345,10 @@ class FakeReceptionDB {
 
 class FakePassportR2 {
   objects = new Map<string, { body: R2PutValue; options?: R2PutOptions }>();
+  constructor(private failPut = false) {}
 
   async put(key: string, body: R2PutValue, options?: R2PutOptions) {
+    if (this.failPut) throw new Error("R2 unavailable");
     this.objects.set(key, { body, options });
     return { key } as R2Object;
   }
@@ -528,7 +531,26 @@ test("passport OCR endpoint stores one image and returns strict passport data", 
   assert.equal(payload.success, true);
   assert.ok(payload.objectKey?.startsWith("passports/"));
   assert.deepEqual([...r2.objects.keys()], [payload.objectKey]);
+  assert.equal(r2.objects.get(payload.objectKey ?? "")?.options?.customMetadata, undefined);
   assert.deepEqual(payload.passport, extractedPassport);
+});
+
+test("passport OCR endpoint rejects images larger than 10 MB", async () => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array(10 * 1024 * 1024 + 1)], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 413);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, false);
+  assert.equal(payload.error?.code, "passport_upload_too_large");
+  assert.equal(r2.objects.size, 0);
 });
 
 test("passport OCR endpoint rejects unsupported formats before storage and OCR", async () => {
@@ -547,6 +569,22 @@ test("passport OCR endpoint rejects unsupported formats before storage and OCR",
   assert.equal(payload.success, false);
   assert.equal(payload.error?.code, "passport_upload_invalid");
   assert.equal(r2.objects.size, 0);
+});
+
+test("passport OCR endpoint returns a storage error when R2 upload fails", async () => {
+  const data = env([movementsAccess], true, [], BOOKING, new FakePassportR2(true));
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/passports/ocr", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 502);
+  const payload = await response.json() as PassportOcrPayload;
+  assert.equal(payload.success, false);
+  assert.equal(payload.error?.code, "passport_storage_failed");
 });
 
 test("passport OCR endpoint rejects OpenAI output that does not match the strict passport schema", async (t) => {
@@ -571,6 +609,20 @@ test("passport OCR endpoint rejects OpenAI output that does not match the strict
   const payload = await response.json() as PassportOcrPayload;
   assert.equal(payload.success, false);
   assert.equal(payload.error?.code, "passport_schema_invalid");
+});
+
+test("passport OCR service passes an abort signal and returns a structured timeout error", async () => {
+  await assert.rejects(
+    extractPassportData(
+      { OPENAI_API_KEY: "test-openai-key" },
+      { image: new Uint8Array([1, 2, 3]).buffer, contentType: "image/png" },
+      async (_input, init) => {
+        assert.ok(init.signal instanceof AbortSignal);
+        throw new DOMException("Aborted", "AbortError");
+      },
+    ),
+    (error: unknown) => error instanceof PassportOcrError && error.code === "openai_timeout",
+  );
 });
 
 test("reception completion endpoints require dedicated action permission", async () => {

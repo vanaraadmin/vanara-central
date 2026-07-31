@@ -22,6 +22,7 @@ type JsonRecord = Record<string, unknown>;
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_PASSPORT_MODEL = "gpt-5";
+const OPENAI_PASSPORT_TIMEOUT_MS = 45_000;
 const PASSPORT_FIELDS = [
   "firstName",
   "middleName",
@@ -48,7 +49,7 @@ const PASSPORT_JSON_SCHEMA = {
 } as const;
 
 export class PassportOcrError extends Error {
-  constructor(message: string, public readonly code: "openai_request_failed" | "openai_invalid_response" | "passport_schema_invalid") {
+  constructor(message: string, public readonly code: "openai_request_failed" | "openai_timeout" | "openai_invalid_response" | "passport_schema_invalid") {
     super(message);
   }
 }
@@ -73,6 +74,10 @@ function openAiErrorMessage(payload: unknown): string {
     return "OpenAI OCR request failed.";
   }
   return payload.error.message;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function outputTextFrom(response: unknown): string {
@@ -135,48 +140,62 @@ export function validatePassportData(value: unknown): PassportData {
 
 export async function extractPassportData(env: PassportOcrBindings, input: PassportOcrInput, fetcher: Fetcher = fetch): Promise<PassportData> {
   const imageUrl = `data:${input.contentType};base64,${arrayBufferToBase64(input.image)}`;
-  const response = await fetcher(OPENAI_RESPONSES_URL, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: OPENAI_PASSPORT_MODEL,
-      temperature: 0,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                "Extract structured passport data from this image.",
-                "Read only printed passport text.",
-                "Ignore background, fingers, table, reflections, glare, shadows, stamps, handwritten notes, and any non-passport objects.",
-                "Preserve original spelling and capitalization.",
-                "Never invent missing values.",
-                "Return null for any field that is unreadable or absent.",
-                "Return only the strict JSON schema fields.",
-              ].join(" "),
-            },
-            {
-              type: "input_image",
-              image_url: imageUrl,
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "passport_ocr",
-          strict: true,
-          schema: PASSPORT_JSON_SCHEMA,
-        },
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), OPENAI_PASSPORT_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetcher(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      signal: abortController.signal,
+      headers: {
+        authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "content-type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: OPENAI_PASSPORT_MODEL,
+        temperature: 0,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: [
+                  "Extract structured passport data from this image.",
+                  "Read only printed passport text.",
+                  "Ignore background, fingers, table, reflections, glare, shadows, stamps, handwritten notes, and any non-passport objects.",
+                  "Preserve original spelling and capitalization.",
+                  "Never invent missing values.",
+                  "Return null for any field that is unreadable or absent.",
+                  "Return only the strict JSON schema fields.",
+                ].join(" "),
+              },
+              {
+                type: "input_image",
+                image_url: imageUrl,
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "passport_ocr",
+            strict: true,
+            schema: PASSPORT_JSON_SCHEMA,
+          },
+        },
+      }),
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new PassportOcrError("OpenAI passport OCR request timed out.", "openai_timeout");
+    }
+    throw new PassportOcrError("OpenAI OCR request failed.", "openai_request_failed");
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
