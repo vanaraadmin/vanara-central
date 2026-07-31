@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import addressBookIcon from "../assets/img/address-book-light.svg";
@@ -12,8 +12,8 @@ import { PageError } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { CalendarIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
 import { loadCurrentUser } from "../services/auth.service";
-import { completeReceptionCheckIn, completeReceptionCheckOut, loadReceptionOverview, saveReceptionNotes } from "../services/reception.service";
-import type { ReceptionOverview, ReceptionStay } from "../types/reception";
+import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn, uploadBookingPassport } from "../services/reception.service";
+import type { BookingPassport, ReceptionOverview, ReceptionStay } from "../types/reception";
 import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
@@ -199,7 +199,7 @@ function InternalNotesField({ queryKey, stay }: { queryKey: readonly ["reception
   }
 
   return (
-    <details className="reception-note-details">
+    <details className="reception-note-details" onClick={(event) => event.stopPropagation()}>
       <summary>Internal Notes</summary>
       <form className="reception-note-form" onSubmit={submit}>
         <label>
@@ -260,7 +260,10 @@ function CompletionAction({
   return (
     <button
       className="reception-completion"
-      onClick={() => onRequest(stay, type)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onRequest(stay, type);
+      }}
       type="button"
     >
       <span aria-hidden="true" className="reception-completion__status reception-completion__status--open" />
@@ -274,6 +277,7 @@ function StayCard({
   isToday,
   onContactRequest,
   onCompletionRequest,
+  onDetailsRequest,
   queryKey,
   stay,
   type,
@@ -282,18 +286,27 @@ function StayCard({
   isToday: boolean;
   onContactRequest: (stay: ReceptionStay) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
+  onDetailsRequest: (stay: ReceptionStay) => void;
   queryKey: readonly ["reception", string];
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
   return (
-    <article className={`reception-card reception-card--${type}`}>
+    <article className={`reception-card reception-card--${type}`} onClick={() => onDetailsRequest(stay)}>
       <div className="reception-card__top">
         <div className="reception-room-chip">
           <RoomIcon />
           <span>{stay.roomName}</span>
         </div>
-        <button aria-label={`Contact ${stay.guestName}`} className="reception-contact-trigger" onClick={() => onContactRequest(stay)} type="button">
+        <button
+          aria-label={`Contact ${stay.guestName}`}
+          className="reception-contact-trigger"
+          onClick={(event) => {
+            event.stopPropagation();
+            onContactRequest(stay);
+          }}
+          type="button"
+        >
           <img alt="" src={addressBookIcon} />
         </button>
       </div>
@@ -398,6 +411,7 @@ function ReceptionSection({
   items,
   onContactRequest,
   onCompletionRequest,
+  onDetailsRequest,
   queryKey,
   showSkeleton,
   title,
@@ -409,6 +423,7 @@ function ReceptionSection({
   items: ReceptionStay[];
   onContactRequest: (stay: ReceptionStay) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
+  onDetailsRequest: (stay: ReceptionStay) => void;
   queryKey: readonly ["reception", string];
   showSkeleton: boolean;
   title: string;
@@ -432,6 +447,7 @@ function ReceptionSection({
             key={`${type}-${stay.bookingId}`}
             onContactRequest={onContactRequest}
             onCompletionRequest={onCompletionRequest}
+            onDetailsRequest={onDetailsRequest}
             queryKey={queryKey}
             stay={stay}
             type={type}
@@ -728,6 +744,202 @@ function ContactSheet({
   );
 }
 
+function BookingFact({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function PassportStatusRow({
+  count,
+  disabled,
+  isPending,
+  onClick,
+}: {
+  count: number;
+  disabled: boolean;
+  isPending: boolean;
+  onClick: () => void;
+}) {
+  const completed = count > 0;
+
+  return (
+    <button
+      className={`reception-check-row reception-detail-action${completed ? " is-checked" : ""}`}
+      disabled={disabled || isPending}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="reception-check-row__content">
+        <span className="reception-check-row__icon">
+          <SheetIcon src={passportIcon} />
+        </span>
+        <span className="reception-check-row__label">
+          Passport Acquired
+          <small>{completed ? `${count} saved` : "Upload passport image"}</small>
+        </span>
+      </span>
+
+      <span aria-hidden="true" className={`reception-check-row__control${completed ? "" : " reception-check-row__control--warning"}`}>
+        {completed ? (
+          <svg viewBox="0 0 24 24">
+            <path d="m6.5 12.5 3.5 3.5 7.5-8" />
+          </svg>
+        ) : (
+          "!"
+        )}
+      </span>
+    </button>
+  );
+}
+
+function BookingDetailsSheet({
+  onCancel,
+  onStayUpdated,
+  queryKey,
+  stay,
+  today,
+}: {
+  onCancel: () => void;
+  onStayUpdated: (stay: ReceptionStay) => void;
+  queryKey: readonly ["reception", string];
+  stay: ReceptionStay | null;
+  today: string;
+}) {
+  useSheetScrollLock(Boolean(stay));
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const queryClient = useQueryClient();
+  const [passportError, setPassportError] = useState<string | null>(null);
+  const [depositError, setDepositError] = useState<string | null>(null);
+  const passportsQueryKey = ["reception-passports", stay?.bookingId] as const;
+  const passports = useQuery({
+    enabled: Boolean(stay),
+    queryKey: passportsQueryKey,
+    queryFn: ({ signal }) => {
+      if (!stay) return Promise.resolve([] satisfies BookingPassport[]);
+      return loadBookingPassports(stay.bookingId, signal);
+    },
+  });
+  const deposit = useMutation({
+    mutationFn: async () => {
+      if (!stay) throw new Error("Booking is unavailable.");
+      return updateReceptionCheckIn(stay.bookingId, "depositCollected", !stay.checkIn.depositCollected);
+    },
+    onSuccess: (updated) => {
+      setDepositError(null);
+      onStayUpdated(updated);
+      queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
+    },
+    onError: () => {
+      setDepositError("Deposit status could not be saved.");
+    },
+  });
+  const passportUpload = useMutation({
+    mutationFn: async (file: File) => {
+      if (!stay) throw new Error("Booking is unavailable.");
+      return uploadBookingPassport(stay.bookingId, file);
+    },
+    onSuccess: async () => {
+      setPassportError(null);
+      await queryClient.invalidateQueries({ queryKey: passportsQueryKey });
+    },
+    onError: () => {
+      setPassportError("Passport upload could not be completed.");
+    },
+  });
+
+  if (!stay) return null;
+
+  const showCheckInChecklist = stay.arrival === today;
+  const passportCount = passports.data?.length ?? 0;
+
+  function selectPassport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    passportUpload.mutate(file);
+  }
+
+  return (
+    <div
+      aria-labelledby="reception-booking-details-title"
+      aria-modal="true"
+      className="reception-sheet reception-details-sheet"
+      role="dialog"
+    >
+      <button
+        aria-label="Close booking details"
+        className="reception-sheet__scrim"
+        onClick={onCancel}
+        type="button"
+      />
+
+      <div className="reception-sheet__panel reception-details-sheet__panel">
+        <div className="reception-sheet__handle" />
+
+        <header className="reception-sheet__header">
+          <span>Booking Details</span>
+          <h2 id="reception-booking-details-title">{stay.guestName}</h2>
+          <p>
+            <strong>{stay.roomName}</strong>
+            <span aria-hidden="true"> · </span>
+            {bookingSourceLabel(stay)}
+          </p>
+        </header>
+
+        <dl className="reception-stay-facts reception-details-facts" aria-label="Booking information">
+          <BookingFact label="Check-in" value={formatFullDate(stay.arrival)} />
+          <BookingFact label="Check-out" value={formatFullDate(stay.departure)} />
+          <BookingFact label="Stay" value={stayDuration(stay.arrival, stay.departure)} />
+          <BookingFact label="Guests" value={`${stay.adults} adults · ${stay.children} children`} />
+          <BookingFact label="Reference" value={stay.bookingReference ?? "Not available"} />
+          <BookingFact label="Status" value={stay.bookingStatus} />
+        </dl>
+
+        {showCheckInChecklist && (
+          <section className="reception-details-checklist" aria-label="Check-in checklist">
+            <span>Check-in Checklist</span>
+            <div className="reception-sheet__checks">
+              <ChecklistRow
+                checked={stay.checkIn.depositCollected}
+                icon={depositIcon}
+                label="Deposit Collected"
+                onChange={() => deposit.mutate()}
+              />
+              <PassportStatusRow
+                count={passportCount}
+                disabled={passports.isLoading}
+                isPending={passportUpload.isPending}
+                onClick={() => inputRef.current?.click()}
+              />
+            </div>
+            <input
+              accept="image/jpeg,image/png"
+              className="reception-passport-input"
+              onChange={selectPassport}
+              ref={inputRef}
+              type="file"
+            />
+            {depositError && <p className="reception-modal__error" role="alert">{depositError}</p>}
+            {passportError && <p className="reception-modal__error" role="alert">{passportError}</p>}
+          </section>
+        )}
+
+        <InternalNotesField queryKey={queryKey} stay={stay} />
+
+        <div className="reception-sheet__actions reception-sheet__actions--single">
+          <button onClick={onCancel} type="button">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReceptionPage() {
   const today = bangkokToday();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -736,6 +948,7 @@ export default function ReceptionPage() {
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [contactRequest, setContactRequest] = useState<ReceptionStay | null>(null);
   const [contactFeedback, setContactFeedback] = useState<ContactFeedback>(null);
+  const [detailsRequest, setDetailsRequest] = useState<ReceptionStay | null>(null);
   const queryKey = ["reception", selectedDate] as const;
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal) });
   const reception = useQuery({
@@ -791,8 +1004,8 @@ export default function ReceptionPage() {
       {reception.isError && !reception.data && <PageError onRetry={() => void reception.refetch()} />}
 
       <div className="reception-agenda" aria-busy={reception.isFetching}>
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} />
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
+        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
       </div>
 
       <CompletionModal
@@ -819,6 +1032,13 @@ export default function ReceptionPage() {
         }}
         onFeedback={setContactFeedback}
         stay={contactRequest}
+      />
+      <BookingDetailsSheet
+        onCancel={() => setDetailsRequest(null)}
+        onStayUpdated={setDetailsRequest}
+        queryKey={queryKey}
+        stay={detailsRequest}
+        today={today}
       />
     </WorkspaceShell>
   );

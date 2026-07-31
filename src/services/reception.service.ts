@@ -1,5 +1,5 @@
 import { ApiError, requestJson } from "./api.client";
-import type { ReceptionCheckInField, ReceptionCheckOutField, ReceptionOverview, ReceptionResponse, ReceptionStay, ReceptionStayResponse } from "../types/reception";
+import type { BookingPassport, BookingPassportsResponse, PassportOcrResponse, ReceptionCheckInField, ReceptionCheckOutField, ReceptionOverview, ReceptionResponse, ReceptionStay, ReceptionStayResponse } from "../types/reception";
 
 async function sendJson(path: string, method: "POST" | "PATCH", payload: unknown, signal?: AbortSignal): Promise<ReceptionStay> {
   const response = await fetch(path, {
@@ -40,4 +40,27 @@ export async function completeReceptionCheckOut(bookingId: number, payload: { ro
 
 export async function saveReceptionNotes(bookingId: number, payload: { body?: string; specialNotes?: string | null }, signal?: AbortSignal): Promise<ReceptionStay> {
   return sendJson(`/api/reception/stays/${bookingId}/notes`, "POST", payload, signal);
+}
+
+export async function loadBookingPassports(bookingId: number, signal?: AbortSignal): Promise<BookingPassport[]> {
+  const response = await requestJson<BookingPassportsResponse>(`/api/reception/stays/${bookingId}/passports`, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Booking passports are unavailable");
+  return response.data;
+}
+
+export async function uploadBookingPassport(bookingId: number, file: File, signal?: AbortSignal): Promise<PassportOcrResponse> {
+  const formData = new FormData();
+  formData.set("passport", file);
+  const response = await fetch(`/api/reception/stays/${bookingId}/passports/ocr`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+    body: formData,
+    signal,
+  });
+  const body = await response.json().catch(() => null) as PassportOcrResponse | null;
+  if (!response.ok || !body?.success) {
+    throw new ApiError("Passport upload could not be completed.", response.status);
+  }
+  return body;
 }

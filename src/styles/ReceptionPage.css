@@ -284,6 +284,7 @@
   background: #f6f2ea;
   gap: 18px;
   padding: 20px;
+  cursor: pointer;
 }
 
 .reception-empty {
@@ -1185,6 +1186,62 @@ button.reception-completion:focus-visible {
   font-size: 0.9rem;
   font-weight: 820 !important;
   padding: 11px 13px;
+}
+
+.reception-details-sheet__panel {
+  gap: 18px;
+}
+
+.reception-details-facts {
+  flex-wrap: wrap;
+}
+
+.reception-details-facts div {
+  flex-basis: calc(50% - 5px);
+}
+
+.reception-details-checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.reception-details-checklist > span {
+  color: rgba(23, 59, 45, 0.54);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.reception-detail-action {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+}
+
+.reception-detail-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.reception-check-row__label small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(23, 59, 45, 0.56);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.reception-check-row__control--warning {
+  border-color: rgba(159, 59, 47, 0.18);
+  background: rgba(159, 59, 47, 0.09);
+  color: #9f3b2f;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.reception-passport-input {
+  display: none;
 }
 
 .reception-sheet__actions--single button {

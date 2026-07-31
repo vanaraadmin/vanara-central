@@ -53,6 +53,20 @@ export interface ReceptionStay {
   };
 }
 
+export interface BookingPassport {
+  id: number;
+  bookingId: number;
+  objectKey: string;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  passportNumber: string | null;
+  nationality: string | null;
+  gender: string | null;
+  birthDate: string | null;
+  createdAt: string;
+}
+
 export interface ReceptionOverview {
   date: string;
   arrivals: ReceptionStay[];
@@ -75,4 +89,28 @@ export interface ReceptionStayResponse {
   success: boolean;
   data?: ReceptionStay;
   error?: string;
+}
+
+export interface BookingPassportsResponse {
+  success: boolean;
+  data?: BookingPassport[];
+  error?: string;
+}
+
+export interface PassportOcrResponse {
+  success: boolean;
+  objectKey?: string;
+  passport?: {
+    firstName: string | null;
+    middleName: string | null;
+    lastName: string | null;
+    passportNumber: string | null;
+    nationality: string | null;
+    gender: string | null;
+    birthDate: string | null;
+  };
+  error?: {
+    code: string;
+    message: string;
+  };
 }
