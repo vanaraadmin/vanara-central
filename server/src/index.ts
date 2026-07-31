@@ -1140,7 +1140,7 @@ export default {
       ctx.waitUntil(cleanupExpiredPassports(env).then(() => undefined));
       return;
     }
-    if (controller.cron === "7,22,37,52 * * * *") {
+    if (controller.cron === "*/10 * * * *") {
       ctx.waitUntil(syncBookings(env).then(() => undefined));
       return;
     }
