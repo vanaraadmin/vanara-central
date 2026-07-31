@@ -80,7 +80,7 @@ export interface ReceptionActionInput {
 }
 
 export interface CompleteReceptionCheckInInput {
-  passportPhotographed: boolean;
+  passportRegistrationCompleted: boolean;
   depositCollected: boolean;
 }
 
@@ -239,9 +239,9 @@ export function normalizeReceptionNotesInput(payload: unknown): ReceptionNotesIn
 
 export function normalizeCompleteReceptionCheckInInput(payload: unknown): CompleteReceptionCheckInInput {
   if (!payload || typeof payload !== "object") throw new Error("Complete check-in payload is required.");
-  assertPayloadKeys(payload, ["passportPhotographed", "depositCollected"], "Complete check-in payload");
+  assertPayloadKeys(payload, ["passportRegistrationCompleted", "depositCollected"], "Complete check-in payload");
   return {
-    passportPhotographed: optionalBoolean(payload, "passportPhotographed"),
+    passportRegistrationCompleted: optionalBoolean(payload, "passportRegistrationCompleted"),
     depositCollected: optionalBoolean(payload, "depositCollected"),
   };
 }
@@ -329,7 +329,7 @@ async function loadBookingAlertContext(env: ReceptionBindings, bookingId: number
 }
 
 function alertTitle(type: ReceptionAlertType): string {
-  return type === "passport_missing" ? "Passport missing" : "Deposit pending";
+  return type === "passport_missing" ? "Passport(s) missing" : "Deposit pending";
 }
 
 async function upsertReceptionAlert(env: ReceptionBindings, bookingId: number, unitId: number | null, type: ReceptionAlertType, user: CurrentUser, now: string): Promise<void> {
@@ -370,7 +370,7 @@ export async function resolveReceptionRoomAlert(env: ReceptionBindings, bookingI
   if (type === "passport_missing") {
     if (local.passport_collected !== 1) {
       await env.DB.prepare("UPDATE reception_stays SET passport_collected = 1, updated_at = ? WHERE beds24_booking_id = ?").bind(now, bookingId).run();
-      await recordEvent(env, bookingId, "passportPhotographed", "false", "true", user, now);
+      await recordEvent(env, bookingId, "passportRegistrationCompleted", "false", "true", user, now);
     }
   } else {
     if (local.deposit_collected !== 1) {
@@ -509,10 +509,10 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
       SET guest_arrived = 1, passport_collected = ?, deposit_collected = ?, welcome_completed = 1, keys_delivered = 1, updated_at = ?
       WHERE beds24_booking_id = ?
     `)
-      .bind(checkInInput.passportPhotographed ? 1 : 0, checkInInput.depositCollected ? 1 : 0, now, bookingId)
+      .bind(checkInInput.passportRegistrationCompleted ? 1 : 0, checkInInput.depositCollected ? 1 : 0, now, bookingId)
       .run();
     await recordEvent(env, bookingId, "checkInCompleted", "false", "true", user, now);
-    if (checkInInput.passportPhotographed) {
+    if (checkInInput.passportRegistrationCompleted) {
       await resolveReceptionAlert(env, bookingId, "passport_missing", user, now);
     } else {
       await upsertReceptionAlert(env, bookingId, booking.unit_id, "passport_missing", user, now);

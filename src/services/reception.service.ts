@@ -30,7 +30,7 @@ export async function updateReceptionCheckOut(bookingId: number, field: Receptio
   return sendJson(`/api/reception/stays/${bookingId}/check-out`, "PATCH", { field, completed }, signal);
 }
 
-export async function completeReceptionCheckIn(bookingId: number, payload: { passportPhotographed: boolean; depositCollected: boolean }, signal?: AbortSignal): Promise<ReceptionStay> {
+export async function completeReceptionCheckIn(bookingId: number, payload: { passportRegistrationCompleted: boolean; depositCollected: boolean }, signal?: AbortSignal): Promise<ReceptionStay> {
   return sendJson(`/api/reception/stays/${bookingId}/check-in-completed`, "POST", payload, signal);
 }
 

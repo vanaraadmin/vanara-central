@@ -11,7 +11,7 @@ import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
 type CompletionDraft = {
-  passportPhotographed: boolean;
+  passportRegistrationCompleted: boolean;
   depositCollected: boolean;
   roomInspected: boolean;
   keysReturned: boolean;
@@ -20,7 +20,7 @@ type CompletionDraft = {
 
 function emptyCompletionDraft(): CompletionDraft {
   return {
-    passportPhotographed: false,
+    passportRegistrationCompleted: false,
     depositCollected: false,
     roomInspected: false,
     keysReturned: false,
@@ -375,8 +375,8 @@ function CompletionModal({
           {isArrival ? (
             <>
               <label>
-                <span>Passport photographed</span>
-                <input checked={draft.passportPhotographed} onChange={(event) => onDraftChange({ ...draft, passportPhotographed: event.target.checked })} type="checkbox" />
+                <span>Passport registration completed</span>
+                <input checked={draft.passportRegistrationCompleted} onChange={(event) => onDraftChange({ ...draft, passportRegistrationCompleted: event.target.checked })} type="checkbox" />
               </label>
               <label>
                 <span>Deposit collected</span>
@@ -436,7 +436,7 @@ export default function ReceptionPage() {
     mutationFn: async ({ stay, type }: { stay: ReceptionStay; type: ReceptionCardType }) => (
       type === "arrival"
         ? completeReceptionCheckIn(stay.bookingId, {
-          passportPhotographed: completionDraft.passportPhotographed,
+          passportRegistrationCompleted: completionDraft.passportRegistrationCompleted,
           depositCollected: completionDraft.depositCollected,
         })
         : completeReceptionCheckOut(stay.bookingId, {

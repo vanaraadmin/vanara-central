@@ -368,7 +368,7 @@ test("reception DTO normalizers accept only server-owned workflow fields", () =>
     body: "Guest prefers quiet check-in.",
     specialNotes: undefined,
   });
-  assert.deepEqual(normalizeCompleteReceptionCheckInInput({}), { passportPhotographed: false, depositCollected: false });
+  assert.deepEqual(normalizeCompleteReceptionCheckInInput({}), { passportRegistrationCompleted: false, depositCollected: false });
   assert.deepEqual(normalizeCompleteReceptionCheckOutInput({ roomInspected: true, keysReturned: true, depositReturned: true }), {
     roomInspected: true,
     keysReturned: true,
@@ -478,13 +478,13 @@ test("complete check-in creates persistent room alerts and resolving them update
   const checkIn = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x", "content-type": "application/json" },
-    body: JSON.stringify({ passportPhotographed: false, depositCollected: false }),
+    body: JSON.stringify({ passportRegistrationCompleted: false, depositCollected: false }),
   }, data);
 
   assert.equal(checkIn.status, 200);
-  assert.deepEqual(db.alerts.map((alert) => [alert.beds24_booking_id, alert.unit_id, alert.alert_type, alert.status]), [
-    [9001, 1, "passport_missing", "active"],
-    [9001, 1, "deposit_pending", "active"],
+  assert.deepEqual(db.alerts.map((alert) => [alert.beds24_booking_id, alert.unit_id, alert.alert_type, alert.title, alert.status]), [
+    [9001, 1, "passport_missing", "Passport(s) missing", "active"],
+    [9001, 1, "deposit_pending", "Deposit pending", "active"],
   ]);
 
   const passport = await request("/api/reception/stays/9001/alerts/passport_missing/resolve", {

@@ -292,7 +292,7 @@ async function loadReceptionRoomAlerts(env: RoomDetailBindings, unitId: number):
     unitId: row.unit_id,
     type: row.alert_type,
     title: row.title,
-    actionLabel: row.alert_type === "passport_missing" ? "Passport photographed" : "Deposit collected",
+    actionLabel: row.alert_type === "passport_missing" ? "Passport registration completed" : "Deposit collected",
     createdAt: row.created_at,
   }));
 }
