@@ -16,7 +16,7 @@ Everything below is owned by D1.
 
 ## room_operational_status
 
-Three independent dimensions:
+Four independent dimensions:
 
 ### Occupancy
 
@@ -25,17 +25,23 @@ Three independent dimensions:
 -   Arrival Today
 -   Departure Today
 
-### Cleaning
+### Operational Availability
 
--   Dirty
--   In Progress
--   Ready for Inspection
--   Ready
+-   OPERATING
+-   NOT_OPERATING
 
-### Technical
+This is a local internal Vanara indicator. Beds24 remains the booking
+availability source of truth.
 
--   Operational
--   Blocked
+### Housekeeping
+
+-   READY
+-   NOT_READY
+
+### Maintenance
+
+-   CLEAR
+-   BLOCKED / OUT_OF_SERVICE
 
 These dimensions must never be merged into a single status field.
 

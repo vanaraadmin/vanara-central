@@ -6,8 +6,9 @@ import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { getReceptionStay, type ReceptionBindings } from "./reception.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { ForbiddenError, type CurrentUser } from "./current-user.service.js";
+import { canChangeOperationalAvailability, loadOperationalAvailabilityForUnit, type OperationalAvailabilityStatus, type RoomOperationalStateBindings } from "./room-operational-state.service.js";
 
-export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings {
+export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, RoomOperationalStateBindings {
   DB: D1Database;
 }
 
@@ -166,6 +167,16 @@ export interface RoomDetail {
   roomStatus: string;
   occupancyStatus: string;
   housekeepingStatus: HousekeepingWorkflowStatus | RoomOperationalStatus;
+  operationalAvailability: {
+    status: OperationalAvailabilityStatus;
+    label: "Operating" | "Not Operating";
+    reason: string | null;
+    seasonalStart: string | null;
+    seasonalEnd: string | null;
+    seasonalLabel: string | null;
+    updatedAt: string | null;
+    canChange: boolean;
+  };
   operationalPriority: string;
   checkoutCompleted: boolean;
   checkoutCompletionSource: CheckoutCompletionSource;
@@ -229,8 +240,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean): string {
+function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus): string {
   if (outOfService) return "Out of Service";
+  if (availabilityStatus === "NOT_OPERATING") return "Not Operating";
   if (maintenanceOpenIssues > 0) return "Maintenance";
   if (operations.occupancyStatus === "Ready for Guest") return "Ready";
   return operations.occupancyStatus;
@@ -663,7 +675,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
 
   const today = getBangkokDate();
   await getHousekeepingV2Overview(env, user, today);
-  const [stayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement] = await Promise.all([
+  const [stayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement, operationalAvailability] = await Promise.all([
     loadCurrentStay(env, unit.unit_id, today),
     getHousekeepingOverview(env),
     loadActiveHousekeepingTasks(env, unit.unit_id, today),
@@ -672,6 +684,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
     loadChatContext(env, unit),
     loadReceptionRoomAlerts(env, unit.unit_id),
     loadProcurementAttention(env),
+    loadOperationalAvailabilityForUnit(env, unit.unit_id),
   ]);
 
   const currentStay = mapStay(stayRow);
@@ -688,9 +701,21 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
     roomName: unit.unit_name,
     roomType: unitType(unit),
     accommodationType: unitType(unit),
-    roomStatus: housekeeping.primaryStatus === "No active Housekeeping" ? roomStatus(operations, openIssues, outOfService) : housekeeping.primaryStatus,
+    roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.primaryStatus === "No active Housekeeping"
+      ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status)
+      : housekeeping.primaryStatus,
     occupancyStatus: operations.occupancyStatus,
     housekeepingStatus: housekeeping.status,
+    operationalAvailability: {
+      status: operationalAvailability.status,
+      label: operationalAvailability.status === "OPERATING" ? "Operating" : "Not Operating",
+      reason: operationalAvailability.reason,
+      seasonalStart: operationalAvailability.seasonalStart,
+      seasonalEnd: operationalAvailability.seasonalEnd,
+      seasonalLabel: operationalAvailability.seasonalLabel,
+      updatedAt: operationalAvailability.updatedAt,
+      canChange: canChangeOperationalAvailability(user),
+    },
     operationalPriority: operations.operationalPriority,
     checkoutCompleted: operations.checkoutCompleted,
     checkoutCompletionSource: operations.checkoutCompletionSource,

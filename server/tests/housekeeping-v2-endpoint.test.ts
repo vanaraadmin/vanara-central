@@ -68,6 +68,8 @@ class FakeHousekeepingV2DB {
   ];
   nextTaskId = 1;
   raceWaterInsertKey: string | null = null;
+  operationalAvailability = new Map<number, "OPERATING" | "NOT_OPERATING">();
+  maintenanceTickets: Array<{ room_id: number; title: string; priority: "Low" | "Medium" | "High" | "Critical"; out_of_service: number; status: string }> = [];
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
@@ -85,15 +87,18 @@ class FakeHousekeepingV2DB {
     if (sql.includes("FROM units u")) {
       return {
         results: [
-          { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow" },
-          { unit_id: 2, unit_name: "Tent 1", unit_type: "other", room_type_name: "Tent", room_name: "Tent" },
-          { unit_id: 3, unit_name: "Villa 1", unit_type: "villa", room_type_name: "Villa", room_name: "Villa" },
+          { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", operational_availability_status: this.operationalAvailability.get(1) ?? "OPERATING" },
+          { unit_id: 2, unit_name: "Tent 1", unit_type: "other", room_type_name: "Tent", room_name: "Tent", operational_availability_status: this.operationalAvailability.get(2) ?? "OPERATING" },
+          { unit_id: 3, unit_name: "Villa 1", unit_type: "villa", room_type_name: "Villa", room_name: "Villa", operational_availability_status: this.operationalAvailability.get(3) ?? "OPERATING" },
         ] as T[],
       };
     }
     if (sql.includes("FROM bookings b")) {
+      const rows = this.bookings
+        .filter((row) => params.length === 0 || !sql.includes("WHERE b.unit_id = ?") || row.unit_id === params[0])
+        .filter((row) => !sql.includes("room_operational_availability") || (this.operationalAvailability.get(row.unit_id) ?? "OPERATING") === "OPERATING");
       return {
-        results: this.bookings.filter((row) => params.length === 0 || !sql.includes("WHERE b.unit_id = ?") || row.unit_id === params[0]) as T[],
+        results: rows as T[],
       };
     }
     if (sql.includes("FROM housekeeping_tasks ht") && sql.includes("rs.room_released = 1")) {
@@ -110,6 +115,18 @@ class FakeHousekeepingV2DB {
     }
     if (sql.includes("FROM housekeeping_room_counters")) return { results: [...this.counters] as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
+    if (sql.includes("FROM maintenance_tickets") && sql.includes("GROUP BY room_id")) {
+      const rows = [...new Set(this.maintenanceTickets.map((ticket) => ticket.room_id))].map((roomId) => {
+        const tickets = this.maintenanceTickets.filter((ticket) => ticket.room_id === roomId && !["Resolved", "Closed"].includes(ticket.status));
+        return {
+          room_id: roomId,
+          count: tickets.length,
+          critical: tickets.filter((ticket) => ticket.out_of_service === 1 || ticket.priority === "Critical").length,
+          label: tickets[0]?.title ?? null,
+        };
+      });
+      return { results: rows as T[] };
+    }
     if (sql.includes("FROM maintenance_tickets")) return { results: [] as T[] };
     if (sql.includes("FROM housekeeping_task_checklist_items")) return { results: [] as T[] };
     if (sql.includes("FROM housekeeping_task_events")) return { results: this.events.map((event, index) => ({
@@ -659,6 +676,91 @@ test("manual room NOT READY override appears in Housekeeping Normal without acti
   const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
   assert.equal(normal.some((card) => card.taskId === 121 && card.taskType === "STANDARD_CLEANING" && card.currentQueue === "normal-cleaning"), true);
   assert.equal(body.data.summary.normalCleaningDue, 1);
+});
+
+test("non-operating units generate no automatic water cleaning linen or turnover work", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.operationalAvailability.set(1, "NOT_OPERATING");
+  db.operationalAvailability.set(2, "NOT_OPERATING");
+  db.bookings = [
+    { ...booking(201, 920201, 1, "Closed Tent Occupied", 2, 0), arrival_date: "2026-07-30", departure_date: "2026-08-05", guest_arrived: 1 },
+    { ...booking(202, 920202, 2, "Closed Tent Departing", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", guest_arrived: 1, room_released: 1 },
+  ];
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { tasks: Array<{ unitId: number; taskType: string }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.success, true);
+  assert.equal(db.tasks.some((task) => task.unit_id === 1 || task.unit_id === 2), false);
+  assert.equal(body.data.tasks.some((card) => card.unitId === 1 || card.unitId === 2), false);
+});
+
+test("non-operating manual room readiness tasks remain out of Housekeeping queues", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.operationalAvailability.set(1, "NOT_OPERATING");
+  db.bookings = [];
+  db.tasks.push(storedTask({
+    task_id: 122,
+    task_type: "STANDARD_CLEANING",
+    unit_id: 1,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready:not-ready:closed-unit",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number; priorityTurnovers: number; waterRefillDue: number }; tasks: Array<{ taskId: number }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.success, true);
+  assert.equal(body.data.tasks.some((card) => card.taskId === 122), false);
+  assert.deepEqual(body.data.summary, {
+    awaitingReceptionRelease: 0,
+    priorityTurnovers: 0,
+    normalCleaningDue: 0,
+    waterRefillDue: 0,
+    tasksClaimed: 0,
+    tasksInProgress: 0,
+    blockedRooms: 0,
+    completedToday: 0,
+    procurementAttention: 0,
+  });
+});
+
+test("out-of-service maintenance ticket blocks an operating room task without hardcoding the room", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [];
+  db.tasks.push(storedTask({
+    task_id: 123,
+    task_type: "STANDARD_CLEANING",
+    unit_id: 1,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+  }));
+  db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { summary: { blockedRooms: number; priorityTurnovers: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; isBlocked: boolean; blockReason: string | null; currentQueue: string; reasonCodes: string[] }> }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
+  const card = priority.find((item) => item.taskId === 123);
+  assert.ok(card);
+  assert.equal(card.isBlocked, true);
+  assert.equal(card.blockReason, "Replace Air Conditioning");
+  assert.equal(card.currentQueue, "priority-turnover");
+  assert.equal(card.reasonCodes.includes("maintenance_block"), true);
+  assert.equal(body.data.summary.blockedRooms, 1);
+  assert.equal(body.data.summary.priorityTurnovers, 1);
 });
 
 test("completed and cancelled standard cleaning tasks do not escalate", async () => {

@@ -1,6 +1,7 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { createHousekeepingTask, housekeepingTaskCapabilities, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
+import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
 
 export interface HousekeepingV2Bindings {
   DB: D1Database;
@@ -84,6 +85,7 @@ interface UnitRow {
   unit_type: string | null;
   room_type_name: string | null;
   room_name: string | null;
+  operational_availability_status: OperationalAvailabilityStatus;
 }
 
 interface BookingRow {
@@ -174,6 +176,7 @@ interface OperationalContext {
   alerts: AlertRow | null;
   maintenance: MaintenanceRow | null;
   waterQuantity: number;
+  operationalAvailabilityStatus: OperationalAvailabilityStatus;
   date: string;
 }
 
@@ -330,6 +333,8 @@ function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unit
 }
 
 function cardsForContext(context: OperationalContext, user: CurrentUser): HousekeepingV2TaskCard[] {
+  if (context.operationalAvailabilityStatus === "NOT_OPERATING") return [];
+
   const cards: HousekeepingV2TaskCard[] = [];
   const maintenanceBlocked = Boolean(context.maintenance && context.maintenance.critical > 0);
   const turnover = taskFor(context.tasks.filter((task) => taskBelongsToDeparture(context, task)), "TURNOVER");
@@ -453,6 +458,7 @@ function buildContexts(
       alerts: alerts.get(unit.unit_id) ?? null,
       maintenance: maintenance.get(unit.unit_id) ?? null,
       waterQuantity: waterQuantityFor(unit, waterConfig),
+      operationalAvailabilityStatus: unit.operational_availability_status,
       date,
     };
   });
@@ -720,9 +726,11 @@ function formatBangkokDate(now: Date): string {
 
 async function loadUnits(env: HousekeepingV2Bindings): Promise<UnitRow[]> {
   const rows = await env.DB.prepare(`
-    SELECT u.unit_id, u.unit_name, u.unit_type, rt.room_type_name, rt.room_name
+    SELECT u.unit_id, u.unit_name, u.unit_type, rt.room_type_name, rt.room_name,
+           COALESCE(roa.status, 'OPERATING') AS operational_availability_status
     FROM units u
     JOIN room_types rt ON rt.room_type_id = u.room_type_id
+    LEFT JOIN room_operational_availability roa ON roa.unit_id = u.unit_id
     WHERE u.active = 1
     ORDER BY COALESCE(u.position, 999), u.unit_name, u.unit_id
   `).all<UnitRow>();
@@ -735,8 +743,12 @@ async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<
            b.channel, b.api_source, b.status,
            rs.guest_arrived, rs.room_released
     FROM bookings b
+    JOIN units u ON u.unit_id = b.unit_id
+    LEFT JOIN room_operational_availability roa ON roa.unit_id = b.unit_id
     LEFT JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
     WHERE b.unit_id IS NOT NULL
+      AND u.active = 1
+      AND COALESCE(roa.status, 'OPERATING') = 'OPERATING'
       AND ${operationalBookingStatusSql("b.status")}
       AND (
         b.departure_date = ?
@@ -782,7 +794,7 @@ async function loadAlerts(env: HousekeepingV2Bindings): Promise<Map<number, Aler
 async function loadMaintenance(env: HousekeepingV2Bindings): Promise<Map<number, MaintenanceRow>> {
   const rows = await env.DB.prepare(`
     SELECT room_id, COUNT(*) AS count,
-           SUM(CASE WHEN json_extract(metadata_json, '$.outOfService') = 1 OR priority = 'Critical' THEN 1 ELSE 0 END) AS critical,
+           SUM(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 OR priority = 'Critical' THEN 1 ELSE 0 END) AS critical,
            MIN(title) AS label
     FROM maintenance_tickets
     WHERE room_id IS NOT NULL

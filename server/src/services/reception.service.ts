@@ -4,6 +4,7 @@ import { isOperationalBookingStatus, operationalBookingStatusSql } from "./booki
 import { countryCodeFrom, countryFlagFrom, countryFlagUrlFrom } from "./country-flags.service.js";
 import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
+import { loadOperationalAvailabilityForUnit } from "./room-operational-state.service.js";
 
 export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings {
   DB: D1Database;
@@ -430,11 +431,13 @@ async function loadEvents(env: ReceptionBindings, bookingId: number): Promise<Re
 
 async function roomStatus(env: ReceptionBindings, roomId: number | null): Promise<string> {
   if (!roomId) return "Expected Arrival";
-  const [maintenance, task] = await Promise.all([
+  const [maintenance, task, operationalAvailability] = await Promise.all([
     listOpenMaintenanceTicketDetailsForRoom(env, roomId),
     activeRoomReadinessTask(env, roomId),
+    loadOperationalAvailabilityForUnit(env, roomId),
   ]);
   if (maintenance.some((ticket) => ticket.outOfService)) return "Out Of Service";
+  if (operationalAvailability.status === "NOT_OPERATING") return "Not Operating";
   if (maintenance.length > 0) return "Maintenance";
   if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
   if (task) return task.status === "IN_PROGRESS" || task.status === "CLAIMED" ? "Cleaning" : "Not Ready";

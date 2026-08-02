@@ -680,11 +680,13 @@ export async function getHousekeepingOverview(env: HousekeepingBindings): Promis
       CASE WHEN co.unit_id IS NULL THEN 0 ELSE 1 END AS has_current_occupancy,
       CASE WHEN sc.unit_id IS NULL THEN 0 ELSE 1 END AS has_scheduled_checkout_today
     FROM units u
+    LEFT JOIN room_operational_availability roa ON roa.unit_id = u.unit_id
     LEFT JOIN latest_housekeeping lh ON lh.unit_id = u.unit_id
     LEFT JOIN today_arrivals ta ON ta.unit_id = u.unit_id
     LEFT JOIN current_occupancy co ON co.unit_id = u.unit_id
     LEFT JOIN scheduled_checkouts sc ON sc.unit_id = u.unit_id
     WHERE u.active = 1
+      AND COALESCE(roa.status, 'OPERATING') = 'OPERATING'
     ORDER BY u.position, u.unit_name
   `).bind(now.date).all<HousekeepingRow>();
 

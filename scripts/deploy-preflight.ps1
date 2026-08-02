@@ -1,6 +1,7 @@
 param(
   [string]$ConfigPath = "wrangler.jsonc",
-  [string]$ProductionUrl = $env:VANARA_PRODUCTION_URL
+  [string]$ProductionUrl = $env:VANARA_PRODUCTION_URL,
+  [switch]$AllowPendingMigrations
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,7 +108,7 @@ $d1Name = [string]$database.database_name
 $migrations = Invoke-External $wrangler @("d1", "migrations", "list", $d1Name, "--remote", "--config", $ConfigFullPath)
 $noPending = $migrations.ExitCode -eq 0 -and $migrations.Output -match "No migrations to apply"
 Write-Check "D1 access" ($migrations.ExitCode -eq 0) ("Database {0} migration state is readable." -f $d1Name)
-Write-Check "Pending migrations" $noPending ($(if ($noPending) { "No migrations to apply." } else { "Pending migrations may exist; run deploy:production to apply approved migrations safely." }))
+Write-Check "Pending migrations" ($migrations.ExitCode -eq 0) ($(if ($noPending) { "No migrations to apply." } elseif ($AllowPendingMigrations) { "Pending approved migrations will be applied by deploy:production." } else { "Pending migrations detected; deploy:production applies approved migrations safely." }))
 
 $r2Present = $null -ne $r2 -and [string]$r2.binding -eq "R2_STORAGE" -and [string]$r2.bucket_name -ne ""
 Write-Check "R2 binding" $r2Present ($(if ($r2Present) { "R2_STORAGE -> " + [string]$r2.bucket_name } else { "Missing R2_STORAGE binding." }))

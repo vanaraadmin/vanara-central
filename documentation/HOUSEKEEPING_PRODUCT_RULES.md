@@ -15,6 +15,20 @@ Business Rules Specification for Housekeeping.
 - Room Workspace is the only place where every room can be browsed.
 - Room Workspace is the only place where full room information is displayed.
 - Room Workspace is the only place where On-Demand Cleaning may be created.
+- Room Workspace displays Operational Availability and Housekeeping Status as separate dimensions.
+- Owner and Manager may change Operational Availability only from Room Workspace.
+
+## Independent Room Dimensions
+- Operational Availability is either OPERATING or NOT_OPERATING.
+- Housekeeping Status is either READY or NOT_READY.
+- Occupancy is derived from real stay and Reception state.
+- Maintenance blocks are derived from real Maintenance tickets.
+- Changing Operational Availability must never change Housekeeping Status.
+- Changing Housekeeping Status must never change Operational Availability.
+- NOT_OPERATING is an internal Vanara operational indicator only. Beds24 remains the booking availability source of truth.
+- NOT_OPERATING units remain visible in Room Workspace for Owner/Manager inspection and preparation.
+- NOT_OPERATING units are excluded from active operational Housekeeping counts and automatic task generation.
+- NOT_OPERATING units do not generate Water Refill, scheduled Cleaning, Full Cleaning, Turnover, check-in readiness alerts, or occupied-room cleaning cycles.
 
 ## Housekeeping Workspace
 - Initial state shows compact Priority, Normal, and Water summary cards only.
@@ -102,6 +116,7 @@ Occupied rooms only.
 - Yurt/Tent 2
 
 MVP quantity is hardcoded by accommodation type only. Guest Count is informational and must never be used for Water Refill quantity or eligibility.
+NOT_OPERATING units never generate Water Refill.
 
 Water uses a simplified execution workflow:
 - Available.
@@ -156,6 +171,7 @@ Room identity opens Room Workspace.
 - Procurement owns purchasing.
 - Cleaning != Linen.
 - Housekeeping Workspace contains only rooms with actual Housekeeping work.
+- Housekeeping Workspace excludes NOT_OPERATING units from active queues even when their independent Housekeeping Status is NOT_READY.
 - Normal list contains only active Cleaning, On-Demand Cleaning, and relevant Full Cleaning work.
 - Priority list contains active turnover work, previous-operational-day Cleaning, previous-operational-day On-Demand Cleaning, and existing urgent or blocked task work.
 - Water list contains only active daily refill work.

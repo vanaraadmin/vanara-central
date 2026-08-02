@@ -73,7 +73,7 @@ if (-not $database) { Fail-Step "D1 configuration" "No D1 database binding found
 $databaseName = [string]$database.database_name
 $wrangler = Get-WranglerPath
 
-Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath)
+Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath, "-AllowPendingMigrations")
 Invoke-Step "Server tests" "npm.cmd" @("--prefix", "server", "test")
 Invoke-Step "Frontend/source tests" "node" @("--import", "tsx", "--test", "tests/housekeeping-v2-source.test.ts", "tests/housekeeping-v2-room-source.test.ts") (Join-Path $RepoRoot "server")
 Invoke-Step "Typecheck" "npm.cmd" @("run", "typecheck")

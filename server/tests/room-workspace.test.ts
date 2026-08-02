@@ -3,6 +3,7 @@ import test from "node:test";
 
 import worker from "../src/index.ts";
 import { normalizeHousekeepingChecklistInput } from "../src/services/housekeeping-overview.service.ts";
+import { normalizeRoomOperationalAvailabilityInput } from "../src/services/room-operational-state.service.ts";
 import { normalizeRoomHousekeepingInput, normalizeRoomNoteInput } from "../src/services/room-detail.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
 
@@ -64,6 +65,8 @@ class FakeRoomDB {
   housekeeping: Array<Record<string, unknown>> = [];
   tasks: Array<Record<string, unknown>> = [];
   taskEvents: Array<Record<string, unknown>> = [];
+  availability: Array<Record<string, unknown>> = [];
+  availabilityEvents: Array<Record<string, unknown>> = [];
   tickets: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
 
@@ -124,6 +127,7 @@ class FakeRoomDB {
       if (sql.includes("SELECT task_id")) return { results: rows.map((task) => ({ task_id: task.task_id })) as T[] };
       return { results: rows as T[] };
     }
+    if (sql.includes("FROM room_operational_availability")) return { results: this.availability as T[] };
     if (sql.includes("FROM housekeeping_task_events")) return { results: this.taskEvents as T[] };
     if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
@@ -152,6 +156,9 @@ class FakeRoomDB {
     }
     if (sql.includes("SELECT unit_id FROM units WHERE unit_id")) {
       return Number(params[0]) === UNIT.unit_id ? { unit_id: UNIT.unit_id } as T : null;
+    }
+    if (sql.includes("FROM room_operational_availability") && sql.includes("WHERE unit_id")) {
+      return (this.availability.find((row) => row.unit_id === params[0]) ?? null) as T | null;
     }
     if (sql.includes("SELECT unit_id, room_type_id FROM units WHERE unit_id")) {
       return Number(params[0]) === UNIT.unit_id ? { unit_id: UNIT.unit_id, room_type_id: UNIT.room_type_id } as T : null;
@@ -276,6 +283,44 @@ class FakeRoomDB {
         task.cancellation_reason = params[5];
       }
       return { meta: { changes: 1, last_row_id: task.task_id } };
+    }
+    if (sql.includes("INSERT INTO room_operational_availability")) {
+      const existing = this.availability.find((row) => row.unit_id === params[0]);
+      const next = {
+        unit_id: params[0],
+        status: params[1],
+        reason: params[2],
+        seasonal_start: params[3],
+        seasonal_end: params[4],
+        updated_by: params[5],
+        updated_by_name: params[6],
+        created_at: existing?.created_at ?? params[7],
+        updated_at: params[8],
+      };
+      if (existing) Object.assign(existing, next);
+      else this.availability.push(next);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO room_operational_availability_events")) {
+      const event_id = this.availabilityEvents.length + 1;
+      this.availabilityEvents.push({
+        event_id,
+        unit_id: params[0],
+        event_type: "availability_changed",
+        actor_user_id: params[1],
+        actor_name: params[2],
+        previous_status: params[3],
+        new_status: params[4],
+        previous_reason: params[5],
+        new_reason: params[6],
+        previous_seasonal_start: params[7],
+        new_seasonal_start: params[8],
+        previous_seasonal_end: params[9],
+        new_seasonal_end: params[10],
+        idempotency_key: params[11],
+        created_at: params[12],
+      });
+      return { meta: { changes: 1, last_row_id: event_id } };
     }
     if (sql.includes("INSERT INTO room_notes")) {
       const note_id = this.notes.length + 1;
@@ -505,6 +550,32 @@ test("room workspace accepts only supported room readiness states", () => {
   assert.throws(() => normalizeHousekeepingChecklistInput({ itemId: "bathroom", completed: true, author: "fake-user" }), /unsupported field/);
 });
 
+test("room workspace accepts only supported operational availability states", () => {
+  assert.deepEqual(normalizeRoomOperationalAvailabilityInput({
+    status: "not operating",
+    reason: " Season Closed ",
+    seasonalStart: "06-01",
+    seasonalEnd: "11-20",
+    idempotencyKey: "availability-1",
+  }), {
+    status: "NOT_OPERATING",
+    reason: "Season Closed",
+    seasonalStart: "06-01",
+    seasonalEnd: "11-20",
+    idempotencyKey: "availability-1",
+  });
+  assert.deepEqual(normalizeRoomOperationalAvailabilityInput({ status: "Operating" }), {
+    status: "OPERATING",
+    reason: null,
+    seasonalStart: null,
+    seasonalEnd: null,
+    idempotencyKey: null,
+  });
+  assert.throws(() => normalizeRoomOperationalAvailabilityInput({ status: "Ready" }), /Operational availability status is invalid/);
+  assert.throws(() => normalizeRoomOperationalAvailabilityInput({ status: "Operating", roomStatus: "READY" }), /unsupported field/);
+  assert.throws(() => normalizeRoomOperationalAvailabilityInput({ status: "Not Operating", seasonalStart: "13-01" }), /seasonalStart is invalid/);
+});
+
 test("room workspace notes must be real operational text", () => {
   assert.deepEqual(normalizeRoomNoteInput({ body: " Guest requested extra towels. " }), {
     body: "Guest requested extra towels.",
@@ -537,6 +608,35 @@ test("room housekeeping endpoint supports owner manager ready override only", as
   assert.equal(data.DB.tasks.at(-1)?.status, "CANCELLED");
   assert.equal(data.DB.tasks.at(-1)?.completed_at, null);
   assert.equal(data.DB.taskEvents.some((event) => event.event_type === "cancel" && event.reason === "Owner inspected"), true);
+});
+
+test("operational availability endpoint is owner manager only and independent from housekeeping readiness", async () => {
+  assert.equal((await request("/api/rooms/1/operational-availability", { method: "PATCH" }, env([], { authenticated: false }))).status, 401);
+  assert.equal((await request("/api/rooms/1/operational-availability", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_OPERATING" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Housekeeping" } }))).status, 403);
+  assert.equal((await request("/api/rooms/1/operational-availability", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "READY" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 400);
+  assert.equal((await request("/api/rooms/999/operational-availability", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "OPERATING" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 404);
+
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  const notOperating = await request("/api/rooms/1/operational-availability", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_OPERATING", reason: "Season Closed", seasonalStart: "06-01", seasonalEnd: "11-20", idempotencyKey: "availability-test-1" }) }, data);
+  const notOperatingBody = await json(notOperating);
+  assert.equal(notOperating.status, 200, JSON.stringify(notOperatingBody));
+  assert.equal((notOperatingBody.data as { operationalAvailability: { status: string; reason: string; seasonalLabel: string } }).operationalAvailability.status, "NOT_OPERATING");
+  assert.equal((notOperatingBody.data as { operationalAvailability: { status: string; reason: string; seasonalLabel: string } }).operationalAvailability.reason, "Season Closed");
+  assert.equal((notOperatingBody.data as { operationalAvailability: { status: string; reason: string; seasonalLabel: string } }).operationalAvailability.seasonalLabel, "1 Jun - 20 Nov");
+  assert.equal(data.DB.tasks.length, 0);
+  assert.equal(data.DB.availabilityEvents.length, 1);
+
+  const notReady = await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_READY", reason: "Physical cleaning required", idempotencyKey: "room-ready-independent-1" }) }, data);
+  assert.equal(notReady.status, 200, await notReady.text());
+  assert.equal(data.DB.availability[0]?.status, "NOT_OPERATING");
+  assert.equal(data.DB.tasks.length, 1);
+
+  const operating = await request("/api/rooms/1/operational-availability", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "OPERATING", idempotencyKey: "availability-test-2" }) }, data);
+  const operatingBody = await json(operating);
+  assert.equal(operating.status, 200, JSON.stringify(operatingBody));
+  assert.equal((operatingBody.data as { operationalAvailability: { status: string }; housekeeping: { readyState: string } }).operationalAvailability.status, "OPERATING");
+  assert.equal((operatingBody.data as { operationalAvailability: { status: string }; housekeeping: { readyState: string } }).housekeeping.readyState, "NOT_READY");
+  assert.equal(data.DB.tasks.length, 1);
 });
 
 test("room workspace ignores legacy housekeeping rows for readiness", async () => {

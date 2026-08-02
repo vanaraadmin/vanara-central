@@ -3,6 +3,7 @@ import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTask
 
 export type RoomHousekeepingStatus = "Dirty" | "Cleaning" | "Ready";
 export type RoomReadyState = "READY" | "NOT_READY";
+export type OperationalAvailabilityStatus = "OPERATING" | "NOT_OPERATING";
 export type CheckoutCompletionSource = "reception" | "automatic-fallback" | "none";
 export type RoomTimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
 export type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
@@ -123,6 +124,16 @@ export interface RoomDetail {
   roomStatus: string;
   occupancyStatus: string;
   housekeepingStatus: string;
+  operationalAvailability: {
+    status: OperationalAvailabilityStatus;
+    label: "Operating" | "Not Operating";
+    reason: string | null;
+    seasonalStart: string | null;
+    seasonalEnd: string | null;
+    seasonalLabel: string | null;
+    updatedAt: string | null;
+    canChange: boolean;
+  };
   operationalPriority: string;
   checkoutCompleted: boolean;
   checkoutCompletionSource: CheckoutCompletionSource;
@@ -171,6 +182,14 @@ export interface CreateRoomOnDemandCleaningPayload {
 export interface UpdateRoomReadyStatePayload {
   status: RoomReadyState;
   reason?: string | null;
+  idempotencyKey?: string | null;
+}
+
+export interface UpdateRoomOperationalAvailabilityPayload {
+  status: OperationalAvailabilityStatus;
+  reason?: string | null;
+  seasonalStart?: string | null;
+  seasonalEnd?: string | null;
   idempotencyKey?: string | null;
 }
 

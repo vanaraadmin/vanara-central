@@ -14,6 +14,7 @@ import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignabl
 import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
 import { createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
+import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
@@ -565,6 +566,21 @@ app.patch("/api/rooms/:id/housekeeping", async (c) => {
         ? housekeepingV2RoomErrorStatus(error)
         : 400;
     return c.json({ success: false, error: errorMessage(error) }, status);
+  }
+});
+
+app.patch("/api/rooms/:id/operational-availability", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "access");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const availability = await updateRoomOperationalAvailability(c.env, roomId, normalizeRoomOperationalAvailabilityInput(payload), user);
+    if (!availability) return c.json({ success: false, error: "Room not found" }, 404);
+    const room = await getRoomDetail(c.env, roomId, user);
+    if (!room) return c.json({ success: false, error: "Room not found" }, 404);
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
   }
 });
 

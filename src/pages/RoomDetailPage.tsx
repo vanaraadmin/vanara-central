@@ -9,9 +9,9 @@ import {
   completeHousekeepingTask,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
-import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping } from "../services/room-detail.service";
+import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
 import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
-import type { RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
+import type { OperationalAvailabilityStatus, RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
 import "../styles/RoomDetailPage.css";
 
 const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = ["Electrical", "Air Conditioning", "Water", "Furniture", "Bathroom", "Garden", "Cleaning Equipment", "Internet / Network", "Appliance", "Other"];
@@ -133,6 +133,7 @@ function RoomHeader({ room }: { room: RoomDetail }) {
         <RoomIcon />
       </section>
       <section className="room-badges" aria-label="Room badges">
+        <span><RoomIcon />{room.operationalAvailability.label}</span>
         <span><RoomIcon />{room.occupancyStatus}</span>
         <span><HousekeepingIcon />{room.housekeeping.primaryStatus}</span>
         <span><CalendarIcon />{checkoutLabel(room)}</span>
@@ -221,6 +222,76 @@ function useRoomTaskAction(roomId: string) {
       ]);
     },
   });
+}
+
+function OperationalAvailabilityPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<OperationalAvailabilityStatus>(room.operationalAvailability.status);
+  const [reason, setReason] = useState(room.operationalAvailability.reason ?? "");
+  const [seasonalStart, setSeasonalStart] = useState(room.operationalAvailability.seasonalStart ?? "");
+  const [seasonalEnd, setSeasonalEnd] = useState(room.operationalAvailability.seasonalEnd ?? "");
+  const changed = status !== room.operationalAvailability.status
+    || reason.trim() !== (room.operationalAvailability.reason ?? "")
+    || seasonalStart.trim() !== (room.operationalAvailability.seasonalStart ?? "")
+    || seasonalEnd.trim() !== (room.operationalAvailability.seasonalEnd ?? "");
+  const mutation = useMutation({
+    mutationFn: () => updateRoomOperationalAvailability(roomId, {
+      status,
+      reason: reason.trim() || null,
+      seasonalStart: seasonalStart.trim() || null,
+      seasonalEnd: seasonalEnd.trim() || null,
+      idempotencyKey: `room-operational-availability:${room.unitId}:${status}:${Date.now()}`,
+    }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["room-detail", roomId] });
+    },
+  });
+
+  return (
+    <section className="room-section" aria-label="Operational availability">
+      <header><RoomIcon /><h2>Operational Availability</h2></header>
+      <div className="room-operation-card">
+        <span className={`room-status-badge is-${statusTone(room.operationalAvailability.label)}`}>{room.operationalAvailability.label}</span>
+        <dl>
+          <div><dt>Reason</dt><dd>{room.operationalAvailability.reason ?? "None"}</dd></div>
+          <div><dt>Season</dt><dd>{room.operationalAvailability.seasonalLabel ?? "Not seasonal"}</dd></div>
+          <div><dt>Updated</dt><dd>{room.operationalAvailability.updatedAt ? formatDateTime(room.operationalAvailability.updatedAt) : "Baseline default"}</dd></div>
+        </dl>
+      </div>
+
+      {room.operationalAvailability.canChange && (
+        <form className="room-availability-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (changed) mutation.mutate();
+        }}>
+          <div className="room-form-grid">
+            <label>
+              Operational Availability
+              <select onChange={(event) => setStatus(event.target.value as OperationalAvailabilityStatus)} value={status}>
+                <option value="OPERATING">Operating</option>
+                <option value="NOT_OPERATING">Not Operating</option>
+              </select>
+            </label>
+            <label>
+              Reason
+              <input maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="Optional reason" value={reason} />
+            </label>
+            <label>
+              Season Start
+              <input maxLength={5} onChange={(event) => setSeasonalStart(event.target.value)} placeholder="06-01" value={seasonalStart} />
+            </label>
+            <label>
+              Season End
+              <input maxLength={5} onChange={(event) => setSeasonalEnd(event.target.value)} placeholder="11-20" value={seasonalEnd} />
+            </label>
+          </div>
+          <button disabled={!changed || mutation.isPending} type="submit">Change Availability</button>
+        </form>
+      )}
+
+      {mutation.isError && <p className="room-form-error">Operational availability could not be changed.</p>}
+    </section>
+  );
 }
 
 function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }) {
@@ -537,6 +608,7 @@ export default function RoomDetailPage() {
       {room.data && (
         <>
           <RoomHeader room={room.data} />
+          <OperationalAvailabilityPanel room={room.data} roomId={roomId} />
           <CurrentStay stay={room.data.currentStay} />
           <ReceptionPanel room={room.data} />
           <HousekeepingPanel room={room.data} roomId={roomId} />

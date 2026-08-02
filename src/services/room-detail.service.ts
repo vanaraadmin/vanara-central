@@ -1,6 +1,6 @@
 import { ApiError, requestJson } from "./api.client";
 import type { MaintenanceDetailResponse, MaintenanceTicketDetail } from "../types/maintenance";
-import type { CreateRoomMaintenanceTicketPayload, CreateRoomOnDemandCleaningPayload, ReceptionRoomAlert, RoomDetail, RoomDetailResponse, RoomNote, RoomNoteResponse, UpdateRoomReadyStatePayload } from "../types/room-detail";
+import type { CreateRoomMaintenanceTicketPayload, CreateRoomOnDemandCleaningPayload, ReceptionRoomAlert, RoomDetail, RoomDetailResponse, RoomNote, RoomNoteResponse, UpdateRoomOperationalAvailabilityPayload, UpdateRoomReadyStatePayload } from "../types/room-detail";
 import type { ReceptionStayResponse } from "../types/reception";
 
 async function sendJson<T>(path: string, method: "POST" | "PATCH", payload: unknown, signal?: AbortSignal): Promise<T> {
@@ -45,6 +45,12 @@ export async function loadRoomDetail(roomId: string, signal?: AbortSignal): Prom
 export async function updateRoomHousekeeping(roomId: string, payload: UpdateRoomReadyStatePayload, signal?: AbortSignal): Promise<RoomDetail> {
   const response = await sendJson<RoomDetailResponse>(`/api/rooms/${encodeURIComponent(roomId)}/housekeeping`, "PATCH", payload, signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "Housekeeping status could not be updated");
+  return response.data;
+}
+
+export async function updateRoomOperationalAvailability(roomId: string, payload: UpdateRoomOperationalAvailabilityPayload, signal?: AbortSignal): Promise<RoomDetail> {
+  const response = await sendJson<RoomDetailResponse>(`/api/rooms/${encodeURIComponent(roomId)}/operational-availability`, "PATCH", payload, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Operational availability could not be updated");
   return response.data;
 }
 

@@ -254,6 +254,7 @@
 }
 
 .room-status-badge.is-ready,
+.room-status-badge.is-operating,
 .room-status-badge.is-low {
   background: rgba(35, 134, 84, 0.12);
   color: #1c6d45;
@@ -274,6 +275,7 @@
 }
 
 .room-status-badge.is-maintenance,
+.room-status-badge.is-not-operating,
 .room-status-badge.is-critical {
   background: rgba(155, 43, 43, 0.14);
   color: #842424;
@@ -451,6 +453,7 @@
 }
 
 .room-ticket-form,
+.room-availability-form,
 .room-ready-form,
 .room-on-demand-form,
 .room-note-form {
@@ -461,6 +464,7 @@
 }
 
 .room-ticket-form label,
+.room-availability-form label,
 .room-ready-form label,
 .room-on-demand-form label,
 .room-note-form label {
@@ -473,6 +477,8 @@
 
 .room-ticket-form input,
 .room-ticket-form select,
+.room-availability-form input,
+.room-availability-form select,
 .room-ready-form select,
 .room-ready-form textarea,
 .room-ticket-form textarea,
@@ -506,6 +512,7 @@
   gap: var(--vc-space-2);
 }
 
+.room-availability-form button,
 .room-ready-form button {
   min-height: 40px;
   border: 0;
@@ -517,6 +524,7 @@
   padding: 0 var(--vc-space-3);
 }
 
+.room-availability-form button:disabled,
 .room-ready-form button:disabled {
   background: var(--vc-bg-subtle);
   color: var(--vc-text-muted);
