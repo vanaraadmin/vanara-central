@@ -4,6 +4,7 @@ export type MaintenanceStatus = "Open" | "In Progress" | "Waiting Parts" | "Comp
 type StoredMaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
 export type MaintenancePriority = "Low" | "Normal" | "High";
 type StoredMaintenancePriority = "Low" | "Medium" | "High" | "Critical";
+export type MaintenanceTargetType = "ROOM" | "OTHER";
 export type MaintenanceCategory =
   | "Electrical"
   | "Air Conditioning"
@@ -38,7 +39,8 @@ const CATEGORIES: MaintenanceCategory[] = [
   "Appliance",
   "Other",
 ];
-const LOCATION_AREAS = ["Reception", "Restaurant", "Kitchen", "Garden", "Pond", "Entrance", "Storage", "Staff Area", "General Resort Area", "Other"] as const;
+const TARGET_TYPES: MaintenanceTargetType[] = ["ROOM", "OTHER"];
+const LOCATION_AREAS = ["Restaurant", "Garden", "Pool", "Reception", "Storage", "Utilities", "Other"] as const;
 const EXTERNAL_ASSIGNEES = ["Electrician", "Air-conditioning technician", "Plumber", "Internet technician", "Appliance repair", "General contractor", "External maintenance company", "Other external technician"] as const;
 const MAINTENANCE_EDIT_ROLES = new Set(["Owner", "Manager", "Maintenance"]);
 
@@ -134,6 +136,7 @@ export interface MaintenanceAssignment {
 
 export interface MaintenanceTicketSummary {
   id: number;
+  targetType: MaintenanceTargetType;
   title: string;
   description: string;
   category: MaintenanceCategory;
@@ -222,6 +225,7 @@ export interface MaintenanceAssignableOptions {
 }
 
 export interface CreateMaintenanceTicketInput {
+  targetType: MaintenanceTargetType;
   title: string;
   description: string;
   category: MaintenanceCategory;
@@ -368,18 +372,26 @@ function isCompletedStatus(status: MaintenanceStatus): boolean {
 
 export function normalizeCreateMaintenanceTicketInput(payload: unknown): CreateMaintenanceTicketInput {
   if (!payload || typeof payload !== "object") throw new Error("Ticket payload is required.");
-  assertPayloadKeys(payload, ["title", "description", "category", "priority", "roomId", "accommodationId", "locationArea", "assignmentType", "assignedUserId", "externalAssigneeLabel", "externalAssigneeNote", "outOfService"], "Ticket payload");
+  assertPayloadKeys(payload, ["targetType", "title", "description", "category", "priority", "roomId", "accommodationId", "locationArea", "assignmentType", "assignedUserId", "externalAssigneeLabel", "externalAssigneeNote", "outOfService"], "Ticket payload");
   const roomId = optionalId("roomId" in payload ? payload.roomId : undefined, "roomId");
+  const locationArea = normalizeArea("locationArea" in payload ? payload.locationArea : undefined);
+  if (!("targetType" in payload) || payload.targetType === undefined || payload.targetType === null || payload.targetType === "") throw new Error("Target is required.");
+  const targetType = assertEnum(payload.targetType, TARGET_TYPES, "Target");
+  if (targetType === "ROOM" && roomId === null) throw new Error("Room is required.");
+  if (targetType === "ROOM" && locationArea !== null) throw new Error("Room target cannot include Area.");
+  if (targetType === "OTHER" && !locationArea) throw new Error("Area is required.");
+  if (targetType === "OTHER" && roomId !== null) throw new Error("Other target cannot include Room.");
   return {
+    targetType,
     title: requiredString("title" in payload ? payload.title : undefined, "Title", 140),
     description: requiredString("description" in payload ? payload.description : undefined, "Description", 2000),
     category: "category" in payload && payload.category !== undefined && payload.category !== null && payload.category !== ""
       ? assertEnum(payload.category, CATEGORIES, "Category")
       : "Other",
     priority: normalizePriority("priority" in payload ? payload.priority : undefined),
-    roomId,
-    accommodationId: optionalId("accommodationId" in payload ? payload.accommodationId : undefined, "accommodationId"),
-    locationArea: normalizeArea("locationArea" in payload ? payload.locationArea : undefined),
+    roomId: targetType === "ROOM" ? roomId : null,
+    accommodationId: targetType === "ROOM" ? optionalId("accommodationId" in payload ? payload.accommodationId : undefined, "accommodationId") : null,
+    locationArea: targetType === "OTHER" ? locationArea : null,
     assignment: parseAssignment(payload),
     outOfService: "outOfService" in payload ? (payload as { outOfService?: unknown }).outOfService === true : false,
   };
@@ -453,6 +465,7 @@ function mapTicket(row: MaintenanceTicketRow): MaintenanceTicketSummary {
   };
   return {
     id: row.ticket_id,
+    targetType: row.room_id === null ? "OTHER" : "ROOM",
     title: row.title,
     description: row.description,
     category: row.category,
@@ -850,7 +863,6 @@ export async function updateMaintenanceOutOfService(env: MaintenanceBindings, ti
   if (!canEditMaintenance(user)) throw new MaintenancePermissionError("Only Maintenance, Manager or Owner can change Out of Service.");
   const current = await getMaintenanceTicket(env, ticketId);
   if (!current) return null;
-  if (!current.roomId) throw new Error("Out of Service requires a room-related ticket.");
   const now = new Date().toISOString();
   const result = await env.DB.prepare(`
     UPDATE maintenance_tickets

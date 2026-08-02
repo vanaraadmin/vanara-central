@@ -247,7 +247,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const openIssues = activeMaintenance.length;
   const highIssues = activeMaintenance.filter((ticket) => ticket.priority === "High").length;
   const waiting = activeMaintenance.filter((ticket) => ticket.status === "Waiting Parts").length;
-  const outOfService = activeMaintenance.filter((ticket) => ticket.outOfService).length;
+  const outOfService = activeMaintenance.filter((ticket) => ticket.outOfService && ticket.roomId !== null).length;
 
   const activeUsers = users.filter((user) => user.status === "active");
   const disabledUsers = users.filter((user) => user.status === "disabled");

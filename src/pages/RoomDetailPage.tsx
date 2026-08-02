@@ -415,7 +415,7 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
   const [outOfService, setOutOfService] = useState(false);
   const hasActiveTicket = room.maintenance.tickets.length > 0;
   const mutation = useMutation({
-    mutationFn: () => createRoomMaintenanceTicket(roomId, { title, description, priority, outOfService }),
+    mutationFn: () => createRoomMaintenanceTicket(roomId, { targetType: "ROOM", title, description, priority, outOfService }),
     onSuccess: async () => {
       setTitle("");
       setDescription("");

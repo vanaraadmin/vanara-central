@@ -136,7 +136,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   if (canAccess(user, "maintenance")) {
     const tickets = await listMaintenanceTickets(env, { status: "All" });
     const activeTickets = tickets.filter((ticket) => ticket.status !== "Completed");
-    const blockingTickets = activeTickets.filter((ticket) => ticket.outOfService).length;
+    const blockingTickets = activeTickets.filter((ticket) => ticket.outOfService && ticket.roomId !== null).length;
     cards.push(withSummaryLines({
       id: "maintenance",
       module: "maintenance",

@@ -93,7 +93,7 @@ export default function MaintenancePage() {
   });
   const tickets = useMemo(() => (query.data ?? []).filter((ticket) => {
     if (priorityParam && ticket.priority !== priorityParam) return false;
-    if (outOfServiceParam && !ticket.outOfService) return false;
+    if (outOfServiceParam && (!ticket.outOfService || ticket.roomId === null)) return false;
     return true;
   }), [outOfServiceParam, priorityParam, query.data]);
   const activeTickets = useMemo(() => tickets.filter((ticket) => ticket.status !== "Completed"), [tickets]);

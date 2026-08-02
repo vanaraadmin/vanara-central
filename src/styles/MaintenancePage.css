@@ -131,6 +131,42 @@
   gap: var(--vc-space-3);
 }
 
+.maintenance-target-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vc-space-2);
+  padding: 0;
+  border: 0;
+}
+
+.maintenance-target-field legend {
+  flex: 0 0 100%;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.maintenance-target-field label {
+  display: inline-flex;
+  min-height: var(--vc-touch-min);
+  align-items: center;
+  gap: var(--vc-space-2);
+  padding: 0 var(--vc-space-4);
+  color: var(--vc-text-primary);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-pill);
+  box-shadow: var(--vc-shadow-xs);
+  font-weight: var(--vc-weight-bold);
+}
+
+.maintenance-target-field input {
+  width: 16px;
+  min-height: 16px;
+}
+
 .maintenance-checkbox-field,
 .room-checkbox-field {
   display: flex !important;

@@ -1,5 +1,6 @@
 export type MaintenanceStatus = "Open" | "In Progress" | "Waiting Parts" | "Completed";
 export type MaintenancePriority = "Low" | "Normal" | "High";
+export type MaintenanceTargetType = "ROOM" | "OTHER";
 export type MaintenanceCategory =
   | "Electrical"
   | "Air Conditioning"
@@ -24,6 +25,7 @@ export interface MaintenanceAssignment {
 
 export interface MaintenanceTicketSummary {
   id: number;
+  targetType: MaintenanceTargetType;
   title: string;
   description: string;
   category: MaintenanceCategory;
@@ -107,6 +109,7 @@ export interface MaintenanceAssignableOptions {
 }
 
 export interface CreateMaintenanceTicketPayload {
+  targetType: MaintenanceTargetType;
   title: string;
   description: string;
   category?: MaintenanceCategory;

@@ -36,7 +36,7 @@ Server services own permissions, persistence, status transitions, room blocking,
 Maintenance issue cards show only:
 
 - title;
-- room or resort area;
+- target room or resort area;
 - priority;
 - status;
 - assigned to;
@@ -66,6 +66,15 @@ The detail page keeps only the approved intervention details:
 - timeline.
 
 Detailed operational checklists are not part of Maintenance V1.
+
+Every Maintenance issue must have one explicit target:
+
+- Room;
+- Other.
+
+For target `Room`, the room is mandatory. The selected room is the authoritative source for Maintenance alerts in Room Workspace, Reception, Housekeeping, Staff Home, and Dashboard.
+
+For target `Other`, the resort area is mandatory. Supported areas are Restaurant, Garden, Pool, Reception, Storage, Utilities, and Other. These tickets remain Maintenance-only and never create room alerts, Housekeeping blocks, Reception room blocks, or Room Workspace room alerts.
 
 ## Statuses
 
@@ -100,7 +109,7 @@ Legacy stored values are mapped into this product vocabulary before reaching the
 
 Blocking is the most important Maintenance signal.
 
-When an active Maintenance issue is marked blocking:
+When an active room-target Maintenance issue is marked blocking:
 
 - the room is treated as Out Of Service;
 - Reception cards show `Maintenance Out Of Service`;
@@ -110,6 +119,8 @@ When an active Maintenance issue is marked blocking:
 - Housekeeping task execution is blocked for that room.
 
 Closing the issue removes the active blocking state from all read models. The issue history remains in the Maintenance timeline.
+
+When an `Other` target issue is marked blocking, the blocking flag stays inside Maintenance only. It does not place any room Out Of Service and does not affect Reception, Room Workspace, Housekeeping, or room-blocking counters.
 
 ## Duplicate Rule
 
@@ -195,8 +206,9 @@ Important fields:
 
 - `status` stores the lifecycle state.
 - `priority` stores the operational priority.
-- `room_id` links room-related issues.
-- `out_of_service` marks active blocking issues.
+- `room_id` links room-target issues and is required for room-target tickets.
+- `location_area` stores the mandatory area for Other-target tickets.
+- `out_of_service` marks active blocking issues. It affects room operations only when `room_id` is present.
 - `assignment_type`, `assigned_user_id`, and related fields store ownership.
 - event rows store creation, assignment, status, waiting reason, and blocking changes.
 
@@ -208,11 +220,13 @@ Reception:
 
 - cards expose active Maintenance and Out Of Service state;
 - blocking label is `Maintenance Out Of Service`;
+- only room-target blocking tickets affect Reception rooms;
 - closing the Maintenance issue removes the active Reception badge.
 
 Housekeeping:
 
-- out-of-service Maintenance blocks execution for the room;
+- room-target out-of-service Maintenance blocks execution for the room;
+- Other-target Maintenance never blocks Housekeeping room work;
 - Housekeeping room detail exposes the blocking ticket;
 - Housekeeping queues remain task-owned and do not become Maintenance lists.
 
@@ -222,11 +236,13 @@ Room Workspace:
 - shows blocking state;
 - opens existing issue when one is active;
 - creates a new issue only when no active issue exists.
+- ignores Other-target Maintenance tickets because they do not belong to a room.
 
 Staff Home and Dashboard:
 
 - Maintenance metrics expose active issues and blocking count;
-- blocked rooms are surfaced without requiring the operator to open a ticket first.
+- blocked rooms are surfaced without requiring the operator to open a ticket first;
+- room-blocking counters count only room-target blocking tickets.
 
 ## Known Limitations
 
@@ -247,4 +263,3 @@ Future work may include:
 - recurring maintenance schedules;
 - deeper procurement linkage for parts;
 - notifications for Waiting Parts and blocking issues.
-

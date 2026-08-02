@@ -117,7 +117,8 @@ class FakeRoomDB {
       return { results: [...this.notes].reverse() as T[] };
     }
     if (sql.includes("FROM maintenance_tickets") && sql.includes("WHERE room_id =")) {
-      return { results: this.tickets.map((ticket) => ({ ticket_id: ticket.ticket_id })) as T[] };
+      const roomId = Number(params[0]);
+      return { results: this.tickets.filter((ticket) => Number(ticket.room_id) === roomId).map((ticket) => ({ ticket_id: ticket.ticket_id })) as T[] };
     }
     if (sql.includes("FROM maintenance_ticket_notes")) return { results: [] as T[] };
     if (sql.includes("FROM maintenance_ticket_photos")) return { results: [] as T[] };
@@ -1003,4 +1004,29 @@ test("room maintenance endpoint requires room access and creates a ticket throug
   assert.equal((replayBody.data as { id: number }).id, ticketId);
   assert.equal(db.tickets.length, 1);
   assert.equal(db.events.length, auditCount);
+});
+
+test("maintenance target model enforces Room or Other and Other never affects Room Workspace", async () => {
+  assert.equal((await request("/api/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Loose handle", description: "Door handle", priority: "Low" }) }, env([maintenanceEdit]))).status, 400);
+  assert.equal((await request("/api/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ targetType: "ROOM", title: "Loose handle", description: "Door handle", priority: "Low" }) }, env([maintenanceEdit]))).status, 400);
+  assert.equal((await request("/api/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ targetType: "OTHER", title: "Loose handle", description: "Door handle", priority: "Low" }) }, env([maintenanceEdit]))).status, 400);
+
+  const data = env([maintenanceEdit, roomsAccess]);
+  const created = await request("/api/maintenance/tickets", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ targetType: "OTHER", title: "Restaurant fan", description: "Fan vibration", priority: "High", locationArea: "Restaurant", outOfService: true }),
+  }, data);
+  const body = await json(created);
+  assert.equal(created.status, 201);
+  assert.equal((body.data as { targetType: string; roomId: number | null; locationArea: string; outOfService: boolean }).targetType, "OTHER");
+  assert.equal((body.data as { targetType: string; roomId: number | null; locationArea: string; outOfService: boolean }).roomId, null);
+  assert.equal((body.data as { targetType: string; roomId: number | null; locationArea: string; outOfService: boolean }).locationArea, "Restaurant");
+  assert.equal((body.data as { targetType: string; roomId: number | null; locationArea: string; outOfService: boolean }).outOfService, true);
+
+  const room = await request("/api/rooms/1", { method: "GET", headers: { cookie: "vanara_session=x" } }, data);
+  const roomBody = await json(room);
+  assert.equal(room.status, 200);
+  assert.equal((roomBody.data as { maintenance: { openIssues: number; outOfService: boolean } }).maintenance.openIssues, 0);
+  assert.equal((roomBody.data as { maintenance: { openIssues: number; outOfService: boolean } }).maintenance.outOfService, false);
 });

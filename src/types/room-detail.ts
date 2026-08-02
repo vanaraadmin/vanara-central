@@ -162,6 +162,7 @@ export interface RoomDetail {
 }
 
 export interface CreateRoomMaintenanceTicketPayload {
+  targetType?: "ROOM";
   title: string;
   description: string;
   priority: MaintenancePriority;

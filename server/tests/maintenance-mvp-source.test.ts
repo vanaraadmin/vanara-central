@@ -55,3 +55,14 @@ test("blocking maintenance is surfaced in Reception, Staff Home, and Room Worksp
   assert.match(roomDetail, /hasActiveTicket/);
   assert.match(roomDetail, /!hasActiveTicket/);
 });
+
+test("maintenance creation requires an explicit Room or Other target", () => {
+  assert.match(createMaintenance, /maintenance-target-field/);
+  assert.match(createMaintenance, /targetType/);
+  assert.match(createMaintenance, /"ROOM"/);
+  assert.match(createMaintenance, /"OTHER"/);
+  assert.match(createMaintenance, /Restaurant/);
+  assert.match(createMaintenance, /Utilities/);
+  assert.match(createMaintenance, /Area/);
+  assert.doesNotMatch(createMaintenance, /Room optional/);
+});

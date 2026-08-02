@@ -147,11 +147,10 @@ function OutOfServicePanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
       ]);
     },
   });
-  if (!ticket.roomId) return null;
   return (
     <section className="maintenance-panel">
       <h2>Blocking</h2>
-      <p className="maintenance-muted">{ticket.outOfService ? "Room is Out of Service." : "Ticket does not block the room."}</p>
+      <p className="maintenance-muted">{ticket.roomId ? ticket.outOfService ? "Room is Out of Service." : "Ticket does not block the room." : ticket.outOfService ? "Blocking is Maintenance-only for this area." : "Ticket does not block room operations."}</p>
       <button type="button" className={ticket.outOfService ? "is-active" : ""} disabled={mutation.isPending} onClick={() => mutation.mutate(!ticket.outOfService)}>
         {ticket.outOfService ? "Remove Blocking" : "Mark Blocking"}
       </button>

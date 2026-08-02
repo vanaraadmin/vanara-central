@@ -885,11 +885,12 @@ export async function createRoomMaintenanceTicket(env: RoomDetailBindings, id: n
   const unit = await resolveUnit(env, id);
   if (!unit) return null;
   const scopedPayload = payload && typeof payload === "object"
-    ? { ...payload, roomId: unit.unit_id, accommodationId: unit.room_type_id, locationArea: null }
+    ? { ...payload, targetType: "ROOM", roomId: unit.unit_id, accommodationId: unit.room_type_id, locationArea: null }
     : payload;
   const input = normalizeCreateMaintenanceTicketInput(scopedPayload);
   const roomInput: CreateMaintenanceTicketInput = {
     ...input,
+    targetType: "ROOM",
     roomId: unit.unit_id,
     accommodationId: unit.room_type_id,
   };

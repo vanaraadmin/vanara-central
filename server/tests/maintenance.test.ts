@@ -12,6 +12,7 @@ import {
 
 test("maintenance ticket create input supports the MVP production fields", () => {
   const input = normalizeCreateMaintenanceTicketInput({
+    targetType: "ROOM",
     title: "Sink leak",
     description: "Water under the bathroom sink.",
     priority: "Normal",
@@ -22,6 +23,7 @@ test("maintenance ticket create input supports the MVP production fields", () =>
   });
 
   assert.equal(input.title, "Sink leak");
+  assert.equal(input.targetType, "ROOM");
   assert.equal(input.category, "Other");
   assert.equal(input.priority, "Normal");
   assert.equal(input.roomId, 1);
@@ -29,10 +31,35 @@ test("maintenance ticket create input supports the MVP production fields", () =>
   assert.equal(input.outOfService, true);
 });
 
+test("maintenance target model requires Room or Other with a concrete target", () => {
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "Low" }), /Target is required/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ roomId: 1, title: "Loose handle", description: "Door handle", priority: "Low" }), /Target is required/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ locationArea: "Restaurant", title: "Loose handle", description: "Door handle", priority: "Low" }), /Target is required/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ targetType: "ROOM", title: "Loose handle", description: "Door handle", priority: "Low" }), /Room is required/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ targetType: "OTHER", title: "Loose handle", description: "Door handle", priority: "Low" }), /Area is required/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ targetType: "ROOM", roomId: 1, locationArea: "Restaurant", title: "Loose handle", description: "Door handle", priority: "Low" }), /Room target cannot include Area/);
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ targetType: "OTHER", roomId: 1, locationArea: "Restaurant", title: "Loose handle", description: "Door handle", priority: "Low" }), /Other target cannot include Room/);
+
+  const other = normalizeCreateMaintenanceTicketInput({
+    targetType: "OTHER",
+    title: "Restaurant fan",
+    description: "Fan vibration.",
+    priority: "High",
+    locationArea: "Restaurant",
+    outOfService: true,
+  });
+
+  assert.equal(other.targetType, "OTHER");
+  assert.equal(other.roomId, null);
+  assert.equal(other.accommodationId, null);
+  assert.equal(other.locationArea, "Restaurant");
+  assert.equal(other.outOfService, true);
+});
+
 test("maintenance priority is limited to low normal high", () => {
-  assert.equal(normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "Low" }).priority, "Low");
-  assert.equal(normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "High" }).priority, "High");
-  assert.throws(() => normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "Critical" }), /Priority is invalid/);
+  assert.equal(normalizeCreateMaintenanceTicketInput({ targetType: "ROOM", roomId: 1, title: "Loose handle", description: "Door handle", priority: "Low" }).priority, "Low");
+  assert.equal(normalizeCreateMaintenanceTicketInput({ targetType: "ROOM", roomId: 1, title: "Loose handle", description: "Door handle", priority: "High" }).priority, "High");
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ targetType: "ROOM", roomId: 1, title: "Loose handle", description: "Door handle", priority: "Critical" }), /Priority is invalid/);
 });
 
 test("maintenance status exposes only the four MVP states", () => {
