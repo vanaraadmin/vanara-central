@@ -136,6 +136,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   if (canAccess(user, "maintenance")) {
     const tickets = await listMaintenanceTickets(env, { status: "All" });
     const activeTickets = tickets.filter((ticket) => ticket.status !== "Completed");
+    const blockingTickets = activeTickets.filter((ticket) => ticket.outOfService).length;
     cards.push(withSummaryLines({
       id: "maintenance",
       module: "maintenance",
@@ -145,7 +146,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Maintenance",
       metrics: [
         { label: "Open", value: activeTickets.length, tone: activeTickets.some((ticket) => ticket.priority === "High") ? "urgent" : "attention" },
-        { label: "Assigned to me", value: activeTickets.filter((ticket) => ticket.assignedUserId === user.id).length, tone: "neutral" },
+        { label: "Blocking", value: blockingTickets, tone: blockingTickets > 0 ? "urgent" : "neutral" },
         { label: "Waiting", value: activeTickets.filter((ticket) => ticket.status === "Waiting Parts").length, tone: "attention" },
       ],
     }));

@@ -203,6 +203,19 @@ class FakeRoomDB {
     if (sql.includes("FROM housekeeping_tasks WHERE task_id")) {
       return (this.tasks.find((task) => task.task_id === params[0]) ?? null) as T | null;
     }
+    if (sql.includes("FROM maintenance_tickets") && sql.includes("out_of_service = 1") && sql.includes("LIMIT 1")) {
+      const roomId = Number(params[0]);
+      const title = String(params[1]).trim().toLowerCase();
+      const description = String(params[2]).trim().toLowerCase();
+      const ticket = this.tickets
+        .filter((item) => Number(item.room_id) === roomId
+          && Number(item.out_of_service) === 1
+          && String(item.title).trim().toLowerCase() === title
+          && String(item.description).trim().toLowerCase() === description
+          && !["Resolved", "Closed"].includes(String(item.status)))
+        .at(-1);
+      return ticket ? { ticket_id: ticket.ticket_id } as T : null;
+    }
     if (sql.includes("SELECT * FROM room_notes WHERE note_id")) {
       return (this.notes.find((note) => note.note_id === params[0]) ?? null) as T | null;
     }
@@ -971,11 +984,23 @@ test("room maintenance endpoint requires room access and creates a ticket throug
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([maintenanceEdit]))).status, 403);
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "Critical" }) }, env([roomsAccess]))).status, 400);
   assert.equal((await request("/api/rooms/999/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "High" }) }, env([roomsAccess]))).status, 404);
-  const response = await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink cabinet leak", priority: "High", outOfService: true }) }, env([roomsAccess]));
+  const data = env([roomsAccess]);
+  const response = await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink cabinet leak", priority: "High", outOfService: true }) }, data);
   const body = await json(response);
   assert.equal(response.status, 201);
   assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).roomId, UNIT.unit_id);
   assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).accommodationId, UNIT.room_type_id);
   assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).reportedByName, ACTIVE_USER.full_name);
   assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).outOfService, true);
+  const ticketId = (body.data as { id: number }).id;
+  const db = data.DB as unknown as FakeRoomDB;
+  assert.equal(db.tickets.length, 1);
+  const auditCount = db.events.length;
+
+  const replay = await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink cabinet leak", priority: "High", outOfService: true }) }, data);
+  const replayBody = await json(replay);
+  assert.equal(replay.status, 201);
+  assert.equal((replayBody.data as { id: number }).id, ticketId);
+  assert.equal(db.tickets.length, 1);
+  assert.equal(db.events.length, auditCount);
 });

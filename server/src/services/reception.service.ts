@@ -452,7 +452,7 @@ async function roomOperationalState(env: ReceptionBindings, roomId: number | nul
   const maintenanceSummary = {
     openIssues: maintenance.length,
     outOfService,
-    label: outOfService ? "Maintenance Blocking" : maintenance.length > 0 ? "Maintenance Active" : null,
+    label: outOfService ? "Maintenance Out Of Service" : maintenance.length > 0 ? "Maintenance Active" : null,
   };
   if (outOfService) return { status: "Out Of Service", maintenance: maintenanceSummary };
   if (operationalAvailability.status === "NOT_OPERATING") return { status: "Not Operating", maintenance: maintenanceSummary };

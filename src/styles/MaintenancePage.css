@@ -232,10 +232,14 @@
   gap: var(--vc-space-3);
 }
 
-.maintenance-ticket {
+.maintenance-ticket-stack {
   display: grid;
   gap: var(--vc-space-3);
-  padding: var(--vc-space-4);
+}
+
+.maintenance-ticket {
+  display: grid;
+  overflow: hidden;
   color: inherit;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--vc-border-subtle);
@@ -252,6 +256,19 @@
 
 .maintenance-ticket.priority-low {
   border-left-color: var(--vc-color-success);
+}
+
+.maintenance-ticket__trigger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vc-space-2);
+  width: 100%;
+  align-items: center;
+  padding: var(--vc-space-4);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
 }
 
 .maintenance-ticket__top,
@@ -272,6 +289,9 @@
 .maintenance-ticket__top strong,
 .maintenance-ticket__meta span,
 .maintenance-ticket__foot span,
+.maintenance-ticket__trigger span,
+.maintenance-ticket__trigger time,
+.maintenance-ticket__trigger strong,
 .maintenance-detail-hero > div:last-child span {
   display: inline-flex;
   min-height: 1.9rem;
@@ -284,13 +304,40 @@
   font-weight: var(--vc-weight-bold);
 }
 
-.maintenance-ticket__top strong {
+.maintenance-ticket__trigger strong {
+  color: var(--vc-color-white);
+  background: var(--vc-color-danger);
+}
+
+.maintenance-ticket__top strong,
+.maintenance-ticket__title {
+  flex: 1 1 14rem;
   min-height: auto;
   padding: 0;
   color: var(--vc-text-primary);
   background: transparent;
   border-radius: 0;
   font-size: var(--vc-text-lg);
+}
+
+.maintenance-ticket__details {
+  display: grid;
+  gap: var(--vc-space-3);
+  padding: 0 var(--vc-space-4) var(--vc-space-4);
+}
+
+.maintenance-ticket__details a {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--vc-space-4);
+  color: var(--vc-color-white);
+  background: var(--vc-color-jungle-800);
+  border-radius: var(--vc-radius-pill);
+  font-weight: var(--vc-weight-bold);
+  text-decoration: none;
 }
 
 .maintenance-ticket h2 {
@@ -377,8 +424,11 @@
   gap: var(--vc-space-2);
 }
 
-.maintenance-timeline-list article,
-.maintenance-photo-grid article {
+.maintenance-photo-grid {
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+}
+
+.maintenance-timeline-list article {
   display: grid;
   gap: var(--vc-space-1);
   padding: var(--vc-space-3);
@@ -390,6 +440,79 @@
 .maintenance-timeline-list article span {
   color: var(--vc-text-muted);
   font-size: var(--vc-text-xs);
+}
+
+.maintenance-photo-tile {
+  display: grid;
+  min-height: 7.5rem;
+  gap: var(--vc-space-2);
+  align-content: end;
+  padding: var(--vc-space-2);
+  overflow: hidden;
+  color: var(--vc-text-primary);
+  background: var(--vc-color-sand-50);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  text-align: left;
+}
+
+.maintenance-photo-tile img,
+.maintenance-photo-tile span {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: rgba(42, 82, 69, 0.12);
+  border-radius: var(--vc-radius-md);
+}
+
+.maintenance-photo-tile strong {
+  overflow: hidden;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maintenance-photo-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: var(--vc-space-4);
+}
+
+.maintenance-photo-preview__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  border: 0;
+}
+
+.maintenance-photo-preview__frame {
+  position: relative;
+  display: grid;
+  gap: var(--vc-space-2);
+  max-width: min(88vw, 42rem);
+  max-height: 88vh;
+  padding: var(--vc-space-3);
+  background: var(--vc-color-white);
+  border-radius: var(--vc-radius-xl);
+  box-shadow: var(--vc-shadow-lg);
+}
+
+.maintenance-photo-preview__frame img {
+  max-width: 100%;
+  max-height: 74vh;
+  object-fit: contain;
+  border-radius: var(--vc-radius-lg);
+}
+
+.maintenance-photo-preview__frame p {
+  margin: 0;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
 }
 
 .maintenance-form-error {
@@ -429,5 +552,9 @@
 
   .maintenance-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .maintenance-ticket__trigger {
+    align-items: stretch;
   }
 }

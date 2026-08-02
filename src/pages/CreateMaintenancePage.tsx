@@ -86,7 +86,7 @@ export default function CreateMaintenancePage() {
         {photos.length > 0 && <p className="maintenance-muted">{photos.length} photo{photos.length === 1 ? "" : "s"} selected</p>}
         <div className="maintenance-form-grid">
           <label><span>Room optional</span><input inputMode="numeric" value={roomId} onChange={(event) => setRoomId(event.target.value)} placeholder="Example: 1" /></label>
-          <label><span>Priority</span><select value={priority} onChange={(event) => setPriority(event.target.value as MaintenancePriority)}>{priorities.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label><span>Priority</span><select value={priority} onChange={(event) => setPriority(event.target.value as MaintenancePriority)}>{priorities.map((item) => <option key={item}>{item.toUpperCase()}</option>)}</select></label>
         </div>
         <label className="maintenance-checkbox-field">
           <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
@@ -101,8 +101,8 @@ export default function CreateMaintenancePage() {
             </select>
           </label>
         )}
-        {mutation.isError && <p className="maintenance-form-error">Ticket could not be saved. Please check the fields.</p>}
-        <button type="submit" disabled={!title.trim() || !description.trim() || mutation.isPending}>{mutation.isPending ? "Creating..." : "Create Ticket"}</button>
+        {mutation.isError && <p className="maintenance-form-error">Issue could not be saved. Please check the fields.</p>}
+        <button type="submit" disabled={!title.trim() || !description.trim() || mutation.isPending}>{mutation.isPending ? "Creating..." : "Create Issue"}</button>
       </form>
     </WorkspaceShell>
   );

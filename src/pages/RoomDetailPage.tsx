@@ -413,6 +413,7 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<MaintenancePriority>("Normal");
   const [outOfService, setOutOfService] = useState(false);
+  const hasActiveTicket = room.maintenance.tickets.length > 0;
   const mutation = useMutation({
     mutationFn: () => createRoomMaintenanceTicket(roomId, { title, description, priority, outOfService }),
     onSuccess: async () => {
@@ -434,8 +435,8 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
       <header><MaintenanceIcon /><h2>Maintenance</h2></header>
       <div className="room-section-summary">
         <strong>{room.maintenance.label}</strong>
-        <span>{room.maintenance.highestPriority ? `Highest active priority: ${room.maintenance.highestPriority}` : "Tickets stay owned by the Maintenance module."}</span>
-        {room.maintenance.outOfService && <span>Out of Service - local operational state only</span>}
+        <span>{room.maintenance.outOfService ? "Maintenance blocks this room." : room.maintenance.highestPriority ? `${room.maintenance.highestPriority.toUpperCase()} priority` : "No maintenance blocking this room."}</span>
+        {room.maintenance.outOfService && <span>Out Of Service</span>}
       </div>
       <div className="maintenance-ticket-list">
         {room.maintenance.tickets.length === 0 && <div className="room-empty-state">No open issues</div>}
@@ -443,37 +444,40 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
           <Link className="maintenance-ticket-card" key={ticket.id} to={`/maintenance/${ticket.id}`}>
             <div>
               <strong>{ticket.title}</strong>
-              <span>{ticket.status}</span>
+              <span>{ticket.status.toUpperCase()}</span>
             </div>
-            <span className={`room-status-badge is-${ticket.priority.toLowerCase()}`}>{ticket.priority}</span>
+            <span className={`room-status-badge is-${ticket.priority.toLowerCase()}`}>{ticket.priority.toUpperCase()}</span>
+            {ticket.outOfService && <small>Blocking</small>}
             {ticket.photos.length > 0 && <small>{ticket.photos.length} photo{ticket.photos.length === 1 ? "" : "s"}</small>}
           </Link>
         ))}
       </div>
-      <form className="room-ticket-form" onSubmit={submit}>
-        <label>
-          Report Issue
-          <input maxLength={140} onChange={(event) => setTitle(event.target.value)} placeholder="Short issue title" required value={title} />
-        </label>
-        <label>
-          Description
-          <textarea maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What needs attention?" required rows={3} value={description} />
-        </label>
-        <div className="room-form-grid">
+      {!hasActiveTicket && (
+        <form className="room-ticket-form" onSubmit={submit}>
           <label>
-            Priority
-            <select onChange={(event) => setPriority(event.target.value as MaintenancePriority)} value={priority}>
-              {MAINTENANCE_PRIORITIES.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            Report Issue
+            <input maxLength={140} onChange={(event) => setTitle(event.target.value)} placeholder="Short issue title" required value={title} />
           </label>
-          <label className="room-checkbox-field">
-            <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
-            <span>Blocking room</span>
+          <label>
+            Description
+            <textarea maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What needs attention?" required rows={3} value={description} />
           </label>
-        </div>
-        <button disabled={mutation.isPending} type="submit"><PlusIcon />Report Issue</button>
-        {mutation.isError && <p className="room-form-error">Maintenance ticket could not be created.</p>}
-      </form>
+          <div className="room-form-grid">
+            <label>
+              Priority
+              <select onChange={(event) => setPriority(event.target.value as MaintenancePriority)} value={priority}>
+                {MAINTENANCE_PRIORITIES.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
+              </select>
+            </label>
+            <label className="room-checkbox-field">
+              <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
+              <span>Blocking room</span>
+            </label>
+          </div>
+          <button disabled={mutation.isPending} type="submit"><PlusIcon />Report Issue</button>
+          {mutation.isError && <p className="room-form-error">Issue could not be created.</p>}
+        </form>
+      )}
     </section>
   );
 }

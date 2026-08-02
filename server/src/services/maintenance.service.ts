@@ -550,6 +550,21 @@ async function requireUnit(env: MaintenanceBindings, roomId: number | null): Pro
   return row;
 }
 
+async function findActiveBlockingTicketForRoom(env: MaintenanceBindings, roomId: number, title: string, description: string): Promise<MaintenanceTicketDetail | null> {
+  const row = await env.DB.prepare(`
+    SELECT ticket_id
+    FROM maintenance_tickets
+    WHERE room_id = ?
+      AND out_of_service = 1
+      AND status NOT IN ('Resolved', 'Closed')
+      AND lower(trim(title)) = lower(trim(?))
+      AND lower(trim(description)) = lower(trim(?))
+    ORDER BY updated_at DESC, ticket_id DESC
+    LIMIT 1
+  `).bind(roomId, title, description).first<{ ticket_id: number }>();
+  return row ? getMaintenanceTicket(env, row.ticket_id) : null;
+}
+
 async function loadAssignableMaintenanceUser(env: MaintenanceBindings, userId: string): Promise<AssignableUserRow | null> {
   return env.DB.prepare(`
     SELECT u.user_id, u.full_name, u.role, u.status, p.can_access
@@ -707,6 +722,10 @@ export async function listOpenMaintenanceTicketDetailsForRoom(env: MaintenanceBi
 
 export async function createMaintenanceTicket(env: MaintenanceBindings, input: CreateMaintenanceTicketInput, user: CurrentChatUser): Promise<MaintenanceTicketDetail> {
   const unit = await requireUnit(env, input.roomId);
+  if (input.outOfService && input.roomId) {
+    const existingBlocking = await findActiveBlockingTicketForRoom(env, input.roomId, input.title, input.description);
+    if (existingBlocking) return existingBlocking;
+  }
   const assignment = await resolveAssignment(env, input.assignment);
   const now = new Date().toISOString();
   const accommodationId = input.roomId ? unit?.room_type_id ?? input.accommodationId : input.accommodationId;
