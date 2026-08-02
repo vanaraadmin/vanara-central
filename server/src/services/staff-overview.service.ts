@@ -1,10 +1,11 @@
 import { getHousekeepingOverview, type HousekeepingBindings, type HousekeepingOverview } from "./housekeeping-overview.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
+import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./rooms-workspace.service.js";
 import { getReceptionOverview, type ReceptionBindings } from "./reception.service.js";
 import { hasModulePermission, type CurrentUser, type ModuleKey } from "./current-user.service.js";
 import { listRecentBookingEvents, type BookingEventsBindings, type BookingPulseItem } from "./booking-events.service.js";
 
-export interface StaffOverviewBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings {
+export interface StaffOverviewBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings, RoomsWorkspaceBindings {
   DB: D1Database;
 }
 
@@ -92,17 +93,18 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canAccess(user, "rooms")) {
-    const overview = await housekeeping(env, housekeepingCache);
+    const overview = await getRoomsWorkspaceOverview(env);
     cards.push(withSummaryLines({
       id: "rooms",
       module: "rooms",
-      title: "Room Workspace",
-      description: "Open rooms and room-level operations.",
+      title: "Rooms",
+      description: "Compact resort room overview.",
       href: "/rooms",
       cta: "Open Rooms",
       metrics: [
-        { label: "Not ready", value: overview.rooms.filter((room) => room.housekeepingStatus !== "Ready").length, tone: "attention" },
-        { label: "Out of service", value: overview.rooms.filter((room) => room.blocked).length, tone: "urgent" },
+        { label: "Occupied", value: overview.summary.occupied, tone: "neutral" },
+        { label: "Not ready", value: overview.summary.notReady, tone: overview.summary.notReady > 0 ? "attention" : "good" },
+        { label: "Maintenance", value: overview.summary.maintenance, tone: overview.summary.maintenance > 0 ? "urgent" : "good" },
       ],
     }));
     cards.push(withSummaryLines({

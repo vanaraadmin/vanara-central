@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { getDashboard, getDashboardOverview } from "./services/dashboard.service.js";
 import { getStaffOverview, type StaffOverviewBindings } from "./services/staff-overview.service.js";
 import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
+import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./services/rooms-workspace.service.js";
 import { getTodayDashboard } from "./services/today.service.js";
 import { syncProperties, type PropertySyncBindings } from "./services/property-sync.service.js";
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
@@ -55,7 +56,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -550,6 +551,20 @@ app.get("/api/staff/overview", async (c) => {
 
 
 
+
+app.get("/api/rooms", async (c) => {
+  try {
+    await authenticated(c, "rooms", "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getRoomsWorkspaceOverview(c.env) });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Rooms workspace request failed", error: errorMessage(error), path: "/api/rooms" }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Rooms workspace is temporarily unavailable",
+    }, protectedErrorStatus(error));
+  }
+});
 
 app.get("/api/rooms/:id", async (c) => {
   try {

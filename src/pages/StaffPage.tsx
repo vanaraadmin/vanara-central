@@ -28,7 +28,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "procurement",
 ];
 
-const HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>(["rooms", "availability"]);
+const HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>(["availability"]);
 
 const workspaceIcons: Record<StaffCardId, string> = {
   rooms: bedIcon,
@@ -157,10 +157,15 @@ export default function StaffPage() {
         (workspace) => !HIDDEN_UNTIL_PAGE_READY.has(workspace.id),
       )
     : [];
+  const roomsWorkspace = workspaces.find((workspace) => workspace.id === "rooms") ?? null;
+  const remainingWorkspaces = roomsWorkspace
+    ? workspaces.filter((workspace) => workspace.id !== "rooms")
+    : workspaces;
 
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
+  const showSecondaryWorkspaceSection = Boolean(!roomsWorkspace || remainingWorkspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (
     <main className="staff-page" style={workspaceBackgroundStyle("staffHome")}>
@@ -187,6 +192,22 @@ export default function StaffPage() {
           </h1>
         </section>
 
+        {roomsWorkspace ? (
+          <section className="staff-workspaces staff-workspaces--primary" aria-label="Primary workspace">
+            <div className="staff-workspaces__heading">
+              <span>Workspaces</span>
+              <span>{String(workspaces.length).padStart(2, "0")}</span>
+            </div>
+
+            <div className="staff-workspace-list">
+              <WorkspaceCard
+                index={0}
+                workspace={roomsWorkspace}
+              />
+            </div>
+          </section>
+        ) : null}
+
         <RecentBookings
           canViewBookingValue={canViewBookingValue}
           events={bookingEvents}
@@ -195,11 +216,14 @@ export default function StaffPage() {
           onRetry={() => void staff.refetch()}
         />
 
-        <section className="staff-workspaces" aria-label="Available workspaces">
-          <div className="staff-workspaces__heading">
-            <span>Workspaces</span>
-            <span>{String(workspaces.length).padStart(2, "0")}</span>
-          </div>
+        {showSecondaryWorkspaceSection ? (
+        <section className={`staff-workspaces${roomsWorkspace ? " staff-workspaces--secondary" : ""}`} aria-label="Available workspaces">
+          {!roomsWorkspace ? (
+            <div className="staff-workspaces__heading">
+              <span>Workspaces</span>
+              <span>{String(remainingWorkspaces.length).padStart(2, "0")}</span>
+            </div>
+          ) : null}
 
           {staff.isLoading && (
             <div className="staff-state">
@@ -221,11 +245,11 @@ export default function StaffPage() {
             </section>
           )}
 
-          {workspaces.length > 0 && (
+          {remainingWorkspaces.length > 0 && (
             <div className="staff-workspace-list">
-              {workspaces.map((workspace, index) => (
+              {remainingWorkspaces.map((workspace, index) => (
                 <WorkspaceCard
-                  index={index}
+                  index={roomsWorkspace ? index + 1 : index}
                   key={workspace.id}
                   workspace={workspace}
                 />
@@ -233,6 +257,7 @@ export default function StaffPage() {
             </div>
           )}
         </section>
+        ) : null}
 
         <footer className="staff-canopy" aria-label="Vanara Central">
           <img src={shadowCanopy} alt="" aria-hidden="true" />

@@ -95,6 +95,44 @@ class FakeStaffDB {
         ] as T[],
       };
     }
+    if (sql.includes("FROM units u") && sql.includes("LEFT JOIN room_operational_availability") && sql.includes("LEFT JOIN room_housekeeping_state")) {
+      return {
+        results: [
+          {
+            unit_id: 1,
+            unit_name: "Villa 10",
+            unit_type: "villa",
+            room_type_name: "Garden Villa",
+            room_name: "Garden Villa",
+            position: 1,
+            availability_status: "OPERATING",
+            ready_state: "NOT_READY",
+            booking_id: 9001,
+            guest_name: "Mali Guest",
+            api_source: "Beds24",
+            channel: "Direct",
+            open_issues: 1,
+            out_of_service: 1,
+          },
+          {
+            unit_id: 2,
+            unit_name: "Bungalow 1",
+            unit_type: "bungalow",
+            room_type_name: "Bungalow",
+            room_name: "Bungalow",
+            position: 2,
+            availability_status: "OPERATING",
+            ready_state: "READY",
+            booking_id: null,
+            guest_name: null,
+            api_source: null,
+            channel: null,
+            open_issues: 0,
+            out_of_service: 0,
+          },
+        ] as T[],
+      };
+    }
     if (sql.includes("WITH latest_housekeeping")) {
       return {
         results: [

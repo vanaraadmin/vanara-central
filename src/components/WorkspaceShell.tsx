@@ -12,11 +12,11 @@ import "../styles/WorkspaceShell.css";
 const WORKSPACE_HOME_ROUTE = "/staff";
 
 const workspaceNumbers = {
-  reception: "01",
-  housekeeping: "02",
-  maintenance: "03",
-  procurement: "04",
-  rooms: "05",
+  rooms: "01",
+  reception: "02",
+  housekeeping: "03",
+  maintenance: "04",
+  procurement: "05",
   chat: "06",
 } as const;
 
