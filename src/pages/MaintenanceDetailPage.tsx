@@ -5,11 +5,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, loadMaintenanceAssignableUsers, loadMaintenanceTicket, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket } from "../services/maintenance.service";
-import type { MaintenanceAssignmentType, MaintenancePriority, MaintenanceStatus, MaintenanceTicketDetail } from "../types/maintenance";
+import type { MaintenancePriority, MaintenanceStatus, MaintenanceTicketDetail } from "../types/maintenance";
 import "../styles/MaintenancePage.css";
 
-const statuses: MaintenanceStatus[] = ["Open", "Assigned", "In Progress", "Waiting Parts", "Resolved", "Closed"];
-const priorities: MaintenancePriority[] = ["Low", "Medium", "High", "Critical"];
+const statuses: MaintenanceStatus[] = ["Open", "In Progress", "Waiting Parts", "Completed"];
+const priorities: MaintenancePriority[] = ["Low", "Normal", "High"];
+const nextStatuses: Record<MaintenanceStatus, MaintenanceStatus[]> = {
+  Open: ["In Progress"],
+  "In Progress": ["Waiting Parts", "Completed"],
+  "Waiting Parts": ["In Progress", "Completed"],
+  Completed: [],
+};
 
 function formatDate(value: string | null) {
   if (!value) return "Not set";
@@ -27,14 +33,14 @@ function locationLabel(ticket: MaintenanceTicketDetail) {
 }
 
 function assignmentLabel(ticket: MaintenanceTicketDetail) {
-  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? "Internal maintenance";
-  if (ticket.assignment.type === "EXTERNAL") return `External: ${ticket.assignment.externalAssigneeLabel}`;
+  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? "Maintenance";
   return "Unassigned";
 }
 
 function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   const [reason, setReason] = useState(ticket.waitingReason ?? "");
   const queryClient = useQueryClient();
+  const visibleStatuses = statuses.filter((status) => status === ticket.status || nextStatuses[ticket.status].includes(status));
   const mutation = useMutation({
     mutationFn: (status: MaintenanceStatus) => transitionMaintenanceTicket(ticket.id, status, status === "Waiting Parts" ? reason : null),
     onSuccess: async () => {
@@ -47,14 +53,14 @@ function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
 
   return (
     <section className="maintenance-panel">
-      <h2>Status lifecycle</h2>
+      <h2>Status</h2>
       <label className="maintenance-waiting-reason">
         Waiting reason
-        <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required when moving to Waiting" rows={2} />
+        <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for Waiting Parts" rows={2} />
       </label>
       <div className="maintenance-status-actions">
-        {statuses.map((status) => (
-          <button key={status} className={status === ticket.status ? "is-active" : ""} type="button" onClick={() => mutation.mutate(status)} disabled={mutation.isPending || status === ticket.status}>{status === "Waiting Parts" ? "Waiting" : status}</button>
+        {visibleStatuses.map((status) => (
+          <button key={status} className={status === ticket.status ? "is-active" : ""} type="button" onClick={() => mutation.mutate(status)} disabled={mutation.isPending || status === ticket.status}>{status}</button>
         ))}
       </div>
       {mutation.isError && <p className="maintenance-form-error">Status could not be changed.</p>}
@@ -63,19 +69,11 @@ function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
 }
 
 function AssignmentPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
-  const [assignmentType, setAssignmentType] = useState<MaintenanceAssignmentType | "NONE">(ticket.assignment.type ?? "NONE");
   const [assignedUserId, setAssignedUserId] = useState(ticket.assignment.assignedUserId ?? "");
-  const [externalAssigneeLabel, setExternalAssigneeLabel] = useState(ticket.assignment.externalAssigneeLabel ?? "External maintenance company");
-  const [externalAssigneeNote, setExternalAssigneeNote] = useState(ticket.assignment.externalAssigneeNote ?? "");
   const queryClient = useQueryClient();
   const assignable = useQuery({ queryKey: ["maintenance", "assignable-users"], queryFn: ({ signal }) => loadMaintenanceAssignableUsers(signal) });
   const mutation = useMutation({
-    mutationFn: () => assignMaintenanceTicket(ticket.id, {
-      assignmentType: assignmentType === "NONE" ? null : assignmentType,
-      assignedUserId: assignmentType === "INTERNAL" ? assignedUserId : null,
-      externalAssigneeLabel: assignmentType === "EXTERNAL" ? externalAssigneeLabel : null,
-      externalAssigneeNote: assignmentType === "EXTERNAL" ? externalAssigneeNote : null,
-    }),
+    mutationFn: () => assignMaintenanceTicket(ticket.id, assignedUserId ? { assignmentType: "INTERNAL", assignedUserId } : { assignmentType: null }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["maintenance", "ticket", ticket.id] }),
@@ -84,38 +82,25 @@ function AssignmentPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
     },
   });
   const users = assignable.data?.users ?? [];
-  const externalOptions = assignable.data?.externalAssignees ?? ["External maintenance company"];
 
   return (
     <section className="maintenance-panel">
       <h2>Assignment</h2>
       <p className="maintenance-muted">{assignmentLabel(ticket)}</p>
-      <div className="maintenance-inline-form maintenance-inline-form--stacked">
-        <label>
-          Assignee type
-          <select value={assignmentType} onChange={(event) => setAssignmentType(event.target.value as MaintenanceAssignmentType | "NONE")}>
-            <option value="NONE">Unassigned</option>
-            <option value="INTERNAL" disabled={users.length === 0}>Internal maintenance staff</option>
-            <option value="EXTERNAL">External technician</option>
-          </select>
-        </label>
-        {assignmentType === "INTERNAL" && (
+      {users.length > 0 ? (
+        <div className="maintenance-inline-form maintenance-inline-form--stacked">
           <label>
             Maintenance staff
             <select value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
-              <option value="">Select staff</option>
+              <option value="">Unassigned</option>
               {users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}
             </select>
           </label>
-        )}
-        {assignmentType === "EXTERNAL" && (
-          <>
-            <label>External type<select value={externalAssigneeLabel} onChange={(event) => setExternalAssigneeLabel(event.target.value)}>{externalOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label>External note<textarea value={externalAssigneeNote} onChange={(event) => setExternalAssigneeNote(event.target.value)} rows={2} /></label>
-          </>
-        )}
-        <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Save Assignment</button>
-      </div>
+          <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Save Assignment</button>
+        </div>
+      ) : (
+        <p className="maintenance-muted">No active Maintenance user available.</p>
+      )}
       {mutation.isError && <p className="maintenance-form-error">Assignment not saved.</p>}
     </section>
   );
@@ -157,12 +142,12 @@ function OutOfServicePanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   if (!ticket.roomId) return null;
   return (
     <section className="maintenance-panel">
-      <h2>Out of Service</h2>
-      <p className="maintenance-muted">Operational only. No Beds24 change.</p>
+      <h2>Blocking</h2>
+      <p className="maintenance-muted">{ticket.outOfService ? "Room is Out of Service." : "Ticket does not block the room."}</p>
       <button type="button" className={ticket.outOfService ? "is-active" : ""} disabled={mutation.isPending} onClick={() => mutation.mutate(!ticket.outOfService)}>
-        {ticket.outOfService ? "Remove Out of Service" : "Set Out of Service"}
+        {ticket.outOfService ? "Remove Blocking" : "Mark Blocking"}
       </button>
-      {mutation.isError && <p className="maintenance-form-error">Out of Service not changed.</p>}
+      {mutation.isError && <p className="maintenance-form-error">Blocking state not changed.</p>}
     </section>
   );
 }
@@ -187,7 +172,7 @@ function NotesPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
     <section className="maintenance-panel">
       <h2>Notes</h2>
       <form className="maintenance-note-form" onSubmit={submit}>
-        <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="Add an operational note…" />
+        <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} placeholder="Add an operational note" />
         <button type="submit" disabled={!body.trim() || mutation.isPending}>Add Note</button>
       </form>
       <div className="maintenance-timeline-list">
@@ -225,14 +210,13 @@ function PhotosPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
     <section className="maintenance-panel">
       <h2>Photos</h2>
       <form className="maintenance-note-form" onSubmit={submit}>
-        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Local photo reference or future storage key" />
+        <input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Photo reference" />
         <input value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Caption optional" />
-        <button type="submit" disabled={!reference.trim() || mutation.isPending}>Attach Photo Reference</button>
+        <button type="submit" disabled={!reference.trim() || mutation.isPending}>Attach Photo</button>
       </form>
       <div className="maintenance-photo-grid">
         {ticket.photos.length ? ticket.photos.map((photo) => (
           <article key={photo.id}>
-            <span aria-hidden="true">📷</span>
             <strong>{photo.caption ?? "Maintenance photo"}</strong>
             <p>{photo.localReference ?? photo.url}</p>
           </article>
@@ -258,14 +242,14 @@ export default function MaintenanceDetailPage() {
   return (
     <WorkspaceShell title="Maintenance" workspace="maintenance" bodyClassName="maintenance-page maintenance-detail-page">
       <section className={`maintenance-detail-hero priority-${ticket.priority.toLowerCase()}`}>
-        <Link to="/maintenance">← Maintenance</Link>
-        <p>{ticket.category}</p>
+        <Link to="/maintenance">Back</Link>
+        <p>{ticket.status}</p>
         <h1>{ticket.title}</h1>
         <div>
-          <span>{ticket.status === "Waiting Parts" ? "Waiting" : ticket.status}</span>
           <span>{ticket.priority}</span>
           <span>{locationLabel(ticket)}</span>
-          {ticket.outOfService && <span>Out of Service</span>}
+          <span>{assignmentLabel(ticket)}</span>
+          {ticket.outOfService && <span>Blocking</span>}
         </div>
       </section>
 
@@ -274,22 +258,19 @@ export default function MaintenanceDetailPage() {
         <p>{ticket.description}</p>
         <dl className="maintenance-facts">
           <div><dt>Reported by</dt><dd>{ticket.reportedByName}</dd></div>
-          <div><dt>Assigned</dt><dd>{assignmentLabel(ticket)}</dd></div>
           <div><dt>Created</dt><dd>{formatDate(ticket.createdAt)}</dd></div>
-          <div><dt>Started</dt><dd>{formatDate(ticket.startedAt)}</dd></div>
-          <div><dt>Resolved</dt><dd>{formatDate(ticket.resolvedAt)}</dd></div>
-          <div><dt>Closed</dt><dd>{formatDate(ticket.closedAt)}</dd></div>
+          <div><dt>Updated</dt><dd>{formatDate(ticket.updatedAt)}</dd></div>
+          <div><dt>Completed</dt><dd>{formatDate(ticket.closedAt)}</dd></div>
         </dl>
-        {ticket.waitingReason && <p className="maintenance-muted">Waiting: {ticket.waitingReason}</p>}
-        {ticket.assignment.externalAssigneeNote && <p className="maintenance-muted">External note: {ticket.assignment.externalAssigneeNote}</p>}
+        {ticket.waitingReason && <p className="maintenance-muted">Waiting Parts: {ticket.waitingReason}</p>}
       </section>
 
       <StatusPanel ticket={ticket} />
       <PriorityPanel ticket={ticket} />
       <AssignmentPanel ticket={ticket} />
       <OutOfServicePanel ticket={ticket} />
-      <NotesPanel ticket={ticket} />
       <PhotosPanel ticket={ticket} />
+      <NotesPanel ticket={ticket} />
 
       <section className="maintenance-panel">
         <h2>Timeline</h2>
@@ -298,7 +279,7 @@ export default function MaintenanceDetailPage() {
             <article key={event.id}>
               <strong>{event.eventType.replaceAll("_", " ")}</strong>
               <span>{formatDate(event.createdAt)}</span>
-              {(event.fromValue || event.toValue) && <p>{event.fromValue ?? "—"} → {event.toValue ?? "—"}</p>}
+              {(event.fromValue || event.toValue) && <p>{event.fromValue ?? "-"} {"->"} {event.toValue ?? "-"}</p>}
             </article>
           )) : <p className="maintenance-muted">No timeline events yet.</p>}
         </div>

@@ -145,6 +145,11 @@ export interface ReceptionStay {
   bookingStatus: string;
   nationalityCode: string | null;
   roomStatus: string;
+  maintenance: {
+    openIssues: number;
+    outOfService: boolean;
+    label: string | null;
+  };
   checkIn: Record<ReceptionCheckInField, boolean>;
   checkOut: Record<ReceptionCheckOutField, boolean>;
   specialNotes: string | null;
@@ -430,21 +435,32 @@ async function loadEvents(env: ReceptionBindings, bookingId: number): Promise<Re
   return (rows.results ?? []).map(mapEvent);
 }
 
-async function roomStatus(env: ReceptionBindings, roomId: number | null): Promise<string> {
-  if (!roomId) return "Expected Arrival";
+async function roomOperationalState(env: ReceptionBindings, roomId: number | null): Promise<{ status: string; maintenance: ReceptionStay["maintenance"] }> {
+  if (!roomId) {
+    return {
+      status: "Expected Arrival",
+      maintenance: { openIssues: 0, outOfService: false, label: null },
+    };
+  }
   const [maintenance, task, operationalAvailability, storedHousekeepingState] = await Promise.all([
     listOpenMaintenanceTicketDetailsForRoom(env, roomId),
     activeRoomReadinessTask(env, roomId),
     loadOperationalAvailabilityForUnit(env, roomId),
     loadRoomHousekeepingStateForUnit(env, roomId),
   ]);
-  if (maintenance.some((ticket) => ticket.outOfService)) return "Out Of Service";
-  if (operationalAvailability.status === "NOT_OPERATING") return "Not Operating";
-  if (maintenance.length > 0) return "Maintenance";
-  if (storedHousekeepingState.readyState === "NOT_READY") return "Not Ready";
-  if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
-  if (task && (task.status === "IN_PROGRESS" || task.status === "CLAIMED")) return "Cleaning";
-  return "Ready";
+  const outOfService = maintenance.some((ticket) => ticket.outOfService);
+  const maintenanceSummary = {
+    openIssues: maintenance.length,
+    outOfService,
+    label: outOfService ? "Maintenance Blocking" : maintenance.length > 0 ? "Maintenance Active" : null,
+  };
+  if (outOfService) return { status: "Out Of Service", maintenance: maintenanceSummary };
+  if (operationalAvailability.status === "NOT_OPERATING") return { status: "Not Operating", maintenance: maintenanceSummary };
+  if (maintenance.length > 0) return { status: "Maintenance", maintenance: maintenanceSummary };
+  if (storedHousekeepingState.readyState === "NOT_READY") return { status: "Not Ready", maintenance: maintenanceSummary };
+  if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return { status: "Waiting Reception", maintenance: maintenanceSummary };
+  if (task && (task.status === "IN_PROGRESS" || task.status === "CLAIMED")) return { status: "Cleaning", maintenance: maintenanceSummary };
+  return { status: "Ready", maintenance: maintenanceSummary };
 }
 
 async function activeRoomReadinessTask(env: ReceptionBindings, roomId: number): Promise<ActiveRoomTaskRow | null> {
@@ -466,10 +482,10 @@ async function mapStay(env: ReceptionBindings, row: BookingRow): Promise<Recepti
   const local = await ensureReceptionStay(env, row.beds24_booking_id);
   const nationalitySource = row.country_code || row.country;
   const nationalityCode = countryCodeFrom(nationalitySource);
-  const [notes, timeline, status] = await Promise.all([
+  const [notes, timeline, roomOperations] = await Promise.all([
     loadNotes(env, row.beds24_booking_id),
     loadEvents(env, row.beds24_booking_id),
-    roomStatus(env, row.unit_id),
+    roomOperationalState(env, row.unit_id),
   ]);
   return {
     bookingId: row.beds24_booking_id,
@@ -489,7 +505,8 @@ async function mapStay(env: ReceptionBindings, row: BookingRow): Promise<Recepti
     phone: row.mobile || row.phone,
     email: row.email,
     bookingStatus: row.status,
-    roomStatus: status,
+    roomStatus: roomOperations.status,
+    maintenance: roomOperations.maintenance,
     checkIn: {
       guestArrived: local.guest_arrived === 1,
       passportCollected: local.passport_collected === 1,

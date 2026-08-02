@@ -10,12 +10,11 @@ import {
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
 import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
-import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
+import type { MaintenancePriority } from "../types/maintenance";
 import type { OperationalAvailabilityStatus, RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
 import "../styles/RoomDetailPage.css";
 
-const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = ["Electrical", "Air Conditioning", "Water", "Furniture", "Bathroom", "Garden", "Cleaning Equipment", "Internet / Network", "Appliance", "Other"];
-const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Medium", "High", "Critical"];
+const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Normal", "High"];
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -412,15 +411,15 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<MaintenanceCategory>("Other");
-  const [priority, setPriority] = useState<MaintenancePriority>("Medium");
+  const [priority, setPriority] = useState<MaintenancePriority>("Normal");
+  const [outOfService, setOutOfService] = useState(false);
   const mutation = useMutation({
-    mutationFn: () => createRoomMaintenanceTicket(roomId, { title, description, category, priority }),
+    mutationFn: () => createRoomMaintenanceTicket(roomId, { title, description, priority, outOfService }),
     onSuccess: async () => {
       setTitle("");
       setDescription("");
-      setCategory("Other");
-      setPriority("Medium");
+      setPriority("Normal");
+      setOutOfService(false);
       await queryClient.invalidateQueries({ queryKey: ["room-detail", roomId] });
     },
   });
@@ -444,7 +443,7 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
           <Link className="maintenance-ticket-card" key={ticket.id} to={`/maintenance/${ticket.id}`}>
             <div>
               <strong>{ticket.title}</strong>
-              <span>{ticket.category} · {ticket.status}</span>
+              <span>{ticket.status}</span>
             </div>
             <span className={`room-status-badge is-${ticket.priority.toLowerCase()}`}>{ticket.priority}</span>
             {ticket.photos.length > 0 && <small>{ticket.photos.length} photo{ticket.photos.length === 1 ? "" : "s"}</small>}
@@ -453,7 +452,7 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
       </div>
       <form className="room-ticket-form" onSubmit={submit}>
         <label>
-          New ticket
+          Report Issue
           <input maxLength={140} onChange={(event) => setTitle(event.target.value)} placeholder="Short issue title" required value={title} />
         </label>
         <label>
@@ -462,19 +461,17 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
         </label>
         <div className="room-form-grid">
           <label>
-            Category
-            <select onChange={(event) => setCategory(event.target.value as MaintenanceCategory)} value={category}>
-              {MAINTENANCE_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
             Priority
             <select onChange={(event) => setPriority(event.target.value as MaintenancePriority)} value={priority}>
               {MAINTENANCE_PRIORITIES.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
+          <label className="room-checkbox-field">
+            <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
+            <span>Blocking room</span>
+          </label>
         </div>
-        <button disabled={mutation.isPending} type="submit"><PlusIcon />Create ticket</button>
+        <button disabled={mutation.isPending} type="submit"><PlusIcon />Report Issue</button>
         {mutation.isError && <p className="room-form-error">Maintenance ticket could not be created.</p>}
       </form>
     </section>

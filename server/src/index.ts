@@ -34,6 +34,7 @@ import {
   createInitialOwner,
   createUser,
   disableUser,
+  hasModulePermission,
   listUsers,
   login,
   logout,
@@ -239,6 +240,36 @@ async function authenticated(c: AppContext, module: ModuleKey, action: "access" 
   const user = await resolveCurrentUser(c);
   requireView(user, module === "settings" || module === "owner-dashboard" ? "owner" : "staff");
   requireModulePermission(user, module, action);
+  return user;
+}
+
+function canCreateMaintenanceIssue(user: CurrentUser): boolean {
+  return (
+    hasModulePermission(user, "maintenance", "access")
+    || hasModulePermission(user, "rooms", "access")
+    || hasModulePermission(user, "housekeeping", "access")
+    || hasModulePermission(user, "movements", "access")
+  );
+}
+
+function canEditMaintenanceIssue(user: CurrentUser): boolean {
+  return ["Owner", "Manager", "Maintenance"].includes(user.role) && hasModulePermission(user, "maintenance", "edit");
+}
+
+async function maintenanceIssueCreator(c: AppContext): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  requireView(user, "staff");
+  if (!canCreateMaintenanceIssue(user)) throw new ForbiddenError();
+  return user;
+}
+
+async function maintenanceIssueContributor(c: AppContext): Promise<CurrentUser> {
+  return maintenanceIssueCreator(c);
+}
+
+async function maintenanceIssueEditor(c: AppContext): Promise<CurrentUser> {
+  const user = await authenticated(c, "maintenance", "edit");
+  if (!canEditMaintenanceIssue(user)) throw new ForbiddenError("Only Maintenance, Manager or Owner may edit maintenance tickets.");
   return user;
 }
 
@@ -600,7 +631,7 @@ app.post("/api/rooms/:id/notes", async (c) => {
 app.post("/api/rooms/:id/maintenance/tickets", async (c) => {
   try {
     const user = await authenticated(c, "rooms", "access");
-    requireModulePermission(user, "maintenance", "edit");
+    if (!canCreateMaintenanceIssue(user)) throw new ForbiddenError();
     const roomId = positiveIntegerParam(c.req.param("id"), "room id");
     const payload = await c.req.json().catch(() => null);
     const ticket = await createRoomMaintenanceTicket(c.env, roomId, payload, user);
@@ -1383,7 +1414,7 @@ app.get("/api/maintenance/tickets", async (c) => {
 
 app.get("/api/maintenance/assignable-users", async (c) => {
   try {
-    await authenticated(c, "maintenance", "edit");
+    await maintenanceIssueCreator(c);
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listAssignableMaintenanceUsers(c.env) });
   } catch (error) {
@@ -1408,7 +1439,7 @@ app.post("/api/maintenance/tickets", async (c) => {
   try {
     const payload = await c.req.json().catch(() => null);
     const input = normalizeCreateMaintenanceTicketInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueCreator(c);
     const ticket = await createMaintenanceTicket(c.env, input, user);
     return c.json({ success: true, data: ticket }, 201);
   } catch (error) {
@@ -1422,7 +1453,7 @@ app.patch("/api/maintenance/tickets/:id", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeUpdateMaintenanceTicketInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueEditor(c);
     const ticket = await updateMaintenanceTicket(c.env, ticketId, input, user);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
@@ -1436,7 +1467,7 @@ app.patch("/api/maintenance/tickets/:id/assignment", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenanceAssignmentInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueEditor(c);
     const ticket = await assignMaintenanceTicket(c.env, ticketId, input, user);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
@@ -1450,7 +1481,7 @@ app.patch("/api/maintenance/tickets/:id/status", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenanceStatusInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueEditor(c);
     const ticket = await transitionMaintenanceTicket(c.env, ticketId, input, user);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
@@ -1464,7 +1495,7 @@ app.patch("/api/maintenance/tickets/:id/out-of-service", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenanceOutOfServiceInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueEditor(c);
     const ticket = await updateMaintenanceOutOfService(c.env, ticketId, input, user);
     if (!ticket) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: ticket });
@@ -1478,12 +1509,12 @@ app.post("/api/maintenance/tickets/:id/notes", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenanceNoteInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueContributor(c);
     const note = await addMaintenanceNote(c.env, ticketId, input, user);
     if (!note) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: note }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
   }
 });
 
@@ -1492,12 +1523,12 @@ app.post("/api/maintenance/tickets/:id/photos", async (c) => {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMaintenancePhotoInput(payload);
-    const user = await authenticated(c, "maintenance", "edit");
+    const user = await maintenanceIssueContributor(c);
     const photo = await addMaintenancePhoto(c.env, ticketId, input, user);
     if (!photo) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: photo }, 201);
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
   }
 });
 app.get("/api/chat/conversations", async (c) => {

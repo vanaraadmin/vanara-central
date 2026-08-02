@@ -160,7 +160,7 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.housekeeping.cleaning.value, 1);
   assert.equal(data.housekeeping.cleaningRequested.value, 1);
   assert.equal(data.maintenance.openIssues.value, 2);
-  assert.equal(data.maintenance.criticalIssues.value, 1);
+  assert.equal(data.maintenance.criticalIssues.value, 2);
   assert.equal(data.maintenance.waiting.value, 1);
   assert.equal(data.maintenance.outOfService.value, 1);
   assert.equal(data.today.arrivals.value, 1);
@@ -168,7 +168,7 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.staff.housekeepingStaff.value, 1);
   assert.equal(data.staff.maintenanceStaff.value, 1);
   assert.equal(data.staff.disabledUsers.value, 1);
-  assert.equal(data.alerts.some((item) => item.id === "critical-maintenance"), true);
+  assert.equal(data.alerts.some((item) => item.id === "high-maintenance"), true);
   assert.equal(data.alerts.some((item) => item.id === "waiting-maintenance"), true);
   assert.equal(data.quickLinks.some((item) => item.href === "/maintenance"), true);
 });

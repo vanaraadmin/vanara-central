@@ -1,4 +1,4 @@
-import type { MaintenanceCategory, MaintenancePriority, MaintenanceTicketDetail } from "./maintenance";
+import type { MaintenancePriority, MaintenanceTicketDetail } from "./maintenance";
 import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
 
 export type RoomHousekeepingStatus = "Dirty" | "Cleaning" | "Ready";
@@ -164,7 +164,6 @@ export interface RoomDetail {
 export interface CreateRoomMaintenanceTicketPayload {
   title: string;
   description: string;
-  category: MaintenanceCategory;
   priority: MaintenancePriority;
   assignmentType?: "INTERNAL" | "EXTERNAL" | null;
   assignedUserId?: string | null;

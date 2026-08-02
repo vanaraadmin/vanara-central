@@ -180,6 +180,7 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
 
 function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard; onInterventionInfo: (type: InterventionType) => void }) {
   const intervention = interventionForCard(card);
+  const canReportMaintenance = Boolean(intervention && card.unitId > 0);
   return (
     <article className={`housekeeping-v2-card housekeeping-v2-card--${card.priority.toLowerCase()}${card.isBlocked ? " is-blocked" : ""}`}>
       <div className="housekeeping-v2-card__top">
@@ -205,6 +206,9 @@ function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typ
       )}
 
       <CardMeta card={card} />
+      {canReportMaintenance && (
+        <Link className="housekeeping-v2-report-issue" to={`/maintenance/new?roomId=${card.unitId}&source=housekeeping`}>Report Issue</Link>
+      )}
       <TaskActions action={action} card={card} />
     </article>
   );

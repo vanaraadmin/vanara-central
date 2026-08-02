@@ -1,7 +1,9 @@
 import type { CurrentChatUser } from "./chat.service.js";
 
-export type MaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
-export type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
+export type MaintenanceStatus = "Open" | "In Progress" | "Waiting Parts" | "Completed";
+type StoredMaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
+export type MaintenancePriority = "Low" | "Normal" | "High";
+type StoredMaintenancePriority = "Low" | "Medium" | "High" | "Critical";
 export type MaintenanceCategory =
   | "Electrical"
   | "Air Conditioning"
@@ -22,8 +24,8 @@ export interface MaintenanceBindings {
 export class MaintenanceConflictError extends Error {}
 export class MaintenancePermissionError extends Error {}
 
-const STATUSES: MaintenanceStatus[] = ["Open", "Assigned", "In Progress", "Waiting Parts", "Resolved", "Closed"];
-const PRIORITIES: MaintenancePriority[] = ["Low", "Medium", "High", "Critical"];
+const PRODUCT_STATUSES: MaintenanceStatus[] = ["Open", "In Progress", "Waiting Parts", "Completed"];
+const PRODUCT_PRIORITIES: MaintenancePriority[] = ["Low", "Normal", "High"];
 const CATEGORIES: MaintenanceCategory[] = [
   "Electrical",
   "Air Conditioning",
@@ -38,15 +40,15 @@ const CATEGORIES: MaintenanceCategory[] = [
 ];
 const LOCATION_AREAS = ["Reception", "Restaurant", "Kitchen", "Garden", "Pond", "Entrance", "Storage", "Staff Area", "General Resort Area", "Other"] as const;
 const EXTERNAL_ASSIGNEES = ["Electrician", "Air-conditioning technician", "Plumber", "Internet technician", "Appliance repair", "General contractor", "External maintenance company", "Other external technician"] as const;
-const MANAGEMENT_ROLES = new Set(["Owner", "Manager", "Operations"]);
+const MAINTENANCE_EDIT_ROLES = new Set(["Owner", "Manager", "Maintenance"]);
 
 interface MaintenanceTicketRow {
   ticket_id: number;
   title: string;
   description: string;
   category: MaintenanceCategory;
-  priority: MaintenancePriority;
-  status: MaintenanceStatus;
+  priority: StoredMaintenancePriority;
+  status: StoredMaintenanceStatus;
   room_id: number | null;
   room_name: string | null;
   accommodation_id: number | null;
@@ -264,8 +266,8 @@ export interface CreateMaintenancePhotoInput {
   caption: string | null;
 }
 
-function isManagement(user: CurrentChatUser): boolean {
-  return MANAGEMENT_ROLES.has(user.role);
+function canEditMaintenance(user: CurrentChatUser): boolean {
+  return MAINTENANCE_EDIT_ROLES.has(user.role);
 }
 
 function assertPayloadKeys(payload: object, allowed: string[], label: string): void {
@@ -318,11 +320,50 @@ function parseAssignment(payload: object): MaintenanceAssignmentInput | null {
   };
 }
 
-function normalizeArea(value: unknown, roomId: number | null): string | null {
+function normalizeArea(value: unknown): string | null {
   const area = optionalString(value, 120);
   if (area && !(LOCATION_AREAS as readonly string[]).includes(area)) throw new Error("Location area is invalid.");
-  if (!roomId && !area) throw new Error("Location area is required when no room is selected.");
   return area;
+}
+
+function normalizePriority(value: unknown): MaintenancePriority {
+  if (value === undefined || value === null || value === "") return "Normal";
+  if (value === "Medium" || value === "NORMAL" || value === "Normal") return "Normal";
+  if (value === "LOW" || value === "Low") return "Low";
+  if (value === "HIGH" || value === "High") return "High";
+  throw new Error("Priority is invalid.");
+}
+
+function toStoredPriority(priority: MaintenancePriority): StoredMaintenancePriority {
+  if (priority === "Normal") return "Medium";
+  return priority;
+}
+
+function toPublicPriority(priority: StoredMaintenancePriority): MaintenancePriority {
+  if (priority === "Medium") return "Normal";
+  if (priority === "Critical") return "High";
+  return priority;
+}
+
+function toPublicStatus(status: StoredMaintenanceStatus): MaintenanceStatus {
+  if (status === "Assigned") return "Open";
+  if (status === "Resolved" || status === "Closed") return "Completed";
+  return status;
+}
+
+function toStoredStatus(status: MaintenanceStatus): StoredMaintenanceStatus {
+  if (status === "Completed") return "Closed";
+  return status;
+}
+
+function storedStatusFilter(status: MaintenanceStatus): StoredMaintenanceStatus[] {
+  if (status === "Open") return ["Open", "Assigned"];
+  if (status === "Completed") return ["Resolved", "Closed"];
+  return [status];
+}
+
+function isCompletedStatus(status: MaintenanceStatus): boolean {
+  return status === "Completed";
 }
 
 export function normalizeCreateMaintenanceTicketInput(payload: unknown): CreateMaintenanceTicketInput {
@@ -332,11 +373,13 @@ export function normalizeCreateMaintenanceTicketInput(payload: unknown): CreateM
   return {
     title: requiredString("title" in payload ? payload.title : undefined, "Title", 140),
     description: requiredString("description" in payload ? payload.description : undefined, "Description", 2000),
-    category: assertEnum("category" in payload ? payload.category : undefined, CATEGORIES, "Category"),
-    priority: assertEnum("priority" in payload ? payload.priority : undefined, PRIORITIES, "Priority"),
+    category: "category" in payload && payload.category !== undefined && payload.category !== null && payload.category !== ""
+      ? assertEnum(payload.category, CATEGORIES, "Category")
+      : "Other",
+    priority: normalizePriority("priority" in payload ? payload.priority : undefined),
     roomId,
     accommodationId: optionalId("accommodationId" in payload ? payload.accommodationId : undefined, "accommodationId"),
-    locationArea: normalizeArea("locationArea" in payload ? payload.locationArea : undefined, roomId),
+    locationArea: normalizeArea("locationArea" in payload ? payload.locationArea : undefined),
     assignment: parseAssignment(payload),
     outOfService: "outOfService" in payload ? (payload as { outOfService?: unknown }).outOfService === true : false,
   };
@@ -349,7 +392,7 @@ export function normalizeUpdateMaintenanceTicketInput(payload: unknown): UpdateM
   if ("title" in payload) input.title = requiredString(payload.title, "Title", 140);
   if ("description" in payload) input.description = requiredString(payload.description, "Description", 2000);
   if ("category" in payload) input.category = assertEnum(payload.category, CATEGORIES, "Category");
-  if ("priority" in payload) input.priority = assertEnum(payload.priority, PRIORITIES, "Priority");
+  if ("priority" in payload) input.priority = normalizePriority(payload.priority);
   if ("roomId" in payload) input.roomId = optionalId(payload.roomId, "roomId");
   if ("accommodationId" in payload) input.accommodationId = optionalId(payload.accommodationId, "accommodationId");
   if ("locationArea" in payload) input.locationArea = optionalString(payload.locationArea, 120);
@@ -366,7 +409,7 @@ export function normalizeMaintenanceAssignmentInput(payload: unknown): Maintenan
 export function normalizeMaintenanceStatusInput(payload: unknown): MaintenanceStatusInput {
   if (!payload || typeof payload !== "object") throw new Error("Status payload is required.");
   assertPayloadKeys(payload, ["status", "reason"], "Status payload");
-  const status = assertEnum("status" in payload ? payload.status : undefined, STATUSES, "Status");
+  const status = assertEnum("status" in payload ? payload.status : undefined, PRODUCT_STATUSES, "Status");
   const reason = optionalString("reason" in payload ? payload.reason : undefined, 500);
   if (status === "Waiting Parts" && !reason) throw new Error("Waiting reason is required.");
   return { status, reason };
@@ -413,8 +456,8 @@ function mapTicket(row: MaintenanceTicketRow): MaintenanceTicketSummary {
     title: row.title,
     description: row.description,
     category: row.category,
-    priority: row.priority,
-    status: row.status,
+    priority: toPublicPriority(row.priority),
+    status: toPublicStatus(row.status),
     roomId: row.room_id,
     roomName: row.room_name,
     accommodationId: row.accommodation_id,
@@ -528,7 +571,6 @@ function ensureAssignableUser(row: AssignableUserRow | null): AssignableUserRow 
 }
 
 async function resolveAssignment(env: MaintenanceBindings, input: MaintenanceAssignmentInput | null): Promise<{
-  status: MaintenanceStatus;
   assignmentType: MaintenanceAssignmentType | null;
   assignedUserId: string | null;
   assignedUserName: string | null;
@@ -537,18 +579,18 @@ async function resolveAssignment(env: MaintenanceBindings, input: MaintenanceAss
   assignedAt: string | null;
 }> {
   if (!input) {
-    return { status: "Open", assignmentType: null, assignedUserId: null, assignedUserName: null, externalAssigneeLabel: null, externalAssigneeNote: null, assignedAt: null };
+    return { assignmentType: null, assignedUserId: null, assignedUserName: null, externalAssigneeLabel: null, externalAssigneeNote: null, assignedAt: null };
   }
   const now = new Date().toISOString();
   if (input.assignmentType === "INTERNAL") {
     const target = ensureAssignableUser(await loadAssignableMaintenanceUser(env, input.assignedUserId));
-    return { status: "Assigned", assignmentType: "INTERNAL", assignedUserId: target.user_id, assignedUserName: target.full_name, externalAssigneeLabel: null, externalAssigneeNote: null, assignedAt: now };
+    return { assignmentType: "INTERNAL", assignedUserId: target.user_id, assignedUserName: target.full_name, externalAssigneeLabel: null, externalAssigneeNote: null, assignedAt: now };
   }
-  return { status: "Assigned", assignmentType: "EXTERNAL", assignedUserId: null, assignedUserName: null, externalAssigneeLabel: input.externalAssigneeLabel, externalAssigneeNote: input.externalAssigneeNote, assignedAt: now };
+  return { assignmentType: "EXTERNAL", assignedUserId: null, assignedUserName: null, externalAssigneeLabel: input.externalAssigneeLabel, externalAssigneeNote: input.externalAssigneeNote, assignedAt: now };
 }
 
 function canActOnTicket(user: CurrentChatUser, ticket: MaintenanceTicketSummary): boolean {
-  if (isManagement(user)) return true;
+  if (canEditMaintenance(user)) return true;
   if (ticket.assignment.type === "INTERNAL") return ticket.assignedUserId === user.id;
   if (ticket.assignment.type === "EXTERNAL") return ticket.reportedBy === user.id;
   return false;
@@ -556,22 +598,16 @@ function canActOnTicket(user: CurrentChatUser, ticket: MaintenanceTicketSummary)
 
 function assertTransition(user: CurrentChatUser, current: MaintenanceTicketSummary, next: MaintenanceStatus): void {
   if (current.status === next) throw new MaintenanceConflictError("Ticket is already in that status.");
-  if (current.status === "Closed" && !isManagement(user)) throw new MaintenancePermissionError("Closed tickets can only be reopened by Management.");
-
-  if (isManagement(user)) {
-    if (current.status === "Closed" && next !== "Open") throw new MaintenanceConflictError("Closed tickets can only be reopened to Open.");
-    return;
-  }
+  if (isCompletedStatus(current.status)) throw new MaintenanceConflictError("Completed maintenance tickets are closed.");
+  if (next === "Completed" && !canEditMaintenance(user)) throw new MaintenancePermissionError("Only Maintenance, Manager or Owner may close a ticket.");
 
   if (!canActOnTicket(user, current)) throw new MaintenancePermissionError("Only the assigned or reporting operator can update this ticket.");
 
   const allowed: Record<MaintenanceStatus, MaintenanceStatus[]> = {
-    Open: [],
-    Assigned: ["In Progress"],
-    "In Progress": ["Waiting Parts", "Resolved"],
-    "Waiting Parts": ["In Progress"],
-    Resolved: [],
-    Closed: [],
+    Open: ["In Progress"],
+    "In Progress": ["Waiting Parts", "Completed"],
+    "Waiting Parts": ["In Progress", "Completed"],
+    Completed: [],
   };
   if (!allowed[current.status].includes(next)) throw new MaintenanceConflictError("Maintenance status transition is invalid.");
 }
@@ -606,8 +642,9 @@ export async function listMaintenanceTickets(env: MaintenanceBindings, filters: 
   const conditions: string[] = [];
   const params: Array<string> = [];
   if (filters.status && filters.status !== "All") {
-    conditions.push("t.status = ?");
-    params.push(filters.status);
+    const stored = storedStatusFilter(filters.status);
+    conditions.push(`t.status IN (${stored.map(() => "?").join(", ")})`);
+    params.push(...stored);
   }
   if (filters.search?.trim()) {
     conditions.push("(t.title LIKE ? OR t.description LIKE ? OR u.unit_name LIKE ? OR t.assigned_user_name LIKE ? OR t.location_area LIKE ? OR t.external_assignee_label LIKE ?)");
@@ -624,10 +661,9 @@ export async function listMaintenanceTickets(env: MaintenanceBindings, filters: 
     LEFT JOIN room_types rt ON rt.room_type_id = t.accommodation_id
     ${where}
     ORDER BY
-      CASE t.priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END,
-      CASE t.status WHEN 'Open' THEN 1 WHEN 'Assigned' THEN 2 WHEN 'In Progress' THEN 3 WHEN 'Waiting Parts' THEN 4 WHEN 'Resolved' THEN 5 ELSE 6 END,
-      CASE WHEN t.status IN ('Resolved', 'Closed') THEN t.updated_at END DESC,
-      t.created_at ASC
+      CASE WHEN t.status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END,
+      t.created_at DESC,
+      t.ticket_id DESC
     LIMIT 200
   `).bind(...params).all<MaintenanceTicketRow>();
   return (rows.results ?? []).map(mapTicket);
@@ -656,10 +692,10 @@ export async function listOpenMaintenanceTicketDetailsForRoom(env: MaintenanceBi
     SELECT ticket_id
     FROM maintenance_tickets
     WHERE room_id = ?
-      AND status != 'Closed'
+      AND status NOT IN ('Resolved', 'Closed')
     ORDER BY
       out_of_service DESC,
-      CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END,
+      CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 1 WHEN 'Medium' THEN 2 ELSE 3 END,
       CASE status WHEN 'Open' THEN 1 WHEN 'Assigned' THEN 2 WHEN 'In Progress' THEN 3 WHEN 'Waiting Parts' THEN 4 WHEN 'Resolved' THEN 5 ELSE 6 END,
       updated_at DESC
     LIMIT 20
@@ -684,8 +720,8 @@ export async function createMaintenanceTicket(env: MaintenanceBindings, input: C
     input.title,
     input.description,
     input.category,
-    input.priority,
-    assignment.status,
+    toStoredPriority(input.priority),
+    "Open",
     input.roomId,
     accommodationId,
     input.locationArea,
@@ -702,7 +738,7 @@ export async function createMaintenanceTicket(env: MaintenanceBindings, input: C
     input.outOfService ? 1 : 0,
   ).run();
   const id = result.meta.last_row_id;
-  await recordEvent(env, id, "created", null, assignment.status, user, now);
+  await recordEvent(env, id, "created", null, "Open", user, now);
   if (assignment.assignmentType) await recordEvent(env, id, "assigned", null, assignment.assignmentType === "INTERNAL" ? assignment.assignedUserName : assignment.externalAssigneeLabel, user, now);
   if (input.outOfService) await recordEvent(env, id, "out_of_service_changed", "false", "true", user, now);
   const ticket = await getMaintenanceTicket(env, id);
@@ -713,27 +749,26 @@ export async function createMaintenanceTicket(env: MaintenanceBindings, input: C
 export async function updateMaintenanceTicket(env: MaintenanceBindings, ticketId: number, input: UpdateMaintenanceTicketInput, user: CurrentChatUser): Promise<MaintenanceTicketDetail | null> {
   const current = await getMaintenanceTicket(env, ticketId);
   if (!current) return null;
-  if (!isManagement(user) && current.status === "Closed") throw new MaintenancePermissionError("Closed tickets can only be modified by Management.");
-  if (!isManagement(user) && current.reportedBy !== user.id) throw new MaintenancePermissionError("Only Management or the reporter can edit ticket details.");
+  if (isCompletedStatus(current.status)) throw new MaintenancePermissionError("Completed tickets cannot be modified.");
+  if (!canEditMaintenance(user) && current.reportedBy !== user.id) throw new MaintenancePermissionError("Only Maintenance or the reporter can edit ticket details.");
   const unit = await requireUnit(env, input.roomId !== undefined ? input.roomId : current.roomId);
   const nextRoomId = input.roomId !== undefined ? input.roomId : current.roomId;
-  const nextArea = input.locationArea !== undefined ? normalizeArea(input.locationArea, nextRoomId) : current.locationArea;
+  const nextArea = input.locationArea !== undefined ? normalizeArea(input.locationArea) : current.locationArea;
   const now = new Date().toISOString();
   const result = await env.DB.prepare(`
     UPDATE maintenance_tickets
     SET title = ?, description = ?, category = ?, priority = ?, room_id = ?, accommodation_id = ?, location_area = ?, updated_at = ?
-    WHERE ticket_id = ? AND status = ? AND updated_at = ?
+    WHERE ticket_id = ? AND updated_at = ?
   `).bind(
     input.title ?? current.title,
     input.description ?? current.description,
     input.category ?? current.category,
-    input.priority ?? current.priority,
+    input.priority ? toStoredPriority(input.priority) : toStoredPriority(current.priority),
     nextRoomId,
     nextRoomId ? unit?.room_type_id ?? input.accommodationId ?? current.accommodationId : input.accommodationId !== undefined ? input.accommodationId : current.accommodationId,
     nextArea,
     now,
     ticketId,
-    current.status,
     current.updatedAt,
   ).run();
   if ((result.meta.changes ?? 0) !== 1) throw new MaintenanceConflictError("Ticket was updated by another client.");
@@ -744,19 +779,17 @@ export async function updateMaintenanceTicket(env: MaintenanceBindings, ticketId
 export async function assignMaintenanceTicket(env: MaintenanceBindings, ticketId: number, input: MaintenanceAssignmentInput | null, user: CurrentChatUser): Promise<MaintenanceTicketDetail | null> {
   const current = await getMaintenanceTicket(env, ticketId);
   if (!current) return null;
-  if (current.status === "Closed" && !isManagement(user)) throw new MaintenancePermissionError("Closed tickets can only be modified by Management.");
-  if (!isManagement(user) && current.status !== "Open") throw new MaintenancePermissionError("Staff can only route a new open ticket.");
+  if (isCompletedStatus(current.status)) throw new MaintenancePermissionError("Completed tickets cannot be modified.");
+  if (!canEditMaintenance(user)) throw new MaintenancePermissionError("Only Maintenance, Manager or Owner may assign tickets.");
   const assignment = await resolveAssignment(env, input);
   const now = new Date().toISOString();
-  const nextStatus: MaintenanceStatus = assignment.assignmentType ? "Assigned" : "Open";
   const result = await env.DB.prepare(`
     UPDATE maintenance_tickets
-    SET status = ?, assignment_type = ?, assigned_user_id = ?, assigned_user_name = ?,
-        external_assignee_label = ?, external_assignee_note = ?, assigned_at = ?, started_at = NULL,
+    SET assignment_type = ?, assigned_user_id = ?, assigned_user_name = ?,
+        external_assignee_label = ?, external_assignee_note = ?, assigned_at = ?,
         updated_at = ?
-    WHERE ticket_id = ? AND status = ? AND updated_at = ?
+    WHERE ticket_id = ? AND updated_at = ?
   `).bind(
-    nextStatus,
     assignment.assignmentType,
     assignment.assignedUserId,
     assignment.assignedUserName,
@@ -765,7 +798,6 @@ export async function assignMaintenanceTicket(env: MaintenanceBindings, ticketId
     assignment.assignedAt,
     now,
     ticketId,
-    current.status,
     current.updatedAt,
   ).run();
   if ((result.meta.changes ?? 0) !== 1) throw new MaintenanceConflictError("Ticket assignment is stale.");
@@ -779,19 +811,16 @@ export async function transitionMaintenanceTicket(env: MaintenanceBindings, tick
   assertTransition(user, current, input.status);
   const now = new Date().toISOString();
   const startedAt = input.status === "In Progress" && !current.startedAt ? now : current.startedAt;
-  const resolvedAt = input.status === "Resolved" ? now : input.status === "Open" ? null : current.resolvedAt;
-  const closedAt = input.status === "Closed" ? now : input.status === "Open" ? null : current.closedAt;
-  const resolvedBy = input.status === "Resolved" ? user.id : input.status === "Open" ? null : current.resolvedBy;
-  const resolvedByName = input.status === "Resolved" ? user.displayName : input.status === "Open" ? null : current.resolvedByName;
-  const closedBy = input.status === "Closed" ? user.id : input.status === "Open" ? null : current.closedBy;
-  const closedByName = input.status === "Closed" ? user.displayName : input.status === "Open" ? null : current.closedByName;
-  const waitingReason = input.status === "Waiting Parts" ? input.reason : input.status === "In Progress" ? null : current.waitingReason;
+  const closedAt = input.status === "Completed" ? now : current.closedAt;
+  const closedBy = input.status === "Completed" ? user.id : current.closedBy;
+  const closedByName = input.status === "Completed" ? user.displayName : current.closedByName;
+  const waitingReason = input.status === "Waiting Parts" ? input.reason : input.status === "In Progress" || input.status === "Completed" ? null : current.waitingReason;
   const result = await env.DB.prepare(`
     UPDATE maintenance_tickets
     SET status = ?, started_at = ?, resolved_at = ?, closed_at = ?, resolved_by = ?, resolved_by_name = ?,
         closed_by = ?, closed_by_name = ?, waiting_reason = ?, updated_at = ?
-    WHERE ticket_id = ? AND status = ? AND updated_at = ?
-  `).bind(input.status, startedAt, resolvedAt, closedAt, resolvedBy, resolvedByName, closedBy, closedByName, waitingReason, now, ticketId, current.status, current.updatedAt).run();
+    WHERE ticket_id = ? AND updated_at = ?
+  `).bind(toStoredStatus(input.status), startedAt, current.resolvedAt, closedAt, current.resolvedBy, current.resolvedByName, closedBy, closedByName, waitingReason, now, ticketId, current.updatedAt).run();
   if ((result.meta.changes ?? 0) !== 1) throw new MaintenanceConflictError("Ticket status is stale.");
   await recordEvent(env, ticketId, "status_changed", current.status, input.status, user, now);
   if (input.status === "Waiting Parts" && input.reason) await recordEvent(env, ticketId, "waiting_reason", null, input.reason, user, now);
@@ -799,7 +828,7 @@ export async function transitionMaintenanceTicket(env: MaintenanceBindings, tick
 }
 
 export async function updateMaintenanceOutOfService(env: MaintenanceBindings, ticketId: number, input: MaintenanceOutOfServiceInput, user: CurrentChatUser): Promise<MaintenanceTicketDetail | null> {
-  if (!isManagement(user)) throw new MaintenancePermissionError("Only Management can change Out of Service.");
+  if (!canEditMaintenance(user)) throw new MaintenancePermissionError("Only Maintenance, Manager or Owner can change Out of Service.");
   const current = await getMaintenanceTicket(env, ticketId);
   if (!current) return null;
   if (!current.roomId) throw new Error("Out of Service requires a room-related ticket.");
@@ -817,6 +846,7 @@ export async function updateMaintenanceOutOfService(env: MaintenanceBindings, ti
 export async function addMaintenanceNote(env: MaintenanceBindings, ticketId: number, input: CreateMaintenanceNoteInput, user: CurrentChatUser): Promise<MaintenanceNote | null> {
   const ticket = await getMaintenanceTicket(env, ticketId);
   if (!ticket) return null;
+  if (!canEditMaintenance(user) && ticket.reportedBy !== user.id) throw new MaintenancePermissionError("Only the reporter or Maintenance can update this ticket.");
   const now = new Date().toISOString();
   const result = await env.DB.prepare(`
     INSERT INTO maintenance_ticket_notes (ticket_id, author_id, author_name, author_role, body, created_at)
@@ -831,6 +861,7 @@ export async function addMaintenanceNote(env: MaintenanceBindings, ticketId: num
 export async function addMaintenancePhoto(env: MaintenanceBindings, ticketId: number, input: CreateMaintenancePhotoInput, user: CurrentChatUser): Promise<MaintenancePhoto | null> {
   const ticket = await getMaintenanceTicket(env, ticketId);
   if (!ticket) return null;
+  if (!canEditMaintenance(user) && ticket.reportedBy !== user.id) throw new MaintenancePermissionError("Only the reporter or Maintenance can update this ticket.");
   const now = new Date().toISOString();
   const result = await env.DB.prepare(`
     INSERT INTO maintenance_ticket_photos (ticket_id, storage_status, local_reference, url, caption, added_by, added_by_name, created_at)
@@ -843,8 +874,8 @@ export async function addMaintenancePhoto(env: MaintenanceBindings, ticketId: nu
 }
 
 export const maintenanceOptions = {
-  statuses: STATUSES,
-  priorities: PRIORITIES,
+  statuses: PRODUCT_STATUSES,
+  priorities: PRODUCT_PRIORITIES,
   categories: CATEGORIES,
   locationAreas: LOCATION_AREAS,
   externalAssignees: EXTERNAL_ASSIGNEES,

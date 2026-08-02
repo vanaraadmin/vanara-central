@@ -690,7 +690,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
   const operations = housekeepingOverview.rooms.find((room) => room.unitId === unit.unit_id) ?? operationalFallback(unit, currentStay);
   const openIssues = tickets.length;
   const outOfService = tickets.some((ticket) => ticket.outOfService);
-  const highestPriority = ["Critical", "High", "Medium", "Low"].find((priority) => tickets.some((ticket) => ticket.priority === priority)) ?? null;
+  const highestPriority = ["High", "Normal", "Low"].find((priority) => tickets.some((ticket) => ticket.priority === priority)) ?? null;
   const housekeeping = housekeepingDetail(roomScopedActiveTasks, storedHousekeepingState, user, outOfService, today);
 
   return {

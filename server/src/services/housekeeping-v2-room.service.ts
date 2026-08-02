@@ -825,7 +825,9 @@ async function loadCounter(env: HousekeepingV2RoomBindings, unitId: number): Pro
 
 async function loadMaintenance(env: HousekeepingV2RoomBindings, unitId: number): Promise<MaintenanceRow[]> {
   const rows = await env.DB.prepare(`
-    SELECT ticket_id, title, category, priority, status, out_of_service, updated_at
+    SELECT ticket_id, title, category,
+           CASE priority WHEN 'Medium' THEN 'Normal' WHEN 'Critical' THEN 'High' ELSE priority END AS priority,
+           status, out_of_service, updated_at
     FROM maintenance_tickets
     WHERE room_id = ?
       AND status NOT IN ('Resolved', 'Closed')

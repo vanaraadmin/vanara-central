@@ -25,6 +25,22 @@
   display: flex;
 }
 
+.room-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: var(--vc-space-2);
+  min-height: var(--vc-touch-min);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
 .room-detail-header {
   align-items: flex-start;
   justify-content: space-between;

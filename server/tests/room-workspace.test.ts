@@ -966,16 +966,16 @@ test("room notes endpoint enforces direct API authorization and persists server-
   assert.equal((body.data as { body: string; authorName: string }).authorName, ACTIVE_USER.full_name);
 });
 
-test("room maintenance endpoint requires room access, maintenance edit and creates a ticket through maintenance persistence", async () => {
+test("room maintenance endpoint requires room access and creates a ticket through maintenance persistence", async () => {
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST" }, env([], { authenticated: false }))).status, 401);
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([maintenanceEdit]))).status, 403);
-  assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([roomsAccess]))).status, 403);
-  assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Invalid", priority: "High" }) }, env([roomsAccess, maintenanceEdit]))).status, 400);
-  assert.equal((await request("/api/rooms/999/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([roomsAccess, maintenanceEdit]))).status, 404);
-  const response = await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink cabinet leak", category: "Water", priority: "High" }) }, env([roomsAccess, maintenanceEdit]));
+  assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "Critical" }) }, env([roomsAccess]))).status, 400);
+  assert.equal((await request("/api/rooms/999/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "High" }) }, env([roomsAccess]))).status, 404);
+  const response = await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink cabinet leak", priority: "High", outOfService: true }) }, env([roomsAccess]));
   const body = await json(response);
   assert.equal(response.status, 201);
-  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string }).roomId, UNIT.unit_id);
-  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string }).accommodationId, UNIT.room_type_id);
-  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string }).reportedByName, ACTIVE_USER.full_name);
+  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).roomId, UNIT.unit_id);
+  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).accommodationId, UNIT.room_type_id);
+  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).reportedByName, ACTIVE_USER.full_name);
+  assert.equal((body.data as { roomId: number; accommodationId: number; reportedByName: string; outOfService: boolean }).outOfService, true);
 });

@@ -804,7 +804,7 @@ async function loadAlerts(env: HousekeepingV2Bindings): Promise<Map<number, Aler
 async function loadMaintenance(env: HousekeepingV2Bindings): Promise<Map<number, MaintenanceRow>> {
   const rows = await env.DB.prepare(`
     SELECT room_id, COUNT(*) AS count,
-           SUM(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 OR priority = 'Critical' THEN 1 ELSE 0 END) AS critical,
+           SUM(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 THEN 1 ELSE 0 END) AS critical,
            MIN(title) AS label
     FROM maintenance_tickets
     WHERE room_id IS NOT NULL

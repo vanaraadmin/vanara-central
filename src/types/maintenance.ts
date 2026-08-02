@@ -1,5 +1,5 @@
-export type MaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
-export type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
+export type MaintenanceStatus = "Open" | "In Progress" | "Waiting Parts" | "Completed";
+export type MaintenancePriority = "Low" | "Normal" | "High";
 export type MaintenanceCategory =
   | "Electrical"
   | "Air Conditioning"
@@ -109,7 +109,7 @@ export interface MaintenanceAssignableOptions {
 export interface CreateMaintenanceTicketPayload {
   title: string;
   description: string;
-  category: MaintenanceCategory;
+  category?: MaintenanceCategory;
   priority: MaintenancePriority;
   roomId?: number | null;
   accommodationId?: number | null;

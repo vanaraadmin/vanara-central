@@ -9,6 +9,7 @@
 .maintenance-hero,
 .maintenance-detail-hero,
 .maintenance-controls,
+.maintenance-summary,
 .maintenance-list,
 .maintenance-form-page,
 .maintenance-panel {
@@ -85,10 +86,68 @@
   margin-bottom: var(--vc-space-4);
 }
 
+.maintenance-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--vc-space-2);
+  margin-bottom: var(--vc-space-4);
+}
+
+.maintenance-summary div {
+  display: grid;
+  gap: var(--vc-space-2);
+  min-height: 96px;
+  align-content: space-between;
+  padding: var(--vc-space-3);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.maintenance-summary span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  text-transform: uppercase;
+}
+
+.maintenance-summary strong {
+  color: var(--vc-text-primary);
+  font-family: var(--vc-font-display);
+  font-size: 2rem;
+  line-height: 1;
+}
+
 .maintenance-controls label,
 .maintenance-form-page label {
   display: grid;
   gap: var(--vc-space-2);
+}
+
+.maintenance-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-3);
+}
+
+.maintenance-checkbox-field,
+.room-checkbox-field {
+  display: flex !important;
+  align-items: center;
+  gap: var(--vc-space-2);
+  width: fit-content;
+  min-height: var(--vc-touch-min);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.maintenance-checkbox-field input,
+.room-checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
 }
 
 .maintenance-controls label span,
@@ -204,6 +263,11 @@
   gap: var(--vc-space-2);
 }
 
+.maintenance-ticket__top {
+  align-items: center;
+  justify-content: space-between;
+}
+
 .maintenance-ticket__top span,
 .maintenance-ticket__top strong,
 .maintenance-ticket__meta span,
@@ -218,6 +282,15 @@
   border-radius: var(--vc-radius-pill);
   font-size: var(--vc-text-xs);
   font-weight: var(--vc-weight-bold);
+}
+
+.maintenance-ticket__top strong {
+  min-height: auto;
+  padding: 0;
+  color: var(--vc-text-primary);
+  background: transparent;
+  border-radius: 0;
+  font-size: var(--vc-text-lg);
 }
 
 .maintenance-ticket h2 {
@@ -351,6 +424,10 @@
   }
 
   .maintenance-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .maintenance-form-grid {
     grid-template-columns: 1fr;
   }
 }

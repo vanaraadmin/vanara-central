@@ -236,7 +236,8 @@
 }
 
 .housekeeping-v2-card__actions button,
-.housekeeping-v2-secondary-action {
+.housekeeping-v2-secondary-action,
+.housekeeping-v2-report-issue {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
@@ -250,6 +251,10 @@
   font-weight: var(--vc-weight-bold);
   text-decoration: none;
   gap: 6px;
+}
+
+.housekeeping-v2-report-issue {
+  width: fit-content;
 }
 
 .housekeeping-v2-card__actions svg {

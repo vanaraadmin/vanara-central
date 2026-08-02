@@ -41,6 +41,11 @@ export interface ReceptionStay {
   email: string | null;
   bookingStatus: string;
   roomStatus: string;
+  maintenance: {
+    openIssues: number;
+    outOfService: boolean;
+    label: string | null;
+  };
   checkIn: Record<ReceptionCheckInField, boolean>;
   checkOut: Record<ReceptionCheckOutField, boolean>;
   specialNotes: string | null;

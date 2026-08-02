@@ -243,9 +243,9 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const assignedRooms = housekeeping.summary.assigned;
   const unassignedRooms = housekeeping.rooms.filter((room) => room.housekeepingStatus !== "Ready" && room.assignedUserId === null).length;
 
-  const activeMaintenance = maintenanceTickets.filter((ticket) => ticket.status !== "Closed");
+  const activeMaintenance = maintenanceTickets.filter((ticket) => ticket.status !== "Completed");
   const openIssues = activeMaintenance.length;
-  const criticalIssues = activeMaintenance.filter((ticket) => ticket.priority === "Critical").length;
+  const highIssues = activeMaintenance.filter((ticket) => ticket.priority === "High").length;
   const waiting = activeMaintenance.filter((ticket) => ticket.status === "Waiting Parts").length;
   const outOfService = activeMaintenance.filter((ticket) => ticket.outOfService).length;
 
@@ -255,7 +255,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const maintenanceStaff = activeUsers.filter((user) => user.role === "Maintenance").length;
 
   const alerts = [
-    alert("critical-maintenance", "Critical Maintenance", criticalIssues, "/maintenance?priority=Critical", "danger"),
+    alert("high-maintenance", "High Maintenance", highIssues, "/maintenance?priority=High", "danger"),
     alert("out-of-service", "Out Of Service Rooms", outOfService, "/maintenance?outOfService=1", "danger"),
     alert("unassigned-cleaning", "Unassigned Cleaning", unassignedRooms, "/housekeeping?filter=unassigned", "warning"),
     alert("waiting-maintenance", "Waiting Maintenance", waiting, "/maintenance?status=Waiting%20Parts", "warning"),
@@ -274,7 +274,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
     },
     maintenance: {
       openIssues: metric("open-issues", "Open Issues", openIssues, "/maintenance?status=All", openIssues > 0 ? "warning" : "success"),
-      criticalIssues: metric("critical-issues", "Critical Issues", criticalIssues, "/maintenance?priority=Critical", criticalIssues > 0 ? "danger" : "success"),
+      criticalIssues: metric("high-issues", "High Issues", highIssues, "/maintenance?priority=High", highIssues > 0 ? "danger" : "success"),
       waiting: metric("waiting", "Waiting", waiting, "/maintenance?status=Waiting%20Parts", waiting > 0 ? "warning" : "neutral"),
       outOfService: metric("out-of-service", "Out Of Service", outOfService, "/maintenance?outOfService=1", outOfService > 0 ? "danger" : "success"),
     },

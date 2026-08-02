@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import addressBookIcon from "../assets/img/address-book-light.svg";
@@ -157,6 +158,16 @@ function HousekeepingStatusRow({ roomStatus }: { roomStatus: string }) {
         src={selectionBackground}
       />
       <span className="checkin-card__housekeeping-label">{housekeepingLabel}</span>
+    </div>
+  );
+}
+
+function MaintenanceBadge({ stay }: { stay: ReceptionStay }) {
+  if (stay.maintenance.openIssues <= 0) return null;
+  return (
+    <div className={`reception-maintenance-badge${stay.maintenance.outOfService ? " is-blocking" : ""}`}>
+      <span>{stay.maintenance.label ?? "Maintenance Active"}</span>
+      <strong>{stay.maintenance.openIssues}</strong>
     </div>
   );
 }
@@ -341,17 +352,28 @@ function StayCard({
           <RoomIcon />
           <span>{stay.roomName}</span>
         </div>
-        <button
-          aria-label={`Contact ${stay.guestName}`}
-          className="reception-contact-trigger"
-          onClick={(event) => {
-            event.stopPropagation();
-            onContactRequest(stay);
-          }}
-          type="button"
-        >
-          <img alt="" src={addressBookIcon} />
-        </button>
+        <div className="reception-card__quick-actions">
+          {stay.roomId && (
+            <Link
+              className="reception-report-issue"
+              onClick={(event) => event.stopPropagation()}
+              to={`${stay.links.maintenance}&source=reception`}
+            >
+              Report Issue
+            </Link>
+          )}
+          <button
+            aria-label={`Contact ${stay.guestName}`}
+            className="reception-contact-trigger"
+            onClick={(event) => {
+              event.stopPropagation();
+              onContactRequest(stay);
+            }}
+            type="button"
+          >
+            <img alt="" src={addressBookIcon} />
+          </button>
+        </div>
       </div>
 
       <div className="reception-guest">
@@ -360,6 +382,7 @@ function StayCard({
           <h3>{stay.guestName}</h3>
           {nationality ? <p className="reception-nationality">{nationality}</p> : null}
           <p className="reception-booking-source">{bookingSourceLabel(stay)}</p>
+          <MaintenanceBadge stay={stay} />
           {type === "arrival" && <HousekeepingStatusRow roomStatus={stay.roomStatus} />}
         </div>
       </div>

@@ -299,6 +299,7 @@
 
 .reception-card__top,
 .reception-room-chip,
+.reception-card__quick-actions,
 .reception-guest {
   align-items: center;
 }
@@ -327,6 +328,28 @@
   height: 20px;
   flex: 0 0 auto;
   color: #173b2d;
+}
+
+.reception-card__quick-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.reception-report-issue {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid rgba(23, 59, 45, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(23, 59, 45, 0.72);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-decoration: none;
+  text-transform: uppercase;
 }
 
 .reception-contact-trigger {
@@ -429,6 +452,30 @@
   font-size: 0.92rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.reception-maintenance-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(178, 138, 70, 0.14);
+  color: #725325;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.reception-maintenance-badge.is-blocking {
+  background: rgba(163, 63, 54, 0.14);
+  color: #9d352d;
+}
+
+.reception-maintenance-badge strong {
+  font-size: 0.72rem;
 }
 
 .checkin-card__housekeeping--clean {

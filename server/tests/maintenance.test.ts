@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
@@ -10,41 +10,46 @@ import {
   normalizeUpdateMaintenanceTicketInput,
 } from "../src/services/maintenance.service.ts";
 
-test("maintenance ticket create input supports the required production fields", () => {
+test("maintenance ticket create input supports the MVP production fields", () => {
   const input = normalizeCreateMaintenanceTicketInput({
-    title: "Pool pump noise",
-    description: "Pump is louder than usual near the restaurant side.",
-    category: "Appliance",
-    priority: "High",
-    roomId: null,
-    accommodationId: null,
-    locationArea: "Pond",
-    assignmentType: "EXTERNAL",
-    externalAssigneeLabel: "General contractor",
+    title: "Sink leak",
+    description: "Water under the bathroom sink.",
+    priority: "Normal",
+    roomId: 1,
+    assignmentType: "INTERNAL",
+    assignedUserId: "maintenance-1",
+    outOfService: true,
   });
 
-  assert.equal(input.title, "Pool pump noise");
-  assert.equal(input.category, "Appliance");
-  assert.equal(input.priority, "High");
-  assert.equal(input.assignment?.assignmentType, "EXTERNAL");
+  assert.equal(input.title, "Sink leak");
+  assert.equal(input.category, "Other");
+  assert.equal(input.priority, "Normal");
+  assert.equal(input.roomId, 1);
+  assert.equal(input.assignment?.assignmentType, "INTERNAL");
+  assert.equal(input.outOfService, true);
 });
 
-test("maintenance ticket rejects invalid lifecycle status", () => {
-  assert.throws(() => normalizeMaintenanceStatusInput({ status: "Almost Done" }), /Status is invalid/);
-  assert.throws(() => normalizeUpdateMaintenanceTicketInput({ status: "Closed" }), /unsupported field/);
+test("maintenance priority is limited to low normal high", () => {
+  assert.equal(normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "Low" }).priority, "Low");
+  assert.equal(normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "High" }).priority, "High");
+  assert.throws(() => normalizeCreateMaintenanceTicketInput({ title: "Loose handle", description: "Door handle", priority: "Critical" }), /Priority is invalid/);
 });
 
-test("maintenance assignment separates internal and external assignees", () => {
+test("maintenance status exposes only the four MVP states", () => {
+  assert.deepEqual(normalizeMaintenanceStatusInput({ status: "In Progress" }), { status: "In Progress", reason: null });
+  assert.deepEqual(normalizeMaintenanceStatusInput({ status: "Completed" }), { status: "Completed", reason: null });
+  assert.throws(() => normalizeMaintenanceStatusInput({ status: "Assigned" }), /Status is invalid/);
+  assert.throws(() => normalizeMaintenanceStatusInput({ status: "Resolved" }), /Status is invalid/);
+  assert.throws(() => normalizeMaintenanceStatusInput({ status: "Closed" }), /Status is invalid/);
+  assert.throws(() => normalizeUpdateMaintenanceTicketInput({ status: "Completed" }), /unsupported field/);
+});
+
+test("maintenance assignment is optional and internal", () => {
+  assert.equal(normalizeMaintenanceAssignmentInput({ assignmentType: null }), null);
   assert.deepEqual(normalizeMaintenanceAssignmentInput({ assignmentType: "INTERNAL", assignedUserId: "maintenance-1" }), {
     assignmentType: "INTERNAL",
     assignedUserId: "maintenance-1",
   });
-  assert.deepEqual(normalizeMaintenanceAssignmentInput({ assignmentType: "EXTERNAL", externalAssigneeLabel: "Electrician", externalAssigneeNote: "Called" }), {
-    assignmentType: "EXTERNAL",
-    externalAssigneeLabel: "Electrician",
-    externalAssigneeNote: "Called",
-  });
-  assert.throws(() => normalizeMaintenanceAssignmentInput({ assignmentType: "EXTERNAL", assignedUserId: "fake", externalAssigneeLabel: "Electrician" }), /cannot include assignedUserId/);
 });
 
 test("maintenance note requires a real body", () => {

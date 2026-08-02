@@ -1,16 +1,14 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { loadMaintenanceTickets } from "../services/maintenance.service";
 import type { MaintenancePriority, MaintenanceStatus, MaintenanceTicketSummary } from "../types/maintenance";
 import "../styles/MaintenancePage.css";
 
-const statuses: Array<MaintenanceStatus | "All"> = ["All", "Open", "Assigned", "In Progress", "Waiting Parts", "Resolved", "Closed"];
-
 function statusLabel(status: MaintenanceStatus | "All") {
-  return status === "Waiting Parts" ? "Waiting" : status;
+  return status;
 }
 
 function locationLabel(ticket: MaintenanceTicketSummary) {
@@ -18,55 +16,56 @@ function locationLabel(ticket: MaintenanceTicketSummary) {
 }
 
 function assignmentLabel(ticket: MaintenanceTicketSummary) {
-  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? "Internal maintenance";
-  if (ticket.assignment.type === "EXTERNAL") return `External: ${ticket.assignment.externalAssigneeLabel}`;
+  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? "Maintenance";
   return "Unassigned";
 }
 
 function priorityTone(priority: MaintenancePriority): string {
-  return priority.toLowerCase().replace(" ", "-");
+  return priority.toLowerCase();
 }
 
 function TicketCard({ ticket }: { ticket: MaintenanceTicketSummary }) {
   return (
     <Link className={`maintenance-ticket priority-${priorityTone(ticket.priority)} status-${ticket.status.toLowerCase().replaceAll(" ", "-")}`} to={`/maintenance/${ticket.id}`}>
       <div className="maintenance-ticket__top">
-        <span>{ticket.category}</span>
-        <strong>{ticket.priority}</strong>
+        <strong>{ticket.title}</strong>
+        {ticket.outOfService && <span>Blocking</span>}
       </div>
-      <h2>{ticket.title}</h2>
-      <p>{ticket.description}</p>
       <div className="maintenance-ticket__meta">
+        <span>{locationLabel(ticket)}</span>
+        <span>{ticket.priority}</span>
         <span>{statusLabel(ticket.status)}</span>
         <span>{assignmentLabel(ticket)}</span>
-        <span>{locationLabel(ticket)}</span>
-        {ticket.outOfService && <span>Out of Service</span>}
-      </div>
-      <div className="maintenance-ticket__foot">
-        <span>{ticket.noteCount} notes</span>
-        <span>{ticket.photoCount} photos</span>
       </div>
     </Link>
   );
+}
+
+function todayBangkok(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
 }
 
 export default function MaintenancePage() {
   const [params] = useSearchParams();
   const priorityParam = params.get("priority") as MaintenancePriority | null;
   const outOfServiceParam = params.get("outOfService") === "1";
-  const statusParam = params.get("status") as MaintenanceStatus | "All" | null;
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<MaintenanceStatus | "All">(statusParam && statuses.includes(statusParam) ? statusParam : "All");
   const query = useQuery({
-    queryKey: ["maintenance", "tickets", search, status],
-    queryFn: ({ signal }) => loadMaintenanceTickets({ search, status }, signal),
+    queryKey: ["maintenance", "tickets"],
+    queryFn: ({ signal }) => loadMaintenanceTickets({ status: "All" }, signal),
   });
   const tickets = useMemo(() => (query.data ?? []).filter((ticket) => {
     if (priorityParam && ticket.priority !== priorityParam) return false;
     if (outOfServiceParam && !ticket.outOfService) return false;
     return true;
   }), [outOfServiceParam, priorityParam, query.data]);
-  const openCount = useMemo(() => tickets.filter((ticket) => !["Resolved", "Closed"].includes(ticket.status)).length, [tickets]);
+  const activeTickets = useMemo(() => tickets.filter((ticket) => ticket.status !== "Completed"), [tickets]);
+  const completedToday = useMemo(() => tickets.filter((ticket) => ticket.status === "Completed" && ticket.closedAt?.startsWith(todayBangkok())).length, [tickets]);
+  const summary = [
+    { label: "Open", value: activeTickets.filter((ticket) => ticket.status === "Open").length },
+    { label: "In Progress", value: activeTickets.filter((ticket) => ticket.status === "In Progress").length },
+    { label: "Waiting Parts", value: activeTickets.filter((ticket) => ticket.status === "Waiting Parts").length },
+    { label: "Completed Today", value: completedToday },
+  ];
 
   if (query.isLoading) return <WorkspaceShell title="Maintenance" workspace="maintenance"><PageLoading /></WorkspaceShell>;
   if (query.isError) return <WorkspaceShell title="Maintenance" workspace="maintenance"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
@@ -74,28 +73,24 @@ export default function MaintenancePage() {
   return (
     <WorkspaceShell title="Maintenance" workspace="maintenance" bodyClassName="maintenance-page">
       <div className="workspace-body-actions">
-        <span>{openCount} active issue{openCount === 1 ? "" : "s"}</span>
+        <span>{activeTickets.length} active issue{activeTickets.length === 1 ? "" : "s"}</span>
         <Link to="/maintenance/new">New Ticket</Link>
       </div>
 
-      <section className="maintenance-controls" aria-label="Maintenance filters">
-        <label>
-          <span>Search</span>
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Room, issue, technician…" />
-        </label>
-        <div className="maintenance-filter-row">
-          {statuses.map((option) => (
-            <button key={option} className={option === status ? "is-active" : ""} type="button" onClick={() => setStatus(option)}>{statusLabel(option)}</button>
-          ))}
-        </div>
+      <section className="maintenance-summary" aria-label="Maintenance summary">
+        {summary.map((item) => (
+          <div key={item.label}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
       </section>
 
-      <section className="maintenance-list" aria-label="Maintenance tickets">
-        {tickets.length > 0 ? tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />) : (
+      <section className="maintenance-list" aria-label="Active maintenance tickets">
+        {activeTickets.length > 0 ? activeTickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />) : (
           <div className="maintenance-empty">
-            <span aria-hidden="true">🔧</span>
-            <h2>No tickets found</h2>
-            <p>Create a ticket when something needs attention.</p>
+            <h2>No active tickets</h2>
+            <p>Create a ticket when something physical needs attention.</p>
           </div>
         )}
       </section>
