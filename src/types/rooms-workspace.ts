@@ -1,8 +1,37 @@
-export type RoomsWorkspaceAvailabilityStatus = "Operating" | "Not Operating";
-export type RoomsWorkspaceOccupancyStatus = "Occupied" | "Vacant";
-export type RoomsWorkspaceHousekeepingStatus = "Ready" | "Not Ready";
-export type RoomsWorkspaceMaintenanceStatus = "Clear" | "Maintenance";
+export type RoomOperationalAvailability = "OPERATING" | "NOT_OPERATING";
+export type RoomOccupancyState = "VACANT" | "OCCUPIED";
+export type RoomHousekeepingCondition = "READY" | "NOT_READY";
+export type RoomHousekeepingWorkState = "NONE" | "AVAILABLE" | "IN_PROGRESS" | "BLOCKED";
+export type RoomMaintenanceState = "CLEAR" | "ACTIVE" | "BLOCKING";
 export type RoomsWorkspaceSortGroup = "bungalow" | "villa" | "tent" | "other";
+
+export interface RoomOperationalSummary {
+  availability: {
+    state: RoomOperationalAvailability;
+    reason: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    seasonLabel: string | null;
+  };
+  occupancy: {
+    state: RoomOccupancyState;
+    guestName: string | null;
+    bookingId: number | null;
+    source: string | null;
+  };
+  housekeeping: {
+    condition: RoomHousekeepingCondition;
+    workState: RoomHousekeepingWorkState;
+    activeTaskType: string | null;
+    assignedTo: string | null;
+  };
+  maintenance: {
+    state: RoomMaintenanceState;
+    activeTicketCount: number;
+    blockingTicketCount: number;
+    primaryTitle: string | null;
+  };
+}
 
 export interface RoomsWorkspaceRoom {
   unitId: number;
@@ -13,22 +42,7 @@ export interface RoomsWorkspaceRoom {
   sortNumber: number;
   heroImageKey: string;
   heroImage: string | null;
-  occupancy: {
-    status: RoomsWorkspaceOccupancyStatus;
-    guestName: string | null;
-    source: string | null;
-  };
-  operationalAvailability: {
-    status: RoomsWorkspaceAvailabilityStatus;
-  };
-  housekeeping: {
-    status: RoomsWorkspaceHousekeepingStatus;
-  };
-  maintenance: {
-    status: RoomsWorkspaceMaintenanceStatus;
-    openIssues: number;
-    outOfService: boolean;
-  };
+  operational: RoomOperationalSummary;
 }
 
 export interface RoomsWorkspaceOverview {

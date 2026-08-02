@@ -85,7 +85,7 @@
   gap: 3px;
 }
 
-.room-row__identity strong {
+.room-row__name {
   overflow: hidden;
   color: rgba(250, 247, 238, 0.96);
   font-size: var(--vc-text-md);
@@ -95,7 +95,7 @@
   white-space: nowrap;
 }
 
-.room-row__identity span {
+.room-row__guest {
   overflow: hidden;
   color: rgba(235, 230, 215, 0.54);
   font-family: var(--vc-font-sans);
@@ -106,7 +106,7 @@
   white-space: nowrap;
 }
 
-.room-row__status {
+.room-row__signals {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
@@ -141,36 +141,42 @@
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
+  transition:
+    background 180ms var(--vc-ease-standard),
+    border-color 180ms var(--vc-ease-standard),
+    color 180ms var(--vc-ease-standard),
+    opacity 180ms var(--vc-ease-standard);
 }
 
-.operational-status-pill--operating,
-.operational-status-pill--ready,
-.operational-status-pill--clear {
+.operational-status-pill--emphasis {
+  border-width: 1px;
+}
+
+.operational-status-pill--success {
   border-color: rgba(139, 196, 147, 0.28);
   color: rgba(220, 255, 226, 0.96);
   background: rgba(139, 196, 147, 0.12);
 }
 
-.operational-status-pill--occupied {
+.operational-status-pill--info {
   border-color: rgba(139, 180, 202, 0.3);
   color: rgba(222, 243, 255, 0.96);
   background: rgba(139, 180, 202, 0.13);
 }
 
-.operational-status-pill--vacant {
+.operational-status-pill--neutral {
   border-color: rgba(244, 237, 223, 0.16);
   color: rgba(244, 237, 223, 0.68);
   background: rgba(244, 237, 223, 0.07);
 }
 
-.operational-status-pill--not-operating,
-.operational-status-pill--not-ready {
+.operational-status-pill--warning {
   border-color: rgba(208, 166, 99, 0.28);
   color: rgba(255, 231, 194, 0.96);
   background: rgba(208, 166, 99, 0.13);
 }
 
-.operational-status-pill--maintenance {
+.operational-status-pill--danger {
   border-color: rgba(210, 139, 126, 0.3);
   color: rgba(255, 226, 222, 0.96);
   background: rgba(210, 139, 126, 0.14);
@@ -266,10 +272,90 @@
   text-transform: uppercase;
 }
 
-.room-operational-card__pills {
+.room-operational-card {
+  gap: var(--vc-space-3);
+}
+
+.room-operational-card__header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.room-operational-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-2);
+  margin: 0;
+}
+
+.room-operational-item {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(244, 237, 223, 0.1);
+  border-radius: var(--vc-radius-md);
+  background: rgba(244, 237, 223, 0.055);
+}
+
+.room-operational-item--success {
+  border-color: rgba(139, 196, 147, 0.2);
+}
+
+.room-operational-item--warning {
+  border-color: rgba(208, 166, 99, 0.22);
+}
+
+.room-operational-item--danger {
+  border-color: rgba(210, 139, 126, 0.24);
+}
+
+.room-operational-item--info {
+  border-color: rgba(139, 180, 202, 0.22);
+}
+
+.room-operational-item--neutral {
+  border-color: rgba(244, 237, 223, 0.11);
+}
+
+.room-operational-item__label {
+  color: rgba(244, 237, 223, 0.56);
+  font-family: var(--vc-font-sans);
+  font-size: 0.66rem;
+  font-weight: var(--vc-weight-heavy);
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.room-operational-item__body {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  margin: 0;
+}
+
+.room-operational-item__value {
+  overflow-wrap: anywhere;
+  color: rgba(250, 247, 238, 0.96);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-semibold);
+  line-height: 1.2;
+}
+
+.room-operational-item__detail,
+.room-operational-item__meta {
+  overflow-wrap: anywhere;
+  color: rgba(244, 237, 223, 0.62);
+  font-family: var(--vc-font-sans);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-medium);
+  line-height: 1.25;
+}
+
+.room-operational-item__meta {
+  color: rgba(244, 237, 223, 0.48);
 }
 
 .room-workspace-placeholder-card span {
@@ -306,7 +392,7 @@
     flex-basis: calc(100% - 28px);
   }
 
-  .room-row__status {
+  .room-row__signals {
     justify-content: flex-start;
     padding-right: 24px;
   }
@@ -320,8 +406,15 @@
 @media (prefers-reduced-motion: reduce) {
   .room-row,
   .room-row__chevron,
-  .room-expanded {
+  .room-expanded,
+  .operational-status-pill {
     animation: none;
     transition: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .room-operational-card__grid {
+    grid-template-columns: 1fr;
   }
 }

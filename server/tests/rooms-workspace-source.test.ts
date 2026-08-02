@@ -5,9 +5,12 @@ import test from "node:test";
 const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
 const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8");
 const roomCompactRow = readFileSync(new URL("../../src/components/rooms/RoomCompactRow.tsx", import.meta.url), "utf8");
+const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/RoomCompactSignals.tsx", import.meta.url), "utf8");
 const roomExpandedWorkspace = readFileSync(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
+const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/rooms/RoomOperationalSummaryCard.tsx", import.meta.url), "utf8");
 const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx", import.meta.url), "utf8");
 const statusPill = readFileSync(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
+const presentation = readFileSync(new URL("../../src/config/roomOperationalPresentation.ts", import.meta.url), "utf8");
 const imageMapping = readFileSync(new URL("../../src/config/accommodationImages.ts", import.meta.url), "utf8");
 const roomsService = readFileSync(new URL("../../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const staffService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
@@ -28,6 +31,8 @@ test("Rooms Workspace consumes one dedicated read model and cards do not load se
   assert.match(roomsService, /requestJson<RoomsWorkspaceResponse>\("\/api\/rooms"/);
   assert.doesNotMatch(roomsPage, /loadRoomDetail|loadMaintenance|loadHousekeeping|getReception/);
   assert.doesNotMatch(roomCompactRow, /services\//);
+  assert.doesNotMatch(roomCompactSignals, /services\//);
+  assert.doesNotMatch(roomOperationalSummaryCard, /services\//);
   assert.doesNotMatch(roomExpandedWorkspace, /services\//);
   assert.doesNotMatch(roomHero, /services\//);
 });
@@ -40,24 +45,43 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
   assert.match(roomsPage, /event\.key === "Escape"/);
   assert.match(roomCompactRow, /className="room-row"/);
   assert.match(roomCompactRow, /aria-expanded=\{expanded\}/);
+  assert.match(roomCompactRow, /aria-controls=\{detailsId\}/);
   assert.doesNotMatch(roomsPage, /useNavigate|<Link/);
-  assert.doesNotMatch(roomCompactRow, /<Link|to=\{/);
+  assert.doesNotMatch(roomCompactRow, /<Link|to=\{|<button[\s\S]*<button/);
 });
 
-test("Expanded Rooms Workspace is the approved Sprint 1 skeleton", () => {
-  for (const section of ["RoomHero", "Operational Summary", "Guest", "Reception", "Housekeeping", "Maintenance", "Notes", "History"]) {
-    assert.match(roomExpandedWorkspace, new RegExp(section));
+test("Compact row signals are centrally mapped and prioritize operational blockers", () => {
+  assert.match(roomCompactRow, /RoomCompactSignals summary=\{room\.operational\}/);
+  assert.match(roomCompactSignals, /getRoomOperationalSignals\(summary\)/);
+  assert.match(presentation, /signal\("OUT OF SERVICE", "danger", 1/);
+  assert.match(presentation, /signal\("NOT OPERATING", "warning", 2/);
+  assert.match(presentation, /signal\("CLEANING", "info", 3/);
+  assert.match(presentation, /signal\("NOT READY", "warning", 5/);
+  assert.match(presentation, /OCCUPIED/);
+  assert.match(presentation, /VACANT/);
+  assert.match(roomCompactRow, /room\.operational\.occupancy\.state === "OCCUPIED"/);
+  assert.doesNotMatch(roomCompactRow, /AVAILABLE_FOR_CLAIM|STANDARD_CLEANING|out_of_service|NOT_OPERATING/);
+});
+
+test("Expanded Rooms Workspace uses a read-only operational summary card", () => {
+  assert.match(roomExpandedWorkspace, /RoomOperationalSummaryCard summary=\{room\.operational\}/);
+  assert.match(roomOperationalSummaryCard, /Room Status/);
+  assert.match(roomOperationalSummaryCard, /<dl className="room-operational-card__grid">/);
+  for (const label of ["Operational", "Occupancy", "Housekeeping", "Maintenance"]) {
+    assert.match(presentation, new RegExp(label));
   }
-  assert.match(roomHero, /room\.heroImage/);
-  assert.doesNotMatch(roomExpandedWorkspace, /Create On Demand|Report Issue|Save|Complete/);
+  assert.doesNotMatch(roomExpandedWorkspace, /Create On Demand|Report Issue|Save|Complete|Start Cleaning|Finish Cleaning|Ready \/ Not Ready/);
+  assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
 });
 
-test("OperationalStatusPill exposes the required compact variants", () => {
-  for (const variant of ["Operating", "Not Operating", "Occupied", "Vacant", "Ready", "Not Ready", "Maintenance", "Clear"]) {
-    assert.match(statusPill, new RegExp(`"${variant}"`));
+test("Operational status pill supports one reusable tone model", () => {
+  for (const tone of ["success", "warning", "danger", "info", "neutral"]) {
+    assert.match(statusPill, new RegExp(`operational-status-pill--\\$\\{tone\\}`));
+    assert.match(css, new RegExp(`\\.operational-status-pill--${tone}`));
   }
   assert.match(css, /\.operational-status-pill/);
   assert.match(css, /min-height:\s*24px/);
+  assert.doesNotMatch(css, /pulse|blink|flash/);
 });
 
 test("Accommodation images are centrally mapped with static imports", () => {
@@ -68,11 +92,25 @@ test("Accommodation images are centrally mapped with static imports", () => {
   assert.doesNotMatch(roomsService, /\/assets\/img\//);
 });
 
-test("Rooms backend read model keeps ordering and state ownership server-side", () => {
+test("Rooms backend read model keeps all operational dimensions independent", () => {
   assert.match(serverService, /getRoomsWorkspaceOverview/);
   assert.match(serverService, /room_operational_availability/);
   assert.match(serverService, /room_housekeeping_state/);
+  assert.match(serverService, /reception_stays rs2/);
+  assert.match(serverService, /rs2\.guest_arrived = 1/);
+  assert.match(serverService, /housekeeping_tasks/);
+  assert.match(serverService, /room-ready-baseline:not-ready/);
+  assert.match(serverService, /ROW_NUMBER\(\) OVER/);
   assert.match(serverService, /maintenance_tickets/);
+  assert.match(serverService, /out_of_service = 1/);
+  assert.match(serverService, /json_extract\(metadata_json, '\$\.outOfService'\)/);
   assert.match(serverService, /operationalBookingStatusSql/);
   assert.match(serverService, /familyRank/);
+});
+
+test("Room Workspace UI copy does not present raw database or task enums", () => {
+  const ui = `${roomCompactRow}\n${roomCompactSignals}\n${roomOperationalSummaryCard}\n${presentation}`;
+  for (const raw of ["AVAILABLE_FOR_CLAIM", "STANDARD_CLEANING", "ROOM_READY_OVERRIDE", "out_of_service", "guest_arrived", "metadata_json"]) {
+    assert.doesNotMatch(ui, new RegExp(raw));
+  }
 });

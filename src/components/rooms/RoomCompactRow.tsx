@@ -1,5 +1,5 @@
 import { ChevronDownIcon } from "../OperationsIcons";
-import OperationalStatusPill from "./OperationalStatusPill";
+import RoomCompactSignals from "./RoomCompactSignals";
 import type { RoomsWorkspaceRoom } from "../../types/rooms-workspace";
 
 interface RoomCompactRowProps {
@@ -8,14 +8,9 @@ interface RoomCompactRowProps {
   onToggle: () => void;
 }
 
-function maintenanceLabel(room: RoomsWorkspaceRoom): string {
-  if (room.maintenance.outOfService) return "Maintenance";
-  if (room.maintenance.openIssues > 0) return "Maintenance";
-  return "Clear";
-}
-
 export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompactRowProps) {
   const detailsId = `room-workspace-${room.unitId}`;
+  const guestName = room.operational.occupancy.state === "OCCUPIED" ? room.operational.occupancy.guestName : null;
 
   return (
     <article className={`room-list-item${expanded ? " room-list-item--expanded" : ""}`}>
@@ -27,16 +22,11 @@ export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompact
         onClick={onToggle}
       >
         <span className="room-row__identity">
-          <strong>{room.roomName}</strong>
-          {room.occupancy.guestName ? <span>{room.occupancy.guestName}</span> : null}
+          <strong className="room-row__name">{room.roomName}</strong>
+          {guestName ? <span className="room-row__guest">{guestName}</span> : null}
         </span>
 
-        <span className="room-row__status" aria-label={`${room.roomName} operational status`}>
-          <OperationalStatusPill variant={room.occupancy.status} />
-          <OperationalStatusPill variant={room.operationalAvailability.status} />
-          <OperationalStatusPill variant={room.housekeeping.status} />
-          <OperationalStatusPill variant={room.maintenance.status} label={maintenanceLabel(room)} />
-        </span>
+        <RoomCompactSignals summary={room.operational} />
 
         <ChevronDownIcon className="room-row__chevron" />
       </button>

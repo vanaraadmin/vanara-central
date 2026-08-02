@@ -1,26 +1,15 @@
-type OperationalStatusVariant =
-  | "Operating"
-  | "Not Operating"
-  | "Occupied"
-  | "Vacant"
-  | "Ready"
-  | "Not Ready"
-  | "Maintenance"
-  | "Clear";
+import type { StatusTone } from "../../config/roomOperationalPresentation";
 
 interface OperationalStatusPillProps {
-  variant: OperationalStatusVariant;
-  label?: string;
+  label: string;
+  tone: StatusTone;
+  emphasis?: boolean;
 }
 
-function toneFor(variant: OperationalStatusVariant): string {
-  return variant.toLowerCase().replaceAll(" ", "-");
-}
-
-export default function OperationalStatusPill({ label, variant }: OperationalStatusPillProps) {
+export default function OperationalStatusPill({ emphasis = false, label, tone }: OperationalStatusPillProps) {
   return (
-    <span className={`operational-status-pill operational-status-pill--${toneFor(variant)}`}>
-      {label ?? variant}
+    <span className={`operational-status-pill operational-status-pill--${tone}${emphasis ? " operational-status-pill--emphasis" : ""}`}>
+      {label}
     </span>
   );
 }
