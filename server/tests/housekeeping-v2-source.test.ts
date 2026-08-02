@@ -10,11 +10,11 @@ const page = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", im
 const client = await readFile(new URL("../../src/services/housekeeping-v2.service.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../../src/styles/HousekeepingV2Page.css", import.meta.url), "utf8");
 
-test("housekeeping v2 is additive and preserves the legacy housekeeping workspace", () => {
+test("housekeeping workspace routes to the task-oriented v2 workspace while preserving legacy APIs", () => {
   assert.match(index, /app\.get\("\/api\/housekeeping"/);
   assert.match(index, /app\.get\("\/api\/housekeeping\/v2\/summary"/);
   assert.match(index, /app\.get\("\/api\/housekeeping\/v2\/tasks"/);
-  assert.match(router, /path="housekeeping" element=\{<HousekeepingPage \/>}/);
+  assert.match(router, /path="housekeeping" element=\{<Navigate replace to="\/housekeeping-v2" \/>}/);
   assert.match(router, /path="housekeeping-v2" element=\{<HousekeepingV2Page \/>}/);
   assert.match(client, /\/api\/housekeeping\/v2\/tasks/);
 });
@@ -32,16 +32,20 @@ test("housekeeping v2 uses the task-oriented Sprint 1 domain and idempotency key
 test("turnover release gate reads the real Reception booking key", () => {
   assert.match(domain, /JOIN reception_stays rs ON rs\.beds24_booking_id = b\.beds24_booking_id/);
   assert.match(domain, /WHERE b\.booking_id = \?/);
+  assert.match(domain, /export async function syncReleasedTurnoverTasks/);
+  assert.match(domain, /SELECT DISTINCT ht\.task_id, ht\.version/);
+  assert.match(service, /syncReleasedTurnoverTasks\(env, date, user\)/);
   assert.match(service, /room_released === 1 \? "released" : "waiting_for_reception"/);
   assert.doesNotMatch(service, /14:30/);
   assert.doesNotMatch(service, /automatic-fallback/);
 });
 
-test("housekeeping v2 generates only approved Sprint 2 task categories", () => {
+test("housekeeping v2 generates approved scheduled and manual-cleaning task categories", () => {
   assert.match(service, /taskType: "TURNOVER"/);
   assert.match(service, /taskType: "STANDARD_CLEANING"/);
+  assert.match(service, /taskType: "LINEN_CHANGE"/);
   assert.match(service, /taskType: "WATER_REFILL"/);
-  assert.doesNotMatch(service, /taskType: "LINEN_CHANGE"/);
+  assert.match(service, /linen_required_override === 1/);
   assert.doesNotMatch(service, /taskType: "ON_DEMAND_CLEANING"/);
 });
 
@@ -51,6 +55,18 @@ test("normal cleaning and water refill follow occupied arrived-stay rules", () =
   assert.match(service, /DEFAULT_STANDARD_INTERVAL_DAYS = 3/);
   assert.match(service, /standardCleaningDueCycle/);
   assert.match(service, /completedWaterToday/);
+  assert.doesNotMatch(service, /\badults\b|\bchildren\b|guest_count|guestCount/);
+});
+
+test("water refill quantity is room-type based and never guest-count based", () => {
+  assert.match(service, /function waterQuantityFor\(unit: UnitRow, config: Map<string, number>\): number/);
+  assert.match(service, /normalizeRoomType\(label\)/);
+  assert.match(service, /normalized\.includes\("villa"\)/);
+  assert.match(service, /normalized\.includes\("bungalow"\)/);
+  assert.match(service, /normalized\.includes\("yurt"\)/);
+  assert.match(service, /normalized\.includes\("tent"\)/);
+  assert.match(service, /SELECT room_type, default_bottles/);
+  assert.doesNotMatch(service, /\badults\b|\bchildren\b|guest_count|guestCount/);
 });
 
 test("summary exposes the approved operational counters and fixed section order", () => {
@@ -67,58 +83,126 @@ test("summary exposes the approved operational counters and fixed section order"
   ]) {
     assert.match(service, new RegExp(key));
   }
-  assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill", "ready", "procurement"/);
+  assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
+  assert.doesNotMatch(service, /"ready", "procurement"/);
 });
 
 test("compact cards expose required read-model fields", () => {
   for (const key of [
     "unitId",
     "unitName",
-    "roomType",
-    "bookingId",
-    "guestName",
-    "stayStatus",
-    "arrivalDate",
-    "departureDate",
-    "nextCheckInAt",
     "taskId",
+    "taskVersion",
     "taskType",
     "taskStatus",
     "priority",
+    "operationalDate",
+    "currentQueue",
+    "displayReason",
     "assignee",
-    "isOverdue",
     "isBlocked",
     "blockReason",
-    "receptionReleaseState",
     "waterQuantity",
-    "linenRequired",
-    "alertSummary",
-    "maintenanceSummary",
+    "reasonCodes",
     "capabilities",
+    "canReleaseClaim",
   ]) {
     assert.match(service, new RegExp(`${key}:`));
   }
+  for (const removed of ["roomType:", "guestName:", "arrivalDate:", "departureDate:", "nextCheckInAt:", "alertSummary:", "maintenanceSummary:", "linenRequired:", "receptionReleaseState:"]) {
+    assert.doesNotMatch(service, new RegExp(removed));
+  }
 });
 
-test("read model includes alerts, maintenance, next arrival and procurement attention", () => {
+test("room-only operational context moved out of the Housekeeping queue", () => {
   assert.match(service, /FROM reception_room_alerts/);
   assert.match(service, /FROM maintenance_tickets/);
   assert.match(service, /FROM procurement_requests/);
   assert.match(service, /nextArrival/);
-  assert.match(service, /procurementAttentionCard/);
+  assert.match(service, /procurementAttention/);
+  assert.doesNotMatch(service, /procurementAttentionCard/);
   assert.match(service, /json_extract\(metadata_json, '\$\.outOfService'\)/);
+  assert.doesNotMatch(page, /card\.guestName|card\.arrivalDate|card\.departureDate|card\.roomType|card\.alertSummary|card\.maintenanceSummary/);
 });
 
-test("v2 page is a compact home workspace with no checklist, assignment dropdown or mutation controls", () => {
+test("v2 page starts as summary cards and expands only Priority, Normal or Water lists", () => {
   assert.match(page, /function TaskCard/);
   assert.match(page, /function Section/);
   assert.match(page, /Housekeeping operational summary/);
-  assert.match(page, /Room detail coming later/);
+  assert.match(page, /const homeSections/);
+  assert.match(page, /useState<HousekeepingV2SectionId \| null>\(null\)/);
+  assert.match(page, /aria-expanded=\{activeSection === item\.id\}/);
+  assert.match(page, /expandedSection &&/);
+  assert.match(page, /Housekeeping task queue/);
+  assert.doesNotMatch(page, /housekeeping\.data\.sections\.map/);
+  assert.doesNotMatch(page, /Ready \/ No Action Required|No action required/);
+  assert.doesNotMatch(page, /Room detail coming later/);
+});
+
+test("expanded v2 rows link room names to Room Workspace and gate task actions by server capabilities", () => {
+  assert.match(page, /to=\{`\/rooms\/\$\{card\.unitId}`\}/);
+  assert.match(page, /card\.capabilities\.canClaim/);
+  assert.match(page, /card\.capabilities\.canReleaseClaim/);
+  assert.match(page, /card\.capabilities\.canStart/);
+  assert.match(page, /card\.capabilities\.canComplete/);
+  assert.match(page, /claimHousekeepingTask/);
+  assert.match(page, /releaseHousekeepingClaim/);
+  assert.match(page, /startHousekeepingTask/);
+  assert.match(page, /completeHousekeepingTask/);
+  assert.doesNotMatch(page, /\/housekeeping\/rooms\/\$\{card\.unitId}/);
   assert.doesNotMatch(page, /AssignmentControl/);
-  assert.doesNotMatch(page, /ChecklistItem/);
-  assert.doesNotMatch(page, /useMutation/);
   assert.doesNotMatch(page, /<select/);
-  assert.doesNotMatch(page, /updateHousekeeping/);
+  assert.doesNotMatch(page, /createOnDemandCleaning|on-demand-cleaning|Checklist/);
+});
+
+test("v2 task cards avoid staff-facing technical wording and raw task state", () => {
+  assert.match(page, /Today \$\{formatDate\(housekeeping\.data\.operationalDate\)\}/);
+  assert.match(page, /This task changed\. The list is refreshing\./);
+  assert.doesNotMatch(page, /Task #|Operational date|expectedVersion|idempotency|conflict code|state machine/);
+  assert.doesNotMatch(page, /card\.taskStatus\.replaceAll/);
+  assert.doesNotMatch(page, /housekeeping-v2-card__footer|housekeeping-v2-generation|housekeeping-v2-task-link|showTaskSurface/);
+});
+
+test("v2 task actions render the next server-authorized step only", () => {
+  assert.match(page, /if \(card\.capabilities\.canClaim\)/);
+  assert.match(page, /if \(card\.capabilities\.canStart\)/);
+  assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "ON_DEMAND_CLEANING"\)/);
+  assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"\)/);
+  assert.match(page, /if \(card\.capabilities\.canComplete\)/);
+  assert.match(page, /if \(card\.capabilities\.canReleaseClaim\)/);
+  assert.match(page, /onSettled: \(\) =>/);
+  assert.doesNotMatch(page, /Release claim/);
+});
+
+test("v2 page uses intervention wording and informational help instead of checklists", () => {
+  assert.match(page, /type InterventionType = "cleaning" \| "full-cleaning"/);
+  assert.match(page, /function InterventionSheet/);
+  assert.match(page, /General room cleaning\./);
+  assert.match(page, /Replace bed linen\./);
+  assert.match(page, /Please also check room amenities before completion\./);
+  assert.match(page, /Complete Cleaning/);
+  assert.match(page, /Complete Full Cleaning/);
+});
+
+test("read model contains only actionable housekeeping work, with existing on-demand tasks in Normal", () => {
+  assert.doesNotMatch(service, /function readyCard/);
+  assert.doesNotMatch(service, /No ready rooms to list/);
+  assert.match(service, /taskFor\(stayTasks, "ON_DEMAND_CLEANING"\)/);
+  assert.match(service, /function visibleQueueForTask/);
+  assert.match(service, /standard_cleaning_previous_day/);
+  assert.match(service, /on_demand_previous_day/);
+  assert.doesNotMatch(service, /taskType: "ON_DEMAND_CLEANING"/);
+});
+
+test("priority escalation is derived from original operational date without enterprise wording", () => {
+  assert.match(service, /task\.operationalDate < context\.date/);
+  assert.match(service, /return "priority-turnover"/);
+  assert.match(service, /return "Was due yesterday"/);
+  assert.match(service, /taskBelongsToActiveStay/);
+  assert.match(page, /Was due yesterday/);
+  assert.doesNotMatch(service, /escalation_level|SLA|breach/);
+  assert.doesNotMatch(page, /overdue|breach|escalation level|overdue priority/i);
+  assert.doesNotMatch(page, /\bSLA\b/);
 });
 
 test("v2 page covers loading, error, refresh, empty sections and mobile-first cards", () => {
@@ -126,7 +210,12 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(page, /<PageError onRetry/);
   assert.match(page, /onClick=\{\(\) => void housekeeping\.refetch\(\)\}/);
   assert.match(page, /section\.emptyLabel/);
+  assert.match(service, /No priority work\./);
+  assert.match(service, /No normal cleaning work\./);
+  assert.match(service, /No water refills\./);
   assert.match(css, /\.housekeeping-v2-summary/);
   assert.match(css, /grid-template-columns: repeat\(auto-fit, minmax\(128px, 1fr\)\)/);
+  assert.match(css, /\.housekeeping-v2-summary__item\.is-active/);
+  assert.match(css, /\.housekeeping-v2-card__actions/);
   assert.match(css, /@media \(min-width: 760px\)/);
 });

@@ -1,6 +1,12 @@
 import { requestJson } from "./api.client";
 import type { HousekeepingV2Overview, HousekeepingV2Response, HousekeepingV2RoomDetail, HousekeepingV2RoomResponse } from "../types/housekeeping-v2";
 
+export interface HousekeepingTaskCompletionPayload {
+  standardCleaningCompleted?: boolean;
+  linenChangeCompleted?: boolean;
+  waterRefillCompleted?: boolean;
+}
+
 export async function loadHousekeepingV2Overview(date?: string, signal?: AbortSignal): Promise<HousekeepingV2Overview> {
   const query = date ? `?date=${encodeURIComponent(date)}` : "";
   const response = await requestJson<HousekeepingV2Response>(`/api/housekeeping/v2/tasks${query}`, signal);
@@ -46,12 +52,8 @@ export function startHousekeepingTask(taskId: number, expectedVersion: number): 
   return sendHousekeepingV2Action(`/api/housekeeping/v2/tasks/${taskId}/start`, { expectedVersion });
 }
 
-export function updateHousekeepingTaskChecklist(taskId: number, expectedVersion: number, itemKey: string, completed: boolean): Promise<HousekeepingV2RoomDetail> {
-  return sendHousekeepingV2Action(`/api/housekeeping/v2/tasks/${taskId}/checklist`, { expectedVersion, itemKey, completed });
-}
-
-export function completeHousekeepingTask(taskId: number, expectedVersion: number): Promise<HousekeepingV2RoomDetail> {
-  return sendHousekeepingV2Action(`/api/housekeeping/v2/tasks/${taskId}/complete`, { expectedVersion });
+export function completeHousekeepingTask(taskId: number, expectedVersion: number, completion?: HousekeepingTaskCompletionPayload): Promise<HousekeepingV2RoomDetail> {
+  return sendHousekeepingV2Action(`/api/housekeeping/v2/tasks/${taskId}/complete`, { expectedVersion, completion });
 }
 
 export function skipHousekeepingTask(taskId: number, expectedVersion: number, reason: string): Promise<HousekeepingV2RoomDetail> {
@@ -68,4 +70,8 @@ export function reopenHousekeepingTask(taskId: number, expectedVersion: number, 
 
 export function forceHousekeepingRoomRelease(taskId: number, expectedVersion: number, bookingId: number, reason: string): Promise<HousekeepingV2RoomDetail> {
   return sendHousekeepingV2Action(`/api/housekeeping/v2/tasks/${taskId}/force-release`, { expectedVersion, bookingId, reason });
+}
+
+export function markLinenRequired(unitId: number, reason: string, idempotencyKey?: string | null): Promise<HousekeepingV2RoomDetail> {
+  return sendHousekeepingV2Action(`/api/housekeeping/v2/rooms/${unitId}/linen-required`, { reason, idempotencyKey });
 }

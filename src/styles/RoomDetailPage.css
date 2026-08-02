@@ -13,11 +13,14 @@
 .room-badges span,
 .room-section header,
 .room-actions,
+.room-task-card,
+.room-task-actions,
 .room-alert-list button,
 .room-section-summary,
 .stay-card,
 .maintenance-ticket-card,
 .room-ticket-form button,
+.room-on-demand-form button,
 .timeline-event {
   display: flex;
 }
@@ -318,12 +321,61 @@
 
 .maintenance-ticket-list,
 .room-alert-list,
+.room-task-list,
 .room-note-list,
 .room-reception-notes,
 .room-timeline {
   display: grid;
   gap: var(--vc-space-2);
   margin-top: var(--vc-space-3);
+}
+
+.room-task-card {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-2);
+  padding: var(--vc-space-3);
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-app-elevated);
+}
+
+.room-task-card > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.room-task-card strong {
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-task-card span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.room-task-actions {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: var(--vc-space-2);
+}
+
+.room-task-actions button {
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+  padding: 0 var(--vc-space-3);
+}
+
+.room-task-actions button:disabled {
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
 }
 
 .room-alert-list {
@@ -390,6 +442,7 @@
 }
 
 .room-ticket-form,
+.room-on-demand-form,
 .room-note-form {
   display: grid;
   gap: var(--vc-space-2);
@@ -398,6 +451,7 @@
 }
 
 .room-ticket-form label,
+.room-on-demand-form label,
 .room-note-form label {
   display: grid;
   gap: var(--vc-space-1);
@@ -409,6 +463,7 @@
 .room-ticket-form input,
 .room-ticket-form select,
 .room-ticket-form textarea,
+.room-on-demand-form textarea,
 .room-note-form textarea {
   width: 100%;
   border: 1px solid var(--vc-border-subtle);
@@ -420,6 +475,7 @@
 }
 
 .room-ticket-form textarea,
+.room-on-demand-form textarea,
 .room-note-form textarea {
   resize: vertical;
 }
@@ -436,8 +492,33 @@
   gap: var(--vc-space-2);
 }
 
+.room-on-demand-form button {
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+  min-height: var(--vc-touch-min);
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-on-demand-form button:disabled {
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
+}
+
 .room-note-form button {
   padding: 0 var(--vc-space-3);
+}
+
+.room-form-help {
+  margin: var(--vc-space-2) 0 0;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
 }
 
 .room-form-error {

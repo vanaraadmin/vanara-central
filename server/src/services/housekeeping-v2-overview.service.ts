@@ -1,12 +1,12 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import { createHousekeepingTask, housekeepingTaskCapabilities, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { createHousekeepingTask, housekeepingTaskCapabilities, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 
 export interface HousekeepingV2Bindings {
   DB: D1Database;
 }
 
-export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill" | "ready" | "procurement";
+export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
 
@@ -25,29 +25,23 @@ export interface HousekeepingV2Summary {
 export interface HousekeepingV2TaskCard {
   unitId: number;
   unitName: string;
-  roomType: string;
-  bookingId: number | null;
-  guestName: string | null;
-  stayStatus: HousekeepingV2StayStatus;
-  arrivalDate: string | null;
-  departureDate: string | null;
-  nextCheckInAt: string | null;
-  taskId: number | null;
-  taskType: HousekeepingTaskType | null;
-  taskStatus: HousekeepingTaskStatus | null;
+  taskId: number;
+  taskVersion: number;
+  taskType: HousekeepingTaskType;
+  taskStatus: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
+  operationalDate: string;
+  currentQueue: HousekeepingV2SectionId;
+  displayReason: string | null;
   assignee: string | null;
-  isOverdue: boolean;
   isBlocked: boolean;
   blockReason: string | null;
-  receptionReleaseState: HousekeepingV2ReceptionReleaseState;
   waterQuantity: number | null;
-  linenRequired: boolean;
-  alertSummary: string | null;
-  maintenanceSummary: string | null;
+  reasonCodes: HousekeepingV2ReasonCode[];
   capabilities: {
     canOpenRoom: boolean;
     canClaim: boolean;
+    canReleaseClaim: boolean;
     canStart: boolean;
     canComplete: boolean;
     canSkip: boolean;
@@ -55,6 +49,8 @@ export interface HousekeepingV2TaskCard {
     requiresReceptionRelease: boolean;
   };
 }
+
+export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "on_demand_previous_day" | "cleaning_due_today" | "on_demand_cleaning" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Section {
   id: HousekeepingV2SectionId;
@@ -98,8 +94,6 @@ interface BookingRow {
   arrival_date: string;
   departure_date: string;
   arrival_time: string | null;
-  adults: number;
-  children: number;
   channel: string | null;
   api_source: string | null;
   status: string;
@@ -138,9 +132,13 @@ interface TaskRow {
 
 interface CounterRow {
   unit_id: number;
+  active_booking_id: number | null;
+  active_stay_id: number | null;
   next_standard_cleaning_due_date: string | null;
   standard_cleaning_interval_days: number | null;
+  next_linen_change_due_date: string | null;
   linen_required_override: number | null;
+  linen_override_reason: string | null;
 }
 
 interface AlertRow {
@@ -182,7 +180,7 @@ interface OperationalContext {
 const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
 const CLAIMED_STATUSES = new Set<HousekeepingTaskStatus>(["CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
 const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
-const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill", "ready", "procurement"];
+const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STANDARD_INTERVAL_DAYS = 3;
 
@@ -203,6 +201,7 @@ export function normalizeHousekeepingV2Date(value: string | null | undefined, no
 
 export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, user: CurrentUser, date: string): Promise<HousekeepingV2Overview> {
   const generated = await generateHousekeepingV2Tasks(env, user, date);
+  await syncReleasedTurnoverTasks(env, date, user);
   const [units, bookings, tasks, counters, alerts, maintenance, waterConfig, procurement] = await Promise.all([
     loadUnits(env),
     loadBookings(env, date),
@@ -215,9 +214,7 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
   ]);
 
   const contexts = buildContexts(units, bookings, tasks, counters, alerts, maintenance, waterConfig, date);
-  const operationalCards = contexts.flatMap((context) => cardsForContext(context));
-  const procurementCard = procurement.attentionCount > 0 ? procurementAttentionCard(procurement) : null;
-  const allCards = procurementCard ? [...operationalCards, procurementCard] : operationalCards;
+  const allCards = contexts.flatMap((context) => cardsForContext(context, user));
   const sections = buildSections(allCards);
   const summary = buildSummary(sections, allCards, procurement.attentionCount);
 
@@ -254,6 +251,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
         taskType: "TURNOVER",
         unitId: booking.unit_id,
         bookingId: booking.booking_id,
+        stayId: booking.beds24_booking_id,
         operationalDate: date,
         dueCycleDate: date,
         priority: booking.room_released === 1 ? "URGENT" : "HIGH",
@@ -265,7 +263,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
 
     if (!isOccupiedOn(booking, date) || booking.departure_date === date || booking.guest_arrived !== 1) continue;
 
-    const counter = counters.get(booking.unit_id) ?? null;
+    const counter = counterForActiveStay(counters.get(booking.unit_id) ?? null, booking);
     const dueCycleDate = standardCleaningDueCycle(booking, counter, date);
     if (dueCycleDate && !hasTask(activeTasks, "STANDARD_CLEANING", booking.unit_id, booking.booking_id, dueCycleDate)) {
       attempted += 1;
@@ -273,11 +271,29 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
         taskType: "STANDARD_CLEANING",
         unitId: booking.unit_id,
         bookingId: booking.booking_id,
+        stayId: booking.beds24_booking_id,
         operationalDate: date,
         dueCycleDate,
         priority: dueCycleDate < date ? "HIGH" : "NORMAL",
         source: "system",
         idempotencyKey: `housekeeping:v2:standard:${booking.unit_id}:${booking.beds24_booking_id}:${dueCycleDate}`,
+      }, user);
+      createdOrReused += 1;
+    }
+
+    if (counter?.linen_required_override === 1 && !hasTask(activeTasks, "LINEN_CHANGE", booking.unit_id, booking.booking_id, date)) {
+      attempted += 1;
+      await createHousekeepingTask(env, {
+        taskType: "LINEN_CHANGE",
+        unitId: booking.unit_id,
+        bookingId: booking.booking_id,
+        stayId: booking.beds24_booking_id,
+        operationalDate: date,
+        dueCycleDate: date,
+        priority: "HIGH",
+        source: "manual",
+        idempotencyKey: `housekeeping:v2:linen:${booking.unit_id}:${booking.beds24_booking_id}:${date}`,
+        creationMetadata: { reasonCode: "linen_override", reason: counter.linen_override_reason },
       }, user);
       createdOrReused += 1;
     }
@@ -289,6 +305,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
         taskType: "WATER_REFILL",
         unitId: booking.unit_id,
         bookingId: booking.booking_id,
+        stayId: booking.beds24_booking_id,
         operationalDate: date,
         dueCycleDate: date,
         priority: "NORMAL",
@@ -307,147 +324,77 @@ function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unit
   return tasks.some((task) => {
     if (task.taskType !== taskType || task.unitId !== unitId) return false;
     if (bookingId !== null && task.bookingId !== bookingId) return false;
-    if (taskType === "STANDARD_CLEANING") return task.dueCycleDate === dateOrCycle;
+    if (taskType === "STANDARD_CLEANING" || taskType === "LINEN_CHANGE") return task.dueCycleDate === dateOrCycle;
     return task.operationalDate === dateOrCycle;
   });
 }
 
-function cardsForContext(context: OperationalContext): HousekeepingV2TaskCard[] {
+function cardsForContext(context: OperationalContext, user: CurrentUser): HousekeepingV2TaskCard[] {
   const cards: HousekeepingV2TaskCard[] = [];
   const maintenanceBlocked = Boolean(context.maintenance && context.maintenance.critical > 0);
-  const turnover = taskFor(context.tasks, "TURNOVER");
-  if (turnover || context.departure) {
-    cards.push(cardFromContext(context, turnover, "TURNOVER", maintenanceBlocked));
+  const turnover = taskFor(context.tasks.filter((task) => taskBelongsToDeparture(context, task)), "TURNOVER");
+  if (turnover) {
+    cards.push(cardFromContext(context, turnover, maintenanceBlocked, user));
   }
 
-  const standard = taskFor(context.tasks, "STANDARD_CLEANING");
+  const stayTasks = context.tasks.filter((task) => taskBelongsToActiveStay(context, task));
+
+  const standard = taskFor(stayTasks, "STANDARD_CLEANING");
   if (standard) {
-    cards.push(cardFromContext(context, standard, "STANDARD_CLEANING", maintenanceBlocked));
+    cards.push(cardFromContext(context, standard, maintenanceBlocked, user));
   }
 
-  const water = taskFor(context.tasks, "WATER_REFILL");
+  const onDemand = taskFor(stayTasks, "ON_DEMAND_CLEANING");
+  if (onDemand) {
+    cards.push(cardFromContext(context, onDemand, maintenanceBlocked, user));
+  }
+
+  const linen = taskFor(stayTasks, "LINEN_CHANGE");
+  if (linen) {
+    cards.push(cardFromContext(context, linen, maintenanceBlocked, user));
+  }
+
+  const water = taskFor(stayTasks, "WATER_REFILL");
   if (water) {
-    cards.push(cardFromContext(context, water, "WATER_REFILL", maintenanceBlocked));
-  }
-
-  if (!turnover && !standard && !water && !maintenanceBlocked) {
-    cards.push(readyCard(context));
+    cards.push(cardFromContext(context, water, maintenanceBlocked, user));
   }
 
   return cards;
 }
 
-function cardFromContext(context: OperationalContext, task: HousekeepingTask | null, taskType: HousekeepingTaskType, maintenanceBlocked: boolean): HousekeepingV2TaskCard {
-  const booking = taskType === "TURNOVER" ? context.departure : context.activeStay;
+function cardFromContext(context: OperationalContext, task: HousekeepingTask, maintenanceBlocked: boolean, user: CurrentUser): HousekeepingV2TaskCard {
+  const taskType = task.taskType;
   const releaseState = releaseStateFor(context, taskType);
   const isWaitingRelease = releaseState === "waiting_for_reception";
-  const priority = task?.priority ?? (taskType === "TURNOVER" ? "HIGH" : "NORMAL");
-  const taskStatus = task?.status ?? (taskType === "TURNOVER" && isWaitingRelease ? "WAITING_FOR_RECEPTION" : "AVAILABLE_FOR_CLAIM");
-  const capabilities = task ? housekeepingTaskCapabilities(task) : null;
+  const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, maintenanceBlocked);
+  const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, maintenanceBlocked);
+  const currentQueue = visibleQueueForTask(task, reasonCodes, isWaitingRelease, maintenanceBlocked);
 
   return {
     unitId: context.unit.unit_id,
     unitName: context.unit.unit_name,
-    roomType: roomTypeLabel(context.unit),
-    bookingId: booking?.beds24_booking_id ?? task?.bookingId ?? null,
-    guestName: booking?.guest_name ?? null,
-    stayStatus: stayStatusFor(context, taskType),
-    arrivalDate: booking?.arrival_date ?? null,
-    departureDate: booking?.departure_date ?? null,
-    nextCheckInAt: context.nextArrival ? checkInAt(context.nextArrival) : null,
-    taskId: task?.id ?? null,
+    taskId: task.id,
+    taskVersion: task.version,
     taskType,
-    taskStatus,
-    priority,
-    assignee: task?.assignedUserName ?? null,
-    isOverdue: taskType === "STANDARD_CLEANING" && Boolean(task?.dueCycleDate && task.dueCycleDate < context.date),
-    isBlocked: isWaitingRelease || maintenanceBlocked || taskStatus === "BLOCKED",
+    taskStatus: task.status,
+    priority: task.priority,
+    operationalDate: task.operationalDate,
+    currentQueue,
+    displayReason: displayReasonFor(reasonCodes),
+    assignee: task.assignedUserName ?? null,
+    isBlocked: isWaitingRelease || maintenanceBlocked || task.status === "BLOCKED",
     blockReason: blockReasonFor(context, task, isWaitingRelease, maintenanceBlocked),
-    receptionReleaseState: releaseState,
     waterQuantity: taskType === "WATER_REFILL" ? context.waterQuantity : null,
-    linenRequired: context.counter?.linen_required_override === 1,
-    alertSummary: alertSummary(context.alerts),
-    maintenanceSummary: maintenanceSummary(context.maintenance),
+    reasonCodes,
     capabilities: {
       canOpenRoom: true,
-      canClaim: Boolean(capabilities?.canClaim) && !isWaitingRelease && !maintenanceBlocked,
-      canStart: Boolean(capabilities?.canStart) && !maintenanceBlocked,
-      canComplete: Boolean(capabilities?.canComplete) && !maintenanceBlocked,
-      canSkip: Boolean(capabilities?.canSkip),
-      canCancel: Boolean(capabilities?.canCancel),
-      requiresReceptionRelease: Boolean(capabilities?.requiresReceptionRelease) || isWaitingRelease,
-    },
-  };
-}
-
-function readyCard(context: OperationalContext): HousekeepingV2TaskCard {
-  return {
-    unitId: context.unit.unit_id,
-    unitName: context.unit.unit_name,
-    roomType: roomTypeLabel(context.unit),
-    bookingId: context.activeStay?.beds24_booking_id ?? null,
-    guestName: context.activeStay?.guest_name ?? null,
-    stayStatus: context.activeStay ? "in_house" : "ready",
-    arrivalDate: context.activeStay?.arrival_date ?? null,
-    departureDate: context.activeStay?.departure_date ?? null,
-    nextCheckInAt: context.nextArrival ? checkInAt(context.nextArrival) : null,
-    taskId: null,
-    taskType: null,
-    taskStatus: null,
-    priority: "LOW",
-    assignee: null,
-    isOverdue: false,
-    isBlocked: false,
-    blockReason: null,
-    receptionReleaseState: "not_required",
-    waterQuantity: null,
-    linenRequired: false,
-    alertSummary: alertSummary(context.alerts),
-    maintenanceSummary: null,
-    capabilities: {
-      canOpenRoom: true,
-      canClaim: false,
-      canStart: false,
-      canComplete: false,
-      canSkip: false,
-      canCancel: false,
-      requiresReceptionRelease: false,
-    },
-  };
-}
-
-function procurementAttentionCard(procurement: { attentionCount: number; latestRequest: string | null }): HousekeepingV2TaskCard {
-  return {
-    unitId: 0,
-    unitName: "Supply attention",
-    roomType: "Procurement",
-    bookingId: null,
-    guestName: procurement.latestRequest,
-    stayStatus: "ready",
-    arrivalDate: null,
-    departureDate: null,
-    nextCheckInAt: null,
-    taskId: null,
-    taskType: null,
-    taskStatus: null,
-    priority: "NORMAL",
-    assignee: null,
-    isOverdue: false,
-    isBlocked: false,
-    blockReason: null,
-    receptionReleaseState: "not_required",
-    waterQuantity: null,
-    linenRequired: false,
-    alertSummary: `${procurement.attentionCount} supply request${procurement.attentionCount === 1 ? "" : "s"} need attention`,
-    maintenanceSummary: null,
-    capabilities: {
-      canOpenRoom: false,
-      canClaim: false,
-      canStart: false,
-      canComplete: false,
-      canSkip: false,
-      canCancel: false,
-      requiresReceptionRelease: false,
+      canClaim: capabilities.canClaim,
+      canReleaseClaim: capabilities.canReleaseClaim,
+      canStart: capabilities.canStart,
+      canComplete: capabilities.canComplete,
+      canSkip: capabilities.canSkip,
+      canCancel: capabilities.canCancel,
+      requiresReceptionRelease: capabilities.requiresReceptionRelease || isWaitingRelease,
     },
   };
 }
@@ -462,16 +409,15 @@ function buildSections(cards: HousekeepingV2TaskCard[]): HousekeepingV2Section[]
 }
 
 function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], procurementAttention: number): HousekeepingV2Summary {
-  const taskCards = cards.filter((card) => card.taskId !== null);
   return {
-    awaitingReceptionRelease: cards.filter((card) => card.receptionReleaseState === "waiting_for_reception").length,
-    priorityTurnovers: sections.find((section) => section.id === "priority-turnover")?.cards.filter((card) => card.receptionReleaseState !== "waiting_for_reception").length ?? 0,
+    awaitingReceptionRelease: cards.filter((card) => card.reasonCodes.includes("waiting_reception")).length,
+    priorityTurnovers: sections.find((section) => section.id === "priority-turnover")?.cards.length ?? 0,
     normalCleaningDue: sections.find((section) => section.id === "normal-cleaning")?.cards.length ?? 0,
     waterRefillDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,
-    tasksClaimed: taskCards.filter((card) => card.assignee && card.taskStatus && CLAIMED_STATUSES.has(card.taskStatus)).length,
-    tasksInProgress: taskCards.filter((card) => card.taskStatus && IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
+    tasksClaimed: cards.filter((card) => card.assignee && CLAIMED_STATUSES.has(card.taskStatus)).length,
+    tasksInProgress: cards.filter((card) => IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
     blockedRooms: cards.filter((card) => card.isBlocked).length,
-    completedToday: taskCards.filter((card) => card.taskStatus === "COMPLETED").length,
+    completedToday: cards.filter((card) => card.taskStatus === "COMPLETED").length,
     procurementAttention,
   };
 }
@@ -493,12 +439,13 @@ function buildContexts(
     const nextArrival = unitBookings
       .filter((booking) => booking.arrival_date >= date)
       .sort((left, right) => checkInAt(left).localeCompare(checkInAt(right)))[0] ?? null;
+    const rawCounter = counters.get(unit.unit_id) ?? null;
     return {
       unit,
       activeStay,
       departure,
       nextArrival,
-      counter: counters.get(unit.unit_id) ?? null,
+      counter: activeStay ? counterForActiveStay(rawCounter, activeStay) : null,
       tasks: tasks.filter((task) => task.unitId === unit.unit_id),
       alerts: alerts.get(unit.unit_id) ?? null,
       maintenance: maintenance.get(unit.unit_id) ?? null,
@@ -539,10 +486,36 @@ function mapTaskRow(row: TaskRow): HousekeepingTask {
   };
 }
 
+function counterForActiveStay(counter: CounterRow | null, booking: BookingRow): CounterRow | null {
+  if (!counter) return null;
+  if (counter.active_booking_id === booking.booking_id) return counter;
+  if (counter.active_stay_id === booking.beds24_booking_id) return counter;
+  return null;
+}
+
 function standardCleaningDueCycle(booking: BookingRow, counter: CounterRow | null, date: string): string | null {
   const interval = counter?.standard_cleaning_interval_days && counter.standard_cleaning_interval_days > 0 ? counter.standard_cleaning_interval_days : DEFAULT_STANDARD_INTERVAL_DAYS;
+  // The first standard cleaning is due after three occupied days have elapsed; checkout day is excluded by the caller.
   const dueDate = counter?.next_standard_cleaning_due_date ?? addDays(booking.arrival_date, interval);
   return dueDate <= date ? dueDate : null;
+}
+
+function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, taskType: HousekeepingTaskType, waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2ReasonCode[] {
+  const codes: HousekeepingV2ReasonCode[] = [];
+  if (waitingRelease) codes.push("waiting_reception");
+  if (maintenanceBlocked) codes.push("maintenance_block");
+  if (taskType === "STANDARD_CLEANING" && task.dueCycleDate) {
+    if (task.operationalDate < context.date) codes.push("standard_cleaning_previous_day");
+    else if (task.dueCycleDate === context.date || task.operationalDate === context.date) codes.push("cleaning_due_today");
+  }
+  if (taskType === "ON_DEMAND_CLEANING") {
+    codes.push(task.operationalDate < context.date ? "on_demand_previous_day" : "on_demand_cleaning");
+  }
+  if (taskType === "LINEN_CHANGE" || context.counter?.linen_required_override === 1) {
+    codes.push("linen_required");
+    if (context.counter?.linen_required_override === 1) codes.push("linen_override");
+  }
+  return [...new Set(codes)];
 }
 
 function releaseStateFor(context: OperationalContext, taskType: HousekeepingTaskType): HousekeepingV2ReceptionReleaseState {
@@ -550,19 +523,63 @@ function releaseStateFor(context: OperationalContext, taskType: HousekeepingTask
   return context.departure?.room_released === 1 ? "released" : "waiting_for_reception";
 }
 
-function stayStatusFor(context: OperationalContext, taskType: HousekeepingTaskType): HousekeepingV2StayStatus {
-  if (taskType === "TURNOVER") return "departing";
-  if (context.activeStay) return "in_house";
-  if (context.nextArrival?.arrival_date === context.date) return "arriving";
-  return "vacant";
+function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
+  return card.currentQueue;
 }
 
-function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
-  if (card.unitId === 0) return "procurement";
-  if (card.taskType === "TURNOVER") return "priority-turnover";
-  if (card.taskType === "STANDARD_CLEANING") return "normal-cleaning";
-  if (card.taskType === "WATER_REFILL") return "water-refill";
-  return "ready";
+function visibleQueueForTask(task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
+  if (task.taskType === "TURNOVER") return "priority-turnover";
+  if (task.taskType === "WATER_REFILL") return "water-refill";
+  if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "priority-turnover";
+  if (task.priority === "URGENT" || waitingRelease || maintenanceBlocked || task.status === "BLOCKED") return "priority-turnover";
+  return "normal-cleaning";
+}
+
+function displayReasonFor(reasonCodes: HousekeepingV2ReasonCode[]): string | null {
+  if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "Was due yesterday";
+  if (reasonCodes.includes("waiting_reception")) return "Waiting Reception";
+  if (reasonCodes.includes("maintenance_block")) return "Maintenance Block";
+  if (reasonCodes.includes("cleaning_due_today")) return "Due today";
+  if (reasonCodes.includes("on_demand_cleaning")) return "On-Demand";
+  if (reasonCodes.includes("linen_override")) return "Full Cleaning requested";
+  if (reasonCodes.includes("linen_required")) return "Full Cleaning";
+  return null;
+}
+
+function taskBelongsToActiveStay(context: OperationalContext, task: HousekeepingTask): boolean {
+  if (task.taskType === "TURNOVER") return taskBelongsToDeparture(context, task);
+  if (!context.activeStay) return false;
+  return taskMatchesBooking(task, context.activeStay);
+}
+
+function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {
+  if (task.taskType !== "TURNOVER") return false;
+  if (!context.departure) return false;
+  return taskMatchesBooking(task, context.departure);
+}
+
+function taskMatchesBooking(task: HousekeepingTask, booking: BookingRow): boolean {
+  if (task.bookingId !== null) return task.bookingId === booking.booking_id;
+  if (task.stayId !== null) return task.stayId === booking.beds24_booking_id;
+  return false;
+}
+
+function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isWaitingRelease: boolean, maintenanceBlocked: boolean) {
+  const base = housekeepingTaskCapabilities(task);
+  const isOwner = user.role === "Owner" && user.views.includes("owner");
+  const isManager = user.role === "Manager";
+  const isAssigned = task.assignedUserId === user.id;
+  const active = !["COMPLETED", "SKIPPED", "CANCELLED"].includes(task.status);
+
+  return {
+    canClaim: base.canClaim && !isWaitingRelease && !maintenanceBlocked,
+    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
+    canStart: task.status === "CLAIMED" && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner),
+    canComplete: base.canComplete && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner),
+    canSkip: base.canSkip && (isAssigned || isOwner || isManager),
+    canCancel: active && Boolean(isOwner || isManager),
+    requiresReceptionRelease: base.requiresReceptionRelease || isWaitingRelease,
+  };
 }
 
 function taskFor(tasks: HousekeepingTask[], taskType: HousekeepingTaskType): HousekeepingTask | null {
@@ -576,7 +593,31 @@ function sortTasks(left: HousekeepingTask, right: HousekeepingTask): number {
 }
 
 function sortCards(left: HousekeepingV2TaskCard, right: HousekeepingV2TaskCard): number {
-  return priorityRank(right.priority) - priorityRank(left.priority) || Number(right.isOverdue) - Number(left.isOverdue) || left.unitName.localeCompare(right.unitName);
+  if (sectionForCard(left) === "normal-cleaning" && sectionForCard(right) === "normal-cleaning") {
+    return normalCleaningRank(left) - normalCleaningRank(right) || priorityRank(right.priority) - priorityRank(left.priority) || left.unitName.localeCompare(right.unitName);
+  }
+  if (sectionForCard(left) === "priority-turnover" && sectionForCard(right) === "priority-turnover") {
+    return priorityQueueRank(left) - priorityQueueRank(right) || priorityRank(right.priority) - priorityRank(left.priority) || left.operationalDate.localeCompare(right.operationalDate) || left.unitName.localeCompare(right.unitName);
+  }
+  return priorityRank(right.priority) - priorityRank(left.priority) || left.unitName.localeCompare(right.unitName);
+}
+
+function normalCleaningRank(card: HousekeepingV2TaskCard): number {
+  if (card.reasonCodes.includes("standard_cleaning_previous_day")) return 1;
+  if (card.reasonCodes.includes("on_demand_cleaning")) return 2;
+  if (card.reasonCodes.includes("cleaning_due_today") || card.reasonCodes.includes("linen_required")) return 3;
+  if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 4;
+  return 5;
+}
+
+function priorityQueueRank(card: HousekeepingV2TaskCard): number {
+  if (card.taskType === "TURNOVER" && !card.reasonCodes.includes("waiting_reception") && !card.assignee) return 1;
+  if (card.taskType === "TURNOVER") return 2;
+  if (card.reasonCodes.includes("standard_cleaning_previous_day")) return 3;
+  if (card.reasonCodes.includes("on_demand_previous_day")) return 4;
+  if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 5;
+  if (card.isBlocked) return 6;
+  return 7;
 }
 
 function priorityRank(priority: HousekeepingTaskPriority): number {
@@ -599,11 +640,6 @@ function blockReasonFor(context: OperationalContext, task: HousekeepingTask | nu
   return null;
 }
 
-function alertSummary(alert: AlertRow | null): string | null {
-  if (!alert || alert.count <= 0) return null;
-  return alert.count === 1 ? alert.label ?? "1 Reception alert" : `${alert.count} Reception alerts`;
-}
-
 function maintenanceSummary(row: MaintenanceRow | null): string | null {
   if (!row || row.count <= 0) return null;
   if (row.critical > 0) return row.label ?? "Maintenance block";
@@ -613,30 +649,22 @@ function maintenanceSummary(row: MaintenanceRow | null): string | null {
 function sectionTitle(id: HousekeepingV2SectionId): string {
   switch (id) {
     case "priority-turnover":
-      return "Priority Turnover";
+      return "Priority";
     case "normal-cleaning":
-      return "Normal Cleaning";
+      return "Normal";
     case "water-refill":
-      return "Water Refill";
-    case "ready":
-      return "Ready / No Action Required";
-    case "procurement":
-      return "Procurement";
+      return "Water";
   }
 }
 
 function sectionEmpty(id: HousekeepingV2SectionId): string {
   switch (id) {
     case "priority-turnover":
-      return "No turnovers waiting.";
+      return "No priority work.";
     case "normal-cleaning":
-      return "No occupied-room cleaning due.";
+      return "No normal cleaning work.";
     case "water-refill":
-      return "Water refill complete.";
-    case "ready":
-      return "No ready rooms to list.";
-    case "procurement":
-      return "No supply requests pending.";
+      return "No water refills.";
   }
 }
 
@@ -646,10 +674,6 @@ function isOccupiedOn(booking: BookingRow, date: string): boolean {
 
 function checkInAt(booking: BookingRow): string {
   return `${booking.arrival_date}T${booking.arrival_time || "14:00"}`;
-}
-
-function roomTypeLabel(unit: UnitRow): string {
-  return unit.room_type_name || unit.room_name || unit.unit_type || "Accommodation";
 }
 
 function waterQuantityFor(unit: UnitRow, config: Map<string, number>): number {
@@ -700,7 +724,7 @@ async function loadUnits(env: HousekeepingV2Bindings): Promise<UnitRow[]> {
 async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<BookingRow[]> {
   const rows = await env.DB.prepare(`
     SELECT b.booking_id, b.beds24_booking_id, b.unit_id, b.guest_name, b.arrival_date, b.departure_date, b.arrival_time,
-           b.adults, b.children, b.channel, b.api_source, b.status,
+           b.channel, b.api_source, b.status,
            rs.guest_arrived, rs.room_released
     FROM bookings b
     LEFT JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
@@ -729,7 +753,9 @@ async function loadTasks(env: HousekeepingV2Bindings, date: string): Promise<Hou
 
 async function loadCounters(env: HousekeepingV2Bindings): Promise<Map<number, CounterRow>> {
   const rows = await env.DB.prepare(`
-    SELECT unit_id, next_standard_cleaning_due_date, standard_cleaning_interval_days, linen_required_override
+    SELECT unit_id, active_booking_id, active_stay_id, next_standard_cleaning_due_date,
+           standard_cleaning_interval_days, next_linen_change_due_date,
+           linen_required_override, linen_override_reason
     FROM housekeeping_room_counters
   `).all<CounterRow>();
   return new Map((rows.results ?? []).map((row) => [row.unit_id, row]));

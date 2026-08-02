@@ -5,12 +5,17 @@ import warningIcon from "../assets/img/warning-circle-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
-import { addRoomNote, createRoomMaintenanceTicket, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping } from "../services/room-detail.service";
+import {
+  claimHousekeepingTask,
+  completeHousekeepingTask,
+  releaseHousekeepingClaim,
+  startHousekeepingTask,
+} from "../services/housekeeping-v2.service";
+import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert } from "../services/room-detail.service";
 import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
-import type { RoomCurrentStay, RoomDetail, RoomHousekeepingStatus, RoomTimelineEvent } from "../types/room-detail";
+import type { RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomTimelineEvent } from "../types/room-detail";
 import "../styles/RoomDetailPage.css";
 
-const HOUSEKEEPING_STATUSES: RoomHousekeepingStatus[] = ["Dirty", "Cleaning", "Ready"];
 const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = ["Electrical", "Air Conditioning", "Water", "Furniture", "Bathroom", "Garden", "Cleaning Equipment", "Internet / Network", "Appliance", "Other"];
 const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Medium", "High", "Critical"];
 
@@ -105,6 +110,8 @@ function ReceptionPanel({ room }: { room: RoomDetail }) {
           <div><dt>Departure</dt><dd>{room.reception.departure ? formatDate(room.reception.departure) : "Not available"}</dd></div>
           <div><dt>Check-in</dt><dd>{room.reception.checkInStatus}</dd></div>
           <div><dt>Check-out</dt><dd>{room.reception.checkOutStatus}</dd></div>
+          <div><dt>Passport</dt><dd>{room.reception.passportStatus}</dd></div>
+          <div><dt>Deposit</dt><dd>{room.reception.depositStatus}</dd></div>
         </dl>
       </div>
       <div className="room-reception-notes">
@@ -129,45 +136,159 @@ function RoomHeader({ room }: { room: RoomDetail }) {
       </section>
       <section className="room-badges" aria-label="Room badges">
         <span><RoomIcon />{room.occupancyStatus}</span>
-        <span><HousekeepingIcon />{room.housekeepingStatus}</span>
+        <span><HousekeepingIcon />{room.housekeeping.primaryStatus}</span>
         <span><CalendarIcon />{checkoutLabel(room)}</span>
       </section>
     </>
   );
 }
 
+function roomTaskCompletePayload(task: RoomHousekeepingTask) {
+  if (task.taskType === "LINEN_CHANGE") return { linenChangeCompleted: true };
+  if (task.taskType === "WATER_REFILL") return { waterRefillCompleted: true };
+  return { standardCleaningCompleted: true };
+}
+
+function taskStatusLabel(task: RoomHousekeepingTask): string {
+  if (task.status === "AVAILABLE_FOR_CLAIM") return "Available";
+  if (task.status === "CLAIMED") return task.assignee ? `Claimed by ${task.assignee.name}` : "Claimed";
+  if (task.status === "IN_PROGRESS") return "In progress";
+  if (task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (task.status === "READY") return "Ready";
+  return task.status.replaceAll("_", " ");
+}
+
+function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask }) {
+  const completeRegularTask = () => action.mutate(completeHousekeepingTask(task.id, task.version, roomTaskCompletePayload(task)));
+  const completeCleaning = (includeLinen: boolean) => action.mutate(completeHousekeepingTask(task.id, task.version, { standardCleaningCompleted: true, linenChangeCompleted: includeLinen }));
+
+  if (task.capabilities.canClaim) {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={() => action.mutate(claimHousekeepingTask(task.id, task.version))} type="button">Claim</button>
+      </div>
+    );
+  }
+
+  if (task.capabilities.canStart) {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(task.id, task.version))} type="button">Start</button>
+        {task.capabilities.canReleaseClaim && <button disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(task.id, task.version))} type="button">Release</button>}
+      </div>
+    );
+  }
+
+  if (task.capabilities.canComplete && task.taskType === "ON_DEMAND_CLEANING") {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Complete Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Complete Full Cleaning</button>
+      </div>
+    );
+  }
+
+  if (task.capabilities.canComplete && task.taskType === "STANDARD_CLEANING") {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Complete Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Complete Full Cleaning</button>
+      </div>
+    );
+  }
+
+  if (task.capabilities.canComplete) {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "WATER_REFILL" ? "Complete Water" : task.taskType === "LINEN_CHANGE" || task.taskType === "TURNOVER" ? "Complete Full Cleaning" : "Complete Cleaning"}</button>
+      </div>
+    );
+  }
+
+  if (task.capabilities.canReleaseClaim) {
+    return (
+      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+        <button disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(task.id, task.version))} type="button">Release</button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function useRoomTaskAction(roomId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (next: Promise<unknown>) => next,
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["room-detail", roomId] }),
+        queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] }),
+      ]);
+    },
+  });
+}
+
 function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: (status: RoomHousekeepingStatus) => updateRoomHousekeeping(roomId, status),
-    onSuccess: (updated) => queryClient.setQueryData(["room-detail", roomId], updated),
+  const [note, setNote] = useState("");
+  const taskAction = useRoomTaskAction(roomId);
+  const createOnDemand = useMutation({
+    mutationFn: () => createRoomOnDemandCleaning(roomId, { note: note.trim() || null, priority: "normal" }),
+    onSuccess: () => {
+      setNote("");
+    },
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["room-detail", roomId] }),
+        queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] }),
+      ]);
+    },
   });
+  const hasOnDemand = room.housekeeping.tasks.some((task) => task.taskType === "ON_DEMAND_CLEANING");
+  const canCreateOnDemand = room.housekeeping.canCreateOnDemandCleaning && Boolean(room.currentStay);
 
   return (
     <section className="room-section" aria-label="Housekeeping">
       <header><HousekeepingIcon /><h2>Housekeeping</h2></header>
       <div className="room-operation-card">
-        <span className={`room-status-badge is-${statusTone(room.housekeeping.status)}`}>{room.housekeeping.status}</span>
+        <span className={`room-status-badge is-${room.housekeeping.primaryStatusTone}`}>{room.housekeeping.primaryStatus}</span>
         <dl>
           <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo ?? "Unassigned"}</dd></div>
           <div><dt>Updated</dt><dd>{room.housekeeping.lastUpdated ? formatDateTime(room.housekeeping.lastUpdated) : "Not updated"}</dd></div>
-          <div><dt>Checklist</dt><dd>{room.housekeeping.checklistLabel}</dd></div>
+          <div><dt>Active task</dt><dd>{room.housekeeping.activeTask?.title ?? "None"}</dd></div>
+          <div><dt>Reason</dt><dd>{room.housekeeping.activeTask?.reason ?? "No active work"}</dd></div>
         </dl>
       </div>
-      <div className="room-actions" aria-label="Change housekeeping status">
-        {HOUSEKEEPING_STATUSES.map((status) => (
-          <button
-            className={status === room.housekeeping.status ? "is-selected" : ""}
-            disabled={mutation.isPending || status === room.housekeeping.status}
-            key={status}
-            onClick={() => mutation.mutate(status)}
-            type="button"
-          >
-            {status}
-          </button>
+
+      <div className="room-task-list" aria-label="Active housekeeping task">
+        {room.housekeeping.tasks.length === 0 && <div className="room-empty-state">No active Housekeeping</div>}
+        {room.housekeeping.tasks.map((task) => (
+          <article className="room-task-card" key={task.id}>
+            <div>
+              <strong>{task.title}</strong>
+              <span>{taskStatusLabel(task)} - {task.reason}</span>
+            </div>
+            <span className={`room-status-badge is-${statusTone(task.isCarriedOver ? "Priority" : task.priority)}`}>{task.isCarriedOver ? "Priority" : task.priority}</span>
+            <RoomTaskActions action={taskAction} task={task} />
+          </article>
         ))}
       </div>
-      {mutation.isError && <p className="room-form-error">Housekeeping status could not be updated.</p>}
+
+      <form className="room-on-demand-form" onSubmit={(event) => {
+        event.preventDefault();
+        if (canCreateOnDemand) createOnDemand.mutate();
+      }}>
+        <label>
+          On-Demand Cleaning
+          <textarea maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" rows={2} value={note} />
+        </label>
+        <button disabled={!canCreateOnDemand || createOnDemand.isPending || hasOnDemand} type="submit"><PlusIcon />Create On-Demand Cleaning</button>
+      </form>
+
+      {hasOnDemand && <p className="room-form-help">An On-Demand Cleaning task is already active.</p>}
+      {taskAction.isError && <p className="room-form-error">This task changed. The room is refreshing.</p>}
+      {createOnDemand.isError && <p className="room-form-error">On-Demand Cleaning could not be created.</p>}
     </section>
   );
 }
@@ -241,6 +362,18 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
         <button disabled={mutation.isPending} type="submit"><PlusIcon />Create ticket</button>
         {mutation.isError && <p className="room-form-error">Maintenance ticket could not be created.</p>}
       </form>
+    </section>
+  );
+}
+
+function ProcurementPanel({ room }: { room: RoomDetail }) {
+  return (
+    <section className="room-section" aria-label="Procurement alerts">
+      <header><RefreshIcon /><h2>Procurement</h2></header>
+      <div className="room-section-summary">
+        <strong>{room.procurement.attentionCount > 0 ? `${room.procurement.attentionCount} supply request${room.procurement.attentionCount === 1 ? "" : "s"} need attention` : "No procurement alerts"}</strong>
+        <span>{room.procurement.latestRequest ?? "Supply requests stay owned by Procurement."}</span>
+      </div>
     </section>
   );
 }
@@ -364,6 +497,7 @@ export default function RoomDetailPage() {
           <ReceptionPanel room={room.data} />
           <HousekeepingPanel room={room.data} roomId={roomId} />
           <MaintenancePanel room={room.data} roomId={roomId} />
+          <ProcurementPanel room={room.data} />
           <NotesPanel room={room.data} roomId={roomId} />
           <TimelinePanel events={room.data.timeline.events} />
           <ChatContextPanel room={room.data} />

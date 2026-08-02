@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import PagePlaceholder, { type PlaceholderLink } from "../components/PagePlaceholder";
@@ -9,9 +9,7 @@ import CreateMaintenancePage from "../pages/CreateMaintenancePage";
 import DashboardPage from "../pages/DashboardPage";
 import MaintenanceDetailPage from "../pages/MaintenanceDetailPage";
 import MaintenancePage from "../pages/MaintenancePage";
-import HousekeepingPage from "../pages/HousekeepingPage";
 import HousekeepingV2Page from "../pages/HousekeepingV2Page";
-import HousekeepingRoomPage from "../pages/HousekeepingRoomPage";
 import LoginPage from "../pages/LoginPage";
 import MovementsPage from "../pages/MovementsPage";
 import ProcurementDetailPage from "../pages/ProcurementDetailPage";
@@ -59,6 +57,12 @@ function ProtectedLayout() {
   return <AppLayout />;
 }
 
+function HousekeepingRoomRedirect() {
+  const { roomId = "", unitId = "" } = useParams();
+  const targetId = unitId || roomId;
+  return <Navigate replace to={`/rooms/${targetId}`} />;
+}
+
 export default function AppRouter() {
   return (
     <BrowserRouter>
@@ -80,10 +84,10 @@ export default function AppRouter() {
           <Route path="rooms/:roomId" element={<RoomDetailPage />} />
           <Route path="reception" element={<ReceptionPage />} />
           <Route path="movements" element={<MovementsPage />} />
-          <Route path="housekeeping" element={<HousekeepingPage />} />
+          <Route path="housekeeping" element={<Navigate replace to="/housekeeping-v2" />} />
           <Route path="housekeeping-v2" element={<HousekeepingV2Page />} />
-          <Route path="housekeeping/rooms/:unitId" element={<HousekeepingRoomPage />} />
-          <Route path="housekeeping/checklist/:roomId" element={<Placeholder titleKey="readyChecklist" descriptionKey="checklistPlaceholder" />} />
+          <Route path="housekeeping/rooms/:unitId" element={<HousekeepingRoomRedirect />} />
+          <Route path="housekeeping/checklist/:roomId" element={<HousekeepingRoomRedirect />} />
           <Route path="availability" element={<AvailabilityPage />} />
           <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="maintenance/new" element={<CreateMaintenancePage />} />

@@ -108,14 +108,11 @@ Current operational groups:
 - `ready`
 - `occupied`
 
-Current checklist:
+Legacy checklist fields exist in the old implementation but are not product-facing in Housekeeping V2:
 
-- bathroom;
-- floor;
-- towels;
-- bed;
-- amenities;
-- final check.
+- no operational checkbox completion is required;
+- Cleaning and Full Cleaning may show informational help only;
+- completion equals trusted work completion.
 
 ### 3.4 Existing Reception Dependencies
 
@@ -192,17 +189,17 @@ These conflicts must be resolved during implementation sprints.
 
 | Area | Current Code | Target Architecture | Conflict |
 |---|---|---|---|
-| Home UX | Every room card renders assignment selector, checklist, and actions | Home uses concise operational cards; detail opens controls | Current page is too dense and not approved |
-| Categories | `clean-first`, `clean-today`, `ready`, `occupied` | Priority Turnover, Normal Cleaning, Water Refill, Ready / No Action Required, Procurement | Current groups do not match target operations |
+| Home UX | Every room card renders assignment selector, checklist, and actions | Home uses concise operational task cards; Room Workspace owns full room browsing | Current page is too dense and not approved |
+| Categories | `clean-first`, `clean-today`, `ready`, `occupied` | Priority, Normal, and Water actionable lists only | Current groups do not match target operations |
 | Reception release | `checkoutSource()` hardcodes missing Reception flag and uses 14:30 fallback | Turnover cannot begin until Reception releases room | Current fallback can expose rooms before real release |
 | Status model | `Dirty`, `Cleaning`, `Ready` | Task-specific states and claim lifecycle | Current enum is too coarse |
-| Checklist model | One universal checklist | Separate turnover, standard cleaning, linen, water refill checklists | Current checklist cannot express target rules |
+| Checklist model | One universal checklist | No mandatory detailed operational checklist; optional static intervention help only | Current checklist is not part of the approved product flow |
 | Data model | One `housekeeping` row per room/work_date | Multiple task types per room/day with independent state | Current table is insufficient |
 | Assignment | Assignment belongs to room/day row | Assignment belongs to operational task | Current assignment is not task-specific |
 | Water refill | Not modeled | Daily occupied-room task | Missing domain |
 | Linen counters | Not modeled | Independent linen interval and manual override | Missing domain |
 | Normal cleaning counters | Not modeled | Every 3 occupied days by default | Missing domain |
-| On-demand cleaning | Not modeled | Staff can create extra task even if room is clean | Missing domain |
+| On-demand cleaning | Not modeled | Room Workspace can create extra task even if room is clean; Housekeeping Workspace only displays existing active work | Missing domain |
 | Audit | Limited timestamps | Per-transition audit events | Missing for accountability |
 | Alerts | Reception alerts exist only for passport/deposit | Extensible operational alert contract | Partial |
 | Concurrency | No task version/idempotency | Optimistic locking or equivalent | Missing |
@@ -212,16 +209,16 @@ These conflicts must be resolved during implementation sprints.
 
 The Housekeeping home workspace must follow this hierarchy:
 
-1. Operational summary at the top.
-2. Priority operational lists.
-3. Room detail opened only when needed.
-4. Small Procurement widget at the bottom.
+1. Compact Priority, Normal, and Water summary cards at the top.
+2. One expanded actionable list only after the user taps a summary card.
+3. Task controls shown progressively from server-derived capabilities.
+4. Room identity opens the separate Room Workspace.
 
-The home must not render the full operational controls of every clean room.
+The home must not render every list by default, clean rooms, no-action rooms, or the full operational controls of every room.
 
-Rooms initially appear as concise operational cards or list items.
+Rooms initially do not appear. Only the three summary cards appear.
 
-Opening a room reveals the complete operational workspace.
+Opening a room identity reveals the complete Room Workspace. Opening a task-specific action surface remains separate from room browsing.
 
 ## 6. Top Summary
 
@@ -270,25 +267,21 @@ The MVP can use request/response refresh. Realtime push is out of scope.
 
 Empty states must be operational and concise:
 
-- No turnovers waiting.
-- No occupied-room cleaning due.
-- Water refill complete.
-- No rooms blocked.
-- No supply requests pending.
+- No priority work.
+- No normal cleaning work.
+- No water refills.
 
 Empty states must not imply that the whole workspace is inactive if another section has work.
 
 ## 7. Primary Operational Sections
 
-Section order is fixed:
+Actionable section order is fixed:
 
-1. Priority Turnover
-2. Normal Cleaning
-3. Water Refill
-4. Ready / No Action Required
-5. Procurement
+1. Priority
+2. Normal
+3. Water
 
-No unnecessary parallel categories should be introduced.
+Ready / No Action Required and Procurement are not user-facing Housekeeping Workspace lists. Legacy ready/procurement data may exist outside this read model, but this workspace renders only active housekeeping work.
 
 ### 7.1 Priority Turnover
 
@@ -309,7 +302,7 @@ Substates:
 - available for claim;
 - claimed;
 - cleaning in progress;
-- checklist complete;
+- intervention complete;
 - ready for inspection or ready;
 - completed.
 
@@ -370,41 +363,13 @@ Exit:
 - room becomes checkout/vacant;
 - room becomes maintenance-blocked and refill cannot be performed.
 
-### 7.4 Ready / No Action Required
+MVP quantities are hardcoded by accommodation type:
 
-Purpose: low-noise list of rooms with no current housekeeping action.
+- Bungalow: 2 bottles.
+- Yurt/Tent: 2 bottles.
+- Villa: 4 bottles.
 
-Entry:
-
-- no active turnover task;
-- no standard cleaning due;
-- no linen change due;
-- no water refill due;
-- no blocking maintenance issue requiring housekeeping action.
-
-Exit:
-
-- new checkout release;
-- normal cleaning becomes due;
-- water refill becomes due;
-- on-demand cleaning is created;
-- maintenance creates a housekeeping-relevant block.
-
-### 7.5 Procurement
-
-Purpose: small widget for supply shortages. It is visually and operationally secondary.
-
-Entry:
-
-- user opens create request;
-- request exists in status `requested`, `reviewed`, or `ordered`;
-- urgent request requires Owner/Manager attention.
-
-Exit:
-
-- request received;
-- request rejected;
-- request cancelled, if implemented later.
+Guest count is informational only and must not be used for water quantity, water eligibility, cleaning generation, linen, priority, procurement, or any Housekeeping decision.
 
 ## 8. Turnover Workflow
 
@@ -425,7 +390,7 @@ stateDiagram-v2
     ROOM_RELEASED --> AVAILABLE_FOR_CLAIM: task generated
     AVAILABLE_FOR_CLAIM --> CLAIMED: staff claims
     CLAIMED --> CLEANING_IN_PROGRESS: start
-    CLEANING_IN_PROGRESS --> CHECKLIST_COMPLETE: checklist completed
+    CLEANING_IN_PROGRESS --> CHECKLIST_COMPLETE: work completed
     CHECKLIST_COMPLETE --> READY_FOR_INSPECTION: inspection required
     CHECKLIST_COMPLETE --> READY: inspection not required
     READY_FOR_INSPECTION --> READY: Owner/Manager approves
@@ -475,7 +440,7 @@ Housekeeping cannot:
 
 - claim the turnover task;
 - start cleaning;
-- complete the checklist;
+- complete the task;
 - mark ready.
 
 ### 8.4 Force Room Released
@@ -518,7 +483,7 @@ Mitigation:
 Completion requires:
 
 - task assigned to current user or Owner override;
-- checklist mandatory items complete;
+- operator marks the task complete under the trust model;
 - no blocking maintenance issue marked out of service;
 - inspection state satisfied if inspection is enabled;
 - completion timestamp recorded;
@@ -559,16 +524,12 @@ Default frequency:
 
 Standard cleaning and linen change are independent concepts.
 
-### 9.1 Standard Cleaning
+### 9.1 Cleaning
 
-Includes:
+Product meaning:
 
-- floor;
-- bathroom;
-- waste;
-- towels when operationally required;
-- amenities;
-- final room check.
+- general room cleaning;
+- amenities check.
 
 Fields required:
 
@@ -584,18 +545,19 @@ Reset conditions:
 - completing standard cleaning plus linen also resets standard cleaning date;
 - turnover completion resets standard cleaning baseline for the new stay.
 
-Overdue:
+Carry-over priority:
 
-- `next_standard_cleaning_due_date < today`
-- visible as overdue in Normal Cleaning section.
+- active Standard Cleaning task `operational_date < today`
+- visible in Priority section with the same task id.
+- original operational dates are not rewritten.
 
-### 9.2 Linen Change
+### 9.2 Full Cleaning
 
-Includes:
+Product meaning:
 
-- bedsheets;
-- pillowcases;
-- related bed linen.
+- general room cleaning;
+- linen change;
+- amenities check.
 
 Linen must not automatically be required before the configured interval.
 
@@ -631,7 +593,7 @@ stateDiagram-v2
     OVERDUE --> AVAILABLE_FOR_CLAIM: overdue task generated
     AVAILABLE_FOR_CLAIM --> CLAIMED: staff claims
     CLAIMED --> IN_PROGRESS: start
-    IN_PROGRESS --> COMPLETED: standard checklist complete
+    IN_PROGRESS --> COMPLETED: work completed
     COMPLETED --> NOT_DUE: counters reset
     AVAILABLE_FOR_CLAIM --> CANCELLED: stay ends or Owner cancels
     IN_PROGRESS --> BLOCKED: room inaccessible or maintenance block
@@ -648,22 +610,22 @@ stateDiagram-v2
     REQUIRED_BY_INTERVAL --> CLAIMED: staff claims linen task
     REQUIRED_BY_OVERRIDE --> CLAIMED: staff claims linen task
     CLAIMED --> IN_PROGRESS: start
-    IN_PROGRESS --> COMPLETED: linen checklist complete
+    IN_PROGRESS --> COMPLETED: work completed
     COMPLETED --> NOT_REQUIRED: linen counter reset
     REQUIRED_BY_OVERRIDE --> CANCELLED: Owner/Manager removes override
 ```
 
 ## 10. On-Demand Cleaning
 
-On-demand cleaning supports guest-requested cleaning through a physical room sign or future source.
+On-demand cleaning supports guest-requested cleaning through Room Workspace, a physical room sign, or future source.
 
-Housekeeping must be able to open a cleaning task even when the room is currently marked clean.
+Room Workspace must be able to open a cleaning task even when the room is currently marked clean. Housekeeping Workspace must not create On-Demand Cleaning; it only displays an active on-demand task in the Normal list after another authorized source creates it.
 
 ### 10.1 Creation
 
 Allowed sources:
 
-- Housekeeping manual entry;
+- Room Workspace manual entry;
 - Reception manual entry, if later authorized;
 - future room-sign integration;
 - future guest request source.
@@ -676,8 +638,11 @@ Required fields:
 - requested at;
 - task type;
 - priority;
-- note;
 - duplicate key.
+
+Optional fields:
+
+- note.
 
 ### 10.2 Duplicate Prevention
 
@@ -691,13 +656,13 @@ Allowed duplicate exception:
 
 When completing an on-demand task, operator chooses:
 
-- Standard Cleaning;
-- Standard Cleaning + Linen Change.
+- Cleaning;
+- Full Cleaning.
 
 Counter updates:
 
-- Standard Cleaning resets only standard cleaning counters;
-- Standard Cleaning + Linen Change resets both standard cleaning and linen counters.
+- Cleaning resets only cleaning counters;
+- Full Cleaning resets both cleaning and linen counters.
 
 ### 10.4 Audit
 
@@ -862,27 +827,27 @@ It should show:
 It must not show:
 
 - assignment selector;
-- full checklist;
+- detailed operational checklist;
 - all actions;
 - raw database state;
 - long notes;
 - complete history.
 
-Primary tap opens room detail.
+Room identity opens Room Workspace. Task-specific controls may open a Housekeeping task surface only when the server capabilities require a task action.
 
 Fast actions may be allowed only when they are safe:
 
 - Claim;
 - Start after claimed;
-- Complete water refill if already claimed and no checklist required.
+- Complete work when claimed and allowed by server capabilities.
 
 ## 14. Room Detail
 
-Clicking a compact card opens the complete room workspace.
+Clicking the room identity on a compact row opens the complete Room Workspace.
 
 ### 14.1 Required Sections
 
-Room detail must include:
+Room Workspace detail must include:
 
 - room identity;
 - current occupancy;
@@ -899,7 +864,6 @@ Room detail must include:
 - maintenance issues;
 - Reception alerts;
 - task claim;
-- checklist;
 - completion controls;
 - room notes.
 
@@ -921,7 +885,6 @@ Depending on role and task state:
 
 - claim/release task;
 - start task;
-- checklist items;
 - operational note;
 - attach housekeeping evidence photo where justified;
 - mark linen required;
@@ -931,88 +894,22 @@ Depending on role and task state:
 - create procurement request;
 - request reopen or reopen with permission.
 
-## 15. Checklists
+## 15. Intervention Help
 
-Do not use one universal checklist.
+Housekeeping V2 does not require detailed operational checklists.
 
-### 15.1 Checklist Types
+Vanara trusts trained Housekeeping staff. The software decides:
 
-Required checklist types:
+- where;
+- when;
+- which intervention level.
 
-- turnover;
-- standard cleaning;
-- linen change;
-- water refill.
+The approved intervention types are:
 
-### 15.2 Checklist Item Schema
+- Cleaning: general room cleaning plus amenities check.
+- Full Cleaning: general room cleaning plus linen change plus amenities check.
 
-Required fields:
-
-- `id`
-- `checklist_type`
-- `label_key`
-- `default_label`
-- `required`
-- `room_type`
-- `sort_order`
-- `requires_note`
-- `requires_photo`
-- `completed`
-- `completed_by`
-- `completed_at`
-
-### 15.3 Turnover Checklist
-
-Mandatory baseline:
-
-- bathroom cleaned;
-- floor cleaned;
-- trash removed;
-- bed prepared;
-- towels placed;
-- amenities restocked;
-- visible damage checked;
-- final room check.
-
-Room-type configuration may add items.
-
-### 15.4 Standard Cleaning Checklist
-
-Mandatory baseline:
-
-- bathroom;
-- floor;
-- waste;
-- towels if operationally required;
-- amenities;
-- final room check.
-
-Does not require linen unless selected.
-
-### 15.5 Linen Checklist
-
-Mandatory baseline:
-
-- bedsheets changed;
-- pillowcases changed;
-- related bed linen checked;
-- used linen collected.
-
-### 15.6 Water Refill Checklist
-
-Minimal by design:
-
-- quantity confirmed;
-- exception reason if skipped or quantity overridden.
-
-### 15.7 Reopening
-
-Reopening a completed checklist:
-
-- requires Owner or Manager by default;
-- requires reason;
-- preserves original completion events;
-- creates new audit event.
+Tapping Cleaning or Full Cleaning may show a static information sheet. This help is informational only, does not block completion, and is not tracked.
 
 ## 16. Reception Dependencies
 
@@ -1226,7 +1123,7 @@ The existing `housekeeping` table partially supports:
 - simple status;
 - assignment;
 - basic timestamps;
-- universal checklist JSON.
+- legacy checklist JSON.
 
 It does not fully support the target architecture.
 
@@ -1288,7 +1185,7 @@ Statuses:
 
 #### `housekeeping_task_checklist_items`
 
-Stores checklist completion per task.
+Legacy table retained for compatibility. Housekeeping V2 product flow does not require detailed checklist completion.
 
 Required fields:
 
@@ -1503,7 +1400,7 @@ Response:
 - room identity;
 - occupancy;
 - active tasks;
-- checklists;
+- intervention help metadata, if needed;
 - alerts;
 - maintenance issues;
 - procurement links.
@@ -1596,7 +1493,6 @@ Permission:
 
 Validation:
 
-- mandatory checklist items complete;
 - unresolved blocking maintenance absent;
 - task state allows completion.
 
@@ -1673,15 +1569,16 @@ Transition:
 
 ### 21.11 Create On-Demand Cleaning
 
-`POST /api/housekeeping/rooms/:unitId/on-demand-cleaning`
+This endpoint is retained for Room Workspace callers. Housekeeping Workspace must not render a create control for it.
+
+`POST /api/housekeeping/v2/rooms/:unitId/on-demand-cleaning`
 
 Request:
 
 ```json
 {
   "source": "manual",
-  "priority": "normal",
-  "note": "Guest requested cleaning"
+  "priority": "normal"
 }
 ```
 
@@ -1693,6 +1590,7 @@ Validation:
 
 - room exists;
 - active duplicate prevented.
+- note is optional.
 
 ### 21.12 Complete Water Refill
 
@@ -1821,8 +1719,8 @@ The workspace must still expose operational alerts.
 |---|---|---|---|---|---|
 | Reception release pending | Reception/Housekeeping derived | warning | Housekeeping, Owner | derived or persisted | Reception release or Owner force release |
 | Turnover approaching check-in | Booking/Housekeeping | critical | Housekeeping, Owner | derived | turnover complete |
-| Overdue cleaning | Housekeeping counters | warning | Housekeeping, Owner | derived | task complete or skipped |
-| Overdue refill | Housekeeping refill | warning | Housekeeping | derived | refill complete or skipped |
+| Previous-day cleaning | Housekeeping tasks | warning | Housekeeping, Owner | derived | task complete or skipped |
+| Daily water refill | Housekeeping refill | warning | Housekeeping | derived | refill complete or skipped |
 | Task blocked | Maintenance/Housekeeping | warning/critical | Housekeeping, Owner | persisted | block resolved |
 | Maintenance issue | Maintenance | warning/critical | Housekeeping, Maintenance, Owner | persisted | maintenance resolution |
 | Missing passport | Reception | warning | Reception, Owner; visible to Housekeeping | persisted | Reception/passport workflow |
@@ -1852,7 +1750,7 @@ Use stable keys for:
 - section titles;
 - task statuses;
 - task actions;
-- checklist labels;
+- intervention help labels;
 - error messages;
 - alert labels;
 - empty states;
@@ -1864,7 +1762,7 @@ Example key pattern:
 - `housekeeping.summary.awaitingRelease`
 - `housekeeping.section.priorityTurnover`
 - `housekeeping.task.status.availableForClaim`
-- `housekeeping.checklist.turnover.bathroomCleaned`
+- `housekeeping.intervention.cleaning`
 - `housekeeping.error.taskAlreadyClaimed`
 
 ### 24.2 Dynamic Content
@@ -1885,7 +1783,6 @@ Backend should return stable error codes where possible:
 - `housekeeping_task_stale_version`
 - `housekeeping_room_not_released`
 - `housekeeping_task_blocked`
-- `housekeeping_required_checklist_incomplete`
 - `housekeeping_permission_denied`
 - `housekeeping_duplicate_task`
 
@@ -2143,7 +2040,7 @@ UI work:
 
 - Normal Cleaning section;
 - standard vs linen status;
-- completion option Standard Cleaning or Standard Cleaning + Linen Change.
+- completion option Cleaning or Full Cleaning.
 
 Tests:
 
@@ -2516,7 +2413,7 @@ Question:
 
 Why it matters:
 
-- Photo requirements affect R2 usage, mobile workflow, and checklist validation.
+- Photo requirements affect R2 usage, mobile workflow, and completion validation.
 
 Options:
 
@@ -2531,4 +2428,3 @@ Recommended default:
 Architectural impact:
 
 - Sprint 7 integration and optional task photos.
-

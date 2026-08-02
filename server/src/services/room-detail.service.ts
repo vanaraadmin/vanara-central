@@ -1,15 +1,18 @@
 import { getHousekeepingOverview, normalizeHousekeepingWorkflowInput, normalizeHousekeepingWorkflowStatus, updateHousekeepingWorkflow, type CheckoutCompletionSource, type HousekeepingBindings, type HousekeepingRoom, type HousekeepingWorkflowStatus } from "./housekeeping-overview.service.js";
+import { getHousekeepingTask, housekeepingTaskCapabilities, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { getHousekeepingV2Overview, type HousekeepingV2Bindings } from "./housekeeping-v2-overview.service.js";
 import { createMaintenanceTicket, listOpenMaintenanceTicketDetailsForRoom, normalizeCreateMaintenanceTicketInput, type CreateMaintenanceTicketInput, type MaintenanceBindings, type MaintenanceTicketDetail } from "./maintenance.service.js";
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { getReceptionStay, type ReceptionBindings } from "./reception.service.js";
 import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 
-export interface RoomDetailBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings {
+export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings {
   DB: D1Database;
 }
 
 type TimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
+type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
 
 interface UnitRow {
   unit_id: number;
@@ -84,7 +87,9 @@ export interface RoomCurrentStay {
 }
 
 export interface RoomHousekeeping {
-  status: HousekeepingWorkflowStatus;
+  status: HousekeepingWorkflowStatus | RoomOperationalStatus;
+  primaryStatus: HousekeepingWorkflowStatus | RoomOperationalStatus;
+  primaryStatusTone: string;
   assignedTo: string | null;
   assignedAt: string | null;
   lastUpdated: string | null;
@@ -93,6 +98,33 @@ export interface RoomHousekeeping {
   checklistCompleted: number;
   checklistTotal: number;
   notes: string | null;
+  activeTask: RoomHousekeepingTask | null;
+  tasks: RoomHousekeepingTask[];
+  canCreateOnDemandCleaning: boolean;
+}
+
+export interface RoomHousekeepingTask {
+  id: number;
+  taskType: HousekeepingTaskType;
+  title: string;
+  status: HousekeepingTaskStatus;
+  priority: HousekeepingTaskPriority;
+  isCarriedOver: boolean;
+  reason: string;
+  version: number;
+  assignee: { id: string; name: string } | null;
+  operationalDate: string;
+  dueCycleDate: string | null;
+  updatedAt: string;
+  capabilities: {
+    canClaim: boolean;
+    canReleaseClaim: boolean;
+    canStart: boolean;
+    canComplete: boolean;
+    canSkip: boolean;
+    canCancel: boolean;
+    canReopen: boolean;
+  };
 }
 
 export interface RoomNote {
@@ -142,7 +174,7 @@ export interface RoomDetail {
   accommodationType: string;
   roomStatus: string;
   occupancyStatus: string;
-  housekeepingStatus: HousekeepingWorkflowStatus;
+  housekeepingStatus: HousekeepingWorkflowStatus | RoomOperationalStatus;
   operationalPriority: string;
   checkoutCompleted: boolean;
   checkoutCompletionSource: CheckoutCompletionSource;
@@ -158,12 +190,18 @@ export interface RoomDetail {
     outOfService: boolean;
     tickets: MaintenanceTicketDetail[];
   };
+  procurement: {
+    attentionCount: number;
+    latestRequest: string | null;
+  };
   reception: {
     guestSummary: string | null;
     arrival: string | null;
     departure: string | null;
     checkInStatus: string;
     checkOutStatus: string;
+    passportStatus: string;
+    depositStatus: string;
     alerts: ReceptionRoomAlert[];
     notes: string[];
   };
@@ -206,6 +244,62 @@ function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number,
   if (operations.housekeepingStatus === "Dirty") return "Dirty";
   if (operations.occupancyStatus === "Ready for Guest") return "Ready";
   return operations.operationalPriority;
+}
+
+const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
+const TERMINAL_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["COMPLETED", "SKIPPED", "CANCELLED"]);
+
+function canCreateRoomHousekeepingTask(user: CurrentUser): boolean {
+  return user.role === "Owner" || user.role === "Manager" || user.role === "Housekeeping" || user.role === "Operations";
+}
+
+function taskTitle(task: HousekeepingTask): string {
+  if (task.taskType === "STANDARD_CLEANING") return "Cleaning";
+  if (task.taskType === "LINEN_CHANGE") return "Full Cleaning";
+  if (task.taskType === "ON_DEMAND_CLEANING") return "Cleaning request";
+  if (task.taskType === "WATER_REFILL") return "Water refill";
+  return "Turnover";
+}
+
+function taskIsCarriedOver(task: HousekeepingTask, today: string): boolean {
+  return (task.taskType === "STANDARD_CLEANING" || task.taskType === "ON_DEMAND_CLEANING") && task.operationalDate < today;
+}
+
+function taskReason(task: HousekeepingTask, today: string): string {
+  if (task.blockingReason) return task.blockingReason;
+  if (task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (taskIsCarriedOver(task, today)) return "Was scheduled previously. Please do this first today.";
+  if (task.taskType === "STANDARD_CLEANING") return "Cleaning due";
+  if (task.taskType === "LINEN_CHANGE") return "Full Cleaning required";
+  if (task.taskType === "ON_DEMAND_CLEANING") return "On-Demand Cleaning";
+  if (task.taskType === "WATER_REFILL") return "Daily water refill";
+  return "Operational task";
+}
+
+function taskRank(task: HousekeepingTask): number {
+  if (task.taskType === "TURNOVER") return 1;
+  if (task.taskType === "ON_DEMAND_CLEANING") return 2;
+  if (task.taskType === "STANDARD_CLEANING") return 3;
+  if (task.taskType === "LINEN_CHANGE") return 4;
+  if (task.taskType === "WATER_REFILL") return 5;
+  return 6;
+}
+
+function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenanceBlocked: boolean, legacyStatus: HousekeepingWorkflowStatus): { label: HousekeepingWorkflowStatus | RoomOperationalStatus; tone: string } {
+  if (maintenanceBlocked) return { label: "Maintenance Block", tone: "maintenance-block" };
+  if (!task) return { label: legacyStatus === "Ready" ? "No active Housekeeping" : legacyStatus, tone: statusTone(legacyStatus === "Ready" ? "No active Housekeeping" : legacyStatus) };
+  if (task.status === "WAITING_FOR_RECEPTION") return { label: "Waiting Reception", tone: "waiting-reception" };
+  if (task.isCarriedOver) return { label: "Priority", tone: "priority" };
+  if (task.status === "IN_PROGRESS" || task.status === "CLAIMED") return { label: "Cleaning in progress", tone: "cleaning-in-progress" };
+  if (task.status === "READY" || task.status === "READY_FOR_INSPECTION") return { label: "Ready", tone: "ready" };
+  if (task.priority === "URGENT" || task.priority === "HIGH" || task.taskType === "TURNOVER") return { label: "Priority", tone: "priority" };
+  if (task.taskType === "LINEN_CHANGE") return { label: "Full Cleaning", tone: "full-cleaning" };
+  if (task.taskType === "WATER_REFILL") return { label: "Water refill", tone: "water-refill" };
+  return { label: "Cleaning scheduled", tone: "cleaning-scheduled" };
+}
+
+function statusTone(value: string): string {
+  return value.toLowerCase().replaceAll(" ", "-");
 }
 
 async function resolveUnit(env: RoomDetailBindings, id: number): Promise<UnitRow | null> {
@@ -253,6 +347,38 @@ async function loadLatestHousekeeping(env: RoomDetailBindings, unitId: number): 
     ORDER BY work_date DESC, updated_at DESC, housekeeping_id DESC
     LIMIT 1
   `).bind(unitId).first<HousekeepingDetailRow>();
+}
+
+async function loadActiveHousekeepingTasks(env: RoomDetailBindings, unitId: number, date: string): Promise<HousekeepingTask[]> {
+  const rows = await env.DB.prepare(`
+    SELECT task_id
+    FROM housekeeping_tasks
+    WHERE unit_id = ?
+      AND status IN ('WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS', 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED')
+      AND (operational_date = ? OR due_cycle_date <= ?)
+    ORDER BY
+      CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 WHEN 'WATER_REFILL' THEN 5 ELSE 6 END,
+      task_id
+  `).bind(unitId, date, date).all<{ task_id: number }>();
+
+  const tasks: HousekeepingTask[] = [];
+  for (const row of rows.results ?? []) {
+    const task = await getHousekeepingTask(env, row.task_id);
+    if (task && ACTIVE_TASK_STATUSES.has(task.status)) tasks.push(task);
+  }
+  return tasks.sort((left, right) => taskRank(left) - taskRank(right));
+}
+
+async function loadProcurementAttention(env: RoomDetailBindings): Promise<{ attentionCount: number; latestRequest: string | null }> {
+  const row = await env.DB.prepare(`
+    SELECT COUNT(*) AS count, MAX(COALESCE(custom_item_text, note, status)) AS latest_request
+    FROM procurement_requests
+    WHERE status IN ('requested', 'reviewed', 'ordered')
+  `).first<{ count: number; latest_request: string | null }>();
+  return {
+    attentionCount: row?.count ?? 0,
+    latestRequest: row?.latest_request ?? null,
+  };
 }
 
 async function loadRoomNotes(env: RoomDetailBindings, unitId: number): Promise<RoomNote[]> {
@@ -362,18 +488,72 @@ function operationalFallback(unit: UnitRow, stay: RoomCurrentStay | null): House
   };
 }
 
-function housekeepingDetail(operations: HousekeepingRoom, row: HousekeepingDetailRow | null): RoomHousekeeping {
+function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser): RoomHousekeepingTask["capabilities"] {
+  const base = housekeepingTaskCapabilities(task);
+  const isOwner = user.role === "Owner" && user.views.includes("owner");
+  const isManager = user.role === "Manager";
+  const isAssigned = task.assignedUserId === user.id;
+  const active = !TERMINAL_TASK_STATUSES.has(task.status);
+  const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
+
   return {
-    status: row ? normalizeHousekeepingWorkflowStatus(row.status) : operations.housekeepingStatus,
-    assignedTo: operations.assignedTo ?? row?.assigned_to ?? null,
-    assignedAt: operations.assignedAt,
-    lastUpdated: operations.lastUpdated ?? row?.updated_at ?? null,
-    checklistAvailable: true,
-    checklistLabel: `${operations.checklist.completed}/${operations.checklist.total} completed`,
-    checklistCompleted: operations.checklist.completed,
-    checklistTotal: operations.checklist.total,
-    notes: row?.notes ?? null,
+    canClaim: base.canClaim && released,
+    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
+    canStart: task.status === "CLAIMED" && released && (isAssigned || isOwner),
+    canComplete: base.canComplete && released && (isAssigned || isOwner),
+    canSkip: base.canSkip && (isAssigned || isOwner || isManager),
+    canCancel: active && Boolean(isOwner || isManager),
+    canReopen: TERMINAL_TASK_STATUSES.has(task.status) && Boolean(isOwner || isManager),
   };
+}
+
+function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, today: string): RoomHousekeepingTask {
+  return {
+    id: task.id,
+    taskType: task.taskType,
+    title: taskTitle(task),
+    status: task.status,
+    priority: task.priority,
+    isCarriedOver: taskIsCarriedOver(task, today),
+    reason: taskReason(task, today),
+    version: task.version,
+    assignee: task.assignedUserId && task.assignedUserName ? { id: task.assignedUserId, name: task.assignedUserName } : null,
+    operationalDate: task.operationalDate,
+    dueCycleDate: task.dueCycleDate,
+    updatedAt: task.updatedAt,
+    capabilities: roomTaskCapabilities(task, user),
+  };
+}
+
+function housekeepingDetail(operations: HousekeepingRoom, row: HousekeepingDetailRow | null, tasks: HousekeepingTask[], user: CurrentUser, maintenanceBlocked: boolean, today: string): RoomHousekeeping {
+  const taskDtos = tasks.map((task) => mapRoomHousekeepingTask(task, user, today));
+  const activeTask = taskDtos[0] ?? null;
+  const primary = primaryHousekeepingState(activeTask, maintenanceBlocked, row ? normalizeHousekeepingWorkflowStatus(row.status) : operations.housekeepingStatus);
+
+  return {
+    status: primary.label,
+    primaryStatus: primary.label,
+    primaryStatusTone: primary.tone,
+    assignedTo: activeTask?.assignee?.name ?? operations.assignedTo ?? row?.assigned_to ?? null,
+    assignedAt: activeTask?.updatedAt ?? operations.assignedAt,
+    lastUpdated: activeTask?.updatedAt ?? operations.lastUpdated ?? row?.updated_at ?? null,
+    checklistAvailable: false,
+    checklistLabel: "Not used",
+    checklistCompleted: 0,
+    checklistTotal: 0,
+    notes: row?.notes ?? null,
+    activeTask,
+    tasks: taskDtos,
+    canCreateOnDemandCleaning: canCreateRoomHousekeepingTask(user),
+  };
+}
+
+function roomTaskBelongsToCurrentStay(task: HousekeepingTask, stay: RoomCurrentStay | null): boolean {
+  if (task.taskType === "TURNOVER") return true;
+  if (!stay) return false;
+  if (task.bookingId !== null) return task.bookingId === stay.bookingId;
+  if (task.stayId !== null) return task.stayId === stay.beds24BookingId;
+  return false;
 }
 
 function buildTimeline(stay: RoomCurrentStay | null, housekeeping: RoomHousekeeping, tickets: MaintenanceTicketDetail[], notes: RoomNote[]): RoomTimelineEvent[] {
@@ -465,35 +645,39 @@ export function normalizeRoomNoteInput(payload: unknown): CreateRoomNoteInput {
   return { body };
 }
 
-export async function getRoomDetail(env: RoomDetailBindings, id: number): Promise<RoomDetail | null> {
+export async function getRoomDetail(env: RoomDetailBindings, id: number, user: CurrentUser): Promise<RoomDetail | null> {
   const unit = await resolveUnit(env, id);
   if (!unit) return null;
 
   const today = getBangkokDate();
-  const [stayRow, housekeepingOverview, latestHousekeeping, tickets, notes, chatContext, receptionAlerts] = await Promise.all([
+  await getHousekeepingV2Overview(env, user, today);
+  const [stayRow, housekeepingOverview, latestHousekeeping, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement] = await Promise.all([
     loadCurrentStay(env, unit.unit_id, today),
     getHousekeepingOverview(env),
     loadLatestHousekeeping(env, unit.unit_id),
+    loadActiveHousekeepingTasks(env, unit.unit_id, today),
     listOpenMaintenanceTicketDetailsForRoom(env, unit.unit_id),
     loadRoomNotes(env, unit.unit_id),
     loadChatContext(env, unit),
     loadReceptionRoomAlerts(env, unit.unit_id),
+    loadProcurementAttention(env),
   ]);
 
   const currentStay = mapStay(stayRow);
+  const roomScopedActiveTasks = activeTasks.filter((task) => roomTaskBelongsToCurrentStay(task, currentStay));
   const reception = currentStay ? await getReceptionStay(env, currentStay.beds24BookingId) : null;
   const operations = housekeepingOverview.rooms.find((room) => room.unitId === unit.unit_id) ?? operationalFallback(unit, currentStay);
-  const housekeeping = housekeepingDetail(operations, latestHousekeeping);
   const openIssues = tickets.length;
   const outOfService = tickets.some((ticket) => ticket.outOfService);
   const highestPriority = ["Critical", "High", "Medium", "Low"].find((priority) => tickets.some((ticket) => ticket.priority === priority)) ?? null;
+  const housekeeping = housekeepingDetail(operations, latestHousekeeping, roomScopedActiveTasks, user, outOfService, today);
 
   return {
     unitId: unit.unit_id,
     roomName: unit.unit_name,
     roomType: unitType(unit),
     accommodationType: unitType(unit),
-    roomStatus: roomStatus({ ...operations, housekeepingStatus: housekeeping.status }, openIssues, outOfService),
+    roomStatus: housekeeping.primaryStatus === "No active Housekeeping" ? roomStatus(operations, openIssues, outOfService) : housekeeping.primaryStatus,
     occupancyStatus: operations.occupancyStatus,
     housekeepingStatus: housekeeping.status,
     operationalPriority: operations.operationalPriority,
@@ -511,12 +695,15 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number): Promis
       outOfService,
       tickets,
     },
+    procurement,
     reception: {
       guestSummary: reception?.guestName ?? currentStay?.guestName ?? null,
       arrival: reception?.arrival ?? currentStay?.arrival ?? null,
       departure: reception?.departure ?? currentStay?.departure ?? null,
       checkInStatus: reception ? `${Object.values(reception.checkIn).filter(Boolean).length}/5` : "Not Available",
       checkOutStatus: reception ? `${Object.values(reception.checkOut).filter(Boolean).length}/4` : "Not Available",
+      passportStatus: reception ? reception.checkIn.passportCollected ? "Recorded" : "Missing" : "Not Available",
+      depositStatus: reception ? reception.checkIn.depositCollected ? reception.checkOut.depositReturned ? "Returned" : "Collected" : "Pending" : "Not Available",
       alerts: receptionAlerts,
       notes: reception ? [reception.specialNotes, ...reception.notes.slice(0, 3).map((note) => note.body)].filter((note): note is string => Boolean(note)) : [],
     },
@@ -532,7 +719,7 @@ export async function updateRoomHousekeepingStatus(env: RoomDetailBindings, id: 
   const unit = await resolveUnit(env, id);
   if (!unit) return null;
   await updateHousekeepingWorkflow(env, unit.unit_id, input, user);
-  return getRoomDetail(env, unit.unit_id);
+  return getRoomDetail(env, unit.unit_id, user);
 }
 
 export async function createRoomNote(env: RoomDetailBindings, id: number, input: CreateRoomNoteInput, user: CurrentUser): Promise<RoomNote | null> {

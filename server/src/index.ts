@@ -13,7 +13,7 @@ import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normali
 import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
 import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
-import { forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, normalizeForceReleaseInput, normalizeTaskActionInput, performHousekeepingV2TaskAction, updateHousekeepingV2ChecklistItem, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
+import { createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
@@ -87,7 +87,7 @@ function housekeepingV2RoomErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 
   if (error instanceof ForbiddenError) return 403;
   if (error instanceof HousekeepingV2RoomError) return error.status;
   if (error instanceof HousekeepingV2DateError) return 400;
-  if (error instanceof HousekeepingTaskDomainError) return error.code === "housekeeping_task_stale_version" ? 409 : 400;
+  if (error instanceof HousekeepingTaskDomainError) return error.code === "housekeeping_task_stale_version" || error.code === "housekeeping_duplicate_task" ? 409 : 400;
   return 500;
 }
 
@@ -521,10 +521,10 @@ app.get("/api/staff/overview", async (c) => {
 
 app.get("/api/rooms/:id", async (c) => {
   try {
-    await authenticated(c, "rooms", "access");
+    const user = await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
     const roomId = positiveIntegerParam(c.req.param("id"), "room id");
-    const room = await getRoomDetail(c.env, roomId);
+    const room = await getRoomDetail(c.env, roomId, user);
 
     if (!room) {
       return c.json({ success: false, error: "Room not found" }, 404);
@@ -533,6 +533,20 @@ app.get("/api/rooms/:id", async (c) => {
     return c.json({ success: true, data: room });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/rooms/:id/on-demand-cleaning", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "access");
+    requireModulePermission(user, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    await createHousekeepingV2OnDemandCleaning(c.env, user, roomId, normalizeOnDemandCleaningInput(payload), c.req.query("date"));
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
   }
 });
 
@@ -1101,6 +1115,32 @@ app.get("/api/housekeeping/v2/rooms/:unitId", async (c) => {
   }
 });
 
+app.post("/api/housekeeping/v2/rooms/:unitId/on-demand-cleaning", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const unitId = positiveIntegerParam(c.req.param("unitId"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const room = await createHousekeepingV2OnDemandCleaning(c.env, user, unitId, normalizeOnDemandCleaningInput(payload), c.req.query("date"));
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/rooms/:unitId/linen-required", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const unitId = positiveIntegerParam(c.req.param("unitId"), "room id");
+    const payload = await c.req.json().catch(() => null);
+    const room = await markHousekeepingV2LinenRequired(c.env, user, unitId, normalizeLinenRequiredInput(payload), c.req.query("date"));
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
 app.post("/api/housekeeping/v2/tasks/:taskId/claim", async (c) => {
   try {
     const user = await authenticated(c, "housekeeping", "edit");
@@ -1129,17 +1169,6 @@ app.post("/api/housekeeping/v2/tasks/:taskId/start", async (c) => {
     const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
     const payload = await c.req.json().catch(() => null);
     return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "start", normalizeTaskActionInput(payload)) });
-  } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
-  }
-});
-
-app.post("/api/housekeeping/v2/tasks/:taskId/checklist", async (c) => {
-  try {
-    const user = await authenticated(c, "housekeeping", "edit");
-    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
-    const payload = await c.req.json().catch(() => null);
-    return c.json({ success: true, data: await updateHousekeepingV2ChecklistItem(c.env, user, taskId, normalizeTaskActionInput(payload, { checklist: true })) });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
   }

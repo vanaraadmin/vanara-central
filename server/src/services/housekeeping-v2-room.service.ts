@@ -1,11 +1,15 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import {
+  createHousekeepingTask,
   HousekeepingTaskDomainError,
   getHousekeepingTask,
   housekeepingTaskCapabilities,
+  syncReleasedTurnoverTasks,
   transitionHousekeepingTask,
+  type HousekeepingCompletionInput,
   type HousekeepingTask,
   type HousekeepingTaskPriority,
+  type HousekeepingTaskSource,
   type HousekeepingTaskStatus,
   type HousekeepingTaskType,
   type HousekeepingTransitionAction,
@@ -75,6 +79,8 @@ export interface HousekeepingV2TaskCapabilities {
   canForceRelease: boolean;
   canCreateMaintenanceIssue: boolean;
   canCreateProcurementRequest: boolean;
+  canCreateOnDemandCleaning: boolean;
+  canMarkLinenRequired: boolean;
 }
 
 export interface HousekeepingV2RoomDetail {
@@ -124,6 +130,7 @@ export interface HousekeepingV2RoomDetail {
     lastLinenChangeAt: string | null;
     nextLinenDue: string | null;
     linenOverride: boolean;
+    linenOverrideReason: string | null;
     waterRefillStatus: HousekeepingTaskStatus | "NOT_DUE" | null;
   };
   maintenance: {
@@ -179,23 +186,13 @@ interface AlertRow {
   created_at: string;
 }
 
-interface ChecklistRow {
-  checklist_item_id: number;
-  item_key: string;
-  default_label: string;
-  required: number;
-  completed: number;
-  completed_by: string | null;
-  completed_at: string | null;
-  note: string | null;
-}
-
 interface CounterRow {
   last_standard_cleaning_at: string | null;
   next_standard_cleaning_due_date: string | null;
   last_linen_change_at: string | null;
   next_linen_change_due_date: string | null;
   linen_required_override: number;
+  linen_override_reason: string | null;
 }
 
 interface MaintenanceRow {
@@ -226,15 +223,23 @@ interface ActionInput {
   completed?: boolean | null;
   assignedUserId?: string | null;
   assignedUserName?: string | null;
+  idempotencyKey?: string | null;
+  completion?: HousekeepingCompletionInput;
 }
 
-const TURNOVER_CHECKLIST = [
-  ["bathroom", "Bathroom cleaned"],
-  ["floor", "Floor cleaned"],
-  ["bed", "Bed reset"],
-  ["amenities", "Amenities replaced"],
-  ["final-check", "Final room check"],
-] as const;
+interface OnDemandCleaningInput {
+  source: "HOUSEKEEPING_MANUAL";
+  taskSource: HousekeepingTaskSource;
+  priority: HousekeepingTaskPriority;
+  note: string | null;
+  includeLinen: boolean;
+  idempotencyKey: string | null;
+}
+
+interface LinenRequiredInput {
+  reason: string;
+  idempotencyKey: string | null;
+}
 
 const TERMINAL_STATUSES = new Set<HousekeepingTaskStatus>(["COMPLETED", "SKIPPED", "CANCELLED"]);
 
@@ -248,20 +253,16 @@ export class HousekeepingV2RoomError extends Error {
   }
 }
 
-export function normalizeTaskActionInput(payload: unknown, options: { reasonRequired?: boolean; checklist?: boolean } = {}): ActionInput {
+export function normalizeTaskActionInput(payload: unknown, options: { reasonRequired?: boolean } = {}): ActionInput {
   if (!payload || typeof payload !== "object") throw new HousekeepingV2RoomError("Task action payload is required.");
   const data = payload as Record<string, unknown>;
   const expectedVersion = Number(data.expectedVersion);
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw new HousekeepingV2RoomError("expectedVersion is required.");
   const reason = typeof data.reason === "string" ? data.reason.trim() : null;
+  const idempotencyKey = typeof data.idempotencyKey === "string" && data.idempotencyKey.trim() ? data.idempotencyKey.trim() : null;
+  const completion = normalizeCompletion(data.completion);
   if (options.reasonRequired && !reason) throw new HousekeepingV2RoomError("Reason is required.");
-  if (options.checklist) {
-    const itemKey = typeof data.itemKey === "string" ? data.itemKey.trim() : "";
-    if (!itemKey) throw new HousekeepingV2RoomError("Checklist item is required.");
-    if (typeof data.completed !== "boolean") throw new HousekeepingV2RoomError("Checklist completion value is required.");
-    return { expectedVersion, reason, itemKey, completed: data.completed };
-  }
-  return { expectedVersion, reason };
+  return { expectedVersion, reason, idempotencyKey, completion };
 }
 
 export function normalizeForceReleaseInput(payload: unknown): { bookingId: number; expectedVersion: number; reason: string } {
@@ -276,10 +277,38 @@ export function normalizeForceReleaseInput(payload: unknown): { bookingId: numbe
   return { bookingId, expectedVersion, reason };
 }
 
+export function normalizeOnDemandCleaningInput(payload: unknown): OnDemandCleaningInput {
+  if (!payload || typeof payload !== "object") throw new HousekeepingV2RoomError("On-demand cleaning payload is required.");
+  const data = payload as Record<string, unknown>;
+  const source = typeof data.source === "string" ? data.source.trim() : "";
+  if (source !== "HOUSEKEEPING_MANUAL" && source !== "manual" && source !== "ROOM_WORKSPACE") throw new HousekeepingV2RoomError("On-demand cleaning source is invalid.");
+  const priorityInput = typeof data.priority === "string" ? data.priority.trim().toUpperCase() : "NORMAL";
+  const priority = ["LOW", "NORMAL", "HIGH", "URGENT"].includes(priorityInput) ? priorityInput as HousekeepingTaskPriority : "NORMAL";
+  const note = typeof data.note === "string" && data.note.trim() ? data.note.trim().slice(0, 500) : null;
+  const idempotencyKey = typeof data.idempotencyKey === "string" && data.idempotencyKey.trim() ? data.idempotencyKey.trim() : null;
+  return {
+    source: "HOUSEKEEPING_MANUAL",
+    taskSource: "manual",
+    priority,
+    note,
+    includeLinen: data.includeLinen === true,
+    idempotencyKey,
+  };
+}
+
+export function normalizeLinenRequiredInput(payload: unknown): LinenRequiredInput {
+  if (!payload || typeof payload !== "object") throw new HousekeepingV2RoomError("Linen requirement payload is required.");
+  const data = payload as Record<string, unknown>;
+  const reason = typeof data.reason === "string" ? data.reason.trim() : "";
+  if (!reason) throw new HousekeepingV2RoomError("Reason is required.");
+  const idempotencyKey = typeof data.idempotencyKey === "string" && data.idempotencyKey.trim() ? data.idempotencyKey.trim() : null;
+  return { reason: reason.slice(0, 500), idempotencyKey };
+}
+
 export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBindings, user: CurrentUser, unitId: number, dateInput?: string | null): Promise<HousekeepingV2RoomDetail | null> {
   const date = normalizeHousekeepingV2Date(dateInput);
   await getHousekeepingV2Overview(env, user, date);
-  await syncReleasedTurnoverTasks(env, date);
+  await syncReleasedTurnoverTasks(env, date, user);
 
   const unit = await loadUnit(env, unitId);
   if (!unit) return null;
@@ -344,6 +373,7 @@ export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBinding
       lastLinenChangeAt: counter?.last_linen_change_at ?? null,
       nextLinenDue: counter?.next_linen_change_due_date ?? null,
       linenOverride: counter?.linen_required_override === 1,
+      linenOverrideReason: counter?.linen_override_reason ?? null,
       waterRefillStatus: taskDtos.find((task) => task.taskType === "WATER_REFILL")?.status ?? "NOT_DUE",
     },
     maintenance: {
@@ -371,6 +401,73 @@ export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBinding
   };
 }
 
+export async function createHousekeepingV2OnDemandCleaning(env: HousekeepingV2RoomBindings, user: CurrentUser, unitId: number, input: OnDemandCleaningInput, dateInput?: string | null): Promise<HousekeepingV2RoomDetail> {
+  const date = normalizeHousekeepingV2Date(dateInput);
+  const unit = await loadUnit(env, unitId);
+  if (!unit) throw new HousekeepingV2RoomError("Room not found.", 404);
+  const booking = await activeInHouseBooking(env, unitId, date);
+  if (!booking) throw new HousekeepingV2RoomError("On-demand cleaning requires an occupied in-house room.", 409);
+
+  await createHousekeepingTask(env, {
+    taskType: "ON_DEMAND_CLEANING",
+    unitId,
+    bookingId: booking.booking_id,
+    stayId: booking.beds24_booking_id,
+    operationalDate: date,
+    dueCycleDate: date,
+    priority: input.priority,
+    source: input.taskSource,
+    onDemandSource: input.source,
+    idempotencyKey: input.idempotencyKey ?? `housekeeping:v2:on-demand:${unitId}:${input.source}:${date}`,
+    creationMetadata: { source: input.source, note: input.note, includeLinen: input.includeLinen },
+  }, user);
+
+  const detail = await getHousekeepingV2RoomDetail(env, user, unitId, date);
+  if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);
+  return detail;
+}
+
+export async function markHousekeepingV2LinenRequired(env: HousekeepingV2RoomBindings, user: CurrentUser, unitId: number, input: LinenRequiredInput, dateInput?: string | null): Promise<HousekeepingV2RoomDetail> {
+  const date = normalizeHousekeepingV2Date(dateInput);
+  const unit = await loadUnit(env, unitId);
+  if (!unit) throw new HousekeepingV2RoomError("Room not found.", 404);
+  const booking = await activeInHouseBooking(env, unitId, date);
+  if (!booking) throw new HousekeepingV2RoomError("Linen change requires an occupied in-house room.", 409);
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT INTO housekeeping_room_counters (
+      unit_id, active_booking_id, active_stay_id, linen_required_override,
+      linen_override_reason, created_at, updated_at
+    )
+    VALUES (?, ?, ?, 1, ?, ?, ?)
+    ON CONFLICT(unit_id)
+    DO UPDATE SET active_booking_id = excluded.active_booking_id,
+                  active_stay_id = excluded.active_stay_id,
+                  linen_required_override = 1,
+                  linen_override_reason = excluded.linen_override_reason,
+                  updated_at = excluded.updated_at
+  `).bind(unitId, booking.booking_id, booking.beds24_booking_id, input.reason, now, now).run();
+
+  const task = await createHousekeepingTask(env, {
+    taskType: "LINEN_CHANGE",
+    unitId,
+    bookingId: booking.booking_id,
+    stayId: booking.beds24_booking_id,
+    operationalDate: date,
+    dueCycleDate: date,
+    priority: "HIGH",
+    source: "manual",
+    idempotencyKey: input.idempotencyKey ?? `housekeeping:v2:linen:${unitId}:${booking.beds24_booking_id}:${date}`,
+    creationMetadata: { reasonCode: "linen_override", reason: input.reason },
+  }, user);
+  await insertTaskEvent(env, task.id, "linen_override_selected", task.status, task.status, user, input.reason, { reasonCode: "linen_override" }, `linen-override:${task.id}:${input.idempotencyKey ?? date}`, now);
+
+  const detail = await getHousekeepingV2RoomDetail(env, user, unitId, date);
+  if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);
+  return detail;
+}
+
 export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, action: "claim" | "release-claim" | "start" | "complete" | "skip" | "cancel" | "reopen", input: ActionInput): Promise<HousekeepingV2RoomDetail> {
   const task = await getRequiredTask(env, taskId);
   const blocking = await hasMaintenanceBlock(env, task.unitId);
@@ -386,14 +483,15 @@ export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBin
     if (!permissions.canStart) throw new ForbiddenError();
     await transitionHousekeepingTask(env, taskId, transitionInput("start", task, user, input));
   } else if (action === "complete") {
-    if (!permissions.canComplete && !await canCompleteTurnoverFromCurrentState(env, task, user, blocking)) throw new ForbiddenError();
-    await completeTurnoverTask(env, task, user, input);
+    if (!permissions.canComplete && !canCompleteTurnoverFromCurrentState(task, user, blocking)) throw new ForbiddenError();
+    await completeHousekeepingTaskWithRules(env, task, user, input);
   } else if (action === "skip") {
     if (!permissions.canSkip) throw new ForbiddenError();
     await transitionHousekeepingTask(env, taskId, transitionInput("skip", task, user, input));
   } else if (action === "cancel") {
     if (!permissions.canCancel || !input.reason) throw new ForbiddenError();
     await transitionHousekeepingTask(env, taskId, transitionInput("cancel", task, user, input));
+    if (task.taskType === "LINEN_CHANGE") await clearLinenOverrideForTask(env, task, user, input.reason);
   } else {
     if (!permissions.canReopen || !input.reason) throw new ForbiddenError();
     await reopenTask(env, task, user, input.reason);
@@ -404,33 +502,13 @@ export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBin
   return detail;
 }
 
-async function canCompleteTurnoverFromCurrentState(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): Promise<boolean> {
+function canCompleteTurnoverFromCurrentState(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): boolean {
   if (task.taskType !== "TURNOVER" || maintenanceBlocked) return false;
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isAssigned = task.assignedUserId === user.id;
   if (!isAssigned && !isOwner) return false;
   if (task.status === "READY" || task.status === "CHECKLIST_COMPLETE") return true;
-  if (task.status !== "IN_PROGRESS") return false;
-  return (await missingChecklistItems(env, task)).length === 0;
-}
-
-export async function updateHousekeepingV2ChecklistItem(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, input: ActionInput): Promise<HousekeepingV2RoomDetail> {
-  const task = await getRequiredTask(env, taskId);
-  const permissions = taskCapabilitiesForUser(task, user, await hasMaintenanceBlock(env, task.unitId));
-  if (!permissions.canEditChecklist || !input.itemKey || input.completed === null || input.completed === undefined) throw new ForbiddenError();
-  await ensureChecklist(env, task);
-  const now = new Date().toISOString();
-  const result = await env.DB.prepare(`
-    UPDATE housekeeping_task_checklist_items
-    SET completed = ?, completed_by = ?, completed_by_name = ?, completed_at = ?, updated_at = ?
-    WHERE task_id = ?
-      AND item_key = ?
-  `).bind(input.completed ? 1 : 0, input.completed ? user.id : null, input.completed ? user.displayName : null, input.completed ? now : null, now, taskId, input.itemKey).run();
-  if (Number(result.meta.changes ?? 0) !== 1) throw new HousekeepingV2RoomError("Checklist item not found.", 404);
-  await insertTaskEvent(env, taskId, "checklist_updated", task.status, task.status, user, input.itemKey, { completed: input.completed }, `checklist:${taskId}:${input.itemKey}:${now}`, now);
-  const detail = await getHousekeepingV2RoomDetail(env, user, task.unitId, task.operationalDate);
-  if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);
-  return detail;
+  return task.status === "IN_PROGRESS";
 }
 
 export async function forceHousekeepingV2RoomRelease(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, input: { bookingId: number; expectedVersion: number; reason: string }): Promise<HousekeepingV2RoomDetail> {
@@ -471,13 +549,11 @@ export async function forceHousekeepingV2RoomRelease(env: HousekeepingV2RoomBind
   return detail;
 }
 
-async function completeTurnoverTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, input: ActionInput): Promise<void> {
+async function completeHousekeepingTaskWithRules(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, input: ActionInput): Promise<void> {
   if (task.taskType !== "TURNOVER") {
     await transitionHousekeepingTask(env, task.id, transitionInput("complete", task, user, input));
     return;
   }
-  const missing = await missingChecklistItems(env, task);
-  if (missing.length > 0) throw new HousekeepingV2RoomError(`Checklist incomplete: ${missing.join(", ")}.`, 409);
   let current = task;
   if (current.status === "IN_PROGRESS") current = await transitionHousekeepingTask(env, current.id, transitionInput("checklist_complete", current, user, input));
   if (current.status === "CHECKLIST_COMPLETE") current = await transitionHousekeepingTask(env, current.id, transitionInput("mark_ready", current, user, { ...input, expectedVersion: current.version }));
@@ -512,18 +588,46 @@ function transitionInput(action: HousekeepingTransitionAction, task: Housekeepin
     expectedVersion: input.expectedVersion,
     actor: user,
     reason: input.reason,
-    idempotencyKey: `${action}:${task.id}:${input.expectedVersion}:${user.id}`,
-    completion: { standardCleaningCompleted: task.taskType === "TURNOVER" },
+    idempotencyKey: input.idempotencyKey ?? `${action}:${task.id}:${input.expectedVersion}:${user.id}`,
+    completion: action === "complete" ? completionForTask(task, input) : undefined,
   };
 }
 
+function completionForTask(task: HousekeepingTask, input: ActionInput): HousekeepingCompletionInput {
+  const completion = input.completion ?? {};
+  if (task.taskType === "TURNOVER" || task.taskType === "STANDARD_CLEANING") {
+    return { ...completion, standardCleaningCompleted: true };
+  }
+  if (task.taskType === "LINEN_CHANGE") {
+    return { ...completion, linenChangeCompleted: true };
+  }
+  if (task.taskType === "WATER_REFILL") {
+    return { ...completion, waterRefillCompleted: true };
+  }
+  if (completion.standardCleaningCompleted !== true || typeof completion.linenChangeCompleted !== "boolean") {
+    throw new HousekeepingV2RoomError("On-demand completion requires Cleaning or Full Cleaning selection.", 400);
+  }
+  return {
+    standardCleaningCompleted: true,
+    linenChangeCompleted: completion.linenChangeCompleted,
+  };
+}
+
+function normalizeCompletion(value: unknown): HousekeepingCompletionInput | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const data = value as Record<string, unknown>;
+  const completion: HousekeepingCompletionInput = {};
+  if (typeof data.standardCleaningCompleted === "boolean") completion.standardCleaningCompleted = data.standardCleaningCompleted;
+  if (typeof data.linenChangeCompleted === "boolean") completion.linenChangeCompleted = data.linenChangeCompleted;
+  if (typeof data.waterRefillCompleted === "boolean") completion.waterRefillCompleted = data.waterRefillCompleted;
+  if (typeof data.completedAt === "string") completion.completedAt = data.completedAt;
+  return completion;
+}
+
 async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): Promise<HousekeepingV2RoomTask> {
-  await ensureChecklist(env, task);
-  const checklist = await loadChecklist(env, task.id);
   const caps = taskCapabilitiesForUser(task, user, maintenanceBlocked);
   const booking = task.bookingId ? await env.DB.prepare("SELECT beds24_booking_id FROM bookings WHERE booking_id = ?").bind(task.bookingId).first<{ beds24_booking_id: number }>() : null;
-  const missing = checklist.filter((item) => item.required && !item.completed).map((item) => item.label);
-  if (task.taskType === "TURNOVER" && task.status === "IN_PROGRESS" && missing.length === 0 && caps.canEditChecklist) {
+  if (task.taskType === "TURNOVER" && task.status === "IN_PROGRESS" && !maintenanceBlocked && (task.assignedUserId === user.id || (user.role === "Owner" && user.views.includes("owner")))) {
     caps.canComplete = true;
   }
   return {
@@ -548,10 +652,10 @@ async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTa
       cancelledAt: task.cancelledAt,
     },
     checklist: {
-      completed: checklist.filter((item) => item.completed).length,
-      total: checklist.length,
-      missing,
-      items: checklist,
+      completed: 0,
+      total: 0,
+      missing: [],
+      items: [],
     },
     capabilities: caps,
   };
@@ -564,12 +668,13 @@ function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, main
   const isAssigned = task.assignedUserId === user.id;
   const active = !TERMINAL_STATUSES.has(task.status);
   const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
+  const canRoomCreate = isOwner || isManager || user.role === "Housekeeping" || user.role === "Operations";
 
   return {
     canClaim: base.canClaim && released && !maintenanceBlocked,
     canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
     canStart: task.status === "CLAIMED" && released && !maintenanceBlocked && (isAssigned || isOwner),
-    canEditChecklist: task.status === "IN_PROGRESS" && !maintenanceBlocked && (isAssigned || isOwner),
+    canEditChecklist: false,
     canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
     canCancel: active && Boolean(isOwner || isManager),
@@ -578,11 +683,14 @@ function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, main
     canForceRelease: task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION" && isOwner,
     canCreateMaintenanceIssue: true,
     canCreateProcurementRequest: true,
+    canCreateOnDemandCleaning: canRoomCreate,
+    canMarkLinenRequired: canRoomCreate,
   };
 }
 
 function emptyCapabilities(user: CurrentUser): HousekeepingV2TaskCapabilities {
   const isOwner = user.role === "Owner" && user.views.includes("owner");
+  const canRoomCreate = isOwner || user.role === "Housekeeping" || user.role === "Manager" || user.role === "Operations";
   return {
     canClaim: false,
     canReleaseClaim: false,
@@ -594,8 +702,10 @@ function emptyCapabilities(user: CurrentUser): HousekeepingV2TaskCapabilities {
     canReopen: false,
     canReassign: false,
     canForceRelease: false,
-    canCreateMaintenanceIssue: isOwner || user.role === "Housekeeping" || user.role === "Manager" || user.role === "Operations",
-    canCreateProcurementRequest: isOwner || user.role === "Housekeeping" || user.role === "Manager" || user.role === "Operations",
+    canCreateMaintenanceIssue: canRoomCreate,
+    canCreateProcurementRequest: canRoomCreate,
+    canCreateOnDemandCleaning: canRoomCreate,
+    canMarkLinenRequired: canRoomCreate,
   };
 }
 
@@ -603,66 +713,6 @@ async function getRequiredTask(env: HousekeepingV2RoomBindings, taskId: number):
   const task = await getHousekeepingTask(env, taskId);
   if (!task) throw new HousekeepingV2RoomError("Task not found.", 404);
   return task;
-}
-
-async function ensureChecklist(env: HousekeepingV2RoomBindings, task: HousekeepingTask): Promise<void> {
-  if (task.taskType !== "TURNOVER") return;
-  const now = new Date().toISOString();
-  for (let index = 0; index < TURNOVER_CHECKLIST.length; index += 1) {
-    const [key, label] = TURNOVER_CHECKLIST[index]!;
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO housekeeping_task_checklist_items (
-        task_id, item_key, label_key, default_label, required, completed, sort_order, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
-    `).bind(task.id, key, `housekeeping.checklist.turnover.${key}`, label, index + 1, now, now).run();
-  }
-}
-
-async function missingChecklistItems(env: HousekeepingV2RoomBindings, task: HousekeepingTask): Promise<string[]> {
-  await ensureChecklist(env, task);
-  const checklist = await loadChecklist(env, task.id);
-  return checklist.filter((item) => item.required && !item.completed).map((item) => item.label);
-}
-
-async function loadChecklist(env: HousekeepingV2RoomBindings, taskId: number): Promise<HousekeepingV2ChecklistItem[]> {
-  const rows = await env.DB.prepare(`
-    SELECT checklist_item_id, item_key, default_label, required, completed, completed_by, completed_at, note
-    FROM housekeeping_task_checklist_items
-    WHERE task_id = ?
-    ORDER BY sort_order, checklist_item_id
-  `).bind(taskId).all<ChecklistRow>();
-  return (rows.results ?? []).map((row) => ({
-    id: row.checklist_item_id,
-    key: row.item_key,
-    label: row.default_label,
-    required: row.required === 1,
-    completed: row.completed === 1,
-    completedBy: row.completed_by,
-    completedAt: row.completed_at,
-    note: row.note,
-  }));
-}
-
-async function syncReleasedTurnoverTasks(env: HousekeepingV2RoomBindings, date: string): Promise<void> {
-  const rows = await env.DB.prepare(`
-    SELECT ht.task_id, ht.version
-    FROM housekeeping_tasks ht
-    JOIN bookings b ON b.booking_id = ht.booking_id
-    JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
-    WHERE ht.task_type = 'TURNOVER'
-      AND ht.status = 'WAITING_FOR_RECEPTION'
-      AND ht.operational_date = ?
-      AND rs.room_released = 1
-  `).bind(date).all<{ task_id: number; version: number }>();
-  for (const row of rows.results ?? []) {
-    await transitionHousekeepingTask(env, row.task_id, {
-      action: "release_from_reception",
-      expectedVersion: row.version,
-      idempotencyKey: `reception-release:${row.task_id}:${row.version}`,
-      metadata: { source: "reception_stays.room_released" },
-    });
-  }
 }
 
 async function hasMaintenanceBlock(env: HousekeepingV2RoomBindings, unitId: number): Promise<boolean> {
@@ -685,6 +735,19 @@ async function insertTaskEvent(env: HousekeepingV2RoomBindings, taskId: number, 
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(taskId, eventType, user.id, user.displayName, previousStatus, newStatus, reason, metadata ? JSON.stringify(metadata) : null, idempotencyKey, now).run();
+}
+
+async function clearLinenOverrideForTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, reason: string): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    UPDATE housekeeping_room_counters
+    SET linen_required_override = 0,
+        linen_override_reason = NULL,
+        updated_at = ?
+    WHERE unit_id = ?
+      AND (active_booking_id = ? OR active_stay_id = ?)
+  `).bind(now, task.unitId, task.bookingId, task.stayId).run();
+  await insertTaskEvent(env, task.id, "linen_override_cancelled", task.status, task.status, user, reason, { reasonCode: "linen_override" }, `linen-override-cancelled:${task.id}:${task.version}`, now);
 }
 
 async function loadUnit(env: HousekeepingV2RoomBindings, unitId: number): Promise<UnitRow | null> {
@@ -715,6 +778,11 @@ async function loadRoomBookings(env: HousekeepingV2RoomBindings, unitId: number,
   return rows.results ?? [];
 }
 
+async function activeInHouseBooking(env: HousekeepingV2RoomBindings, unitId: number, date: string): Promise<BookingRow | null> {
+  const bookings = await loadRoomBookings(env, unitId, date);
+  return bookings.find((booking) => booking.arrival_date <= date && booking.departure_date > date && booking.guest_arrived === 1) ?? null;
+}
+
 async function loadReceptionAlerts(env: HousekeepingV2RoomBindings, unitId: number): Promise<AlertRow[]> {
   const rows = await env.DB.prepare(`
     SELECT alert_id, alert_type, title, created_at
@@ -733,7 +801,7 @@ async function loadRoomTasks(env: HousekeepingV2RoomBindings, unitId: number, da
     WHERE unit_id = ?
       AND (operational_date = ? OR (due_cycle_date <= ? AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')))
     ORDER BY
-      CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'STANDARD_CLEANING' THEN 2 WHEN 'WATER_REFILL' THEN 3 ELSE 4 END,
+      CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 WHEN 'WATER_REFILL' THEN 5 ELSE 6 END,
       task_id
   `).bind(unitId, date, date).all<{ task_id: number }>();
   const tasks: HousekeepingTask[] = [];
@@ -747,7 +815,8 @@ async function loadRoomTasks(env: HousekeepingV2RoomBindings, unitId: number, da
 async function loadCounter(env: HousekeepingV2RoomBindings, unitId: number): Promise<CounterRow | null> {
   return env.DB.prepare(`
     SELECT last_standard_cleaning_at, next_standard_cleaning_due_date,
-           last_linen_change_at, next_linen_change_due_date, linen_required_override
+           last_linen_change_at, next_linen_change_due_date, linen_required_override,
+           linen_override_reason
     FROM housekeeping_room_counters
     WHERE unit_id = ?
   `).bind(unitId).first<CounterRow>();
@@ -797,9 +866,11 @@ function primaryTask(tasks: HousekeepingTask[]): HousekeepingTask | null {
 
 function taskRank(task: HousekeepingTask): number {
   if (task.taskType === "TURNOVER") return 1;
-  if (task.taskType === "STANDARD_CLEANING") return 2;
-  if (task.taskType === "WATER_REFILL") return 3;
-  return 4;
+  if (task.taskType === "ON_DEMAND_CLEANING") return 2;
+  if (task.taskType === "STANDARD_CLEANING") return 3;
+  if (task.taskType === "LINEN_CHANGE") return 4;
+  if (task.taskType === "WATER_REFILL") return 5;
+  return 6;
 }
 
 function checkInAt(booking: BookingRow): string {

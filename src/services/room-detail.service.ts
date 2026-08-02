@@ -1,6 +1,6 @@
 import { ApiError, requestJson } from "./api.client";
 import type { MaintenanceDetailResponse, MaintenanceTicketDetail } from "../types/maintenance";
-import type { CreateRoomMaintenanceTicketPayload, ReceptionRoomAlert, RoomDetail, RoomDetailResponse, RoomHousekeepingStatus, RoomNote, RoomNoteResponse } from "../types/room-detail";
+import type { CreateRoomMaintenanceTicketPayload, CreateRoomOnDemandCleaningPayload, ReceptionRoomAlert, RoomDetail, RoomDetailResponse, RoomHousekeepingStatus, RoomNote, RoomNoteResponse } from "../types/room-detail";
 import type { ReceptionStayResponse } from "../types/reception";
 
 async function sendJson<T>(path: string, method: "POST" | "PATCH", payload: unknown, signal?: AbortSignal): Promise<T> {
@@ -58,6 +58,17 @@ export async function createRoomMaintenanceTicket(roomId: string, payload: Creat
   const response = await sendJson<MaintenanceDetailResponse>(`/api/rooms/${encodeURIComponent(roomId)}/maintenance/tickets`, "POST", payload, signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance ticket could not be created");
   return response.data;
+}
+
+export async function createRoomOnDemandCleaning(roomId: string, payload: CreateRoomOnDemandCleaningPayload, signal?: AbortSignal): Promise<void> {
+  const response = await sendJson<RoomDetailResponse>(`/api/rooms/${encodeURIComponent(roomId)}/on-demand-cleaning`, "POST", {
+    source: "ROOM_WORKSPACE",
+    priority: payload.priority ?? "normal",
+    note: payload.note ?? null,
+    includeLinen: false,
+    idempotencyKey: payload.idempotencyKey ?? null,
+  }, signal);
+  if (!response.success) throw new Error(response.error ?? "On-demand cleaning could not be created");
 }
 
 export async function resolveReceptionRoomAlert(alert: ReceptionRoomAlert, signal?: AbortSignal): Promise<void> {

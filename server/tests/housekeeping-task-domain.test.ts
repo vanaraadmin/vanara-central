@@ -494,6 +494,17 @@ test("counter updates keep standard cleaning, linen, and water refill independen
   assert.equal(standard.db.counters[0]?.next_standard_cleaning_due_date, "2026-08-04");
   assert.equal(standard.db.counters[0]?.next_linen_change_due_date, null);
 
+  const standardFull = await createTask("STANDARD_CLEANING", new FakeHousekeepingTaskDB());
+  await applyCompletionCounters(standardFull.data, standardFull.task, {
+    standardCleaningCompleted: true,
+    linenChangeCompleted: true,
+    completedAt: "2026-08-01T09:00:00.000Z",
+  });
+  assert.equal(standardFull.db.counters[0]?.last_standard_cleaning_task_id, standardFull.task.id);
+  assert.equal(standardFull.db.counters[0]?.last_linen_change_task_id, standardFull.task.id);
+  assert.equal(standardFull.db.counters[0]?.next_standard_cleaning_due_date, "2026-08-04");
+  assert.equal(standardFull.db.counters[0]?.next_linen_change_due_date, "2026-08-04");
+
   const linen = await createTask("LINEN_CHANGE", new FakeHousekeepingTaskDB());
   linen.db.counters.push({
     counter_id: 1,
@@ -521,4 +532,18 @@ test("counter updates keep standard cleaning, linen, and water refill independen
   const water = await createTask("WATER_REFILL", new FakeHousekeepingTaskDB());
   await applyCompletionCounters(water.data, water.task, { waterRefillCompleted: true, completedAt: "2026-08-03T09:00:00.000Z" });
   assert.equal(water.db.counters.length, 0);
+});
+
+test("on-demand cleaning resets counters only after explicit completion choice", async () => {
+  const onDemand = await createTask("ON_DEMAND_CLEANING", new FakeHousekeepingTaskDB(), { onDemandSource: "HOUSEKEEPING_MANUAL" });
+  await applyCompletionCounters(onDemand.data, onDemand.task, { completedAt: "2026-08-03T09:00:00.000Z" });
+  assert.equal(onDemand.db.counters.length, 0);
+
+  await applyCompletionCounters(onDemand.data, onDemand.task, {
+    standardCleaningCompleted: true,
+    linenChangeCompleted: true,
+    completedAt: "2026-08-03T09:00:00.000Z",
+  });
+  assert.equal(onDemand.db.counters[0]?.last_standard_cleaning_task_id, onDemand.task.id);
+  assert.equal(onDemand.db.counters[0]?.last_linen_change_task_id, onDemand.task.id);
 });

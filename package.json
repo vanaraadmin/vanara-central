@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-preflight.ps1",
+    "deploy:production": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-production.ps1",
+    "deploy:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-smoke.ps1",
     "typecheck": "tsc -b"
   },
   "dependencies": {

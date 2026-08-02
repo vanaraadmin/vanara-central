@@ -4,17 +4,24 @@ import test from "node:test";
 
 const roomService = await readFile(new URL("../src/services/housekeeping-v2-room.service.ts", import.meta.url), "utf8");
 const overviewService = await readFile(new URL("../src/services/housekeeping-v2-overview.service.ts", import.meta.url), "utf8");
+const roomDetailService = await readFile(new URL("../src/services/room-detail.service.ts", import.meta.url), "utf8");
 const index = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
 const homePage = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
-const roomPage = await readFile(new URL("../../src/pages/HousekeepingRoomPage.tsx", import.meta.url), "utf8");
+const roomWorkspace = await readFile(new URL("../../src/pages/RoomDetailPage.tsx", import.meta.url), "utf8");
 const client = await readFile(new URL("../../src/services/housekeeping-v2.service.ts", import.meta.url), "utf8");
+const roomClient = await readFile(new URL("../../src/services/room-detail.service.ts", import.meta.url), "utf8");
 
-test("housekeeping v2 room workspace has a dedicated route and endpoint", () => {
+test("housekeeping task navigation reuses the Room Workspace", () => {
   assert.match(index, /app\.get\("\/api\/housekeeping\/v2\/rooms\/:unitId"/);
-  assert.match(router, /path="housekeeping\/rooms\/:unitId" element=\{<HousekeepingRoomPage \/>}/);
-  assert.match(homePage, /to=\{`\/housekeeping\/rooms\/\$\{card\.unitId}`\}/);
-  assert.doesNotMatch(homePage, /to=\{`\/rooms\/\$\{card\.unitId}`\}/);
+  assert.match(router, /function HousekeepingRoomRedirect/);
+  assert.match(router, /path="housekeeping\/rooms\/:unitId" element=\{<HousekeepingRoomRedirect \/>}/);
+  assert.match(router, /path="housekeeping\/checklist\/:roomId" element=\{<HousekeepingRoomRedirect \/>}/);
+  assert.match(router, /path="rooms\/:roomId" element=\{<RoomDetailPage \/>}/);
+  assert.match(homePage, /className="housekeeping-v2-room-link" to=\{`\/rooms\/\$\{card\.unitId}`\}/);
+  assert.doesNotMatch(homePage, /housekeeping-v2-task-link|Open room/);
+  assert.doesNotMatch(router, /import HousekeepingRoomPage/);
+  assert.doesNotMatch(router, /readyChecklist|checklistPlaceholder/);
 });
 
 test("room read model is assembled server-side from real operational sources", () => {
@@ -28,12 +35,17 @@ test("room read model is assembled server-side from real operational sources", (
 });
 
 test("task actions are additive v2 endpoints with expected version contracts", () => {
-  for (const action of ["claim", "release-claim", "start", "checklist", "complete", "skip", "cancel", "reopen", "force-release"]) {
+  for (const action of ["claim", "release-claim", "start", "complete", "skip", "cancel", "reopen", "force-release"]) {
     assert.match(index, new RegExp(`/api/housekeeping/v2/tasks/:taskId/${action}`));
   }
+  assert.doesNotMatch(index, /\/api\/housekeeping\/v2\/tasks\/:taskId\/checklist/);
+  assert.match(index, /\/api\/housekeeping\/v2\/rooms\/:unitId\/on-demand-cleaning/);
+  assert.match(index, /\/api\/housekeeping\/v2\/rooms\/:unitId\/linen-required/);
   assert.match(roomService, /expectedVersion is required/);
   assert.match(roomService, /housekeeping_task_stale_version/);
   assert.match(client, /expectedVersion/);
+  assert.doesNotMatch(client, /createOnDemandCleaning/);
+  assert.match(client, /markLinenRequired/);
 });
 
 test("server-derived capabilities enforce assignment, owner force release and maintenance blocking", () => {
@@ -55,34 +67,78 @@ test("Owner Force Room Released updates Reception release and records audit with
   assert.doesNotMatch(roomService, /bulk/i);
 });
 
-test("turnover checklist lives in room detail and completion requires it", () => {
-  assert.match(roomService, /TURNOVER_CHECKLIST/);
-  assert.match(roomService, /INSERT OR IGNORE INTO housekeeping_task_checklist_items/);
-  assert.match(roomService, /missingChecklistItems/);
-  assert.match(roomService, /Checklist incomplete:/);
-  assert.match(roomPage, /function Checklist/);
-  assert.match(roomPage, /Complete turnover/);
+test("task detail uses intervention help and trust completion instead of detailed checklists", () => {
+  assert.doesNotMatch(roomService, /TURNOVER_CHECKLIST|STANDARD_CLEANING_CHECKLIST|LINEN_CHANGE_CHECKLIST/);
+  assert.doesNotMatch(roomService, /INSERT OR IGNORE INTO housekeeping_task_checklist_items/);
+  assert.doesNotMatch(roomService, /missingChecklistItems|Checklist incomplete:/);
+  assert.doesNotMatch(roomService, /updateHousekeepingV2ChecklistItem/);
+  assert.match(roomService, /canEditChecklist: false/);
+  assert.match(roomWorkspace, /Complete Cleaning/);
+  assert.match(roomWorkspace, /Complete Full Cleaning/);
+  assert.match(roomWorkspace, /task\.capabilities\.canComplete && task\.taskType === "STANDARD_CLEANING"/);
+  assert.doesNotMatch(roomWorkspace, /function Checklist|updateHousekeepingTaskChecklist|Complete checklist/);
+  assert.doesNotMatch(client, /updateHousekeepingTaskChecklist/);
 });
 
-test("Housekeeping room detail can view but not resolve Reception alerts", () => {
-  assert.match(roomPage, /Reception state/);
-  assert.match(roomPage, /room\.reception\.alerts/);
-  assert.doesNotMatch(roomPage, /resolveReception/);
+test("on-demand and linen override preserve explicit counter choices", () => {
+  assert.match(roomService, /normalizeOnDemandCleaningInput/);
+  assert.doesNotMatch(roomService, /On-demand cleaning note is required/);
+  assert.match(roomService, /taskType: "ON_DEMAND_CLEANING"/);
+  assert.match(roomService, /source: "HOUSEKEEPING_MANUAL"/);
+  assert.match(roomService, /On-demand completion requires Cleaning or Full Cleaning selection/);
+  assert.match(roomService, /linen_override_selected/);
+  assert.match(roomService, /linen_override_cancelled/);
+  assert.doesNotMatch(roomWorkspace, /Linen required/);
+});
+
+test("Housekeeping UI cannot initiate On-Demand Cleaning", () => {
+  assert.match(index, /\/api\/housekeeping\/v2\/rooms\/:unitId\/on-demand-cleaning/);
+  assert.match(index, /\/api\/rooms\/:id\/on-demand-cleaning/);
+  assert.match(roomClient, /createRoomOnDemandCleaning/);
+  assert.match(roomWorkspace, /Create On-Demand Cleaning/);
+  assert.doesNotMatch(homePage, /createOnDemandCleaning|on-demand-cleaning/);
+  assert.doesNotMatch(client, /createOnDemandCleaning|on-demand-cleaning/);
+});
+
+test("Housekeeping no longer owns a duplicate room detail surface", () => {
+  assert.doesNotMatch(router, /<HousekeepingRoomPage/);
+  assert.doesNotMatch(homePage, /Room context|Reception state|Recent activity/);
+  assert.doesNotMatch(homePage, /resolveReception/);
   assert.doesNotMatch(client, /alerts.*resolve/);
 });
 
-test("room workspace preserves compact home and avoids full controls on home cards", () => {
-  assert.match(roomPage, /Back to Housekeeping/);
-  assert.match(roomPage, /PageLoading/);
-  assert.match(roomPage, /PageError/);
-  assert.match(roomPage, /No active housekeeping task/);
+test("Room Workspace owns active housekeeping task and room operations", () => {
+  assert.match(roomWorkspace, /Active task/);
+  assert.match(roomWorkspace, /room\.housekeeping\.tasks/);
+  assert.match(roomWorkspace, /room\.reception\.passportStatus/);
+  assert.match(roomWorkspace, /room\.reception\.depositStatus/);
+  assert.match(roomWorkspace, /room\.procurement/);
   assert.doesNotMatch(homePage, /function Checklist/);
-  assert.doesNotMatch(homePage, /claimHousekeepingTask/);
+  assert.doesNotMatch(homePage, /AssignmentControl/);
+  assert.doesNotMatch(homePage, /<select/);
+});
+
+test("Room Workspace task actions refresh on stale or changed task data", () => {
+  assert.match(roomWorkspace, /onSettled: async \(\) =>/);
+  assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["room-detail", roomId\] \}\)/);
+  assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
+  assert.match(roomWorkspace, /This task changed\. The room is refreshing\./);
+  assert.doesNotMatch(roomWorkspace, /Release claim/);
+});
+
+test("Room Workspace displays carried-over cleaning as the same active Priority task", () => {
+  assert.match(roomDetailService, /function taskIsCarriedOver/);
+  assert.match(roomDetailService, /task\.operationalDate < today/);
+  assert.match(roomDetailService, /Was scheduled previously\. Please do this first today\./);
+  assert.match(roomDetailService, /roomTaskBelongsToCurrentStay/);
+  assert.match(roomDetailService, /task\.isCarriedOver/);
+  assert.match(roomWorkspace, /task\.isCarriedOver \? "Priority" : task\.priority/);
+  assert.doesNotMatch(roomDetailService, /Cleaning overdue|overdue by|SLA/i);
 });
 
 test("Sprint 3 keeps Passport out of scope", () => {
   assert.doesNotMatch(roomService, /PassportWorkflow|passport-ocr|OCR|booking-passports/);
-  assert.doesNotMatch(roomPage, /PassportWorkflow|passport-ocr|OCR/);
+  assert.doesNotMatch(homePage, /PassportWorkflow|passport-ocr|OCR/);
   assert.doesNotMatch(client, /passport/i);
 });
 

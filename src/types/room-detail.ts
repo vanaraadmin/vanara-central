@@ -1,8 +1,10 @@
 import type { MaintenanceCategory, MaintenancePriority, MaintenanceTicketDetail } from "./maintenance";
+import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
 
 export type RoomHousekeepingStatus = "Dirty" | "Cleaning" | "Ready";
 export type CheckoutCompletionSource = "reception" | "automatic-fallback" | "none";
 export type RoomTimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
+export type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
 
 export interface RoomCurrentStay {
   bookingId: number;
@@ -18,7 +20,9 @@ export interface RoomCurrentStay {
 }
 
 export interface RoomHousekeeping {
-  status: RoomHousekeepingStatus;
+  status: RoomOperationalStatus | RoomHousekeepingStatus;
+  primaryStatus: RoomOperationalStatus | RoomHousekeepingStatus;
+  primaryStatusTone: string;
   assignedTo: string | null;
   assignedAt: string | null;
   lastUpdated: string | null;
@@ -27,6 +31,33 @@ export interface RoomHousekeeping {
   checklistCompleted: number;
   checklistTotal: number;
   notes: string | null;
+  activeTask: RoomHousekeepingTask | null;
+  tasks: RoomHousekeepingTask[];
+  canCreateOnDemandCleaning: boolean;
+}
+
+export interface RoomHousekeepingTask {
+  id: number;
+  taskType: HousekeepingTaskType;
+  title: string;
+  status: HousekeepingTaskStatus;
+  priority: HousekeepingTaskPriority;
+  isCarriedOver: boolean;
+  reason: string;
+  version: number;
+  assignee: { id: string; name: string } | null;
+  operationalDate: string;
+  dueCycleDate: string | null;
+  updatedAt: string;
+  capabilities: {
+    canClaim: boolean;
+    canReleaseClaim: boolean;
+    canStart: boolean;
+    canComplete: boolean;
+    canSkip: boolean;
+    canCancel: boolean;
+    canReopen: boolean;
+  };
 }
 
 export interface RoomNote {
@@ -75,6 +106,8 @@ export interface RoomReceptionSummary {
   departure: string | null;
   checkInStatus: string;
   checkOutStatus: string;
+  passportStatus: string;
+  depositStatus: string;
   alerts: ReceptionRoomAlert[];
   notes: string[];
 }
@@ -86,7 +119,7 @@ export interface RoomDetail {
   accommodationType: string;
   roomStatus: string;
   occupancyStatus: string;
-  housekeepingStatus: RoomHousekeepingStatus;
+  housekeepingStatus: string;
   operationalPriority: string;
   checkoutCompleted: boolean;
   checkoutCompletionSource: CheckoutCompletionSource;
@@ -101,6 +134,10 @@ export interface RoomDetail {
     highestPriority: string | null;
     outOfService: boolean;
     tickets: MaintenanceTicketDetail[];
+  };
+  procurement: {
+    attentionCount: number;
+    latestRequest: string | null;
   };
   reception: RoomReceptionSummary;
   notes: RoomNote[];
@@ -120,6 +157,12 @@ export interface CreateRoomMaintenanceTicketPayload {
   externalAssigneeLabel?: string | null;
   externalAssigneeNote?: string | null;
   outOfService?: boolean;
+}
+
+export interface CreateRoomOnDemandCleaningPayload {
+  note?: string | null;
+  priority?: "low" | "normal" | "high" | "urgent";
+  idempotencyKey?: string | null;
 }
 
 export interface RoomDetailResponse {

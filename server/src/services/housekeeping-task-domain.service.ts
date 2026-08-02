@@ -106,6 +106,7 @@ export interface CreateHousekeepingTaskInput {
   onDemandSource?: string | null;
   idempotencyKey?: string | null;
   receptionReleased?: boolean;
+  creationMetadata?: Record<string, unknown>;
 }
 
 export interface TransitionHousekeepingTaskInput {
@@ -225,6 +226,36 @@ export async function isReceptionRoomReleased(env: HousekeepingTaskBindings, boo
   return row?.room_released === 1;
 }
 
+export async function syncReleasedTurnoverTasks(env: HousekeepingTaskBindings, date: string, actor?: HousekeepingActor | CurrentUser | null): Promise<void> {
+  const rows = await env.DB.prepare(`
+    SELECT DISTINCT ht.task_id, ht.version
+    FROM housekeeping_tasks ht
+    JOIN bookings b ON b.booking_id = ht.booking_id
+    JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
+    WHERE ht.task_type = 'TURNOVER'
+      AND ht.status = 'WAITING_FOR_RECEPTION'
+      AND ht.operational_date = ?
+      AND rs.room_released = 1
+  `).bind(date).all<{ task_id: number; version: number }>();
+  for (const row of rows.results ?? []) {
+    try {
+      await transitionHousekeepingTask(env, row.task_id, {
+        action: "release_from_reception",
+        expectedVersion: row.version,
+        actor,
+        idempotencyKey: `reception-release:${row.task_id}:${row.version}`,
+        metadata: { source: "reception_stays.room_released" },
+      });
+    } catch (error: unknown) {
+      if (error instanceof HousekeepingTaskDomainError && (error.code === "housekeeping_task_stale_version" || error.code === "housekeeping_invalid_transition")) {
+        const current = await getHousekeepingTask(env, row.task_id);
+        if (current?.taskType === "TURNOVER" && current.status !== "WAITING_FOR_RECEPTION") continue;
+      }
+      throw error;
+    }
+  }
+}
+
 export async function createHousekeepingTask(env: HousekeepingTaskBindings, input: CreateHousekeepingTaskInput, actor?: HousekeepingActor | CurrentUser | null): Promise<HousekeepingTask> {
   const idempotencyKey = normalizeOptionalText(input.idempotencyKey);
   if (idempotencyKey) {
@@ -275,7 +306,7 @@ export async function createHousekeepingTask(env: HousekeepingTaskBindings, inpu
 
   const created = await getHousekeepingTask(env, Number(result.meta.last_row_id));
   if (!created) throw new HousekeepingTaskDomainError("housekeeping_task_not_found", "Housekeeping task could not be loaded after creation.");
-  await insertTaskEvent(env, created.id, "created", null, created.status, normalizedActor, null, { taskType: created.taskType }, idempotencyKey ? `${idempotencyKey}:created` : null, now);
+  await insertTaskEvent(env, created.id, "created", null, created.status, normalizedActor, null, { taskType: created.taskType, ...(input.creationMetadata ?? {}) }, idempotencyKey ? `${idempotencyKey}:created` : null, now);
   return created;
 }
 
@@ -309,7 +340,7 @@ export async function transitionHousekeepingTask(env: HousekeepingTaskBindings, 
 
 export async function applyCompletionCounters(env: HousekeepingTaskBindings, task: HousekeepingTask, completion: HousekeepingCompletionInput, now = new Date().toISOString()): Promise<void> {
   const completedAt = completion.completedAt ?? task.completedAt ?? now;
-  const updateStandard = task.taskType === "STANDARD_CLEANING" || task.taskType === "TURNOVER" || task.taskType === "ON_DEMAND_CLEANING" ? completion.standardCleaningCompleted !== false : completion.standardCleaningCompleted === true;
+  const updateStandard = task.taskType === "STANDARD_CLEANING" || task.taskType === "TURNOVER" ? completion.standardCleaningCompleted !== false : completion.standardCleaningCompleted === true;
   const updateLinen = task.taskType === "LINEN_CHANGE" || completion.linenChangeCompleted === true;
 
   if (!updateStandard && !updateLinen) return;

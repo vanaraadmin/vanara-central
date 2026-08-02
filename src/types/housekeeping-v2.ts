@@ -1,8 +1,9 @@
 import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
 
-export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill" | "ready" | "procurement";
+export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
+export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "on_demand_previous_day" | "cleaning_due_today" | "on_demand_cleaning" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Summary {
   awaitingReceptionRelease: number;
@@ -19,29 +20,23 @@ export interface HousekeepingV2Summary {
 export interface HousekeepingV2TaskCard {
   unitId: number;
   unitName: string;
-  roomType: string;
-  bookingId: number | null;
-  guestName: string | null;
-  stayStatus: HousekeepingV2StayStatus;
-  arrivalDate: string | null;
-  departureDate: string | null;
-  nextCheckInAt: string | null;
-  taskId: number | null;
-  taskType: HousekeepingTaskType | null;
-  taskStatus: HousekeepingTaskStatus | null;
+  taskId: number;
+  taskVersion: number;
+  taskType: HousekeepingTaskType;
+  taskStatus: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
+  operationalDate: string;
+  currentQueue: HousekeepingV2SectionId;
+  displayReason: string | null;
   assignee: string | null;
-  isOverdue: boolean;
   isBlocked: boolean;
   blockReason: string | null;
-  receptionReleaseState: HousekeepingV2ReceptionReleaseState;
   waterQuantity: number | null;
-  linenRequired: boolean;
-  alertSummary: string | null;
-  maintenanceSummary: string | null;
+  reasonCodes: HousekeepingV2ReasonCode[];
   capabilities: {
     canOpenRoom: boolean;
     canClaim: boolean;
+    canReleaseClaim: boolean;
     canStart: boolean;
     canComplete: boolean;
     canSkip: boolean;
@@ -106,6 +101,8 @@ export interface HousekeepingV2TaskCapabilities {
   canForceRelease: boolean;
   canCreateMaintenanceIssue: boolean;
   canCreateProcurementRequest: boolean;
+  canCreateOnDemandCleaning: boolean;
+  canMarkLinenRequired: boolean;
 }
 
 export interface HousekeepingV2RoomTask {
@@ -185,6 +182,7 @@ export interface HousekeepingV2RoomDetail {
     lastLinenChangeAt: string | null;
     nextLinenDue: string | null;
     linenOverride: boolean;
+    linenOverrideReason: string | null;
     waterRefillStatus: HousekeepingTaskStatus | "NOT_DUE" | null;
   };
   maintenance: {
