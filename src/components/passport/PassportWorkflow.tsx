@@ -31,6 +31,12 @@ import {
   shouldStartAutoCaptureTimer,
   type PassportAutoCaptureCandidate,
 } from "../../utils/passport-auto-capture";
+import {
+  PASSPORT_REVIEW_FIELDS,
+  normalizePassportReviewDraft,
+  passportReviewSaveDisabledReason,
+  type PassportReviewField,
+} from "../../utils/passport-review";
 import { passportMessage, type PassportMessageKey } from "./passport-messages";
 
 type CameraStartupState = "idle" | "starting" | "ready" | "failed" | "permission_denied" | "unavailable";
@@ -51,7 +57,6 @@ type TorchVideoTrackConstraintSet = MediaTrackConstraintSet & {
   torch?: boolean;
 };
 
-type PassportReviewField = "firstName" | "middleName" | "lastName" | "passportNumber" | "nationality" | "gender" | "birthDate" | "expiryDate";
 type ReadyCaptureCandidate = PassportAutoCaptureCandidate & {
   capturedAt: number;
   debug: CaptureDebug;
@@ -60,17 +65,6 @@ type ReadyCaptureCandidate = PassportAutoCaptureCandidate & {
 
 const PASSPORT_IMAGE_ACCEPT = "image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif";
 const MIN_CAPTURE_LONG_EDGE = 1000;
-const PASSPORT_REVIEW_FIELDS: Array<{ key: PassportReviewField; label: string }> = [
-  { key: "firstName", label: "First name" },
-  { key: "middleName", label: "Middle name" },
-  { key: "lastName", label: "Last name" },
-  { key: "passportNumber", label: "Passport number" },
-  { key: "nationality", label: "Nationality" },
-  { key: "gender", label: "Gender" },
-  { key: "birthDate", label: "Birth date" },
-  { key: "expiryDate", label: "Expiry date" },
-];
-const TM30_REQUIRED_REVIEW_FIELDS: PassportReviewField[] = ["firstName", "lastName", "passportNumber", "nationality", "gender", "birthDate"];
 
 export interface PassportWorkflowProps {
   bookingId: number;
@@ -234,13 +228,13 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
   }
 
   if (!open || state.phase === "CLOSED" || state.phase === "COMPLETED") return null;
+  const reviewingPassport = state.phase === "REVIEW" || state.phase === "SAVING" || state.phase === "SAVE_FAILED";
 
   return (
     <div className="passport-workflow" role="dialog" aria-modal="true" aria-labelledby="passport-workflow-title">
       <header className="passport-workflow__header">
-        <button onClick={cancelWorkflow} type="button">Cancel</button>
         <div>
-          <span>Passport Registration</span>
+          <span>{reviewingPassport ? "Review Passport" : "Passport Registration"}</span>
           <h2 id="passport-workflow-title">{guestName}</h2>
         </div>
       </header>
@@ -851,18 +845,16 @@ function PassportReviewStep({
   onSave: (passport: PassportData) => void;
   passport: PassportData;
 }) {
-  const [draft, setDraft] = useState<PassportData>(passport);
+  const [draft, setDraft] = useState<PassportData>(() => normalizePassportReviewDraft(passport));
+
   const verification = passportVerificationSummary(draft);
   const nameReview = passportNameReviewSummary(draft);
-  const missingRequiredFields = TM30_REQUIRED_REVIEW_FIELDS.filter((field) => !draft[field]?.trim());
   const passportNumberRequiresConfirmation = verification?.state !== undefined && verification.state !== "AUTO_VERIFIED" && verification.state !== "MANUALLY_VERIFIED";
-  const saveDisabledReason = isPending
-    ? "Verification still running."
-    : missingRequiredFields.length > 0
-      ? `Missing TM30 field: ${fieldLabel(missingRequiredFields[0])}.`
-      : passportNumberRequiresConfirmation
-        ? "Passport number requires confirmation."
-        : null;
+  const saveDisabledReason = passportReviewSaveDisabledReason({
+    isSaving: isPending,
+    ocrCompleted: true,
+    passport: draft,
+  });
   const verifierTimedOut = passport.verification && typeof passport.verification === "object" && "timing" in passport.verification
     ? (passport.verification.timing as { verifierTimedOut?: boolean; visualOpenAiRequestId?: string | null; mrzOpenAiRequestId?: string | null; verifierOpenAiRequestId?: string | null } | undefined)?.verifierTimedOut === true
     : false;
@@ -872,10 +864,6 @@ function PassportReviewStep({
 
   return (
     <section className="passport-review passport-wizard-step" aria-label="Review passport OCR">
-      <header>
-        <span>Passport OCR Review</span>
-        <h3>Review extracted fields</h3>
-      </header>
       <div className="passport-review__fields">
         {PASSPORT_REVIEW_FIELDS.map((field) => (
           <label key={field.key}>
@@ -933,19 +921,15 @@ function PassportReviewStep({
       )}
       {error && <p className="reception-modal__error" role="alert">{error}</p>}
       {saveDisabledReason && <p className="passport-review__save-reason" role="status">{saveDisabledReason}</p>}
-      <div className="passport-workflow__actions">
+      <div className="passport-workflow__actions passport-review-actions">
         <button disabled={isPending} onClick={onCancel} type="button">Cancel</button>
-        <button disabled={isPending} onClick={onRetake} type="button">Retake photo</button>
-        <button disabled={Boolean(saveDisabledReason)} onClick={() => onSave(draft)} type="button">
+        <button disabled={isPending} onClick={onRetake} type="button">Retake Photo</button>
+        <button disabled={Boolean(saveDisabledReason)} onClick={() => onSave(normalizePassportReviewDraft(draft))} type="button">
           {isPending ? "Saving..." : "Save Passport"}
         </button>
       </div>
     </section>
   );
-}
-
-function fieldLabel(field: PassportReviewField): string {
-  return PASSPORT_REVIEW_FIELDS.find((item) => item.key === field)?.label ?? field;
 }
 
 function updateDraftField(passport: PassportData, field: PassportReviewField, value: string | null): PassportData {

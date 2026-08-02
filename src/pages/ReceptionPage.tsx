@@ -16,6 +16,7 @@ import { CalendarIcon, RoomIcon, UserIcon } from "../components/OperationsIcons"
 import { loadCurrentUser } from "../services/auth.service";
 import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
 import type { BookingPassport, PassportData, ReceptionOverview, ReceptionStay } from "../types/reception";
+import { formatNationalityText } from "../utils/country-nationality";
 import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
@@ -127,11 +128,6 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   if (value.includes("trip")) return "Trip.com";
   if (value.includes("direct")) return "Direct";
   return stay.bookingSource || "Direct";
-}
-
-function formatNationality(value: string | null): string | null {
-  const cleaned = value?.trim();
-  return cleaned ? cleaned.toUpperCase() : null;
 }
 
 function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
@@ -336,7 +332,7 @@ function StayCard({
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
-  const nationality = formatNationality(stay.nationality);
+  const nationality = formatNationalityText(stay.nationality);
 
   return (
     <article className={`reception-card reception-card--${type}`} onClick={() => onDetailsRequest(stay)}>
@@ -973,6 +969,7 @@ function PassportManagementPanel({
       <div className="passport-management__list">
         {passports.map((passport) => {
           const verification = passportVerificationBadge(passport);
+          const nationality = formatNationalityText(passport.nationality);
           return (
             <article className="passport-management-card" key={passport.id}>
               <div>
@@ -982,7 +979,7 @@ function PassportManagementPanel({
               <dl>
                 <div>
                   <dt>Nationality</dt>
-                  <dd>{passport.nationality ?? "Not available"}</dd>
+                  <dd>{nationality ?? "Not available"}</dd>
                 </div>
                 <div>
                   <dt>Verification</dt>

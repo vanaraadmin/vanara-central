@@ -3,10 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const receptionPage = await readFile(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8");
+const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css", import.meta.url), "utf8");
 const passportWorkflow = await readFile(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportWorkflowState = await readFile(new URL("../../src/utils/passport-workflow-state.ts", import.meta.url), "utf8");
 const receptionService = await readFile(new URL("../../src/services/reception.service.ts", import.meta.url), "utf8");
 const passportCrop = await readFile(new URL("../../src/utils/passport-crop.ts", import.meta.url), "utf8");
+const passportReview = await readFile(new URL("../../src/utils/passport-review.ts", import.meta.url), "utf8");
+const countryNationality = await readFile(new URL("../../src/utils/country-nationality.ts", import.meta.url), "utf8");
 const bookingPassportsMigration = await readFile(new URL("../migrations/0013_booking_passports.sql", import.meta.url), "utf8");
 
 test("booking details sheet reuses the existing reception sheet structure", () => {
@@ -25,10 +28,9 @@ test("booking cards open booking details without replacing existing contact and 
 });
 
 test("check-in and check-out cards render nationality text without flags", async () => {
-  const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css", import.meta.url), "utf8");
-  assert.match(receptionPage, /function formatNationality\(value: string \| null\): string \| null/);
-  assert.match(receptionPage, /cleaned \? cleaned\.toUpperCase\(\) : null/);
-  assert.match(receptionPage, /const nationality = formatNationality\(stay\.nationality\);/);
+  assert.match(receptionPage, /import \{ formatNationalityText \} from "\.\.\/utils\/country-nationality";/);
+  assert.match(receptionPage, /const nationality = formatNationalityText\(stay\.nationality\);/);
+  assert.match(countryNationality, /export function countryCodeToNationality/);
   assert.match(receptionPage, /\{nationality \? <p className="reception-nationality">\{nationality\}<\/p> : null\}/);
   assert.match(receptionPage, /<p className="reception-booking-source">\{bookingSourceLabel\(stay\)\}<\/p>/);
   assert.doesNotMatch(receptionPage, /reception-nationality-flag|nationalityFlagUrl|nationalityFlag/);
@@ -200,14 +202,26 @@ test("verification timeout opens review with manual confirmation and technical d
 });
 
 test("passport review save button always explains disabled state", () => {
-  assert.match(passportWorkflow, /TM30_REQUIRED_REVIEW_FIELDS/);
-  assert.match(passportWorkflow, /Missing TM30 field:/);
-  assert.match(passportWorkflow, /Passport number requires confirmation\./);
+  assert.match(passportReview, /TM30_REQUIRED_REVIEW_FIELDS/);
+  assert.match(passportReview, /Missing TM30 field:/);
+  assert.doesNotMatch(passportWorkflow, /Passport number requires confirmation\./);
   assert.match(passportWorkflow, /passport-review__save-reason/);
   assert.match(passportWorkflow, /disabled=\{Boolean\(saveDisabledReason\)\}/);
   assert.match(passportWorkflow, /markPassportNumberNeedsConfirmation/);
   assert.match(passportWorkflow, /passportNameReviewSummary/);
   assert.match(passportWorkflow, /Given names need review/);
+});
+
+test("passport review is a compact quick review with one sticky action bar", () => {
+  const reviewStep = passportWorkflow.match(/function PassportReviewStep[\s\S]*?function updateDraftField/)?.[0] ?? "";
+  const reviewCss = receptionCss.match(/\.passport-review\s*\{[\s\S]*?\.passport-management/)?.[0] ?? "";
+  assert.match(passportWorkflow, /reviewingPassport \? "Review Passport" : "Passport Registration"/);
+  assert.doesNotMatch(reviewStep, /Passport OCR Review|Review extracted fields/);
+  assert.match(reviewStep, /className="passport-workflow__actions passport-review-actions"/);
+  assert.match(reviewCss, /\.passport-review-actions/);
+  assert.match(reviewCss, /position:\s*sticky/);
+  assert.match(reviewCss, /height:\s*44px/);
+  assert.match(reviewCss, /env\(safe-area-inset-bottom\)/);
 });
 
 test("passport camera latches READY through tap micro-movement", () => {

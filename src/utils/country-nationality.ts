@@ -1,0 +1,145 @@
+const NATIONALITY_BY_COUNTRY_CODE: Record<string, string> = {
+  AR: "ARGENTINIAN",
+  AT: "AUSTRIAN",
+  AU: "AUSTRALIAN",
+  BE: "BELGIAN",
+  BR: "BRAZILIAN",
+  CA: "CANADIAN",
+  CH: "SWISS",
+  CN: "CHINESE",
+  CZ: "CZECH",
+  DE: "GERMAN",
+  DK: "DANISH",
+  ES: "SPANISH",
+  FI: "FINNISH",
+  FR: "FRENCH",
+  GB: "BRITISH",
+  GR: "GREEK",
+  IE: "IRISH",
+  IN: "INDIAN",
+  IT: "ITALIAN",
+  JP: "JAPANESE",
+  KH: "CAMBODIAN",
+  KR: "KOREAN",
+  LA: "LAO",
+  MM: "MYANMAR",
+  MY: "MALAYSIAN",
+  NL: "DUTCH",
+  NO: "NORWEGIAN",
+  NZ: "NEW ZEALANDER",
+  PH: "FILIPINO",
+  PL: "POLISH",
+  PT: "PORTUGUESE",
+  RU: "RUSSIAN",
+  SE: "SWEDISH",
+  SG: "SINGAPOREAN",
+  TH: "THAI",
+  TR: "TURKISH",
+  UK: "BRITISH",
+  US: "AMERICAN",
+  VN: "VIETNAMESE",
+};
+
+const NATIONALITY_BY_ALPHA3_CODE: Record<string, string> = {
+  ARG: "ARGENTINIAN",
+  AUS: "AUSTRALIAN",
+  AUT: "AUSTRIAN",
+  BEL: "BELGIAN",
+  BRA: "BRAZILIAN",
+  CAN: "CANADIAN",
+  CHE: "SWISS",
+  CHN: "CHINESE",
+  CZE: "CZECH",
+  DEU: "GERMAN",
+  DNK: "DANISH",
+  ESP: "SPANISH",
+  FIN: "FINNISH",
+  FRA: "FRENCH",
+  GBR: "BRITISH",
+  GER: "GERMAN",
+  GRC: "GREEK",
+  IND: "INDIAN",
+  IRL: "IRISH",
+  ITA: "ITALIAN",
+  JPN: "JAPANESE",
+  KHM: "CAMBODIAN",
+  KOR: "KOREAN",
+  LAO: "LAO",
+  MMR: "MYANMAR",
+  MYS: "MALAYSIAN",
+  NLD: "DUTCH",
+  NOR: "NORWEGIAN",
+  NZL: "NEW ZEALANDER",
+  PHL: "FILIPINO",
+  POL: "POLISH",
+  PRT: "PORTUGUESE",
+  RUS: "RUSSIAN",
+  SGP: "SINGAPOREAN",
+  SWE: "SWEDISH",
+  THA: "THAI",
+  TUR: "TURKISH",
+  USA: "AMERICAN",
+  VNM: "VIETNAMESE",
+};
+
+const NATIONALITY_BY_COUNTRY_NAME: Record<string, string> = {
+  ARGENTINA: "ARGENTINIAN",
+  AUSTRALIA: "AUSTRALIAN",
+  AUSTRIA: "AUSTRIAN",
+  BELGIUM: "BELGIAN",
+  BRAZIL: "BRAZILIAN",
+  CAMBODIA: "CAMBODIAN",
+  CANADA: "CANADIAN",
+  CHINA: "CHINESE",
+  "CZECH REPUBLIC": "CZECH",
+  DENMARK: "DANISH",
+  FINLAND: "FINNISH",
+  FRANCE: "FRENCH",
+  GERMANY: "GERMAN",
+  GREECE: "GREEK",
+  INDIA: "INDIAN",
+  IRELAND: "IRISH",
+  ITALY: "ITALIAN",
+  JAPAN: "JAPANESE",
+  LAOS: "LAO",
+  MALAYSIA: "MALAYSIAN",
+  MYANMAR: "MYANMAR",
+  NETHERLANDS: "DUTCH",
+  "NEW ZEALAND": "NEW ZEALANDER",
+  NORWAY: "NORWEGIAN",
+  PHILIPPINES: "FILIPINO",
+  POLAND: "POLISH",
+  PORTUGAL: "PORTUGUESE",
+  RUSSIA: "RUSSIAN",
+  SINGAPORE: "SINGAPOREAN",
+  SPAIN: "SPANISH",
+  SWEDEN: "SWEDISH",
+  SWITZERLAND: "SWISS",
+  THAILAND: "THAI",
+  "THE UNITED STATES OF AMERICA": "AMERICAN",
+  TURKEY: "TURKISH",
+  "UNITED KINGDOM": "BRITISH",
+  "UNITED STATES": "AMERICAN",
+  "UNITED STATES OF AMERICA": "AMERICAN",
+  VIETNAM: "VIETNAMESE",
+};
+
+function normalizedNationalityInput(value: string | null | undefined): string | null {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned.toUpperCase() : null;
+}
+
+export function countryCodeToNationality(value: string | null | undefined): string | null {
+  const normalized = normalizedNationalityInput(value);
+  if (!normalized) return null;
+  return NATIONALITY_BY_COUNTRY_CODE[normalized] ?? NATIONALITY_BY_ALPHA3_CODE[normalized] ?? null;
+}
+
+export function formatNationalityText(value: string | null | undefined): string | null {
+  const normalized = normalizedNationalityInput(value);
+  if (!normalized) return null;
+  const mapped = countryCodeToNationality(normalized) ?? NATIONALITY_BY_COUNTRY_NAME[normalized];
+  if (mapped) return mapped;
+  if (/^[A-Z]{2,3}$/.test(normalized)) return null;
+  return normalized;
+}
