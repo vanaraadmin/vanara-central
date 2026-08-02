@@ -40,7 +40,10 @@ export interface BookingPulseItem {
   bookingStatus?: string | null;
   guestCount?: number | null;
   totalPrice?: number | null;
-  currency?: string | null;
+}
+
+export interface ListRecentBookingEventsOptions {
+  includeBookingValue?: boolean;
 }
 
 interface BookingEventRow {
@@ -60,6 +63,7 @@ interface BookingEventRow {
   booking_status: string | null;
   adults: number | null;
   children: number | null;
+  price: number | null;
   api_source: string | null;
   channel: string | null;
 }
@@ -125,8 +129,13 @@ function guestCount(row: BookingEventRow): number | null {
   return total > 0 ? total : null;
 }
 
-function toBookingPulseItem(row: BookingEventRow): BookingPulseItem {
+function cleanOptionalNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEventsOptions): BookingPulseItem {
   const eventType = pulseTypeFor(row.event_type);
+  const includeBookingValue = options.includeBookingValue === true;
   return {
     eventId: `${row.beds24_booking_id}:${eventType}:${row.occurred_at}`,
     bookingId: String(row.beds24_booking_id),
@@ -143,8 +152,7 @@ function toBookingPulseItem(row: BookingEventRow): BookingPulseItem {
     stayNights: stayNights(row.arrival_date, row.departure_date),
     bookingStatus: cleanOptionalText(row.booking_status),
     guestCount: guestCount(row),
-    totalPrice: null,
-    currency: null,
+    totalPrice: includeBookingValue ? cleanOptionalNumber(row.price) : null,
   };
 }
 
@@ -211,7 +219,12 @@ export async function recordBookingEvent(
   ).run();
 }
 
-export async function listRecentBookingEvents(env: BookingEventsBindings, limit = 3, now = new Date()): Promise<BookingPulseItem[]> {
+export async function listRecentBookingEvents(
+  env: BookingEventsBindings,
+  limit = 3,
+  now = new Date(),
+  options: ListRecentBookingEventsOptions = {},
+): Promise<BookingPulseItem[]> {
   const readLimit = Math.max(limit * 10, 50);
   const rows = await env.DB.prepare(`
     SELECT
@@ -231,6 +244,7 @@ export async function listRecentBookingEvents(env: BookingEventsBindings, limit 
       b.status AS booking_status,
       b.adults,
       b.children,
+      b.price,
       b.api_source,
       b.channel
     FROM booking_events be
@@ -252,7 +266,7 @@ export async function listRecentBookingEvents(env: BookingEventsBindings, limit 
     if (seenBookings.has(bookingKey)) continue;
 
     seenBookings.add(bookingKey);
-    items.push(toBookingPulseItem(row));
+    items.push(toBookingPulseItem(row, options));
     if (items.length >= limit) break;
   }
 

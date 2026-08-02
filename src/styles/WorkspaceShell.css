@@ -2,15 +2,17 @@
   --workspace-cream: #f4eddf;
   --workspace-ink: #173429;
   --workspace-line: rgba(244, 237, 223, 0.16);
+  --workspace-background-fallback: #0c241a;
 
   position: relative;
   min-height: 100dvh;
   overflow-x: hidden;
   color: var(--workspace-cream);
-  background:
-    #0c241a
-    url("../assets/img/background1.png")
-    center top / cover fixed no-repeat;
+  background-color: var(--workspace-background-fallback, #031c15);
+  background-image: var(--workspace-background, none);
+  background-position: center top;
+  background-size: cover;
+  background-repeat: no-repeat;
   font-family: var(--vc-font-display);
 }
 

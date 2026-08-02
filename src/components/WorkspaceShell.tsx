@@ -1,6 +1,12 @@
 import { Link } from "react-router-dom";
+import { useEffect } from "react";
 import logo from "../assets/img/logo.png";
 import shadowCanopy from "../assets/img/shadow-canopy.svg";
+import {
+  preloadWorkspaceBackground,
+  workspaceBackgroundStyle,
+  type WorkspaceBackgroundKey,
+} from "../config/workspaceBackgrounds";
 import "../styles/WorkspaceShell.css";
 
 const WORKSPACE_HOME_ROUTE = "/staff";
@@ -15,6 +21,15 @@ const workspaceNumbers = {
 } as const;
 
 type WorkspaceKey = keyof typeof workspaceNumbers;
+
+const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
+  reception: "reception",
+  housekeeping: "housekeeping",
+  maintenance: "maintenance",
+  procurement: "procurement",
+  rooms: "rooms",
+  chat: "chat",
+};
 
 interface WorkspaceShellProps {
   children: React.ReactNode;
@@ -38,8 +53,14 @@ export default function WorkspaceShell({
   title,
   workspace,
 }: WorkspaceShellProps) {
+  const backgroundKey = workspaceBackgroundKeys[workspace];
+
+  useEffect(() => {
+    preloadWorkspaceBackground(backgroundKey);
+  }, [backgroundKey]);
+
   return (
-    <main className="workspace-page">
+    <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
       <div className="workspace-page__veil" aria-hidden="true" />
 
       <section className="workspace-shell" aria-label={`${title} workspace`}>

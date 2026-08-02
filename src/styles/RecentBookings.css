@@ -371,25 +371,25 @@
   gap: 0.18rem;
 }
 
-.booking-pulse__detail dt,
-.booking-pulse__detail dd {
+.booking-pulse__detail-label,
+.booking-pulse__detail-value {
   margin: 0;
 }
 
-.booking-pulse__detail dt {
-  color: rgba(235, 230, 215, 0.42);
-  font-size: 0.55rem;
+.booking-pulse__detail-label {
+  color: rgba(235, 230, 215, 0.56);
+  font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.11em;
-  line-height: 1;
+  line-height: 1.25;
   text-transform: uppercase;
 }
 
-.booking-pulse__detail dd {
+.booking-pulse__detail-value {
   overflow: hidden;
-  color: rgba(250, 247, 238, 0.88);
-  font-size: 0.68rem;
-  line-height: 1.22;
+  color: rgba(250, 247, 238, 0.94);
+  font-size: 0.82rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
 }
 

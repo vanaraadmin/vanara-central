@@ -34,12 +34,19 @@ export interface StaffOverview {
     displayName: string;
     role: string;
   };
+  bookingPulseCapabilities: {
+    canViewBookingValue: boolean;
+  };
   bookingEvents: BookingPulseItem[];
   cards: StaffOverviewCard[];
 }
 
 function canAccess(user: CurrentUser, module: ModuleKey): boolean {
   return hasModulePermission(user, module, "access");
+}
+
+function canViewBookingValue(user: CurrentUser): boolean {
+  return (user.role === "Owner" || user.role === "Manager") && canAccess(user, "owner-dashboard");
 }
 
 async function housekeeping(env: StaffOverviewBindings, cache: { data?: HousekeepingOverview }): Promise<HousekeepingOverview> {
@@ -63,6 +70,9 @@ function withSummaryLines(card: StaffOverviewCard): StaffOverviewCard {
 export async function getStaffOverview(env: StaffOverviewBindings, user: CurrentUser): Promise<StaffOverview> {
   const cards: StaffOverviewCard[] = [];
   const housekeepingCache: { data?: HousekeepingOverview } = {};
+  const bookingPulseCapabilities = {
+    canViewBookingValue: canViewBookingValue(user),
+  };
 
   if (canAccess(user, "movements")) {
     const reception = await getReceptionOverview(env);
@@ -159,7 +169,10 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       displayName: user.displayName,
       role: user.role,
     },
-    bookingEvents: await listRecentBookingEvents(env, 3),
+    bookingPulseCapabilities,
+    bookingEvents: await listRecentBookingEvents(env, 3, new Date(), {
+      includeBookingValue: bookingPulseCapabilities.canViewBookingValue,
+    }),
     cards,
   };
 }

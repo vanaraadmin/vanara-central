@@ -70,12 +70,37 @@ test("Booking Pulse is self-contained and has no booking navigation action", () 
   assert.doesNotMatch(service, /navigationTarget|\/rooms\/|\/reception/);
 });
 
-test("Booking Pulse detail fields cover the approved informational set", () => {
-  for (const label of ["Guest", "Nationality", "Room", "Source", "Arrival", "Departure", "Stay", "Status", "Guest count", "Event", "Event time"]) {
+test("Booking Pulse expanded details keep only the compact informational set", () => {
+  for (const label of ["Guest", "Room", "Source", "Arrival", "Departure", "Stay", "Guest Count"]) {
     assert.match(component, new RegExp(`label="${label}"`));
+  }
+  for (const removedLabel of ["Status", "Event", "Event time", "Nationality", "Total"]) {
+    assert.doesNotMatch(component, new RegExp(`label="${removedLabel}"`));
   }
   assert.match(component, /guestCount/);
   assert.match(component, /guest count/i);
+});
+
+test("Booking Pulse booking value is gated by the server capability and rendered in THB", () => {
+  assert.match(component, /canViewBookingValue\?: boolean/);
+  assert.match(component, /canViewBookingValue = false/);
+  assert.match(component, /canViewBookingValue \?/);
+  assert.match(component, /label="Booking Value"/);
+  assert.match(component, /\} THB`/);
+  assert.doesNotMatch(component, /label="Currency"/);
+  assert.match(staffPage, /canViewBookingValue=\{canViewBookingValue\}/);
+  assert.doesNotMatch(component, /OwnerRecentBookings|StaffRecentBookings/);
+});
+
+test("Booking Pulse expanded typography has scoped readable label and value classes", () => {
+  assert.match(component, /className="booking-pulse__detail-label"/);
+  assert.match(component, /className="booking-pulse__detail-value"/);
+  assert.match(css, /\.booking-pulse__detail-label/);
+  assert.match(css, /font-size:\s*0\.64rem/);
+  assert.match(css, /line-height:\s*1\.25/);
+  assert.match(css, /\.booking-pulse__detail-value/);
+  assert.match(css, /font-size:\s*0\.82rem/);
+  assert.match(css, /line-height:\s*1\.35/);
 });
 
 test("Booking Pulse read model enforces retention without deleting source data", () => {

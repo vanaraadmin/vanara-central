@@ -7,6 +7,7 @@ export type RecentBookingEvent = BookingPulseItem;
 
 type RecentBookingsProps = {
   events: RecentBookingEvent[];
+  canViewBookingValue?: boolean;
   loading?: boolean;
   error?: boolean;
   onRetry?: () => void;
@@ -109,10 +110,9 @@ function formatStay(value?: number | null): string | null {
   return `${value} ${value === 1 ? "night" : "nights"}`;
 }
 
-function formatPrice(item: RecentBookingEvent): string | null {
-  if (item.totalPrice == null) return null;
-  const amount = item.totalPrice.toLocaleString("en-GB", { maximumFractionDigits: 2 });
-  return item.currency ? `${amount} ${item.currency}` : amount;
+function formatBookingValue(value?: number | null): string | null {
+  if (value == null) return null;
+  return `${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })} THB`;
 }
 
 function safeDetailsId(eventId: string): string {
@@ -123,21 +123,22 @@ function BookingPulseDetail({ label, value }: { label: string; value?: string | 
   if (value == null || value === "") return null;
   return (
     <div className="booking-pulse__detail">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+      <dt className="booking-pulse__detail-label">{label}</dt>
+      <dd className="booking-pulse__detail-value">{value}</dd>
     </div>
   );
 }
 
 function BookingPulseDetails({
+  canViewBookingValue,
   id,
   item,
 }: {
+  canViewBookingValue: boolean;
   id: string;
   item: RecentBookingEvent;
 }) {
-  const flag = countryCodeToFlag(item.countryCode);
-  const nationality = [flag, item.nationality].filter(Boolean).join(" ");
+  const bookingValue = canViewBookingValue ? formatBookingValue(item.totalPrice) : null;
 
   return (
     <div
@@ -148,28 +149,26 @@ function BookingPulseDetails({
     >
       <dl className="booking-pulse__detail-grid">
         <BookingPulseDetail label="Guest" value={item.guestName} />
-        <BookingPulseDetail label="Nationality" value={nationality || null} />
         <BookingPulseDetail label="Room" value={item.unitName} />
         <BookingPulseDetail label="Source" value={item.source} />
         <BookingPulseDetail label="Arrival" value={formatDate(item.arrivalDate)} />
         <BookingPulseDetail label="Departure" value={formatDate(item.departureDate)} />
         <BookingPulseDetail label="Stay" value={formatStay(item.stayNights)} />
-        <BookingPulseDetail label="Status" value={item.bookingStatus} />
-        <BookingPulseDetail label="Guest count" value={formatGuestCount(item.guestCount)} />
-        <BookingPulseDetail label="Event" value={EVENT_LABELS[item.eventType]} />
-        <BookingPulseDetail label="Event time" value={formatDateTime(item.eventTimestamp)} />
-        <BookingPulseDetail label="Total" value={formatPrice(item)} />
+        <BookingPulseDetail label="Guest Count" value={formatGuestCount(item.guestCount)} />
+        <BookingPulseDetail label="Booking Value" value={bookingValue} />
       </dl>
     </div>
   );
 }
 
 function BookingEventRow({
+  canViewBookingValue,
   event,
   expanded,
   index,
   onToggle,
 }: {
+  canViewBookingValue: boolean;
   event: RecentBookingEvent;
   expanded: boolean;
   index: number;
@@ -226,7 +225,7 @@ function BookingEventRow({
         </time>
       </button>
 
-      {expanded ? <BookingPulseDetails id={detailsId} item={event} /> : null}
+      {expanded ? <BookingPulseDetails canViewBookingValue={canViewBookingValue} id={detailsId} item={event} /> : null}
 
       <span className="recent-bookings__event-index" aria-hidden="true">
         {String(index + 1).padStart(2, "0")}
@@ -278,6 +277,7 @@ function RecentBookingsError({ onRetry }: { onRetry?: () => void }) {
 }
 
 export default function RecentBookings({
+  canViewBookingValue = false,
   events,
   loading = false,
   error = false,
@@ -357,6 +357,7 @@ export default function RecentBookings({
           <div ref={containerRef} className="recent-bookings__list booking-pulse__list">
             {visibleEvents.map((event, index) => (
               <BookingEventRow
+                canViewBookingValue={canViewBookingValue}
                 event={event}
                 expanded={activeExpandedEventId === event.eventId}
                 index={index}

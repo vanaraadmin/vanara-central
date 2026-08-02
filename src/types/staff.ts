@@ -39,7 +39,6 @@ export interface BookingPulseItem {
   bookingStatus?: string | null;
   guestCount?: number | null;
   totalPrice?: number | null;
-  currency?: string | null;
 }
 
 export interface StaffOverview {
@@ -47,6 +46,9 @@ export interface StaffOverview {
     id: string;
     displayName: string;
     role: string;
+  };
+  bookingPulseCapabilities: {
+    canViewBookingValue: boolean;
   };
   bookingEvents: BookingPulseItem[];
   cards: StaffOverviewCard[];

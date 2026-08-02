@@ -54,6 +54,7 @@ type FakeBookingEventRow = {
   booking_status: string | null;
   adults: number | null;
   children: number | null;
+  price: number | null;
   api_source: string | null;
   channel: string | null;
 };
@@ -76,6 +77,7 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     booking_status: "Confirmed",
     adults: 2,
     children: 0,
+    price: 12000,
     api_source: "Beds24",
     channel: "Direct",
     ...overrides,
@@ -187,6 +189,20 @@ test("recent booking event query returns newest first with a maximum limit", asy
   assert.deepEqual(events.map((event) => event.unitName), ["Bungalow 6", "Villa 12"]);
   assert.equal(events[0]?.eventId, "9003:CANCELLED:2026-07-31T10:20:00.000Z");
   assert.equal(events[0]?.bookingId, "9003");
+});
+
+test("booking pulse booking value is included only when explicitly requested", async () => {
+  const db = new FakeBookingEventsDB();
+  const staffEvents = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 1, new Date("2026-07-31T11:00:00.000Z"));
+  const financeEvents = await listRecentBookingEvents(
+    { DB: db as unknown as D1Database },
+    1,
+    new Date("2026-07-31T11:00:00.000Z"),
+    { includeBookingValue: true },
+  );
+
+  assert.equal(staffEvents[0]?.totalPrice, null);
+  assert.equal(financeEvents[0]?.totalPrice, 12000);
 });
 
 test("booking pulse visibility uses the 24 hour boundary safely", async () => {

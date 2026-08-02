@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 import airplaneLandingIcon from "../assets/img/airplane-landing-light.svg";
 import bedIcon from "../assets/img/bed-light.svg";
 import logo from "../assets/img/logo.png";
@@ -11,6 +11,10 @@ import wrenchIcon from "../assets/img/wrench-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RecentBookings from "../components/RecentBookings";
 import { RoomIcon } from "../components/OperationsIcons";
+import {
+  preloadWorkspaceBackground,
+  workspaceBackgroundStyle,
+} from "../config/workspaceBackgrounds";
 import { loadStaffOverview } from "../services/staff.service";
 import type { StaffCardId, StaffOverviewCard } from "../types/staff";
 import "../styles/StaffPage.css";
@@ -138,6 +142,10 @@ function WorkspaceCard({
 }
 
 export default function StaffPage() {
+  useEffect(() => {
+    preloadWorkspaceBackground("staffHome");
+  }, []);
+
   const staff = useQuery({
     queryKey: ["staff", "overview"],
     queryFn: ({ signal }) => loadStaffOverview(signal),
@@ -152,9 +160,10 @@ export default function StaffPage() {
 
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
+  const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
 
   return (
-    <main className="staff-page">
+    <main className="staff-page" style={workspaceBackgroundStyle("staffHome")}>
       <div className="staff-page__veil" aria-hidden="true" />
 
       <section className="staff-shell" aria-label="Vanara Central home">
@@ -179,6 +188,7 @@ export default function StaffPage() {
         </section>
 
         <RecentBookings
+          canViewBookingValue={canViewBookingValue}
           events={bookingEvents}
           error={staff.isError}
           loading={staff.isLoading}

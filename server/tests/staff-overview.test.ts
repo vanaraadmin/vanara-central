@@ -24,19 +24,23 @@ const USER_ROW = {
 
 const RECENT_BOOKING_EVENT_AT = new Date(Date.now() - 60_000).toISOString();
 
-function currentUser(permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>): CurrentUser {
+function currentUser(
+  permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>,
+  role: CurrentUser["role"] = "Operations",
+): CurrentUser {
   return {
     id: USER_ROW.user_id,
     displayName: USER_ROW.full_name,
     fullName: USER_ROW.full_name,
     profilePhotoUrl: null,
-    role: "Operations",
+    role,
     preferredLanguage: "en",
     username: USER_ROW.username,
     email: null,
     status: "active",
     views: ["staff"],
     permissions,
+    actionPermissions: [],
     lastLoginAt: null,
   };
 }
@@ -84,6 +88,7 @@ class FakeStaffDB {
             booking_status: "Confirmed",
             adults: 2,
             children: 0,
+            price: 12000,
             api_source: "Beds24",
             channel: "Direct",
           },
@@ -228,6 +233,7 @@ const roomsAccess: Permission = { module_key: "rooms", can_access: 1, can_edit: 
 const housekeepingAccess: Permission = { module_key: "housekeeping", can_access: 1, can_edit: 0 };
 const maintenanceAccess: Permission = { module_key: "maintenance", can_access: 1, can_edit: 0 };
 const procurementAccess: Permission = { module_key: "procurement", can_access: 1, can_edit: 0 };
+const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
 test("staff overview filters cards using effective module permissions", async () => {
   const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]));
@@ -255,6 +261,7 @@ test("staff overview can return an empty operational home for active users witho
 
 test("staff overview includes the persisted recent booking event feed", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]));
+  assert.deepEqual(overview.bookingPulseCapabilities, { canViewBookingValue: false });
   assert.deepEqual(overview.bookingEvents, [
     {
       eventId: `9001:NEW:${RECENT_BOOKING_EVENT_AT}`,
@@ -273,9 +280,24 @@ test("staff overview includes the persisted recent booking event feed", async ()
       bookingStatus: "Confirmed",
       guestCount: 2,
       totalPrice: null,
-      currency: null,
     },
   ]);
+});
+
+test("staff overview exposes booking value only through the server-side financial capability", async () => {
+  const operationsOverview = await getStaffOverview(
+    env([ownerDashboardAccess]),
+    currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Operations"),
+  );
+  const managerOverview = await getStaffOverview(
+    env([ownerDashboardAccess]),
+    currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Manager"),
+  );
+
+  assert.equal(operationsOverview.bookingPulseCapabilities.canViewBookingValue, false);
+  assert.equal(operationsOverview.bookingEvents[0]?.totalPrice, null);
+  assert.equal(managerOverview.bookingPulseCapabilities.canViewBookingValue, true);
+  assert.equal(managerOverview.bookingEvents[0]?.totalPrice, 12000);
 });
 
 test("staff overview API enforces authentication and staff view", async () => {
