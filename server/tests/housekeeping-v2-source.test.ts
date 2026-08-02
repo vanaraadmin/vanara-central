@@ -83,6 +83,8 @@ test("summary exposes the approved operational counters and fixed section order"
   ]) {
     assert.match(service, new RegExp(key));
   }
+  assert.match(service, /taskCompletedOn\(task, date\)/);
+  assert.match(service, /completed_at IS NOT NULL AND substr\(completed_at, 1, 10\) = \?/);
   assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
   assert.doesNotMatch(service, /"ready", "procurement"/);
 });

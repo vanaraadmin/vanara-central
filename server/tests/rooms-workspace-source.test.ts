@@ -22,6 +22,14 @@ const staffService = readFileSync(new URL("../src/services/staff-overview.servic
 const serverService = readFileSync(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../src/styles/RoomsPage.css", import.meta.url), "utf8");
 
+function sourceBlockBetween(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  assert.notEqual(startIndex, -1);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(endIndex, -1);
+  return source.slice(startIndex, endIndex);
+}
+
 test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", () => {
   assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>\(\["rooms"/);
   assert.match(staffPage, /<RecentBookings/);
@@ -54,6 +62,37 @@ test("Rooms Workspace consumes one dedicated read model and cards do not load se
   assert.doesNotMatch(roomOperationalSummaryCard, /services\//);
   assert.doesNotMatch(roomExpandedWorkspace, /services\//);
   assert.doesNotMatch(roomHero, /services\//);
+});
+
+test("Rooms summaries expose reconciled operational counters from the shared read model", () => {
+  const staffRoomsCard = sourceBlockBetween(staffService, 'id: "rooms"', 'id: "availability"');
+
+  for (const field of ["occupied", "vacant", "maintenanceBlocked", "seasonClosed"]) {
+    assert.match(serverService, new RegExp(`${field}:`));
+    assert.match(staffService, new RegExp(`overview\\.summary\\.${field}`));
+  }
+  assert.match(serverService, /const operatingRooms = rooms\.filter/);
+  assert.match(serverService, /const blockedOperatingRooms = operatingRooms\.filter/);
+  assert.match(serverService, /const usableOperatingRooms = operatingRooms\.filter/);
+  assert.match(roomsPage, /summary\.vacant/);
+  assert.match(roomsPage, /summary\.maintenanceBlocked/);
+  assert.match(roomsPage, /summary\.seasonClosed/);
+  assert.match(staffRoomsCard, /label:\s*"Occupied"/);
+  assert.match(staffRoomsCard, /label:\s*"Vacant"/);
+  assert.match(staffRoomsCard, /label:\s*"Maintenance Blocked"/);
+  assert.match(staffRoomsCard, /label:\s*"Season Closed"/);
+  assert.doesNotMatch(staffRoomsCard, /Ready|Not Ready|Dirty|Cleaning|Water|Housekeeping Tasks/);
+  assert.doesNotMatch(staffService, /Vacant Ready|Vacant Not Ready|Not Ready|Dirty/);
+});
+
+test("Staff Home Housekeeping summary consumes the V2 operational task engine", () => {
+  assert.match(staffService, /getHousekeepingV2Overview/);
+  assert.match(staffService, /staffHousekeepingMetrics/);
+  assert.match(staffService, /Water Due/);
+  assert.match(staffService, /Completed Today/);
+  assert.match(staffService, /Cleaning In Progress/);
+  assert.doesNotMatch(staffService, /getHousekeepingOverview/);
+  assert.doesNotMatch(staffService, /cleanFirst \+ overview\.summary\.cleanToday/);
 });
 
 test("Rooms rows are compact, expandable inline, and dismiss without navigation", () => {
@@ -221,7 +260,7 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
   assert.match(serverService, /b\.departure_date/);
   assert.match(serverService, /currentStay: occupancyState === "OCCUPIED"/);
   assert.match(serverService, /reception_stays rs2/);
-  assert.match(serverService, /rs2\.guest_arrived = 1/);
+  assert.doesNotMatch(serverService, /AND rs2\.guest_arrived = 1/);
   assert.match(serverService, /housekeeping_tasks/);
   assert.match(serverService, /room-ready-baseline:not-ready/);
   assert.match(serverService, /ROW_NUMBER\(\) OVER/);

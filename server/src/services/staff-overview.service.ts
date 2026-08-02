@@ -1,11 +1,12 @@
-import { getHousekeepingOverview, type HousekeepingBindings, type HousekeepingOverview } from "./housekeeping-overview.service.js";
+import { getHousekeepingV2Overview, type HousekeepingV2Bindings, type HousekeepingV2Overview, type HousekeepingV2TaskCard } from "./housekeeping-v2-overview.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./rooms-workspace.service.js";
 import { getReceptionOverview, type ReceptionBindings } from "./reception.service.js";
 import { hasModulePermission, type CurrentUser, type ModuleKey } from "./current-user.service.js";
 import { listRecentBookingEvents, type BookingEventsBindings, type BookingPulseItem } from "./booking-events.service.js";
+import { getBangkokDate } from "./today.service.js";
 
-export interface StaffOverviewBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings, RoomsWorkspaceBindings {
+export interface StaffOverviewBindings extends HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings, RoomsWorkspaceBindings {
   DB: D1Database;
 }
 
@@ -50,11 +51,6 @@ function canViewBookingValue(user: CurrentUser): boolean {
   return (user.role === "Owner" || user.role === "Manager") && canAccess(user, "owner-dashboard");
 }
 
-async function housekeeping(env: StaffOverviewBindings, cache: { data?: HousekeepingOverview }): Promise<HousekeepingOverview> {
-  cache.data ??= await getHousekeepingOverview(env);
-  return cache.data;
-}
-
 function formatMetric(metric: StaffOverviewMetric | undefined): string | undefined {
   if (!metric) return undefined;
   return `${metric.value} ${metric.label}`;
@@ -63,14 +59,31 @@ function formatMetric(metric: StaffOverviewMetric | undefined): string | undefin
 function withSummaryLines(card: StaffOverviewCard): StaffOverviewCard {
   return {
     ...card,
-    summaryLine1: formatMetric(card.metrics[0]),
-    summaryLine2: formatMetric(card.metrics[1]),
+    summaryLine1: card.summaryLine1 ?? formatMetric(card.metrics[0]),
+    summaryLine2: card.summaryLine2 ?? formatMetric(card.metrics[1]),
   };
 }
 
-export async function getStaffOverview(env: StaffOverviewBindings, user: CurrentUser): Promise<StaffOverview> {
+const IN_PROGRESS_STATUSES = new Set(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
+const CLEANING_TASK_TYPES = new Set(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING", "LINEN_CHANGE"]);
+
+function isCleaningTask(card: HousekeepingV2TaskCard): boolean {
+  return CLEANING_TASK_TYPES.has(card.taskType);
+}
+
+function staffHousekeepingMetrics(overview: HousekeepingV2Overview): StaffOverviewMetric[] {
+  const toClean = overview.tasks.filter((card) => isCleaningTask(card) && !IN_PROGRESS_STATUSES.has(card.taskStatus) && !card.isBlocked).length;
+  return [
+    { label: "To Clean", value: toClean, tone: toClean > 0 ? "attention" : "good" },
+    { label: "Cleaning In Progress", value: overview.summary.tasksInProgress, tone: overview.summary.tasksInProgress > 0 ? "attention" : "neutral" },
+    { label: "Completed Today", value: overview.summary.completedToday, tone: "good" },
+    { label: "Water Due", value: overview.summary.waterRefillDue, tone: overview.summary.waterRefillDue > 0 ? "attention" : "good" },
+    { label: "Blocked", value: overview.summary.blockedRooms, tone: overview.summary.blockedRooms > 0 ? "urgent" : "neutral" },
+  ];
+}
+
+export async function getStaffOverview(env: StaffOverviewBindings, user: CurrentUser, date = getBangkokDate()): Promise<StaffOverview> {
   const cards: StaffOverviewCard[] = [];
-  const housekeepingCache: { data?: HousekeepingOverview } = {};
   const bookingPulseCapabilities = {
     canViewBookingValue: canViewBookingValue(user),
   };
@@ -93,7 +106,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canAccess(user, "rooms")) {
-    const overview = await getRoomsWorkspaceOverview(env);
+    const overview = await getRoomsWorkspaceOverview(env, date, user);
     cards.push(withSummaryLines({
       id: "rooms",
       module: "rooms",
@@ -103,9 +116,12 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Rooms",
       metrics: [
         { label: "Occupied", value: overview.summary.occupied, tone: "neutral" },
-        { label: "Not ready", value: overview.summary.notReady, tone: overview.summary.notReady > 0 ? "attention" : "good" },
-        { label: "Maintenance", value: overview.summary.maintenance, tone: overview.summary.maintenance > 0 ? "urgent" : "good" },
+        { label: "Vacant", value: overview.summary.vacant, tone: "good" },
+        { label: "Maintenance Blocked", value: overview.summary.maintenanceBlocked, tone: overview.summary.maintenanceBlocked > 0 ? "urgent" : "neutral" },
+        { label: "Season Closed", value: overview.summary.seasonClosed, tone: overview.summary.seasonClosed > 0 ? "attention" : "neutral" },
       ],
+      summaryLine1: `${overview.summary.occupied} Occupied / ${overview.summary.vacant} Vacant`,
+      summaryLine2: `${overview.summary.maintenanceBlocked} Maintenance Blocked / ${overview.summary.seasonClosed} Season Closed`,
     }));
     cards.push(withSummaryLines({
       id: "availability",
@@ -119,7 +135,8 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canAccess(user, "housekeeping")) {
-    const overview = await housekeeping(env, housekeepingCache);
+    const overview = await getHousekeepingV2Overview(env, user, date);
+    const metrics = staffHousekeepingMetrics(overview);
     cards.push(withSummaryLines({
       id: "housekeeping",
       module: "housekeeping",
@@ -127,11 +144,9 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       description: "Clean rooms in operational priority.",
       href: "/housekeeping",
       cta: "Open Housekeeping",
-      metrics: [
-        { label: "To clean", value: overview.summary.cleanFirst + overview.summary.cleanToday, tone: overview.summary.cleanFirst > 0 ? "urgent" : "attention" },
-        { label: "In progress", value: overview.summary.cleaningInProgress, tone: "neutral" },
-        { label: "Ready", value: overview.summary.ready, tone: "good" },
-      ],
+      metrics,
+      summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Cleaning In Progress`,
+      summaryLine2: `${metrics[2].value} Completed Today / ${metrics[3].value} Water Due / ${metrics[4].value} Blocked`,
     }));
   }
 

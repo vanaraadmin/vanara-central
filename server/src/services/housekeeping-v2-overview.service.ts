@@ -219,7 +219,7 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
   const contexts = buildContexts(units, bookings, tasks, counters, alerts, maintenance, waterConfig, date);
   const allCards = contexts.flatMap((context) => cardsForContext(context, user));
   const sections = buildSections(allCards);
-  const summary = buildSummary(sections, allCards, procurement.attentionCount);
+  const summary = buildSummary(sections, allCards, tasks, date, procurement.attentionCount);
 
   return {
     operationalDate: date,
@@ -417,7 +417,7 @@ function buildSections(cards: HousekeepingV2TaskCard[]): HousekeepingV2Section[]
   }));
 }
 
-function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], procurementAttention: number): HousekeepingV2Summary {
+function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], tasks: HousekeepingTask[], date: string, procurementAttention: number): HousekeepingV2Summary {
   return {
     awaitingReceptionRelease: cards.filter((card) => card.reasonCodes.includes("waiting_reception")).length,
     priorityTurnovers: sections.find((section) => section.id === "priority-turnover")?.cards.length ?? 0,
@@ -426,7 +426,7 @@ function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2Ta
     tasksClaimed: cards.filter((card) => card.assignee && CLAIMED_STATUSES.has(card.taskStatus)).length,
     tasksInProgress: cards.filter((card) => IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
     blockedRooms: cards.filter((card) => card.isBlocked).length,
-    completedToday: cards.filter((card) => card.taskStatus === "COMPLETED").length,
+    completedToday: tasks.filter((task) => taskCompletedOn(task, date)).length,
     procurementAttention,
   };
 }
@@ -689,6 +689,14 @@ function isOccupiedOn(booking: BookingRow, date: string): boolean {
   return booking.arrival_date <= date && booking.departure_date > date;
 }
 
+function taskCompletedOn(task: HousekeepingTask, date: string): boolean {
+  if (task.status !== "COMPLETED") return false;
+  if (!task.completedAt) return task.operationalDate === date;
+  const completedAt = new Date(task.completedAt);
+  if (Number.isNaN(completedAt.getTime())) return task.operationalDate === date;
+  return formatBangkokDate(completedAt) === date;
+}
+
 function checkInAt(booking: BookingRow): string {
   return `${booking.arrival_date}T${booking.arrival_time || "14:00"}`;
 }
@@ -776,8 +784,9 @@ async function loadTasks(env: HousekeepingV2Bindings, date: string): Promise<Hou
     FROM housekeeping_tasks
     WHERE operational_date = ?
        OR (due_cycle_date <= ? AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED'))
+       OR (completed_at IS NOT NULL AND substr(completed_at, 1, 10) = ?)
     ORDER BY operational_date, task_id
-  `).bind(date, date).all<TaskRow>();
+  `).bind(date, date, date).all<TaskRow>();
   return (rows.results ?? []).map(mapTaskRow);
 }
 

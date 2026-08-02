@@ -206,9 +206,9 @@ export interface RoomsWorkspaceOverview {
   summary: {
     total: number;
     occupied: number;
-    notOperating: number;
-    notReady: number;
-    maintenance: number;
+    vacant: number;
+    maintenanceBlocked: number;
+    seasonClosed: number;
   };
 }
 
@@ -813,12 +813,10 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
     LEFT JOIN bookings b ON b.booking_id = (
       SELECT b2.booking_id
       FROM bookings b2
-      LEFT JOIN reception_stays rs2 ON rs2.beds24_booking_id = b2.beds24_booking_id
       WHERE b2.unit_id = u.unit_id
         AND b2.arrival_date <= ?1
         AND b2.departure_date > ?1
         AND ${operationalBookingStatusSql("b2.status")}
-        AND rs2.guest_arrived = 1
       ORDER BY b2.arrival_date DESC, b2.booking_id DESC
       LIMIT 1
     )
@@ -936,14 +934,19 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       || left.unitId - right.unitId
     );
 
+  const operatingRooms = rooms.filter((room) => room.operational.availability.state === "OPERATING");
+  const blockedOperatingRooms = operatingRooms.filter((room) => room.operational.maintenance.state === "BLOCKING");
+  const usableOperatingRooms = operatingRooms.filter((room) => room.operational.maintenance.state !== "BLOCKING");
+  const vacantOperatingRooms = usableOperatingRooms.filter((room) => room.operational.occupancy.state === "VACANT");
+
   return {
     rooms,
     summary: {
       total: rooms.length,
-      occupied: rooms.filter((room) => room.operational.occupancy.state === "OCCUPIED").length,
-      notOperating: rooms.filter((room) => room.operational.availability.state === "NOT_OPERATING").length,
-      notReady: rooms.filter((room) => room.operational.housekeeping.condition === "NOT_READY").length,
-      maintenance: rooms.filter((room) => room.operational.maintenance.state !== "CLEAR").length,
+      occupied: usableOperatingRooms.filter((room) => room.operational.occupancy.state === "OCCUPIED").length,
+      vacant: vacantOperatingRooms.length,
+      maintenanceBlocked: blockedOperatingRooms.length,
+      seasonClosed: rooms.filter((room) => room.operational.availability.state === "NOT_OPERATING").length,
     },
   };
 }

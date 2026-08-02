@@ -94,8 +94,7 @@ export default function RoomsPage() {
 
   const summaryText = useMemo(() => {
     if (!rooms.data) return null;
-    const { occupied, total } = rooms.data.summary;
-    return `${occupied}/${total} occupied`;
+    return `${rooms.data.summary.occupied} occupied`;
   }, [rooms.data]);
 
   return (
@@ -107,8 +106,9 @@ export default function RoomsPage() {
         <section className="rooms-home" aria-label="Rooms Home">
           <header className="rooms-home__summary">
             <span>{summaryText}</span>
-            <span>{rooms.data.summary.notReady} not ready</span>
-            <span>{rooms.data.summary.maintenance} maintenance</span>
+            <span>{rooms.data.summary.vacant} vacant</span>
+            <span>{rooms.data.summary.maintenanceBlocked} maintenance blocked</span>
+            <span>{rooms.data.summary.seasonClosed} season closed</span>
           </header>
 
           <div ref={containerRef} className="rooms-home__list">

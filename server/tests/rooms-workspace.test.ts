@@ -289,6 +289,21 @@ function byName<T extends { roomName: string }>(rooms: T[], name: string): T {
   return room;
 }
 
+function todayBangkok(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function addDays(date: string, days: number): string {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
 test("rooms workspace read model returns every independent operational dimension", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
 
@@ -546,6 +561,42 @@ test("occupied rooms expose current guest and vacant rooms expose no guest", asy
   assert.equal(vacant.currentStay, null);
 });
 
+test("Rooms occupancy comes from operational bookings, not Reception guest arrival flags", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 18,
+      unit_name: "Bungalow 18",
+      booking_id: 1801,
+      beds24_booking_id: 91801,
+      guest_name: "Booking Engine Guest",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-05",
+      reception_booking_id: 1801,
+      reception_beds24_booking_id: 91801,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-05",
+      reception_guest_arrived: 0,
+    }),
+    roomRow({
+      unit_id: 19,
+      unit_name: "Bungalow 19",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-03");
+  const occupied = byName(overview.rooms, "Bungalow 18");
+
+  assert.equal(occupied.operational.occupancy.state, "OCCUPIED");
+  assert.equal(occupied.currentStay?.guestName, "Booking Engine Guest");
+  assert.deepEqual(overview.summary, {
+    total: 2,
+    occupied: 1,
+    vacant: 1,
+    maintenanceBlocked: 0,
+    seasonClosed: 0,
+  });
+});
+
 test("guest card read model follows arrived occupancy and does not expose reception-only fields", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
   const occupied = byName(overview.rooms, "Bungalow 3");
@@ -717,14 +768,15 @@ test("late checkout is exposed as a Reception alert summary, not a cleaning stat
 });
 
 test("Reception primary actions require the existing Reception action capability", async () => {
+  const today = todayBangkok();
   const rooms = [
     roomRow({
       unit_id: 11,
       unit_name: "Bungalow 11",
       reception_booking_id: 1101,
       reception_beds24_booking_id: 91101,
-      reception_arrival_date: "2026-08-02",
-      reception_departure_date: "2026-08-05",
+      reception_arrival_date: today,
+      reception_departure_date: addDays(today, 2),
     }),
   ];
 
@@ -753,16 +805,21 @@ test("Reception primary actions require the existing Reception action capability
   });
 });
 
-test("rooms workspace read model exposes compact operational summary counts", async () => {
+test("Rooms executive summary categories are mutually exclusive and reconcile to total units", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
+  const categorizedTotal = overview.summary.occupied
+    + overview.summary.vacant
+    + overview.summary.maintenanceBlocked
+    + overview.summary.seasonClosed;
 
   assert.deepEqual(overview.summary, {
     total: 8,
     occupied: 1,
-    notOperating: 2,
-    notReady: 3,
-    maintenance: 2,
+    vacant: 4,
+    maintenanceBlocked: 1,
+    seasonClosed: 2,
   });
+  assert.equal(categorizedTotal, overview.summary.total);
 });
 
 test("rooms workspace endpoint requires Rooms access and returns the read model", async () => {

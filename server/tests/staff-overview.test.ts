@@ -4,8 +4,37 @@ import test from "node:test";
 import worker from "../src/index.ts";
 import { getStaffOverview } from "../src/services/staff-overview.service.ts";
 import type { CurrentUser, ModuleKey } from "../src/services/current-user.service.ts";
+import type { HousekeepingTaskStatus, HousekeepingTaskType } from "../src/services/housekeeping-task-domain.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
+type TaskRow = {
+  task_id: number;
+  task_type: HousekeepingTaskType;
+  unit_id: number;
+  booking_id: number | null;
+  stay_id: number | null;
+  operational_date: string;
+  due_cycle_date: string | null;
+  status: HousekeepingTaskStatus;
+  priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  blocking_reason: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  claimed_at: string | null;
+  started_at: string | null;
+  checklist_completed_at: string | null;
+  ready_at: string | null;
+  completed_at: string | null;
+  skipped_at: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+  source: "system" | "reception_release" | "manual" | "physical_sign" | "guest_request" | "maintenance" | "migration";
+  on_demand_source: string | null;
+  idempotency_key: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
 
 const USER_ROW = {
   user_id: "staff-1",
@@ -58,6 +87,28 @@ class FakeStmt {
 }
 
 class FakeStaffDB {
+  private housekeepingTasks: TaskRow[] = [
+    taskRow({
+      task_id: 1,
+      task_type: "STANDARD_CLEANING",
+      status: "IN_PROGRESS",
+      assigned_user_id: USER_ROW.user_id,
+      assigned_user_name: USER_ROW.full_name,
+      started_at: "2026-08-03T03:00:00.000Z",
+    }),
+    taskRow({
+      task_id: 2,
+      task_type: "WATER_REFILL",
+      status: "AVAILABLE_FOR_CLAIM",
+    }),
+    taskRow({
+      task_id: 3,
+      task_type: "ON_DEMAND_CLEANING",
+      status: "COMPLETED",
+      completed_at: "2026-08-03T04:00:00.000Z",
+    }),
+  ];
+
   constructor(private permissions: Permission[], private options: { authenticated?: boolean; staffView?: boolean } = {}) {}
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
@@ -95,6 +146,14 @@ class FakeStaffDB {
         ] as T[],
       };
     }
+    if (sql.includes("COALESCE(roa.status, 'OPERATING') AS operational_availability_status")) {
+      return {
+        results: [
+          { unit_id: 1, unit_name: "Villa 10", unit_type: "villa", room_type_name: "Garden Villa", room_name: "Garden Villa", operational_availability_status: "OPERATING" },
+          { unit_id: 2, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", operational_availability_status: "OPERATING" },
+        ] as T[],
+      };
+    }
     if (sql.includes("FROM units u") && sql.includes("LEFT JOIN room_operational_availability") && sql.includes("LEFT JOIN room_housekeeping_state")) {
       return {
         results: [
@@ -107,12 +166,26 @@ class FakeStaffDB {
             position: 1,
             availability_status: "OPERATING",
             ready_state: "NOT_READY",
-            booking_id: 9001,
+            booking_id: 101,
+            beds24_booking_id: 9001,
             guest_name: "Mali Guest",
+            country: "Thailand",
+            country_code: "TH",
+            arrival_date: "2026-08-01",
+            departure_date: "2026-08-06",
             api_source: "Beds24",
             channel: "Direct",
-            open_issues: 1,
-            out_of_service: 1,
+            active_task_count: 2,
+            active_task_id: 1,
+            active_task_version: 1,
+            active_task_status: "IN_PROGRESS",
+            active_task_type: "STANDARD_CLEANING",
+            active_task_priority: "NORMAL",
+            active_task_assignee: USER_ROW.full_name,
+            active_ticket_count: 0,
+            blocking_ticket_count: 0,
+            primary_maintenance_ticket_id: null,
+            primary_maintenance_title: null,
           },
           {
             unit_id: 2,
@@ -127,10 +200,37 @@ class FakeStaffDB {
             guest_name: null,
             api_source: null,
             channel: null,
-            open_issues: 0,
-            out_of_service: 0,
+            active_task_count: 0,
+            active_task_id: null,
+            active_task_version: null,
+            active_task_status: null,
+            active_task_type: null,
+            active_task_priority: null,
+            active_task_assignee: null,
+            active_ticket_count: 0,
+            blocking_ticket_count: 0,
+            primary_maintenance_ticket_id: null,
+            primary_maintenance_title: null,
           },
         ] as T[],
+      };
+    }
+    if (sql.includes("FROM bookings b") && sql.includes("JOIN units u ON u.unit_id = b.unit_id") && sql.includes("rs.guest_arrived")) {
+      return {
+        results: [{
+          booking_id: 101,
+          beds24_booking_id: 9001,
+          unit_id: 1,
+          guest_name: "Mali Guest",
+          arrival_date: "2026-08-01",
+          departure_date: "2026-08-06",
+          arrival_time: "14:00",
+          channel: "Direct",
+          api_source: "Beds24",
+          status: "Confirmed",
+          guest_arrived: 1,
+          room_released: 0,
+        }] as T[],
       };
     }
     if (sql.includes("WITH latest_housekeeping")) {
@@ -170,6 +270,21 @@ class FakeStaffDB {
             has_current_occupancy: 0,
             has_scheduled_checkout_today: 0,
           },
+        ] as T[],
+      };
+    }
+    if (sql.includes("FROM housekeeping_tasks ht") && sql.includes("rs.room_released = 1")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_tasks")) return { results: [...this.housekeepingTasks] as T[] };
+    if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
+    if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
+    if (sql.includes("FROM maintenance_tickets") && sql.includes("GROUP BY room_id")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_water_quantity_config")) {
+      return {
+        results: [
+          { room_type: "Bungalow", default_bottles: 2 },
+          { room_type: "Yurt", default_bottles: 2 },
+          { room_type: "Tent", default_bottles: 2 },
+          { room_type: "Villa", default_bottles: 4 },
         ] as T[],
       };
     }
@@ -250,6 +365,38 @@ class FakeStaffDB {
   }
 }
 
+function taskRow(overrides: Partial<TaskRow>): TaskRow {
+  return {
+    task_id: 1,
+    task_type: "STANDARD_CLEANING",
+    unit_id: 1,
+    booking_id: 101,
+    stay_id: 9001,
+    operational_date: "2026-08-03",
+    due_cycle_date: "2026-08-03",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    claimed_at: null,
+    started_at: null,
+    checklist_completed_at: null,
+    ready_at: null,
+    completed_at: null,
+    skipped_at: null,
+    cancelled_at: null,
+    cancellation_reason: null,
+    source: "system",
+    on_demand_source: null,
+    idempotency_key: null,
+    version: 1,
+    created_at: "2026-08-03T02:00:00.000Z",
+    updated_at: "2026-08-03T02:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function env(permissions: Permission[], options?: { authenticated?: boolean; staffView?: boolean }) {
   return {
     DB: new FakeStaffDB(permissions, options) as unknown as D1Database,
@@ -274,10 +421,42 @@ const procurementAccess: Permission = { module_key: "procurement", can_access: 1
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
 test("staff overview filters cards using effective module permissions", async () => {
-  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]));
+  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]), "2026-08-03");
   assert.deepEqual(overview.cards.map((card) => card.id), ["housekeeping"]);
   assert.equal(overview.cards[0]?.href, "/housekeeping");
   assert.equal(overview.cards[0]?.metrics.some((metric) => metric.value === 0), true);
+});
+
+test("staff overview housekeeping summary derives from the Housekeeping V2 task engine", async () => {
+  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]), "2026-08-03");
+  const card = overview.cards.find((item) => item.id === "housekeeping");
+  assert.ok(card);
+
+  assert.deepEqual(card.metrics, [
+    { label: "To Clean", value: 0, tone: "good" },
+    { label: "Cleaning In Progress", value: 1, tone: "attention" },
+    { label: "Completed Today", value: 1, tone: "good" },
+    { label: "Water Due", value: 1, tone: "attention" },
+    { label: "Blocked", value: 0, tone: "neutral" },
+  ]);
+  assert.equal(card.summaryLine1, "0 To Clean / 1 Cleaning In Progress");
+  assert.equal(card.summaryLine2, "1 Completed Today / 1 Water Due / 0 Blocked");
+});
+
+test("staff overview rooms summary exposes reconciled operating counters from the Rooms read model", async () => {
+  const overview = await getStaffOverview(env([roomsAccess]), currentUser([{ module: "rooms", canAccess: true, canEdit: false }]), "2026-08-03");
+  const card = overview.cards.find((item) => item.id === "rooms");
+  assert.ok(card);
+
+  assert.deepEqual(card.metrics, [
+    { label: "Occupied", value: 1, tone: "neutral" },
+    { label: "Vacant", value: 1, tone: "good" },
+    { label: "Maintenance Blocked", value: 0, tone: "neutral" },
+    { label: "Season Closed", value: 0, tone: "neutral" },
+  ]);
+  assert.equal(card.metrics[0].value + card.metrics[1].value + card.metrics[2].value + card.metrics[3].value, 2);
+  assert.equal(card.summaryLine1, "1 Occupied / 1 Vacant");
+  assert.equal(card.summaryLine2, "0 Maintenance Blocked / 0 Season Closed");
 });
 
 test("staff overview supports users with multiple permissions without owner data", async () => {
@@ -355,5 +534,7 @@ test("staff overview API enforces authentication and staff view", async () => {
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "housekeeping");
   assert.equal(cards[0]?.href, "/housekeeping");
-  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "To clean")?.value, 0);
+  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "To Clean")?.value, 0);
+  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "Cleaning In Progress")?.value, 1);
+  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "Water Due")?.value, 1);
 });

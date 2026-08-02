@@ -140,9 +140,9 @@ export interface RoomsWorkspaceOverview {
   summary: {
     total: number;
     occupied: number;
-    notOperating: number;
-    notReady: number;
-    maintenance: number;
+    vacant: number;
+    maintenanceBlocked: number;
+    seasonClosed: number;
   };
 }
 
