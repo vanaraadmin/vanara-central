@@ -22,6 +22,8 @@ const USER_ROW = {
   last_login_at: null,
 };
 
+const RECENT_BOOKING_EVENT_AT = new Date(Date.now() - 60_000).toISOString();
+
 function currentUser(permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>): CurrentUser {
   return {
     id: USER_ROW.user_id,
@@ -68,9 +70,22 @@ class FakeStaffDB {
           {
             booking_event_id: 501,
             event_type: "new",
-            accommodation: "Villa 10",
-            source: "Booking.com",
-            occurred_at: "2026-07-31T10:00:00.000Z",
+            beds24_booking_id: 9001,
+            event_accommodation: "Villa 10",
+            event_source: "Booking.com",
+            occurred_at: RECENT_BOOKING_EVENT_AT,
+            guest_name: "Mali Guest",
+            country: "Thailand",
+            country_code: "TH",
+            unit_id: 1,
+            unit_name: "Villa 10",
+            arrival_date: "2026-08-01",
+            departure_date: "2026-08-03",
+            booking_status: "Confirmed",
+            adults: 2,
+            children: 0,
+            api_source: "Beds24",
+            channel: "Direct",
           },
         ] as T[],
       };
@@ -242,12 +257,23 @@ test("staff overview includes the persisted recent booking event feed", async ()
   const overview = await getStaffOverview(env([]), currentUser([]));
   assert.deepEqual(overview.bookingEvents, [
     {
-      id: "501",
-      type: "new",
-      title: "NEW BOOKING",
-      accommodation: "Villa 10",
+      eventId: `9001:NEW:${RECENT_BOOKING_EVENT_AT}`,
+      bookingId: "9001",
+      eventType: "NEW",
+      eventTimestamp: RECENT_BOOKING_EVENT_AT,
+      guestName: "Mali Guest",
+      nationality: "Thailand",
+      countryCode: "TH",
+      unitId: 1,
+      unitName: "Villa 10",
       source: "Booking.com",
-      occurredAt: "2026-07-31T10:00:00.000Z",
+      arrivalDate: "2026-08-01",
+      departureDate: "2026-08-03",
+      stayNights: 2,
+      bookingStatus: "Confirmed",
+      guestCount: 2,
+      totalPrice: null,
+      currency: null,
     },
   ]);
 });
@@ -259,12 +285,13 @@ test("staff overview API enforces authentication and staff view", async () => {
   assert.equal(response.status, 200);
   const body = await json(response);
   const data = body.data as {
-    bookingEvents: Array<{ title: string; accommodation: string }>;
+    bookingEvents: Array<{ eventType: string; guestName: string; unitName: string }>;
     cards: Array<{ id: string; href: string; metrics: Array<{ label: string; value: number }> }>;
   };
   const cards = data.cards;
-  assert.equal(data.bookingEvents[0]?.title, "NEW BOOKING");
-  assert.equal(data.bookingEvents[0]?.accommodation, "Villa 10");
+  assert.equal(data.bookingEvents[0]?.eventType, "NEW");
+  assert.equal(data.bookingEvents[0]?.guestName, "Mali Guest");
+  assert.equal(data.bookingEvents[0]?.unitName, "Villa 10");
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "housekeeping");
   assert.equal(cards[0]?.href, "/housekeeping");

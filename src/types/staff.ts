@@ -20,15 +20,26 @@ export interface StaffOverviewCard {
   summaryLine2?: string;
 }
 
-export type StaffBookingEventType = "new" | "updated" | "cancelled";
+export type BookingPulseEventType = "NEW" | "UPDATED" | "CANCELLED";
 
-export interface StaffBookingEvent {
-  id: string;
-  type: StaffBookingEventType;
-  title: "NEW BOOKING" | "BOOKING UPDATED" | "BOOKING CANCELLED";
-  accommodation: string;
+export interface BookingPulseItem {
+  eventId: string;
+  bookingId: string;
+  eventType: BookingPulseEventType;
+  eventTimestamp: string;
+  guestName: string;
+  nationality?: string | null;
+  countryCode?: string | null;
+  unitId?: number | null;
+  unitName?: string | null;
   source: string | null;
-  occurredAt: string;
+  arrivalDate?: string | null;
+  departureDate?: string | null;
+  stayNights?: number | null;
+  bookingStatus?: string | null;
+  guestCount?: number | null;
+  totalPrice?: number | null;
+  currency?: string | null;
 }
 
 export interface StaffOverview {
@@ -37,7 +48,7 @@ export interface StaffOverview {
     displayName: string;
     role: string;
   };
-  bookingEvents: StaffBookingEvent[];
+  bookingEvents: BookingPulseItem[];
   cards: StaffOverviewCard[];
 }
 
