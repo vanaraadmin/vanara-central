@@ -129,6 +129,11 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   return stay.bookingSource || "Direct";
 }
 
+function formatNationality(value: string | null): string | null {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned.toUpperCase() : null;
+}
+
 function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
   if (roomStatus === "Ready") return "clean";
   if (roomStatus === "Cleaning") return "in_progress";
@@ -331,6 +336,8 @@ function StayCard({
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
+  const nationality = formatNationality(stay.nationality);
+
   return (
     <article className={`reception-card reception-card--${type}`} onClick={() => onDetailsRequest(stay)}>
       <div className="reception-card__top">
@@ -354,10 +361,8 @@ function StayCard({
       <div className="reception-guest">
         <UserIcon />
         <div>
-          <h3>
-            {stay.guestName}
-            {stay.nationalityFlagUrl && <img alt={stay.nationality ? `${stay.nationality} flag` : "Guest nationality"} className="reception-nationality-flag" src={stay.nationalityFlagUrl} />}
-          </h3>
+          <h3>{stay.guestName}</h3>
+          {nationality ? <p className="reception-nationality">{nationality}</p> : null}
           <p className="reception-booking-source">{bookingSourceLabel(stay)}</p>
           {type === "arrival" && <HousekeepingStatusRow roomStatus={stay.roomStatus} />}
         </div>

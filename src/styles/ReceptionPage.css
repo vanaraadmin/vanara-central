@@ -401,22 +401,19 @@
   letter-spacing: -0.03em;
 }
 
-.reception-nationality-flag {
-  width: 24px;
-  height: 18px;
-  display: inline-block;
-  margin-left: 10px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px rgba(23, 59, 45, 0.12);
-  object-fit: cover;
-  vertical-align: 0.02em;
-}
-
 .reception-guest p {
   margin-top: 3px;
   color: rgba(23, 59, 45, 0.62);
   font-size: 0.92rem;
   font-weight: 700;
+}
+
+.reception-nationality {
+  color: rgba(23, 59, 45, 0.54) !important;
+  font-size: 0.84rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .reception-booking-source {

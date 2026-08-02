@@ -24,6 +24,24 @@ test("booking cards open booking details without replacing existing contact and 
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onRequest\(stay, type\)/);
 });
 
+test("check-in and check-out cards render nationality text without flags", async () => {
+  const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css", import.meta.url), "utf8");
+  assert.match(receptionPage, /function formatNationality\(value: string \| null\): string \| null/);
+  assert.match(receptionPage, /cleaned \? cleaned\.toUpperCase\(\) : null/);
+  assert.match(receptionPage, /const nationality = formatNationality\(stay\.nationality\);/);
+  assert.match(receptionPage, /\{nationality \? <p className="reception-nationality">\{nationality\}<\/p> : null\}/);
+  assert.match(receptionPage, /<p className="reception-booking-source">\{bookingSourceLabel\(stay\)\}<\/p>/);
+  assert.doesNotMatch(receptionPage, /reception-nationality-flag|nationalityFlagUrl|nationalityFlag/);
+  assert.doesNotMatch(receptionPage, /UNKNOWN|N\/A|Guest nationality/);
+  assert.match(receptionCss, /\.reception-nationality \{/);
+  assert.match(receptionCss, /text-transform:\s*uppercase/);
+  assert.match(receptionCss, /font-size:\s*0\.84rem/);
+  assert.match(receptionCss, /font-weight:\s*650/);
+  const nationalityCss = receptionCss.match(/\.reception-nationality\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  assert.doesNotMatch(nationalityCss, /border|border-radius|box-shadow/);
+  assert.doesNotMatch(receptionCss, /\.reception-nationality-flag/);
+});
+
 test("check-in checklist is visible only for today's arrival", () => {
   assert.match(receptionPage, /const showCheckInChecklist = stay\.arrival === today;/);
   assert.match(receptionPage, /{showCheckInChecklist && \(/);
