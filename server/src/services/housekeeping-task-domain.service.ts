@@ -188,6 +188,7 @@ const taskStatuses: readonly HousekeepingTaskStatus[] = [
   "CANCELLED",
 ];
 const terminalStatuses = new Set<HousekeepingTaskStatus>(["COMPLETED", "SKIPPED", "CANCELLED"]);
+export const ROOM_READY_OVERRIDE_SOURCE = "ROOM_READY_OVERRIDE";
 
 export function isHousekeepingTaskType(value: string): value is HousekeepingTaskType {
   return taskTypes.includes(value as HousekeepingTaskType);

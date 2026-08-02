@@ -1,5 +1,5 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import { createHousekeepingTask, housekeepingTaskCapabilities, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { createHousekeepingTask, housekeepingTaskCapabilities, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 
 export interface HousekeepingV2Bindings {
@@ -337,7 +337,10 @@ function cardsForContext(context: OperationalContext, user: CurrentUser): Housek
     cards.push(cardFromContext(context, turnover, maintenanceBlocked, user));
   }
 
-  const stayTasks = context.tasks.filter((task) => taskBelongsToActiveStay(context, task));
+  const stayTasks = [
+    ...context.tasks.filter((task) => taskBelongsToActiveStay(context, task)),
+    ...context.tasks.filter((task) => taskBelongsToRoomReadyOverride(task)),
+  ];
 
   const standard = taskFor(stayTasks, "STANDARD_CLEANING");
   if (standard) {
@@ -550,6 +553,10 @@ function taskBelongsToActiveStay(context: OperationalContext, task: Housekeeping
   if (task.taskType === "TURNOVER") return taskBelongsToDeparture(context, task);
   if (!context.activeStay) return false;
   return taskMatchesBooking(task, context.activeStay);
+}
+
+function taskBelongsToRoomReadyOverride(task: HousekeepingTask): boolean {
+  return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
 function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {

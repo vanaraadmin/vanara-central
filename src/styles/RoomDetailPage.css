@@ -451,6 +451,7 @@
 }
 
 .room-ticket-form,
+.room-ready-form,
 .room-on-demand-form,
 .room-note-form {
   display: grid;
@@ -460,6 +461,7 @@
 }
 
 .room-ticket-form label,
+.room-ready-form label,
 .room-on-demand-form label,
 .room-note-form label {
   display: grid;
@@ -471,6 +473,8 @@
 
 .room-ticket-form input,
 .room-ticket-form select,
+.room-ready-form select,
+.room-ready-form textarea,
 .room-ticket-form textarea,
 .room-on-demand-form textarea,
 .room-note-form textarea {
@@ -484,6 +488,7 @@
 }
 
 .room-ticket-form textarea,
+.room-ready-form textarea,
 .room-on-demand-form textarea,
 .room-note-form textarea {
   resize: vertical;
@@ -499,6 +504,22 @@
   align-items: center;
   justify-content: center;
   gap: var(--vc-space-2);
+}
+
+.room-ready-form button {
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+  padding: 0 var(--vc-space-3);
+}
+
+.room-ready-form button:disabled {
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
 }
 
 .room-on-demand-form button {

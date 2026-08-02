@@ -9,9 +9,9 @@ import {
   completeHousekeepingTask,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
-import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert } from "../services/room-detail.service";
+import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping } from "../services/room-detail.service";
 import type { MaintenanceCategory, MaintenancePriority } from "../types/maintenance";
-import type { RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomTimelineEvent } from "../types/room-detail";
+import type { RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
 import "../styles/RoomDetailPage.css";
 
 const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = ["Electrical", "Air Conditioning", "Water", "Furniture", "Bathroom", "Garden", "Cleaning Equipment", "Internet / Network", "Appliance", "Other"];
@@ -223,6 +223,51 @@ function useRoomTaskAction(roomId: string) {
   });
 }
 
+function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }) {
+  const queryClient = useQueryClient();
+  const [readyState, setReadyState] = useState<RoomReadyState>(room.housekeeping.readyState);
+  const [readyReason, setReadyReason] = useState("");
+  const changed = readyState !== room.housekeeping.readyState;
+  const changeReadyState = useMutation({
+    mutationFn: () => updateRoomHousekeeping(roomId, {
+      status: readyState,
+      reason: readyReason.trim() || null,
+      idempotencyKey: `room-ready:${room.unitId}:${readyState}:${Date.now()}`,
+    }),
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["room-detail", roomId] }),
+        queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] }),
+      ]);
+    },
+  });
+
+  return (
+    <>
+      <form className="room-ready-form" onSubmit={(event) => {
+        event.preventDefault();
+        if (changed) changeReadyState.mutate();
+      }}>
+        <div className="room-form-grid">
+          <label>
+            Room Status
+            <select onChange={(event) => setReadyState(event.target.value as RoomReadyState)} value={readyState}>
+              <option value="READY">READY</option>
+              <option value="NOT_READY">NOT READY</option>
+            </select>
+          </label>
+          <label>
+            Reason
+            <textarea maxLength={500} onChange={(event) => setReadyReason(event.target.value)} placeholder="Optional reason" rows={2} value={readyReason} />
+          </label>
+        </div>
+        <button disabled={!changed || changeReadyState.isPending} type="submit">Change Status</button>
+      </form>
+      {changeReadyState.isError && <p className="room-form-error">Room status could not be changed.</p>}
+    </>
+  );
+}
+
 function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
@@ -250,10 +295,15 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
         <dl>
           <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo ?? "Unassigned"}</dd></div>
           <div><dt>Updated</dt><dd>{room.housekeeping.lastUpdated ? formatDateTime(room.housekeeping.lastUpdated) : "Not updated"}</dd></div>
+          <div><dt>Room Status</dt><dd>{room.housekeeping.readyState === "READY" ? "READY" : "NOT READY"}</dd></div>
           <div><dt>Active task</dt><dd>{room.housekeeping.activeTask?.title ?? "None"}</dd></div>
           <div><dt>Reason</dt><dd>{room.housekeeping.activeTask?.reason ?? "No active work"}</dd></div>
         </dl>
       </div>
+
+      {room.housekeeping.canChangeReadyState && (
+        <RoomReadyControl key={`${room.unitId}:${room.housekeeping.readyState}`} room={room} roomId={roomId} />
+      )}
 
       <div className="room-task-list" aria-label="Active housekeeping task">
         {room.housekeeping.tasks.length === 0 && <div className="room-empty-state">No active Housekeeping</div>}

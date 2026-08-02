@@ -2,6 +2,7 @@ import type { MaintenanceCategory, MaintenancePriority, MaintenanceTicketDetail 
 import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
 
 export type RoomHousekeepingStatus = "Dirty" | "Cleaning" | "Ready";
+export type RoomReadyState = "READY" | "NOT_READY";
 export type CheckoutCompletionSource = "reception" | "automatic-fallback" | "none";
 export type RoomTimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
 export type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
@@ -23,6 +24,7 @@ export interface RoomHousekeeping {
   status: RoomOperationalStatus | RoomHousekeepingStatus;
   primaryStatus: RoomOperationalStatus | RoomHousekeepingStatus;
   primaryStatusTone: string;
+  readyState: RoomReadyState;
   assignedTo: string | null;
   assignedAt: string | null;
   lastUpdated: string | null;
@@ -34,6 +36,7 @@ export interface RoomHousekeeping {
   activeTask: RoomHousekeepingTask | null;
   tasks: RoomHousekeepingTask[];
   canCreateOnDemandCleaning: boolean;
+  canChangeReadyState: boolean;
 }
 
 export interface RoomHousekeepingTask {
@@ -162,6 +165,12 @@ export interface CreateRoomMaintenanceTicketPayload {
 export interface CreateRoomOnDemandCleaningPayload {
   note?: string | null;
   priority?: "low" | "normal" | "high" | "urgent";
+  idempotencyKey?: string | null;
+}
+
+export interface UpdateRoomReadyStatePayload {
+  status: RoomReadyState;
+  reason?: string | null;
   idempotencyKey?: string | null;
 }
 

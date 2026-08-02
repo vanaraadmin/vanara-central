@@ -636,6 +636,31 @@ test("clean rooms with no active work are absent from Housekeeping queues", asyn
   ]);
 });
 
+test("manual room NOT READY override appears in Housekeeping Normal without active booking", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [];
+  db.tasks.push(storedTask({
+    task_id: 121,
+    task_type: "STANDARD_CLEANING",
+    unit_id: 1,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready:not-ready:1",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; currentQueue: string }> }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
+  assert.equal(normal.some((card) => card.taskId === 121 && card.taskType === "STANDARD_CLEANING" && card.currentQueue === "normal-cleaning"), true);
+  assert.equal(body.data.summary.normalCleaningDue, 1);
+});
+
 test("completed and cancelled standard cleaning tasks do not escalate", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [

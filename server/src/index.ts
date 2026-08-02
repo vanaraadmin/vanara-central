@@ -553,14 +553,18 @@ app.post("/api/rooms/:id/on-demand-cleaning", async (c) => {
 app.patch("/api/rooms/:id/housekeeping", async (c) => {
   try {
     const user = await authenticated(c, "rooms", "access");
-    requireModulePermission(user, "housekeeping", "edit");
     const roomId = positiveIntegerParam(c.req.param("id"), "room id");
     const payload = await c.req.json().catch(() => null);
     const room = await updateRoomHousekeepingStatus(c.env, roomId, normalizeRoomHousekeepingInput(payload), user);
     if (!room) return c.json({ success: false, error: "Room not found" }, 404);
     return c.json({ success: true, data: room });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : housekeepingWorkflowErrorStatus(error));
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError
+      ? apiErrorStatus(error)
+      : error instanceof HousekeepingTaskDomainError
+        ? housekeepingV2RoomErrorStatus(error)
+        : 400;
+    return c.json({ success: false, error: errorMessage(error) }, status);
   }
 });
 

@@ -1,4 +1,4 @@
-import { getHousekeepingOverview, type HousekeepingBindings } from "./housekeeping-overview.service.js";
+import type { HousekeepingBindings } from "./housekeeping-overview.service.js";
 import { listOpenMaintenanceTicketDetailsForRoom, type MaintenanceBindings } from "./maintenance.service.js";
 import { isOperationalBookingStatus, operationalBookingStatusSql } from "./booking-status.service.js";
 import { countryCodeFrom, countryFlagFrom, countryFlagUrlFrom } from "./country-flags.service.js";
@@ -75,6 +75,11 @@ interface ReceptionEventRow {
   actor_id: string;
   actor_name: string;
   created_at: string;
+}
+
+interface ActiveRoomTaskRow {
+  task_type: string;
+  status: string;
 }
 
 export interface ReceptionActionInput {
@@ -425,17 +430,29 @@ async function loadEvents(env: ReceptionBindings, bookingId: number): Promise<Re
 
 async function roomStatus(env: ReceptionBindings, roomId: number | null): Promise<string> {
   if (!roomId) return "Expected Arrival";
-  const housekeeping = await getHousekeepingOverview(env);
-  const room = housekeeping.rooms.find((item) => item.unitId === roomId);
-  const maintenance = await listOpenMaintenanceTicketDetailsForRoom(env, roomId);
+  const [maintenance, task] = await Promise.all([
+    listOpenMaintenanceTicketDetailsForRoom(env, roomId),
+    activeRoomReadinessTask(env, roomId),
+  ]);
   if (maintenance.some((ticket) => ticket.outOfService)) return "Out Of Service";
   if (maintenance.length > 0) return "Maintenance";
-  if (!room) return "Ready";
-  if (room.housekeepingStatus === "Cleaning") return "Cleaning";
-  if (room.occupancyStatus === "Occupied") return "Occupied";
-  if (room.newGuestToday) return "Expected Arrival";
-  if (room.checkoutCompleted) return "Expected Departure";
+  if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (task) return task.status === "IN_PROGRESS" || task.status === "CLAIMED" ? "Cleaning" : "Not Ready";
   return "Ready";
+}
+
+async function activeRoomReadinessTask(env: ReceptionBindings, roomId: number): Promise<ActiveRoomTaskRow | null> {
+  return env.DB.prepare(`
+    SELECT task_type, status
+    FROM housekeeping_tasks
+    WHERE unit_id = ?
+      AND task_type IN ('TURNOVER', 'STANDARD_CLEANING', 'LINEN_CHANGE', 'ON_DEMAND_CLEANING')
+      AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
+    ORDER BY
+      CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 ELSE 5 END,
+      task_id
+    LIMIT 1
+  `).bind(roomId).first<ActiveRoomTaskRow>();
 }
 
 async function mapStay(env: ReceptionBindings, row: BookingRow): Promise<ReceptionStay> {

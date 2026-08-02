@@ -62,6 +62,8 @@ class FakeStmt {
 class FakeRoomDB {
   notes: Array<Record<string, unknown>> = [];
   housekeeping: Array<Record<string, unknown>> = [];
+  tasks: Array<Record<string, unknown>> = [];
+  taskEvents: Array<Record<string, unknown>> = [];
   tickets: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
 
@@ -72,8 +74,7 @@ class FakeRoomDB {
     return Promise.all(stmts.map((stmt) => stmt.run()));
   }
 
-  async all<T>(sql: string, _params: unknown[]) {
-    void _params;
+  async all<T>(sql: string, params: unknown[]) {
     if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("FROM users u") && sql.includes("ORDER BY u.full_name")) {
@@ -116,6 +117,17 @@ class FakeRoomDB {
     if (sql.includes("FROM maintenance_ticket_notes")) return { results: [] as T[] };
     if (sql.includes("FROM maintenance_ticket_photos")) return { results: [] as T[] };
     if (sql.includes("FROM maintenance_ticket_events")) return { results: this.events as T[] };
+    if (sql.includes("FROM housekeeping_tasks ht")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_tasks")) {
+      const unitId = Number(params[0]);
+      const rows = this.tasks.filter((task) => !unitId || Number(task.unit_id) === unitId);
+      if (sql.includes("SELECT task_id")) return { results: rows.map((task) => ({ task_id: task.task_id })) as T[] };
+      return { results: rows as T[] };
+    }
+    if (sql.includes("FROM housekeeping_task_events")) return { results: this.taskEvents as T[] };
+    if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
+    if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
+    if (sql.includes("FROM procurement_requests")) return { results: [{ count: 0, latest_request: null }] as T[] };
     return { results: [] as T[] };
   }
 
@@ -166,6 +178,16 @@ class FakeRoomDB {
     if (sql.includes("FROM housekeeping") && sql.includes("ORDER BY")) {
       return (this.housekeeping.at(-1) ?? null) as T | null;
     }
+    if (sql.includes("FROM housekeeping_tasks WHERE idempotency_key")) {
+      return (this.tasks.find((task) => task.idempotency_key === params[0]) ?? null) as T | null;
+    }
+    if (sql.includes("FROM housekeeping_task_events WHERE task_id")) {
+      const event = this.taskEvents.find((item) => item.task_id === params[0] && item.idempotency_key === params[1]);
+      return event ? { task_id: params[0] } as T : null;
+    }
+    if (sql.includes("FROM housekeeping_tasks WHERE task_id")) {
+      return (this.tasks.find((task) => task.task_id === params[0]) ?? null) as T | null;
+    }
     if (sql.includes("SELECT * FROM room_notes WHERE note_id")) {
       return (this.notes.find((note) => note.note_id === params[0]) ?? null) as T | null;
     }
@@ -178,6 +200,83 @@ class FakeRoomDB {
   }
 
   async run(sql: string, params: unknown[]) {
+    if (sql.includes("INSERT INTO housekeeping_tasks")) {
+      const task_id = this.tasks.length + 1;
+      const task = {
+        task_id,
+        task_type: params[0],
+        unit_id: params[1],
+        booking_id: params[2],
+        stay_id: params[3],
+        operational_date: params[4],
+        due_cycle_date: params[5],
+        status: params[6],
+        priority: params[7],
+        source: params[8],
+        on_demand_source: params[9],
+        idempotency_key: params[10],
+        blocking_reason: null,
+        assigned_user_id: null,
+        assigned_user_name: null,
+        claimed_at: null,
+        started_at: null,
+        checklist_completed_at: null,
+        ready_at: null,
+        completed_at: null,
+        skipped_at: null,
+        cancelled_at: null,
+        cancellation_reason: null,
+        version: 1,
+        created_at: params[15],
+        updated_at: params[16],
+      };
+      this.tasks.push(task);
+      return { meta: { changes: 1, last_row_id: task_id } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO housekeeping_task_events")) {
+      const event_id = this.taskEvents.length + 1;
+      const hardcodedRoomReady = sql.includes("'room_ready_override'");
+      this.taskEvents.push(hardcodedRoomReady ? {
+        event_id,
+        task_id: params[0],
+        event_type: "room_ready_override",
+        actor_user_id: params[1],
+        actor_name: params[2],
+        previous_status: params[3],
+        new_status: params[4],
+        reason: params[5],
+        metadata_json: params[6],
+        idempotency_key: params[7],
+        created_at: params[8],
+      } : {
+        event_id,
+        task_id: params[0],
+        event_type: params[1],
+        actor_user_id: params[2],
+        actor_name: params[3],
+        previous_status: params[4],
+        new_status: params[5],
+        reason: params[6],
+        metadata_json: params[7],
+        idempotency_key: params[8],
+        created_at: params[9],
+      });
+      return { meta: { changes: 1, last_row_id: event_id } };
+    }
+    if (sql.includes("UPDATE housekeeping_tasks SET")) {
+      const task = this.tasks.find((item) => item.task_id === params.at(-2) && item.version === params.at(-1));
+      if (!task) return { meta: { changes: 0, last_row_id: 0 } };
+      task.status = params[0];
+      task.version = Number(task.version) + 1;
+      task.updated_at = params[1];
+      task.updated_by = params[2];
+      task.updated_by_name = params[3];
+      if (sql.includes("cancelled_at = ?")) {
+        task.cancelled_at = params[4];
+        task.cancellation_reason = params[5];
+      }
+      return { meta: { changes: 1, last_row_id: task.task_id } };
+    }
     if (sql.includes("INSERT INTO room_notes")) {
       const note_id = this.notes.length + 1;
       this.notes.push({
@@ -390,15 +489,19 @@ async function json(response: Response) {
   return response.json() as Promise<{ success: boolean; data?: unknown; error?: string }>;
 }
 
-test("room workspace accepts only supported housekeeping workflow states", () => {
-  assert.deepEqual(normalizeRoomHousekeepingInput({ status: "Cleaning" }), {
-    status: "Cleaning",
+test("room workspace accepts only supported room readiness states", () => {
+  assert.deepEqual(normalizeRoomHousekeepingInput({ status: "Ready", reason: " Inspected ", idempotencyKey: "ready-1" }), {
+    status: "READY",
+    reason: "Inspected",
+    idempotencyKey: "ready-1",
   });
-  assert.deepEqual(normalizeRoomHousekeepingInput({ status: "Cleaning In Progress" }), {
-    status: "Cleaning",
+  assert.deepEqual(normalizeRoomHousekeepingInput({ status: "not ready" }), {
+    status: "NOT_READY",
+    reason: null,
+    idempotencyKey: null,
   });
-  assert.throws(() => normalizeRoomHousekeepingInput({ status: "Inspected" }), /Housekeeping status is invalid/);
-  assert.throws(() => normalizeRoomHousekeepingInput({ status: "Cleaning", updatedBy: "fake-user" }), /unsupported field/);
+  assert.throws(() => normalizeRoomHousekeepingInput({ status: "Inspected" }), /Room status is invalid/);
+  assert.throws(() => normalizeRoomHousekeepingInput({ status: "Ready", updatedBy: "fake-user" }), /unsupported field/);
   assert.throws(() => normalizeHousekeepingChecklistInput({ itemId: "bathroom", completed: true, author: "fake-user" }), /unsupported field/);
 });
 
@@ -409,16 +512,52 @@ test("room workspace notes must be real operational text", () => {
   assert.throws(() => normalizeRoomNoteInput({ body: " " }), /Note is required/);
 });
 
-test("room housekeeping endpoint enforces authentication, rooms access, edit permission, payload validation, not found and success", async () => {
+test("room housekeeping endpoint supports owner manager ready override only", async () => {
   assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH" }, env([], { authenticated: false }))).status, 401);
   assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x" } }, env([housekeepingEdit]))).status, 403);
-  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Ready" }) }, env([roomsAccess]))).status, 403);
-  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Inspected" }) }, env([roomsAccess, housekeepingEdit]))).status, 400);
-  assert.equal((await request("/api/rooms/999/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Ready" }) }, env([roomsAccess, housekeepingEdit]))).status, 404);
-  const data = env([roomsAccess, housekeepingEdit]);
-  const response = await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Cleaning" }) }, data);
-  assert.equal(response.status, 200);
-  assert.equal(((await json(response)).data as { housekeepingStatus: string }).housekeepingStatus, "Cleaning");
+  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_READY" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Housekeeping" } }))).status, 403);
+  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Inspected" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 400);
+  assert.equal((await request("/api/rooms/999/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "READY" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 404);
+
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  const response = await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_READY", reason: "Owner saw sand", idempotencyKey: "room-ready-test-1" }) }, data);
+  const responseBody = await json(response);
+  assert.equal(response.status, 200, JSON.stringify(responseBody));
+  const body = responseBody.data as { housekeeping: { readyState: string; tasks: Array<{ taskType: string }> } };
+  assert.equal(body.housekeeping.readyState, "NOT_READY");
+  assert.equal(body.housekeeping.tasks.some((task) => task.taskType === "STANDARD_CLEANING"), true);
+  assert.equal(data.DB.tasks.length, 1);
+  assert.equal(data.DB.tasks.at(-1)?.source, "manual");
+  assert.equal(data.DB.tasks.at(-1)?.on_demand_source, "ROOM_READY_OVERRIDE");
+  assert.equal(data.DB.taskEvents.filter((event) => event.event_type === "created").length, 1);
+  assert.equal(data.DB.taskEvents.filter((event) => event.event_type === "room_ready_override").length, 1);
+
+  const ready = await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "READY", reason: "Owner inspected", idempotencyKey: "room-ready-test-2" }) }, data);
+  assert.equal(ready.status, 200, await ready.text());
+  assert.equal(data.DB.tasks.at(-1)?.status, "CANCELLED");
+  assert.equal(data.DB.tasks.at(-1)?.completed_at, null);
+  assert.equal(data.DB.taskEvents.some((event) => event.event_type === "cancel" && event.reason === "Owner inspected"), true);
+});
+
+test("room workspace ignores legacy housekeeping rows for readiness", async () => {
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.housekeeping.push({
+    housekeeping_id: 99,
+    unit_id: UNIT.unit_id,
+    status: "Dirty",
+    assigned_to: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    assigned_at: null,
+    updated_at: "2026-07-01T00:00:00.000Z",
+  });
+
+  const response = await request("/api/rooms/1", { method: "GET", headers: { cookie: "vanara_session=x" } }, data);
+  const body = await json(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.readyState, "READY");
+  assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.primaryStatus, "No active Housekeeping");
+  assert.notEqual((body.data as { roomStatus: string }).roomStatus, "Dirty");
 });
 
 test("housekeeping workflow endpoint supports quick actions and checklist updates", async () => {
