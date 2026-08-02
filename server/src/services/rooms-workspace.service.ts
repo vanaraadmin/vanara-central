@@ -1,5 +1,5 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import type { HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { housekeepingTaskCapabilities, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { hasActionPermission, hasModulePermission, type CurrentUser } from "./current-user.service.js";
 
@@ -15,6 +15,10 @@ export type RoomMaintenanceState = "CLEAR" | "ACTIVE" | "BLOCKING";
 export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOCKED";
 export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
 export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
+export type RoomDomainTone = "success" | "warning" | "danger" | "info" | "neutral";
+export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK";
+export type RoomMaintenanceActionType = "REPORT_ISSUE" | "OPEN_TICKET" | "CONTINUE_WORK";
+export type RoomHousekeepingCompletionMode = "STANDARD" | "FULL" | "WATER";
 
 interface RoomWorkspaceRow {
   unit_id: number;
@@ -38,11 +42,15 @@ interface RoomWorkspaceRow {
   api_source: string | null;
   channel: string | null;
   active_task_count: number | null;
+  active_task_id: number | null;
+  active_task_version: number | null;
   active_task_status: HousekeepingTaskStatus | null;
   active_task_type: HousekeepingTaskType | null;
+  active_task_priority: HousekeepingTaskPriority | null;
   active_task_assignee: string | null;
   active_ticket_count: number | null;
   blocking_ticket_count: number | null;
+  primary_maintenance_ticket_id: number | null;
   primary_maintenance_title: string | null;
   reception_booking_id: number | null;
   reception_beds24_booking_id: number | null;
@@ -82,6 +90,8 @@ export interface RoomsWorkspaceRoom {
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
   reception: RoomReceptionSummary;
+  housekeeping: RoomHousekeepingDomainSummary;
+  maintenance: RoomMaintenanceDomainSummary;
 }
 
 export interface RoomCurrentStaySummary {
@@ -147,6 +157,46 @@ export interface RoomReceptionSummary {
   checkOut: RoomReceptionStepSummary;
   alerts: RoomReceptionAlertSummary[];
   primaryAction: RoomReceptionPrimaryAction | null;
+}
+
+export interface RoomHousekeepingActiveTaskSummary {
+  id: number;
+  version: number;
+  taskType: string;
+  status: string;
+  priority: string;
+  assignee: string | null;
+}
+
+export interface RoomHousekeepingPrimaryAction {
+  type: RoomHousekeepingActionType;
+  label: string;
+  taskId: number | null;
+  version: number | null;
+  completionMode: RoomHousekeepingCompletionMode | null;
+}
+
+export interface RoomHousekeepingDomainSummary {
+  primaryStatus: string;
+  tone: RoomDomainTone;
+  detail: string;
+  secondaryInfo: string | null;
+  activeTask: RoomHousekeepingActiveTaskSummary | null;
+  primaryAction: RoomHousekeepingPrimaryAction | null;
+}
+
+export interface RoomMaintenancePrimaryAction {
+  type: RoomMaintenanceActionType;
+  label: string;
+  target: string | null;
+}
+
+export interface RoomMaintenanceDomainSummary {
+  primaryStatus: string;
+  tone: RoomDomainTone;
+  detail: string;
+  secondaryInfo: string | null;
+  primaryAction: RoomMaintenancePrimaryAction | null;
 }
 
 export interface RoomsWorkspaceOverview {
@@ -401,6 +451,186 @@ async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<num
   return mapReceptionAlerts(rows.results ?? []);
 }
 
+function canUseHousekeepingActions(user?: CurrentUser): boolean {
+  return Boolean(user && hasModulePermission(user, "housekeeping", "edit"));
+}
+
+function canCreateMaintenanceIssue(user?: CurrentUser): boolean {
+  return Boolean(user && (
+    hasModulePermission(user, "maintenance", "access")
+    || hasModulePermission(user, "rooms", "access")
+    || hasModulePermission(user, "housekeeping", "access")
+    || hasModulePermission(user, "movements", "access")
+  ));
+}
+
+function taskActionLabel(taskType: HousekeepingTaskType, mode: "start" | "complete"): string {
+  if (mode === "start") {
+    if (taskType === "LINEN_CHANGE") return "Start Full Cleaning";
+    if (taskType === "WATER_REFILL") return "Complete Water";
+    return "Start Cleaning";
+  }
+
+  if (taskType === "LINEN_CHANGE") return "Finish Full Cleaning";
+  if (taskType === "WATER_REFILL") return "Complete Water";
+  return "Finish Cleaning";
+}
+
+function housekeepingCompletionMode(taskType: HousekeepingTaskType): RoomHousekeepingCompletionMode {
+  if (taskType === "LINEN_CHANGE") return "FULL";
+  if (taskType === "WATER_REFILL") return "WATER";
+  return "STANDARD";
+}
+
+function mapHousekeepingActiveTask(row: RoomWorkspaceRow): RoomHousekeepingActiveTaskSummary | null {
+  if (!row.active_task_id || !row.active_task_type || !row.active_task_status || !row.active_task_priority || !row.active_task_version) return null;
+  return {
+    id: row.active_task_id,
+    version: row.active_task_version,
+    taskType: taskTypeLabel(row.active_task_type) ?? "Housekeeping",
+    status: row.active_task_status,
+    priority: row.active_task_priority,
+    assignee: row.active_task_assignee,
+  };
+}
+
+function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupancyState, user?: CurrentUser): RoomHousekeepingPrimaryAction | null {
+  const canAct = canUseHousekeepingActions(user);
+  if (!canAct) return null;
+  if (maintenanceState(row) === "BLOCKING") return null;
+
+  if (row.active_task_id && row.active_task_type && row.active_task_status && row.active_task_version) {
+    const capabilities = housekeepingTaskCapabilities({ taskType: row.active_task_type, status: row.active_task_status });
+    if (capabilities.canStart) {
+      return {
+        type: "START_HOUSEKEEPING_TASK",
+        label: taskActionLabel(row.active_task_type, "start"),
+        taskId: row.active_task_id,
+        version: row.active_task_version,
+        completionMode: null,
+      };
+    }
+    if (capabilities.canComplete) {
+      return {
+        type: "COMPLETE_HOUSEKEEPING_TASK",
+        label: taskActionLabel(row.active_task_type, "complete"),
+        taskId: row.active_task_id,
+        version: row.active_task_version,
+        completionMode: housekeepingCompletionMode(row.active_task_type),
+      };
+    }
+    return null;
+  }
+
+  if (occupancyState === "OCCUPIED") {
+    return {
+      type: "CREATE_ON_DEMAND_CLEANING",
+      label: "Start On-demand Cleaning",
+      taskId: null,
+      version: null,
+      completionMode: null,
+    };
+  }
+
+  return null;
+}
+
+function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccupancyState, user?: CurrentUser): RoomHousekeepingDomainSummary {
+  const activeTask = mapHousekeepingActiveTask(row);
+  const activeTaskLabel = taskTypeLabel(row.active_task_type);
+  const action = mapHousekeepingAction(row, occupancyState, user);
+  const workState = housekeepingWorkState(row);
+
+  if (maintenanceState(row) === "BLOCKING") {
+    return {
+      primaryStatus: "Maintenance Block",
+      tone: "danger",
+      detail: row.primary_maintenance_title ?? "Housekeeping blocked by maintenance.",
+      secondaryInfo: "No cleaning actions available",
+      activeTask,
+      primaryAction: null,
+    };
+  }
+
+  if (workState === "IN_PROGRESS") {
+    return {
+      primaryStatus: activeTaskLabel === "Water refill" ? "Water In Progress" : "Cleaning In Progress",
+      tone: "info",
+      detail: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : "Assigned operator pending",
+      secondaryInfo: activeTaskLabel,
+      activeTask,
+      primaryAction: action,
+    };
+  }
+
+  if (workState === "AVAILABLE") {
+    return {
+      primaryStatus: activeTaskLabel ?? "Cleaning Required",
+      tone: "warning",
+      detail: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : "Ready to start",
+      secondaryInfo: row.ready_state === "NOT_READY" ? "Room not ready" : null,
+      activeTask,
+      primaryAction: action,
+    };
+  }
+
+  if (row.ready_state === "NOT_READY") {
+    return {
+      primaryStatus: "Not Ready",
+      tone: "warning",
+      detail: "No active Housekeeping task",
+      secondaryInfo: occupancyState === "OCCUPIED" ? "On-demand cleaning available" : null,
+      activeTask,
+      primaryAction: action,
+    };
+  }
+
+  return {
+    primaryStatus: "Ready",
+    tone: "success",
+    detail: "No work required",
+    secondaryInfo: occupancyState === "OCCUPIED" ? "Guest request cleaning available" : null,
+    activeTask,
+    primaryAction: action,
+  };
+}
+
+function mapMaintenanceSummary(row: RoomWorkspaceRow, user?: CurrentUser): RoomMaintenanceDomainSummary {
+  const state = maintenanceState(row);
+  const ticketCount = row.active_ticket_count ?? 0;
+  const canReport = canCreateMaintenanceIssue(user);
+  const title = row.primary_maintenance_title;
+  const ticketTarget = row.primary_maintenance_ticket_id ? `/maintenance/${row.primary_maintenance_ticket_id}` : null;
+
+  if (state === "BLOCKING") {
+    return {
+      primaryStatus: "Out Of Service",
+      tone: "danger",
+      detail: title ?? "Blocking maintenance active.",
+      secondaryInfo: ticketCount > 1 ? `${ticketCount} open tickets` : "Room blocked",
+      primaryAction: ticketTarget ? { type: "OPEN_TICKET", label: "Open Ticket", target: ticketTarget } : null,
+    };
+  }
+
+  if (state === "ACTIVE") {
+    return {
+      primaryStatus: "Maintenance Active",
+      tone: "warning",
+      detail: title ?? "Open technical issue.",
+      secondaryInfo: ticketCount > 1 ? `${ticketCount} open tickets` : "Room operating",
+      primaryAction: ticketTarget ? { type: "CONTINUE_WORK", label: "Continue Work", target: ticketTarget } : null,
+    };
+  }
+
+  return {
+    primaryStatus: "No Issues",
+    tone: "success",
+    detail: "No technical issue.",
+    secondaryInfo: null,
+    primaryAction: canReport ? { type: "REPORT_ISSUE", label: "Report Issue", target: `/maintenance/new?roomId=${row.unit_id}&source=rooms` } : null,
+  };
+}
+
 function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
   const group = roomFamily(row);
   const occupancyState = row.beds24_booking_id ? "OCCUPIED" : "VACANT";
@@ -453,6 +683,8 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
       },
     },
     reception: mapReceptionSummary(row, receptionAlerts, date, user),
+    housekeeping: mapHousekeepingSummary(row, occupancyState, user),
+    maintenance: mapMaintenanceSummary(row, user),
   };
 }
 
@@ -480,11 +712,15 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       b.api_source,
       b.channel,
       COALESCE(ht_count.active_task_count, 0) AS active_task_count,
+      ht.active_task_id,
+      ht.active_task_version,
       ht.active_task_status,
       ht.active_task_type,
+      ht.active_task_priority,
       ht.active_task_assignee,
       COALESCE(mt.active_ticket_count, 0) AS active_ticket_count,
       COALESCE(mt.blocking_ticket_count, 0) AS blocking_ticket_count,
+      mt.primary_maintenance_ticket_id,
       mt.primary_maintenance_title,
       rb.booking_id AS reception_booking_id,
       rb.beds24_booking_id AS reception_beds24_booking_id,
@@ -587,7 +823,14 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       GROUP BY unit_id
     ) ht_count ON ht_count.unit_id = u.unit_id
     LEFT JOIN (
-      SELECT unit_id, status AS active_task_status, task_type AS active_task_type, assigned_user_name AS active_task_assignee
+      SELECT
+        unit_id,
+        task_id AS active_task_id,
+        version AS active_task_version,
+        status AS active_task_status,
+        task_type AS active_task_type,
+        priority AS active_task_priority,
+        assigned_user_name AS active_task_assignee
       FROM (
         SELECT
           ht.*,
@@ -621,6 +864,10 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
         room_id,
         COUNT(*) AS active_ticket_count,
         SUM(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 THEN 1 ELSE 0 END) AS blocking_ticket_count,
+        COALESCE(
+          MIN(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 THEN ticket_id END),
+          MIN(ticket_id)
+        ) AS primary_maintenance_ticket_id,
         COALESCE(
           MIN(CASE WHEN out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1 THEN title END),
           MIN(title)

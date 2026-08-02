@@ -7,6 +7,10 @@ export type RoomsWorkspaceSortGroup = "bungalow" | "villa" | "tent" | "other";
 export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOCKED";
 export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
 export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
+export type RoomDomainTone = "success" | "warning" | "danger" | "info" | "neutral";
+export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK";
+export type RoomMaintenanceActionType = "REPORT_ISSUE" | "OPEN_TICKET" | "CONTINUE_WORK";
+export type RoomHousekeepingCompletionMode = "STANDARD" | "FULL" | "WATER";
 
 export interface RoomOperationalSummary {
   availability: {
@@ -73,6 +77,46 @@ export interface RoomReceptionSummary {
   primaryAction: RoomReceptionPrimaryAction | null;
 }
 
+export interface RoomHousekeepingActiveTaskSummary {
+  id: number;
+  version: number;
+  taskType: string;
+  status: string;
+  priority: string;
+  assignee: string | null;
+}
+
+export interface RoomHousekeepingPrimaryAction {
+  type: RoomHousekeepingActionType;
+  label: string;
+  taskId: number | null;
+  version: number | null;
+  completionMode: RoomHousekeepingCompletionMode | null;
+}
+
+export interface RoomHousekeepingDomainSummary {
+  primaryStatus: string;
+  tone: RoomDomainTone;
+  detail: string;
+  secondaryInfo: string | null;
+  activeTask: RoomHousekeepingActiveTaskSummary | null;
+  primaryAction: RoomHousekeepingPrimaryAction | null;
+}
+
+export interface RoomMaintenancePrimaryAction {
+  type: RoomMaintenanceActionType;
+  label: string;
+  target: string | null;
+}
+
+export interface RoomMaintenanceDomainSummary {
+  primaryStatus: string;
+  tone: RoomDomainTone;
+  detail: string;
+  secondaryInfo: string | null;
+  primaryAction: RoomMaintenancePrimaryAction | null;
+}
+
 export interface RoomsWorkspaceRoom {
   unitId: number;
   roomName: string;
@@ -85,6 +129,8 @@ export interface RoomsWorkspaceRoom {
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
   reception: RoomReceptionSummary;
+  housekeeping: RoomHousekeepingDomainSummary;
+  maintenance: RoomMaintenanceDomainSummary;
 }
 
 export interface RoomsWorkspaceOverview {

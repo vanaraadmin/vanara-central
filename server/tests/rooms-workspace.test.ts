@@ -97,11 +97,15 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     api_source: null,
     channel: null,
     active_task_count: 0,
+    active_task_id: null,
+    active_task_version: null,
     active_task_status: null,
     active_task_type: null,
+    active_task_priority: null,
     active_task_assignee: null,
     active_ticket_count: 0,
     blocking_ticket_count: 0,
+    primary_maintenance_ticket_id: null,
     primary_maintenance_title: null,
     reception_booking_id: null,
     reception_beds24_booking_id: null,
@@ -133,6 +137,7 @@ function defaultRooms() {
       ready_state: "NOT_READY",
       active_ticket_count: 1,
       blocking_ticket_count: 1,
+      primary_maintenance_ticket_id: 7001,
       primary_maintenance_title: "Replace Air Conditioning",
     }),
     roomRow({
@@ -193,8 +198,11 @@ function defaultRooms() {
       unit_name: "Bungalow 4",
       ready_state: "READY",
       active_task_count: 1,
+      active_task_id: 4001,
+      active_task_version: 3,
       active_task_status: "IN_PROGRESS",
       active_task_type: "STANDARD_CLEANING",
+      active_task_priority: "NORMAL",
       active_task_assignee: "Dao",
     }),
     roomRow({
@@ -203,6 +211,7 @@ function defaultRooms() {
       ready_state: "READY",
       active_ticket_count: 1,
       blocking_ticket_count: 0,
+      primary_maintenance_ticket_id: 5001,
       primary_maintenance_title: "Fix bathroom light",
     }),
     roomRow({
@@ -210,8 +219,11 @@ function defaultRooms() {
       unit_name: "Bungalow 6",
       ready_state: "READY",
       active_task_count: 1,
+      active_task_id: 6001,
+      active_task_version: 1,
       active_task_status: "AVAILABLE_FOR_CLAIM",
       active_task_type: "STANDARD_CLEANING",
+      active_task_priority: "NORMAL",
     }),
   ];
 }
@@ -259,6 +271,10 @@ function currentUser(permissions: CurrentUser["permissions"], actionPermissions:
 }
 
 const roomsUser = currentUser([{ module: "rooms", canAccess: true, canEdit: false }]);
+const housekeepingCapableUser = currentUser([
+  { module: "rooms", canAccess: true, canEdit: false },
+  { module: "housekeeping", canAccess: true, canEdit: true },
+]);
 const receptionCapableUser = currentUser(
   [
     { module: "rooms", canAccess: true, canEdit: false },
@@ -314,6 +330,54 @@ test("READY comes only from room_housekeeping_state and active tasks remain sepa
   assert.equal(inProgress.operational.housekeeping.assignedTo, "Dao");
 });
 
+test("Housekeeping domain summary exposes work and one primary action without changing room state", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02", housekeepingCapableUser);
+  const readyOccupied = byName(overview.rooms, "Bungalow 3");
+  const inProgress = byName(overview.rooms, "Bungalow 4");
+  const available = byName(overview.rooms, "Bungalow 6");
+  const blocked = byName(overview.rooms, "Bungalow 7");
+
+  assert.equal(readyOccupied.housekeeping.primaryStatus, "Ready");
+  assert.equal(readyOccupied.housekeeping.detail, "No work required");
+  assert.deepEqual(readyOccupied.housekeeping.primaryAction, {
+    type: "CREATE_ON_DEMAND_CLEANING",
+    label: "Start On-demand Cleaning",
+    taskId: null,
+    version: null,
+    completionMode: null,
+  });
+
+  assert.equal(available.housekeeping.primaryStatus, "Cleaning");
+  assert.deepEqual(available.housekeeping.activeTask, {
+    id: 6001,
+    version: 1,
+    taskType: "Cleaning",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+    assignee: null,
+  });
+  assert.deepEqual(available.housekeeping.primaryAction, {
+    type: "START_HOUSEKEEPING_TASK",
+    label: "Start Cleaning",
+    taskId: 6001,
+    version: 1,
+    completionMode: null,
+  });
+
+  assert.equal(inProgress.housekeeping.primaryStatus, "Cleaning In Progress");
+  assert.equal(inProgress.housekeeping.detail, "Assigned Dao");
+  assert.deepEqual(inProgress.housekeeping.primaryAction, {
+    type: "COMPLETE_HOUSEKEEPING_TASK",
+    label: "Finish Cleaning",
+    taskId: 4001,
+    version: 3,
+    completionMode: "STANDARD",
+  });
+
+  assert.equal(blocked.housekeeping.primaryStatus, "Maintenance Block");
+  assert.equal(blocked.housekeeping.primaryAction, null);
+});
+
 test("maintenance states distinguish blocking active and clear", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
 
@@ -321,6 +385,26 @@ test("maintenance states distinguish blocking active and clear", async () => {
   assert.equal(byName(overview.rooms, "Bungalow 7").operational.maintenance.primaryTitle, "Replace Air Conditioning");
   assert.equal(byName(overview.rooms, "Bungalow 5").operational.maintenance.state, "ACTIVE");
   assert.equal(byName(overview.rooms, "Bungalow 2").operational.maintenance.state, "CLEAR");
+});
+
+test("Maintenance domain summary exposes clear active and blocking ticket actions", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02", roomsUser);
+
+  assert.deepEqual(byName(overview.rooms, "Bungalow 2").maintenance.primaryAction, {
+    type: "REPORT_ISSUE",
+    label: "Report Issue",
+    target: "/maintenance/new?roomId=2&source=rooms",
+  });
+  assert.deepEqual(byName(overview.rooms, "Bungalow 5").maintenance.primaryAction, {
+    type: "CONTINUE_WORK",
+    label: "Continue Work",
+    target: "/maintenance/5001",
+  });
+  assert.deepEqual(byName(overview.rooms, "Bungalow 7").maintenance.primaryAction, {
+    type: "OPEN_TICKET",
+    label: "Open Ticket",
+    target: "/maintenance/7001",
+  });
 });
 
 test("not operating reason and season dates are returned for seasonal rooms", async () => {

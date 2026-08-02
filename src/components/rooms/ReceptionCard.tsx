@@ -1,9 +1,7 @@
-import { Link } from "react-router-dom";
 import type { StatusTone } from "../../config/roomOperationalPresentation";
-import type { ReceptionStayPhase, ReceptionStepState, RoomReceptionAlertSummary, RoomReceptionPrimaryAction, RoomReceptionSummary } from "../../types/rooms-workspace";
-import { ArrowRightIcon } from "../OperationsIcons";
+import type { ReceptionStayPhase, ReceptionStepState, RoomReceptionAlertSummary, RoomReceptionSummary } from "../../types/rooms-workspace";
 import OperationalStatusPill from "./OperationalStatusPill";
-import RoomDomainCard from "./RoomDomainCard";
+import RoomDomainCard, { OperationalStateBlock, PrimaryActionRow } from "./RoomDomainCard";
 
 type ReceptionCardProps = {
   roomId: number;
@@ -72,13 +70,10 @@ function ReceptionAlerts({ alerts }: { alerts: RoomReceptionAlertSummary[] }) {
   );
 }
 
-function ReceptionPrimaryAction({ action, roomName }: { action: RoomReceptionPrimaryAction; roomName: string }) {
-  return (
-    <Link className="room-domain-card__primary-action" to={action.target} aria-label={`${action.label} for ${roomName}`}>
-      <span>{action.label}</span>
-      <ArrowRightIcon />
-    </Link>
-  );
+function getReceptionDetail(reception: RoomReceptionSummary): string {
+  if (reception.primaryAction) return reception.primaryAction.label;
+  if (reception.alerts.length > 0) return "Reception attention required";
+  return "No Reception action required";
 }
 
 export default function ReceptionCard({ roomId, roomName, reception }: ReceptionCardProps) {
@@ -91,21 +86,36 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
 
   return (
     <RoomDomainCard
+      action={reception.primaryAction ? (
+        <PrimaryActionRow
+          ariaLabel={`Open Reception for ${roomName}`}
+          label="Open Reception"
+          to={reception.primaryAction.target}
+        />
+      ) : null}
       className="reception-card"
       eyebrow="Reception"
       headingId={`reception-card-${roomId}`}
-      title={phaseLabel}
+      secondary={(
+        <>
+          <ReceptionAlerts alerts={reception.alerts} />
+          <dl className="reception-card__steps">
+            <ReceptionStatusItem label="Passport" state={reception.passport.state} />
+            <ReceptionStatusItem label="Deposit" state={reception.deposit.state} />
+            <ReceptionStatusItem label="Check-in" state={reception.checkIn.state} />
+            <ReceptionStatusItem label="Check-out" state={reception.checkOut.state} />
+          </dl>
+        </>
+      )}
+      state={(
+        <OperationalStateBlock
+          detail={getReceptionDetail(reception)}
+          tone={getReceptionPhaseTone(reception.phase)}
+          value={phaseLabel}
+        />
+      )}
       status={phaseStatus}
-    >
-      <ReceptionAlerts alerts={reception.alerts} />
-      {reception.primaryAction ? <ReceptionPrimaryAction action={reception.primaryAction} roomName={roomName} /> : null}
-
-      <dl className="reception-card__steps">
-        <ReceptionStatusItem label="Passport" state={reception.passport.state} />
-        <ReceptionStatusItem label="Deposit" state={reception.deposit.state} />
-        <ReceptionStatusItem label="Check-in" state={reception.checkIn.state} />
-        <ReceptionStatusItem label="Check-out" state={reception.checkOut.state} />
-      </dl>
-    </RoomDomainCard>
+      title="Stay"
+    />
   );
 }

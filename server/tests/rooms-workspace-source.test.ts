@@ -9,6 +9,8 @@ const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/Room
 const roomExpandedWorkspace = readFileSync(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
 const guestCard = readFileSync(new URL("../../src/components/rooms/GuestCard.tsx", import.meta.url), "utf8");
 const receptionCard = readFileSync(new URL("../../src/components/rooms/ReceptionCard.tsx", import.meta.url), "utf8");
+const housekeepingCard = readFileSync(new URL("../../src/components/rooms/HousekeepingCard.tsx", import.meta.url), "utf8");
+const maintenanceCard = readFileSync(new URL("../../src/components/rooms/MaintenanceCard.tsx", import.meta.url), "utf8");
 const roomDomainCard = readFileSync(new URL("../../src/components/rooms/RoomDomainCard.tsx", import.meta.url), "utf8");
 const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/rooms/RoomOperationalSummaryCard.tsx", import.meta.url), "utf8");
 const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx", import.meta.url), "utf8");
@@ -43,6 +45,8 @@ test("Rooms Workspace consumes one dedicated read model and cards do not load se
   assert.doesNotMatch(roomCompactSignals, /services\//);
   assert.doesNotMatch(guestCard, /services\//);
   assert.doesNotMatch(receptionCard, /services\//);
+  assert.doesNotMatch(housekeepingCard, /services\//);
+  assert.doesNotMatch(maintenanceCard, /services\//);
   assert.doesNotMatch(roomDomainCard, /services\//);
   assert.doesNotMatch(roomOperationalSummaryCard, /services\//);
   assert.doesNotMatch(roomExpandedWorkspace, /services\//);
@@ -82,8 +86,15 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
   for (const label of ["Operational", "Occupancy", "Housekeeping", "Maintenance"]) {
     assert.match(presentation, new RegExp(label));
   }
-  assert.doesNotMatch(roomExpandedWorkspace, /Create On Demand|Report Issue|Save|Complete|Start Cleaning|Finish Cleaning|Ready \/ Not Ready/);
   assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
+});
+
+test("Expanded Rooms Workspace uses one parent container and removes Notes and History", () => {
+  assert.match(roomExpandedWorkspace, /className="room-workspace-container"/);
+  assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
+  assert.match(roomExpandedWorkspace, /<ReceptionCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder|title="Notes"|title="History"|Notes|History/);
+  assert.match(css, /\.room-workspace-container/);
 });
 
 test("Expanded Rooms Workspace renders GuestCard only for occupied current stays", () => {
@@ -113,19 +124,38 @@ test("Expanded Rooms Workspace renders ReceptionCard only for relevant Reception
   assert.match(receptionCard, /Deposit/);
   assert.match(receptionCard, /Check-in/);
   assert.match(receptionCard, /Check-out/);
-  assert.match(receptionCard, /action\.label/);
+  assert.match(receptionCard, /Open Reception/);
   assert.match(serverService, /Collect Passport/);
   assert.match(serverService, /Complete Check-in/);
   assert.match(serverService, /Complete Check-out/);
+});
+
+test("Housekeeping and Maintenance cards share the RoomDomainCard structure", () => {
+  for (const card of [receptionCard, housekeepingCard, maintenanceCard]) {
+    assert.match(card, /RoomDomainCard/);
+    assert.match(card, /OperationalStateBlock/);
+    assert.match(card, /PrimaryActionRow/);
+  }
+  assert.match(housekeepingCard, /Start On-demand Cleaning|action\.label/);
+  assert.match(housekeepingCard, /onCreateOnDemandCleaning/);
+  assert.match(housekeepingCard, /onStartTask/);
+  assert.match(housekeepingCard, /onCompleteTask/);
+  assert.match(maintenanceCard, /Report Issue|action\.label/);
+  assert.match(serverService, /mapHousekeepingSummary/);
+  assert.match(serverService, /mapMaintenanceSummary/);
+  assert.match(serverService, /primaryAction/);
 });
 
 test("RoomDomainCard is reusable and not Reception-specific", () => {
   assert.match(roomDomainCard, /type RoomDomainCardProps/);
   assert.match(roomDomainCard, /eyebrow: string/);
   assert.match(roomDomainCard, /title: string/);
-  assert.match(roomDomainCard, /children: ReactNode/);
+  assert.match(roomDomainCard, /children\?: ReactNode/);
   assert.match(roomDomainCard, /status\?: ReactNode/);
   assert.match(roomDomainCard, /footer\?: ReactNode/);
+  assert.match(roomDomainCard, /RoomSectionHeader/);
+  assert.match(roomDomainCard, /OperationalStateBlock/);
+  assert.match(roomDomainCard, /PrimaryActionRow/);
   assert.doesNotMatch(roomDomainCard, /Reception|Passport|Deposit|Check-in|Check-out/);
 });
 
@@ -175,7 +205,7 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
 });
 
 test("Room Workspace UI copy does not present raw database or task enums", () => {
-  const ui = `${roomCompactRow}\n${roomCompactSignals}\n${guestCard}\n${receptionCard}\n${roomDomainCard}\n${roomOperationalSummaryCard}\n${presentation}`;
+  const ui = `${roomCompactRow}\n${roomCompactSignals}\n${guestCard}\n${receptionCard}\n${maintenanceCard}\n${roomDomainCard}\n${roomOperationalSummaryCard}\n${presentation}`;
   for (const raw of ["AVAILABLE_FOR_CLAIM", "STANDARD_CLEANING", "ROOM_READY_OVERRIDE", "out_of_service", "guest_arrived", "metadata_json"]) {
     assert.doesNotMatch(ui, new RegExp(raw));
   }
