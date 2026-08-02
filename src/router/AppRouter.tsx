@@ -10,6 +10,8 @@ import DashboardPage from "../pages/DashboardPage";
 import MaintenanceDetailPage from "../pages/MaintenanceDetailPage";
 import MaintenancePage from "../pages/MaintenancePage";
 import HousekeepingPage from "../pages/HousekeepingPage";
+import HousekeepingV2Page from "../pages/HousekeepingV2Page";
+import HousekeepingRoomPage from "../pages/HousekeepingRoomPage";
 import LoginPage from "../pages/LoginPage";
 import MovementsPage from "../pages/MovementsPage";
 import ProcurementDetailPage from "../pages/ProcurementDetailPage";
@@ -79,6 +81,8 @@ export default function AppRouter() {
           <Route path="reception" element={<ReceptionPage />} />
           <Route path="movements" element={<MovementsPage />} />
           <Route path="housekeeping" element={<HousekeepingPage />} />
+          <Route path="housekeeping-v2" element={<HousekeepingV2Page />} />
+          <Route path="housekeeping/rooms/:unitId" element={<HousekeepingRoomPage />} />
           <Route path="housekeeping/checklist/:roomId" element={<Placeholder titleKey="readyChecklist" descriptionKey="checklistPlaceholder" />} />
           <Route path="availability" element={<AvailabilityPage />} />
           <Route path="maintenance" element={<MaintenancePage />} />

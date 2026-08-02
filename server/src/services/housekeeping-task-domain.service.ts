@@ -216,7 +216,12 @@ export function initialHousekeepingTaskStatus(input: Pick<CreateHousekeepingTask
 }
 
 export async function isReceptionRoomReleased(env: HousekeepingTaskBindings, bookingId: number): Promise<boolean> {
-  const row = await env.DB.prepare("SELECT room_released FROM reception_stays WHERE booking_id = ?").bind(bookingId).first<{ room_released: number }>();
+  const row = await env.DB.prepare(`
+    SELECT rs.room_released
+    FROM bookings b
+    JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
+    WHERE b.booking_id = ?
+  `).bind(bookingId).first<{ room_released: number }>();
   return row?.room_released === 1;
 }
 
@@ -231,34 +236,42 @@ export async function createHousekeepingTask(env: HousekeepingTaskBindings, inpu
   const status = initialHousekeepingTaskStatus({ taskType: input.taskType, receptionReleased });
   const now = new Date().toISOString();
   const normalizedActor = normalizeActor(actor);
-  const result = await env.DB.prepare(`
-    INSERT INTO housekeeping_tasks (
-      task_type, unit_id, booking_id, stay_id, operational_date, due_cycle_date, status, priority,
-      source, on_demand_source, idempotency_key, created_by, created_by_name, updated_by, updated_by_name,
-      created_at, updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    input.taskType,
-    input.unitId,
-    input.bookingId ?? null,
-    input.stayId ?? null,
-    input.operationalDate,
-    input.dueCycleDate ?? input.operationalDate,
-    status,
-    input.priority ?? "NORMAL",
-    input.source ?? "system",
-    normalizeOptionalText(input.onDemandSource),
-    idempotencyKey,
-    normalizedActor.id,
-    normalizedActor.displayName,
-    normalizedActor.id,
-    normalizedActor.displayName,
-    now,
-    now,
-  ).run().catch((error: unknown) => {
-    throw mapConstraintError(error);
-  });
+  let result: D1Result;
+  try {
+    result = await env.DB.prepare(`
+      INSERT INTO housekeeping_tasks (
+        task_type, unit_id, booking_id, stay_id, operational_date, due_cycle_date, status, priority,
+        source, on_demand_source, idempotency_key, created_by, created_by_name, updated_by, updated_by_name,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      input.taskType,
+      input.unitId,
+      input.bookingId ?? null,
+      input.stayId ?? null,
+      input.operationalDate,
+      input.dueCycleDate ?? input.operationalDate,
+      status,
+      input.priority ?? "NORMAL",
+      input.source ?? "system",
+      normalizeOptionalText(input.onDemandSource),
+      idempotencyKey,
+      normalizedActor.id,
+      normalizedActor.displayName,
+      normalizedActor.id,
+      normalizedActor.displayName,
+      now,
+      now,
+    ).run();
+  } catch (error: unknown) {
+    const mapped = mapConstraintError(error);
+    if (mapped.code === "housekeeping_duplicate_task" && idempotencyKey) {
+      const existing = await findTaskByIdempotencyKey(env, idempotencyKey);
+      if (existing) return existing;
+    }
+    throw mapped;
+  }
 
   const created = await getHousekeepingTask(env, Number(result.meta.last_row_id));
   if (!created) throw new HousekeepingTaskDomainError("housekeeping_task_not_found", "Housekeeping task could not be loaded after creation.");

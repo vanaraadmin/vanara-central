@@ -62,6 +62,19 @@ class FakeStaffDB {
       return { results: this.options.staffView === false ? [{ view_key: "owner" }] as T[] : [{ view_key: "staff" }] as T[] };
     }
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
+    if (sql.includes("FROM booking_events")) {
+      return {
+        results: [
+          {
+            booking_event_id: 501,
+            event_type: "new",
+            accommodation: "Villa 10",
+            source: "Booking.com",
+            occurred_at: "2026-07-31T10:00:00.000Z",
+          },
+        ] as T[],
+      };
+    }
     if (sql.includes("WITH latest_housekeeping")) {
       return {
         results: [
@@ -225,13 +238,33 @@ test("staff overview can return an empty operational home for active users witho
   assert.deepEqual(overview.cards, []);
 });
 
+test("staff overview includes the persisted recent booking event feed", async () => {
+  const overview = await getStaffOverview(env([]), currentUser([]));
+  assert.deepEqual(overview.bookingEvents, [
+    {
+      id: "501",
+      type: "new",
+      title: "NEW BOOKING",
+      accommodation: "Villa 10",
+      source: "Booking.com",
+      occurredAt: "2026-07-31T10:00:00.000Z",
+    },
+  ]);
+});
+
 test("staff overview API enforces authentication and staff view", async () => {
   assert.equal((await request("/api/staff/overview", { method: "GET" }, env([], { authenticated: false }))).status, 401);
   assert.equal((await request("/api/staff/overview", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([], { staffView: false }))).status, 403);
   const response = await request("/api/staff/overview", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([housekeepingAccess]));
   assert.equal(response.status, 200);
   const body = await json(response);
-  const cards = (body.data as { cards: Array<{ id: string; href: string; metrics: Array<{ label: string; value: number }> }> }).cards;
+  const data = body.data as {
+    bookingEvents: Array<{ title: string; accommodation: string }>;
+    cards: Array<{ id: string; href: string; metrics: Array<{ label: string; value: number }> }>;
+  };
+  const cards = data.cards;
+  assert.equal(data.bookingEvents[0]?.title, "NEW BOOKING");
+  assert.equal(data.bookingEvents[0]?.accommodation, "Villa 10");
   assert.equal(cards.length, 1);
   assert.equal(cards[0]?.id, "housekeeping");
   assert.equal(cards[0]?.href, "/housekeeping");

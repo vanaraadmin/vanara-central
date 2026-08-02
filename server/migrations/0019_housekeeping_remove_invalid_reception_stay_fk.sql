@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS housekeeping_tasks (
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE housekeeping_tasks_next (
   task_id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_type TEXT NOT NULL CHECK (task_type IN (
     'TURNOVER',
@@ -59,6 +61,26 @@ CREATE TABLE IF NOT EXISTS housekeeping_tasks (
   FOREIGN KEY (booking_id) REFERENCES bookings(booking_id) ON DELETE SET NULL
 );
 
+INSERT INTO housekeeping_tasks_next (
+  task_id, task_type, unit_id, booking_id, stay_id, operational_date, due_cycle_date,
+  status, priority, blocking_reason, assigned_user_id, assigned_user_name,
+  claimed_at, started_at, checklist_completed_at, ready_at, completed_at,
+  skipped_at, cancelled_at, cancellation_reason, source, on_demand_source,
+  idempotency_key, version, created_by, created_by_name, updated_by,
+  updated_by_name, created_at, updated_at
+)
+SELECT
+  task_id, task_type, unit_id, booking_id, stay_id, operational_date, due_cycle_date,
+  status, priority, blocking_reason, assigned_user_id, assigned_user_name,
+  claimed_at, started_at, checklist_completed_at, ready_at, completed_at,
+  skipped_at, cancelled_at, cancellation_reason, source, on_demand_source,
+  idempotency_key, version, created_by, created_by_name, updated_by,
+  updated_by_name, created_at, updated_at
+FROM housekeeping_tasks;
+
+DROP TABLE housekeeping_tasks;
+ALTER TABLE housekeeping_tasks_next RENAME TO housekeeping_tasks;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_housekeeping_tasks_idempotency_key
   ON housekeeping_tasks(idempotency_key)
   WHERE idempotency_key IS NOT NULL;
@@ -103,54 +125,7 @@ CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_assignee_status
 CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_type_date_status
   ON housekeeping_tasks(task_type, operational_date, status);
 
-CREATE TABLE IF NOT EXISTS housekeeping_task_events (
-  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id INTEGER NOT NULL,
-  event_type TEXT NOT NULL,
-  actor_user_id TEXT,
-  actor_name TEXT,
-  previous_status TEXT,
-  new_status TEXT,
-  reason TEXT,
-  metadata_json TEXT,
-  idempotency_key TEXT,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (task_id) REFERENCES housekeeping_tasks(task_id) ON DELETE CASCADE
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_housekeeping_task_events_idempotency_key
-  ON housekeeping_task_events(task_id, idempotency_key)
-  WHERE idempotency_key IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_housekeeping_task_events_task_created
-  ON housekeeping_task_events(task_id, created_at);
-
-CREATE TABLE IF NOT EXISTS housekeeping_task_checklist_items (
-  checklist_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id INTEGER NOT NULL,
-  item_key TEXT NOT NULL,
-  label_key TEXT NOT NULL,
-  default_label TEXT NOT NULL,
-  required INTEGER NOT NULL DEFAULT 1 CHECK (required IN (0, 1)),
-  completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1)),
-  completed_by TEXT,
-  completed_by_name TEXT,
-  completed_at TEXT,
-  note TEXT,
-  photo_object_key TEXT,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (task_id) REFERENCES housekeeping_tasks(task_id) ON DELETE CASCADE
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_housekeeping_checklist_task_item
-  ON housekeeping_task_checklist_items(task_id, item_key);
-
-CREATE INDEX IF NOT EXISTS idx_housekeeping_checklist_task
-  ON housekeeping_task_checklist_items(task_id, sort_order);
-
-CREATE TABLE IF NOT EXISTS housekeeping_room_counters (
+CREATE TABLE housekeeping_room_counters_next (
   counter_id INTEGER PRIMARY KEY AUTOINCREMENT,
   unit_id INTEGER NOT NULL,
   active_booking_id INTEGER,
@@ -173,6 +148,24 @@ CREATE TABLE IF NOT EXISTS housekeeping_room_counters (
   FOREIGN KEY (last_linen_change_task_id) REFERENCES housekeeping_tasks(task_id) ON DELETE SET NULL
 );
 
+INSERT INTO housekeeping_room_counters_next (
+  counter_id, unit_id, active_booking_id, active_stay_id, last_standard_cleaning_at,
+  last_standard_cleaning_task_id, next_standard_cleaning_due_date,
+  standard_cleaning_interval_days, last_linen_change_at, last_linen_change_task_id,
+  next_linen_change_due_date, linen_interval_days, linen_required_override,
+  linen_override_reason, created_at, updated_at
+)
+SELECT
+  counter_id, unit_id, active_booking_id, active_stay_id, last_standard_cleaning_at,
+  last_standard_cleaning_task_id, next_standard_cleaning_due_date,
+  standard_cleaning_interval_days, last_linen_change_at, last_linen_change_task_id,
+  next_linen_change_due_date, linen_interval_days, linen_required_override,
+  linen_override_reason, created_at, updated_at
+FROM housekeeping_room_counters;
+
+DROP TABLE housekeeping_room_counters;
+ALTER TABLE housekeeping_room_counters_next RENAME TO housekeeping_room_counters;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_housekeeping_room_counters_unit
   ON housekeeping_room_counters(unit_id);
 
@@ -182,21 +175,4 @@ CREATE INDEX IF NOT EXISTS idx_housekeeping_room_counters_standard_due
 CREATE INDEX IF NOT EXISTS idx_housekeeping_room_counters_linen_due
   ON housekeeping_room_counters(next_linen_change_due_date);
 
-CREATE TABLE IF NOT EXISTS housekeeping_water_quantity_config (
-  config_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_type TEXT NOT NULL,
-  default_bottles INTEGER NOT NULL CHECK (default_bottles > 0),
-  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_housekeeping_water_quantity_room_type
-  ON housekeeping_water_quantity_config(room_type);
-
-INSERT OR IGNORE INTO housekeeping_water_quantity_config (room_type, default_bottles, active, created_at, updated_at)
-VALUES
-  ('Bungalow', 2, 1, datetime('now'), datetime('now')),
-  ('Villa', 4, 1, datetime('now'), datetime('now')),
-  ('Yurt', 2, 1, datetime('now'), datetime('now')),
-  ('Tent', 2, 1, datetime('now'), datetime('now'));
+PRAGMA foreign_keys = ON;

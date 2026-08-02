@@ -9,9 +9,10 @@ import shoppingCartIcon from "../assets/img/shopping-cart-light.svg";
 import sprayBottleIcon from "../assets/img/spray-bottle-light.svg";
 import wrenchIcon from "../assets/img/wrench-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
+import RecentBookings, { type RecentBookingEvent } from "../components/RecentBookings";
 import { RoomIcon } from "../components/OperationsIcons";
 import { loadStaffOverview } from "../services/staff.service";
-import type { StaffCardId, StaffOverviewCard } from "../types/staff";
+import type { StaffBookingEvent, StaffCardId, StaffOverviewCard } from "../types/staff";
 import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
@@ -71,6 +72,52 @@ function sortWorkspaces(workspaces: StaffOverviewCard[]) {
 
 function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
+}
+
+function formatBookingEventTime(value: string): string {
+  const occurredAt = new Date(value);
+  if (Number.isNaN(occurredAt.getTime())) return value;
+
+  const now = new Date();
+  const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - occurredAt.getTime()) / 60_000));
+  if (elapsedMinutes < 60) return `${Math.max(1, elapsedMinutes)} min ago`;
+
+  const bangkokDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const eventDay = bangkokDate.format(occurredAt);
+  const today = bangkokDate.format(now);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(occurredAt);
+
+  if (eventDay === today) return `Today ${time}`;
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(occurredAt);
+}
+
+function recentBookingEvent(event: StaffBookingEvent): RecentBookingEvent {
+  return {
+    id: event.id,
+    type: event.type,
+    title: event.title,
+    accommodation: event.accommodation,
+    source: event.source ?? undefined,
+    occurredAt: formatBookingEventTime(event.occurredAt),
+  };
 }
 
 function WorkspaceCard({
@@ -150,6 +197,7 @@ export default function StaffPage() {
     : [];
 
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
+  const bookingEvents = staff.data?.bookingEvents.map(recentBookingEvent) ?? [];
 
   return (
     <main className="staff-page">
@@ -175,6 +223,8 @@ export default function StaffPage() {
             {name ? `Sawasdee, ${name}` : "Sawasdee"}
           </h1>
         </section>
+
+        <RecentBookings events={bookingEvents} loading={staff.isLoading} />
 
         <section className="staff-workspaces" aria-label="Available workspaces">
           <div className="staff-workspaces__heading">

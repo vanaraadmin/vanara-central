@@ -11,12 +11,17 @@ import { getAvailability } from "./services/availability-read.service.js";
 import { getArrivalsDeparturesAgenda, type MovementsBindings } from "./services/arrivals-departures.service.js";
 import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normalizeCompleteReceptionCheckInInput, normalizeCompleteReceptionCheckOutInput, normalizeReceptionCheckInInput, normalizeReceptionCheckOutInput, normalizeReceptionNotesInput, receptionCompletionErrorStatus, resolveReceptionRoomAlert, updateReceptionAction, updateReceptionNotes, type ReceptionAlertType, type ReceptionBindings } from "./services/reception.service.js";
 import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
+import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain.service.js";
+import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
+import { forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, normalizeForceReleaseInput, normalizeTaskActionInput, performHousekeepingV2TaskAction, updateHousekeepingV2ChecklistItem, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
-import { extractPassportData, PassportOcrError, type PassportData, type PassportOcrBindings } from "./services/passport-ocr.service.js";
+import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
+import { classifyPassportImageWithTiming, decidePassportClassification, PassportClassificationError, type PassportClassificationBindings } from "./services/passport-classification.service.js";
+import { isPassportLivePreflightReady, PassportLivePreflightError, runPassportLivePreflight, type PassportLivePreflightBindings } from "./services/passport-live-preflight.service.js";
 import { deletePassport, uploadPassport, type PassportStorageBindings, type UploadedPassport } from "./services/passport-storage.service.js";
-import { normalizePassportImageFormData, PassportUploadError } from "./services/passport-upload.service.js";
+import { normalizePassportImageFormData, passportImageDiagnostics, PassportUploadError } from "./services/passport-upload.service.js";
 import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
 import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentionBindings } from "./services/passport-retention.service.js";
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
@@ -48,7 +53,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -77,24 +82,92 @@ function protectedErrorStatus(error: unknown): 401 | 403 | 500 {
   if (error instanceof ForbiddenError) return 403;
   return 500;
 }
+function housekeepingV2RoomErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 500 {
+  if (error instanceof AuthenticationError) return 401;
+  if (error instanceof ForbiddenError) return 403;
+  if (error instanceof HousekeepingV2RoomError) return error.status;
+  if (error instanceof HousekeepingV2DateError) return 400;
+  if (error instanceof HousekeepingTaskDomainError) return error.code === "housekeeping_task_stale_version" ? 409 : 400;
+  return 500;
+}
 
 function passportUploadErrorStatus(error: unknown): 400 | 401 | 403 | 413 | 502 {
   if (error instanceof AuthenticationError) return 401;
   if (error instanceof ForbiddenError) return 403;
   if (error instanceof PassportUploadError && error.code === "passport_upload_too_large") return 413;
   if (error instanceof PassportUploadError && error.code === "passport_storage_failed") return 502;
-  return error instanceof PassportOcrError ? 502 : 400;
+  return error instanceof PassportOcrError || error instanceof PassportClassificationError || error instanceof PassportLivePreflightError ? 502 : 400;
 }
 
-function passportUploadError(error: unknown): { code: string; message: string } {
-  if (error instanceof PassportOcrError) return { code: error.code, message: error.message };
+function passportUploadError(error: unknown, requestId?: string): { code: string; message: string; requestId?: string } {
+  if (error instanceof PassportOcrError) return { code: error.code, message: error.message, requestId };
+  if (error instanceof PassportClassificationError) return { code: error.code, message: error.message, requestId };
+  if (error instanceof PassportLivePreflightError) return { code: error.code, message: error.message, requestId };
   if (error instanceof PassportUploadError) return { code: error.code, message: error.message };
   if (error instanceof AuthenticationError) return { code: "authentication_required", message: error.message };
   if (error instanceof ForbiddenError) return { code: "forbidden", message: error.message };
   return { code: "passport_upload_invalid", message: errorMessage(error) };
 }
 
-async function storePassportUpload(env: Bindings, upload: { bytes: ArrayBuffer; contentType: "image/jpeg" | "image/png" }): Promise<UploadedPassport> {
+function logPassportEvent(event: Record<string, unknown>): void {
+  console.log(JSON.stringify(event));
+}
+
+function passportObjectKeyFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || !("objectKey" in payload) || typeof payload.objectKey !== "string") {
+    throw new PassportUploadError("Passport object key is required.", "passport_upload_invalid");
+  }
+  const objectKey = payload.objectKey.trim();
+  if (!objectKey.startsWith("passports/")) {
+    throw new PassportUploadError("Passport object key is invalid.", "passport_upload_invalid");
+  }
+  return objectKey;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function reviewedPassportPayload(payload: unknown): { objectKey: string; passport: PassportData; validation: PassportReviewValidation; manualCorrections: unknown } {
+  if (!payload || typeof payload !== "object" || !("passport" in payload)) {
+    throw new PassportUploadError("Reviewed passport payload is required.", "passport_upload_invalid");
+  }
+  const passport = validatePassportData(payload.passport);
+  const verification = isRecord(payload.passport) ? payload.passport.verification : null;
+  if (!isRecord(verification) || !isRecord(verification.consensus) || !isRecord(verification.consensus.fields)) {
+    throw new PassportUploadError("Passport verification data is required.", "passport_upload_invalid");
+  }
+  const fields = verification.consensus.fields as Record<string, unknown>;
+  const passportNumberField = isRecord(fields.passportNumber) ? fields.passportNumber : null;
+  const passportNumberState = passportNumberField?.state;
+  const tm30Ready = verification.consensus.tm30Ready === true;
+  const requiredFields = [
+    ["firstName", "first name", passport.firstName],
+    ["lastName", "last name", passport.lastName],
+    ["passportNumber", "passport number", passport.passportNumber],
+    ["nationality", "nationality", passport.nationality],
+    ["gender", "gender", passport.gender],
+    ["birthDate", "birth date", passport.birthDate],
+  ] as const;
+  const missingField = requiredFields.find(([, , value]) => typeof value !== "string" || value.trim() === "");
+  if (missingField) {
+    throw new PassportUploadError(`TM30 mandatory field missing: ${missingField[1]}.`, "passport_upload_invalid");
+  }
+  if (passportNumberState !== "AUTO_VERIFIED" && passportNumberState !== "MANUALLY_VERIFIED") {
+    throw new PassportUploadError("Passport number could not be verified.", "passport_upload_invalid");
+  }
+  if (!tm30Ready && passportNumberState !== "MANUALLY_VERIFIED") {
+    throw new PassportUploadError("OCR inconsistency detected.", "passport_upload_invalid");
+  }
+  return {
+    objectKey: passportObjectKeyFromPayload(payload),
+    passport,
+    validation: verification as unknown as PassportReviewValidation,
+    manualCorrections: isRecord(payload) && "manualCorrections" in payload ? payload.manualCorrections : {},
+  };
+}
+
+async function storePassportUpload(env: Bindings, upload: { bytes: ArrayBuffer; contentType: "image/jpeg" | "image/png" | "image/heic" | "image/heif" }): Promise<UploadedPassport> {
   try {
     return await uploadPassport(env, {
       body: upload.bytes,
@@ -537,26 +610,191 @@ app.get("/api/reception", async (c) => {
 });
 
 app.post("/api/reception/passports/ocr", async (c) => {
+  const requestId = crypto.randomUUID();
   try {
     await authenticated(c, "movements", "access");
     const upload = await normalizePassportImageFormData(await c.req.formData());
+    const fullImage = passportImageDiagnostics(upload.bytes, upload.contentType);
+    const passportNumberCrop = passportImageDiagnostics(upload.passportNumberCrop, upload.contentType);
+    const mrzCrop = passportImageDiagnostics(upload.mrzCrop, upload.contentType);
+    logPassportEvent({
+      event: "passport_ocr_started",
+      requestId,
+      fullImage,
+      passportNumberCrop,
+      mrzCrop,
+    });
     const stored = await storePassportUpload(c.env, upload);
     let passport: PassportData;
     try {
-      passport = await extractPassportData(c.env, {
+      passport = await extractPassportReview(c.env, {
         image: upload.bytes,
         contentType: upload.contentType,
+        passportNumberCrop: upload.passportNumberCrop,
+        mrzCrop: upload.mrzCrop,
       });
     } catch (error) {
       await rollbackPassportUpload(c.env, stored.objectKey, "ocr_failed");
       throw error;
     }
+    logPassportEvent({
+      event: "passport_ocr_timing",
+      requestId,
+      model: passport.verification?.timing?.model,
+      pass1Ms: passport.verification?.timing?.pass1Ms,
+      pass2Ms: passport.verification?.timing?.pass2Ms,
+      consensusMs: passport.verification?.timing?.consensusMs,
+      totalMs: passport.verification?.timing?.totalMs,
+      pass1Status: passport.verification?.timing?.pass1Status,
+      pass2Status: passport.verification?.timing?.pass2Status,
+      pass1OpenAiRequestId: passport.verification?.timing?.pass1OpenAiRequestId,
+      pass2OpenAiRequestId: passport.verification?.timing?.pass2OpenAiRequestId,
+      pass1Attempts: passport.verification?.timing?.pass1Attempts,
+      pass2Attempts: passport.verification?.timing?.pass2Attempts,
+      deterministicValidationMs: passport.verification?.timing?.deterministicValidationMs,
+      conditionalVerificationMs: passport.verification?.timing?.conditionalVerificationMs,
+      conditionalVerificationInvoked: passport.verification?.timing?.conditionalVerificationInvoked,
+      visualModel: passport.verification?.timing?.visualModel,
+      mrzModel: passport.verification?.timing?.mrzModel,
+      visualMs: passport.verification?.timing?.visualMs,
+      mrzMs: passport.verification?.timing?.mrzMs,
+      mergeMs: passport.verification?.timing?.mergeMs,
+      verifierMs: passport.verification?.timing?.verifierMs,
+      visualStatus: passport.verification?.timing?.visualStatus,
+      mrzStatus: passport.verification?.timing?.mrzStatus,
+      visualOpenAiRequestId: passport.verification?.timing?.visualOpenAiRequestId,
+      mrzOpenAiRequestId: passport.verification?.timing?.mrzOpenAiRequestId,
+      verifierOpenAiRequestId: passport.verification?.timing?.verifierOpenAiRequestId,
+      verifierTriggerCode: passport.verification?.timing?.verifierTriggerCode,
+      verifierTimedOut: passport.verification?.timing?.verifierTimedOut,
+      manualConfirmationRequired: passport.verification?.timing?.manualConfirmationRequired,
+      parseStatus: "ok",
+    });
 
     return c.json({
       success: true,
       objectKey: stored.objectKey,
       passport,
+      timing: passport.verification?.timing,
+      requestId,
     });
+  } catch (error) {
+    logPassportEvent({
+      event: "passport_ocr_failed",
+      requestId,
+      code: error instanceof PassportOcrError ? error.code : error instanceof PassportUploadError ? error.code : "unknown",
+      stage: error instanceof PassportOcrError ? error.stage : undefined,
+    });
+    return c.json({ success: false, error: passportUploadError(error, requestId) }, passportUploadErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/passports/classify", async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    await authenticated(c, "movements", "access");
+    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const image = passportImageDiagnostics(upload.bytes, upload.contentType);
+    const mrzCrop = passportImageDiagnostics(upload.mrzCrop, upload.contentType);
+    logPassportEvent({
+      event: "passport_classification_started",
+      requestId,
+      image,
+      mrzCrop,
+    });
+    const result = await classifyPassportImageWithTiming(c.env, {
+      image: upload.bytes,
+      contentType: upload.contentType,
+      mrzCrop: upload.mrzCrop,
+    });
+    const decision = decidePassportClassification(result.classification);
+    logPassportEvent({
+      event: "passport_classification_timing",
+      requestId,
+      model: result.timing.model,
+      classificationMs: result.timing.classificationMs,
+      httpStatus: result.timing.httpStatus,
+      openAiRequestId: result.timing.openAiRequestId,
+      flags: {
+        isPassport: result.classification.isPassport,
+        isPassportBiodataPage: result.classification.isPassportBiodataPage,
+        passportConfidence: result.classification.passportConfidence,
+        passportComplete: result.classification.passportComplete,
+        mrzVisible: result.classification.mrzVisible,
+        excessiveGlare: result.classification.excessiveGlare,
+        unreadableBlur: result.classification.unreadableBlur,
+        unreadableDarkness: result.classification.unreadableDarkness,
+      },
+      decisionCode: decision.code,
+    });
+    return c.json({
+      success: true,
+      classification: result.classification,
+      decision,
+      timing: result.timing,
+      requestId,
+    });
+  } catch (error) {
+    logPassportEvent({
+      event: "passport_classification_failed",
+      requestId,
+      code: error instanceof PassportClassificationError ? error.code : error instanceof PassportUploadError ? error.code : "unknown",
+    });
+    return c.json({ success: false, error: passportUploadError(error, requestId) }, passportUploadErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/passports/live-preflight", async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    await authenticated(c, "movements", "access");
+    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const image = passportImageDiagnostics(upload.bytes, upload.contentType);
+    const result = await runPassportLivePreflight(c.env, {
+      image: upload.bytes,
+      contentType: upload.contentType,
+    });
+    const ready = isPassportLivePreflightReady(result.preflight);
+    logPassportEvent({
+      event: "passport_live_preflight_timing",
+      requestId,
+      model: result.timing.model,
+      livePreflightMs: result.timing.livePreflightMs,
+      httpStatus: result.timing.httpStatus,
+      openAiRequestId: result.timing.openAiRequestId,
+      image,
+      flags: {
+        biodataPageDetected: result.preflight.biodataPageDetected,
+        documentInsideFrame: result.preflight.documentInsideFrame,
+        mrzLikelyVisible: result.preflight.mrzLikelyVisible,
+        confidence: result.preflight.confidence,
+      },
+      instruction: result.preflight.instruction,
+      ready,
+    });
+    return c.json({
+      success: true,
+      preflight: result.preflight,
+      ready,
+      timing: result.timing,
+      requestId,
+    });
+  } catch (error) {
+    logPassportEvent({
+      event: "passport_live_preflight_failed",
+      requestId,
+      code: error instanceof PassportLivePreflightError ? error.code : error instanceof PassportUploadError ? error.code : "unknown",
+    });
+    return c.json({ success: false, error: passportUploadError(error, requestId) }, passportUploadErrorStatus(error));
+  }
+});
+
+app.post("/api/reception/passports/discard", async (c) => {
+  try {
+    await authenticated(c, "movements", "access");
+    const objectKey = passportObjectKeyFromPayload(await c.req.json().catch(() => null));
+    await deletePassport(c.env, objectKey);
+    return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: passportUploadError(error) }, passportUploadErrorStatus(error));
   }
@@ -575,37 +813,120 @@ app.get("/api/reception/stays/:bookingId/passports", async (c) => {
   }
 });
 
-app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
+app.post("/api/reception/stays/:bookingId/passports", async (c) => {
+  let objectKey: string | null = null;
   try {
-    await authenticated(c, "movements", "access");
+    const user = await authenticated(c, "movements", "access");
+    const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
+    const stay = await getReceptionStay(c.env, bookingId);
+    if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
+    const input = reviewedPassportPayload(await c.req.json().catch(() => null));
+    objectKey = input.objectKey;
+    const passport = await createBookingPassport(c.env, {
+      bookingId,
+      objectKey: input.objectKey,
+      passport: input.passport,
+      validation: input.validation,
+      manualCorrections: input.manualCorrections,
+      createdBy: user.id,
+      verifiedBy: user.id,
+    });
+    return c.json({ success: true, data: passport }, 201);
+  } catch (error) {
+    if (objectKey) await rollbackPassportUpload(c.env, objectKey, "passport_persistence_failed");
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
+app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const user = await authenticated(c, "movements", "access");
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const stay = await getReceptionStay(c.env, bookingId);
     if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
     const upload = await normalizePassportImageFormData(await c.req.formData());
+    logPassportEvent({
+      event: "passport_ocr_started",
+      requestId,
+      fullImage: passportImageDiagnostics(upload.bytes, upload.contentType),
+      passportNumberCrop: passportImageDiagnostics(upload.passportNumberCrop, upload.contentType),
+      mrzCrop: passportImageDiagnostics(upload.mrzCrop, upload.contentType),
+      bookingScoped: true,
+    });
     const stored = await storePassportUpload(c.env, upload);
     let passport: PassportData;
     try {
-      passport = await extractPassportData(c.env, {
+      passport = await extractPassportReview(c.env, {
         image: upload.bytes,
         contentType: upload.contentType,
+        passportNumberCrop: upload.passportNumberCrop,
+        mrzCrop: upload.mrzCrop,
       });
+      if (!passport.verification) throw new PassportOcrError("Passport verification data is missing.", "passport_schema_invalid");
       await createBookingPassport(c.env, {
         bookingId,
         objectKey: stored.objectKey,
         passport,
+        validation: passport.verification,
+        manualCorrections: {},
+        createdBy: user.id,
+        verifiedBy: user.id,
       });
     } catch (error) {
       await rollbackPassportUpload(c.env, stored.objectKey, error instanceof PassportOcrError ? "ocr_failed" : "passport_persistence_failed");
       throw error;
     }
+    logPassportEvent({
+      event: "passport_ocr_timing",
+      requestId,
+      model: passport.verification?.timing?.model,
+      pass1Ms: passport.verification?.timing?.pass1Ms,
+      pass2Ms: passport.verification?.timing?.pass2Ms,
+      consensusMs: passport.verification?.timing?.consensusMs,
+      totalMs: passport.verification?.timing?.totalMs,
+      pass1Status: passport.verification?.timing?.pass1Status,
+      pass2Status: passport.verification?.timing?.pass2Status,
+      pass1OpenAiRequestId: passport.verification?.timing?.pass1OpenAiRequestId,
+      pass2OpenAiRequestId: passport.verification?.timing?.pass2OpenAiRequestId,
+      pass1Attempts: passport.verification?.timing?.pass1Attempts,
+      pass2Attempts: passport.verification?.timing?.pass2Attempts,
+      deterministicValidationMs: passport.verification?.timing?.deterministicValidationMs,
+      conditionalVerificationMs: passport.verification?.timing?.conditionalVerificationMs,
+      conditionalVerificationInvoked: passport.verification?.timing?.conditionalVerificationInvoked,
+      visualModel: passport.verification?.timing?.visualModel,
+      mrzModel: passport.verification?.timing?.mrzModel,
+      visualMs: passport.verification?.timing?.visualMs,
+      mrzMs: passport.verification?.timing?.mrzMs,
+      mergeMs: passport.verification?.timing?.mergeMs,
+      verifierMs: passport.verification?.timing?.verifierMs,
+      visualStatus: passport.verification?.timing?.visualStatus,
+      mrzStatus: passport.verification?.timing?.mrzStatus,
+      visualOpenAiRequestId: passport.verification?.timing?.visualOpenAiRequestId,
+      mrzOpenAiRequestId: passport.verification?.timing?.mrzOpenAiRequestId,
+      verifierOpenAiRequestId: passport.verification?.timing?.verifierOpenAiRequestId,
+      verifierTriggerCode: passport.verification?.timing?.verifierTriggerCode,
+      verifierTimedOut: passport.verification?.timing?.verifierTimedOut,
+      manualConfirmationRequired: passport.verification?.timing?.manualConfirmationRequired,
+      parseStatus: "ok",
+    });
 
     return c.json({
       success: true,
       objectKey: stored.objectKey,
       passport,
+      timing: passport.verification?.timing,
+      requestId,
     });
   } catch (error) {
-    return c.json({ success: false, error: passportUploadError(error) }, passportUploadErrorStatus(error));
+    logPassportEvent({
+      event: "passport_ocr_failed",
+      requestId,
+      code: error instanceof PassportOcrError ? error.code : error instanceof PassportUploadError ? error.code : "unknown",
+      stage: error instanceof PassportOcrError ? error.stage : undefined,
+      bookingScoped: true,
+    });
+    return c.json({ success: false, error: passportUploadError(error, requestId) }, passportUploadErrorStatus(error));
   }
 });
 
@@ -721,6 +1042,162 @@ app.get("/api/housekeeping", async (c) => {
       success: false,
       error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Housekeeping data is temporarily unavailable",
     }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/housekeeping/v2/summary", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "access");
+    const date = normalizeHousekeepingV2Date(c.req.query("date"));
+    c.header("Cache-Control", "no-store");
+    const overview = await getHousekeepingV2Overview(c.env, user, date);
+    return c.json({
+      success: true,
+      data: overview.summary,
+      meta: {
+        operationalDate: overview.operationalDate,
+        generatedAt: overview.generatedAt,
+        generation: overview.meta.generation,
+      },
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Housekeeping v2 summary request failed", error: errorMessage(error), path: "/api/housekeeping/v2/summary" }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError || error instanceof HousekeepingV2DateError ? errorMessage(error) : "Housekeeping summary is temporarily unavailable",
+    }, error instanceof HousekeepingV2DateError ? 400 : protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/housekeeping/v2/tasks", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "access");
+    const date = normalizeHousekeepingV2Date(c.req.query("date"));
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      success: true,
+      data: await getHousekeepingV2Overview(c.env, user, date),
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Housekeeping v2 tasks request failed", error: errorMessage(error), path: "/api/housekeeping/v2/tasks" }));
+    return c.json({
+      success: false,
+      error: error instanceof AuthenticationError || error instanceof ForbiddenError || error instanceof HousekeepingV2DateError ? errorMessage(error) : "Housekeeping tasks are temporarily unavailable",
+    }, error instanceof HousekeepingV2DateError ? 400 : protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/housekeeping/v2/rooms/:unitId", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "access");
+    const unitId = positiveIntegerParam(c.req.param("unitId"), "room id");
+    const room = await getHousekeepingV2RoomDetail(c.env, user, unitId, c.req.query("date"));
+    if (!room) return c.json({ success: false, error: "Room not found" }, 404);
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Housekeeping v2 room request failed", error: errorMessage(error), path: "/api/housekeeping/v2/rooms/:unitId" }));
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/claim", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "claim", normalizeTaskActionInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/release-claim", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "release-claim", normalizeTaskActionInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/start", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "start", normalizeTaskActionInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/checklist", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await updateHousekeepingV2ChecklistItem(c.env, user, taskId, normalizeTaskActionInput(payload, { checklist: true })) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/complete", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "complete", normalizeTaskActionInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/skip", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "skip", normalizeTaskActionInput(payload, { reasonRequired: true })) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/cancel", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "cancel", normalizeTaskActionInput(payload, { reasonRequired: true })) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/reopen", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await performHousekeepingV2TaskAction(c.env, user, taskId, "reopen", normalizeTaskActionInput(payload, { reasonRequired: true })) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/v2/tasks/:taskId/force-release", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    requireOwner(user);
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await forceHousekeepingV2RoomRelease(c.env, user, taskId, normalizeForceReleaseInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
   }
 });
 

@@ -161,6 +161,7 @@ export async function listTm30PassportRows(env: Tm30Bindings, date: string): Pro
     FROM booking_passports bp
     INNER JOIN bookings b ON b.beds24_booking_id = bp.booking_id
     WHERE b.arrival_date = ?
+      AND bp.tm30_status = 'READY'
       AND ${operationalBookingStatusSql("b.status")}
     ORDER BY b.unit_id, b.beds24_booking_id, bp.created_at, bp.id
   `).bind(date).all<Tm30PassportSqlRow>();

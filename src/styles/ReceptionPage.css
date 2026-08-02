@@ -13,6 +13,7 @@
 .reception-room-chip,
 .reception-guest,
 .reception-contact-trigger,
+.checkin-card__housekeeping,
 .reception-stay-facts,
 .reception-completion,
 .reception-modal__actions,
@@ -424,6 +425,55 @@
   font-weight: 750 !important;
 }
 
+.checkin-card__housekeeping {
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.checkin-card__housekeeping--clean {
+  color: #42c46b;
+}
+
+.checkin-card__housekeeping--in_progress {
+  color: #f28c28;
+}
+
+.checkin-card__housekeeping--dirty {
+  color: #df4b4b;
+}
+
+.checkin-card__housekeeping-icon {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  flex: none;
+  background: currentColor;
+  mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
+  overflow: hidden;
+  padding-left: 18px;
+  -webkit-mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
+}
+
+.checkin-card__housekeeping-icon--clean {
+  color: currentColor;
+}
+
+.checkin-card__housekeeping-icon--in_progress {
+  color: currentColor;
+}
+
+.checkin-card__housekeeping-icon--dirty {
+  color: currentColor;
+}
+
+.checkin-card__housekeeping-label {
+  color: inherit;
+}
+
 .reception-stay-facts {
   gap: 10px;
   margin: 0;
@@ -790,6 +840,17 @@ button.reception-completion:focus-visible {
   box-shadow: 0 -26px 90px rgba(3, 14, 10, 0.42);
   padding: 14px 20px calc(20px + var(--vc-safe-bottom));
   animation: reception-sheet-in 180ms ease-out;
+}
+
+.reception-sheet__panel--passport-capture {
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
 }
 
 .reception-sheet__handle {
@@ -1244,12 +1305,549 @@ button.reception-completion:focus-visible {
   display: none;
 }
 
+.passport-workflow {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  padding:
+    max(14px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: #f7f4ee;
+  color: #173b2d;
+}
+
+.passport-workflow__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+}
+
+.passport-workflow__header button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(23, 59, 45, 0.08);
+  color: rgba(23, 59, 45, 0.78);
+  font: inherit;
+  font-weight: 900;
+}
+
+.passport-workflow__header span {
+  display: block;
+  color: rgba(23, 59, 45, 0.58);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.passport-workflow__header h2 {
+  margin: 2px 0 0;
+  font-size: clamp(1.25rem, 4vw, 1.9rem);
+  line-height: 1;
+}
+
+.passport-workflow__content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.passport-wizard-step {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.passport-wizard-step h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.1;
+}
+
+.passport-workflow__actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  padding-top: 8px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: linear-gradient(180deg, rgba(247, 244, 238, 0), #f7f4ee 28%);
+}
+
+.passport-workflow__actions button {
+  min-height: 52px;
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(23, 59, 45, 0.1);
+  color: rgba(23, 59, 45, 0.78);
+  font: inherit;
+  font-weight: 900;
+}
+
+.passport-workflow__actions button:last-child {
+  background: #173b2d;
+  color: #f7f4ee;
+}
+
+.passport-workflow__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.passport-workflow__actions--single button {
+  max-width: 420px;
+  margin-inline: auto;
+}
+
+.passport-capture {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.passport-capture header {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 2px;
+}
+
+.passport-capture header span {
+  color: rgba(23, 59, 45, 0.54);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.passport-capture header h3 {
+  margin: 0;
+  color: #173b2d;
+  font-family: var(--vc-font-heading, inherit);
+  font-size: clamp(1.08rem, 3vw, 1.32rem);
+}
+
+.passport-capture__placeholder,
+.passport-capture__preview {
+  width: 100%;
+  aspect-ratio: 1.42;
+  min-height: 0;
+  border: 1px solid rgba(23, 59, 45, 0.13);
+  border-radius: 18px;
+  background: rgba(23, 59, 45, 0.05);
+}
+
+.passport-capture__placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(23, 59, 45, 0.46);
+}
+
+.passport-capture__placeholder .reception-sheet-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.passport-capture__preview {
+  max-height: 42dvh;
+  object-fit: contain;
+  padding: 8px;
+}
+
+.passport-camera {
+  flex: 0 1 auto;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 1.42;
+  max-height: 45dvh;
+  min-height: 0;
+  border: 1px solid rgba(23, 59, 45, 0.18);
+  border-radius: 18px;
+  background: #07130f;
+}
+
+.passport-camera__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+}
+
+.passport-camera__analysis {
+  display: none;
+}
+
+.passport-camera__frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(86%, 520px);
+  aspect-ratio: 1.42;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: 16px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.34);
+}
+
+.passport-camera--ready .passport-camera__frame {
+  border-color: #42c46b;
+}
+
+.passport-camera--passport-likely .passport-camera__frame,
+.passport-camera--document-detected .passport-camera__frame,
+.passport-camera--almost-ready .passport-camera__frame {
+  border-color: #f2a33a;
+}
+
+.passport-camera--no-document .passport-camera__frame,
+.passport-camera--not-ready .passport-camera__frame {
+  border-color: #df4b4b;
+}
+
+.passport-camera__guidance {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  left: 16px;
+  margin: 0;
+  border-radius: 999px;
+  background: rgba(4, 13, 10, 0.74);
+  color: #fffaf1;
+  font-size: 0.86rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  padding: 10px 14px;
+  text-align: center;
+}
+
+.passport-capture__hint,
+.passport-capture__issues {
+  flex: 0 0 auto;
+  margin: 0;
+  color: rgba(23, 59, 45, 0.7);
+  font-size: 0.84rem;
+  font-weight: 720;
+}
+
+.passport-capture__issues {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
+.passport-capture__decision {
+  flex: 0 0 auto;
+  margin: 0;
+  color: #be6b28;
+  font-size: 0.92rem;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.passport-capture__decision--ready {
+  color: #287f49;
+}
+
+.passport-capture__diagnostics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+  border: 1px dashed rgba(23, 59, 45, 0.18);
+  border-radius: 12px;
+  background: rgba(23, 59, 45, 0.05);
+  padding: 10px;
+}
+
+.passport-capture__diagnostics div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.passport-capture__diagnostics dt,
+.passport-capture__diagnostics dd {
+  margin: 0;
+  color: rgba(23, 59, 45, 0.68);
+  font-size: 0.72rem;
+  font-weight: 780;
+}
+
+.passport-capture__progress {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: rgba(23, 59, 45, 0.72);
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.passport-review {
+  display: grid;
+  gap: 16px;
+}
+
+.passport-review header {
+  display: grid;
+  gap: 4px;
+}
+
+.passport-review header span {
+  color: rgba(23, 59, 45, 0.54);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.passport-review header h3 {
+  margin: 0;
+  color: #173b2d;
+  font-family: var(--vc-font-heading, inherit);
+  font-size: clamp(1.2rem, 3vw, 1.55rem);
+}
+
+.passport-review__fields {
+  display: grid;
+  gap: 10px;
+}
+
+.passport-review__fields label {
+  display: grid;
+  gap: 6px;
+  color: rgba(23, 59, 45, 0.62);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.passport-review__fields input {
+  min-height: 46px;
+  border: 1px solid rgba(23, 59, 45, 0.13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #173b2d;
+  font: inherit;
+  font-size: 0.96rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  padding: 0 13px;
+}
+
+.passport-review__fields input:read-only {
+  background: rgba(23, 59, 45, 0.05);
+  color: rgba(23, 59, 45, 0.72);
+}
+
+.passport-review__verification {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(223, 75, 75, 0.22);
+  border-radius: 14px;
+  background: rgba(223, 75, 75, 0.07);
+  color: #173b2d;
+  padding: 12px 14px;
+}
+
+.passport-review__verification strong {
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.passport-review__verification ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(23, 59, 45, 0.72);
+  font-size: 0.8rem;
+  font-weight: 720;
+}
+
+.passport-review__candidates {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.passport-review__candidates div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.passport-review__candidates dt {
+  color: rgba(23, 59, 45, 0.58);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.passport-review__candidates dd {
+  margin: 0;
+  color: #173b2d;
+  font-weight: 900;
+}
+
+.passport-review__technical {
+  color: rgba(23, 59, 45, 0.56);
+  font-size: 0.76rem;
+}
+
+.passport-review__technical summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.passport-review__save-reason {
+  margin: 0;
+  border: 1px solid rgba(242, 140, 40, 0.25);
+  border-radius: 12px;
+  background: rgba(242, 140, 40, 0.1);
+  color: #173b2d;
+  font-size: 0.84rem;
+  font-weight: 820;
+  padding: 10px 12px;
+}
+
+.passport-management {
+  display: grid;
+  gap: 18px;
+}
+
+.passport-management header {
+  display: grid;
+  gap: 4px;
+}
+
+.passport-management header span {
+  color: rgba(23, 59, 45, 0.54);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.passport-management header h3 {
+  margin: 0;
+  color: #173b2d;
+  font-family: var(--vc-font-heading, inherit);
+  font-size: clamp(1.2rem, 3vw, 1.55rem);
+}
+
+.passport-management__list {
+  max-height: min(48vh, 420px);
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.passport-management-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(23, 59, 45, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 14px;
+}
+
+.passport-management-card > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.passport-management-card strong {
+  color: #173b2d;
+  font-size: 1.02rem;
+  font-weight: 920;
+  letter-spacing: 0;
+}
+
+.passport-management-card span,
+.passport-management-card dd {
+  color: rgba(23, 59, 45, 0.7);
+  font-size: 0.9rem;
+  font-weight: 760;
+}
+
+.passport-management-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.passport-management-card dt,
+.passport-management-card dd {
+  margin: 0;
+}
+
+.passport-management-card dt {
+  color: rgba(23, 59, 45, 0.5);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.passport-management-card__status--ready {
+  color: #197b45 !important;
+}
+
+.passport-management-card__status--warning {
+  color: #9a5a16 !important;
+}
+
+.passport-management-card__status--muted {
+  color: rgba(23, 59, 45, 0.62) !important;
+}
+
+.passport-management-card button {
+  justify-self: start;
+  min-height: 38px;
+  border: 1px solid rgba(23, 59, 45, 0.12);
+  border-radius: 999px;
+  background: rgba(247, 244, 238, 0.78);
+  color: #173b2d;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 860;
+  padding: 0 14px;
+}
+
 .reception-sheet__actions--single button {
   max-width: none;
 }
 
 .reception-sheet__actions {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
   gap: 10px;
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(247, 244, 238, 0), rgba(247, 244, 238, 0.96) 24%);
 }
 
 .reception-sheet__actions button {
@@ -1353,6 +1951,10 @@ button.reception-completion:focus-visible {
   .reception-contact-header__icon {
     width: 50px;
     height: 50px;
+  }
+
+  .passport-management-card dl {
+    grid-template-columns: 1fr;
   }
 }
 

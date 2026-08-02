@@ -18,6 +18,8 @@ const PASSPORTS_PREFIX = "passports/";
 const PASSPORT_IMAGE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
+  "image/heic": "heic",
+  "image/heif": "heif",
 };
 
 function storageLookupKey(key: string): string {

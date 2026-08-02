@@ -9,7 +9,7 @@ import {
   normalizeReceptionCheckOutInput,
   normalizeReceptionNotesInput,
 } from "../src/services/reception.service.ts";
-import { extractPassportData, PassportOcrError } from "../src/services/passport-ocr.service.ts";
+import { extractPassportData, extractPassportReview, PassportOcrError } from "../src/services/passport-ocr.service.ts";
 import { createBookingPassport, listBookingPassports } from "../src/services/booking-passports.service.ts";
 import { countryCodeFrom, countryFlagUrlFrom } from "../src/services/country-flags.service.ts";
 import { getBangkokDate } from "../src/services/today.service.ts";
@@ -29,6 +29,24 @@ type PassportOcrPayload = {
     gender: string | null;
     birthDate: string | null;
   };
+  timing?: { model: string; pass1Ms: number; pass2Ms: number; consensusMs: number; totalMs: number };
+  error?: { code: string; message: string };
+};
+type PassportClassificationPayload = {
+  success: boolean;
+  classification?: {
+    isPassport: boolean;
+    isPassportBiodataPage: boolean;
+    passportConfidence: number;
+    passportComplete: boolean;
+    mrzVisible: boolean;
+    excessiveGlare: boolean;
+    unreadableBlur: boolean;
+    unreadableDarkness: boolean;
+    recommendation: string;
+  };
+  decision?: { ready: boolean; code: string; messageKey: string; message: string };
+  timing?: { model: string; classificationMs: number };
   error?: { code: string; message: string };
 };
 
@@ -154,7 +172,11 @@ class FakeReceptionDB {
     if (sql.includes("FROM reception_room_alerts")) return { results: this.alerts.filter((alert) => alert.status === "active") as T[] };
     if (sql.includes("FROM booking_passports")) {
       const bookingId = Number(_params[0]);
-      return { results: this.passports.filter((passport) => passport.booking_id === bookingId) as T[] };
+      const source = _params.length > 1 ? _params[1] : undefined;
+      return { results: this.passports.filter((passport) => (
+        passport.booking_id === bookingId
+        && (source === undefined || passport.source === source)
+      )) as T[] };
     }
     if (sql.includes("FROM maintenance_tickets") && sql.includes("WHERE room_id =")) return { results: [] as T[] };
     return { results: [] as T[] };
@@ -342,14 +364,25 @@ class FakeReceptionDB {
         id,
         booking_id: params[0],
         object_key: params[1],
-        first_name: params[2],
-        middle_name: params[3],
-        last_name: params[4],
-        passport_number: params[5],
-        nationality: params[6],
-        gender: params[7],
-        birth_date: params[8],
-        created_at: params[9],
+        source: params[2],
+        first_name: params[3],
+        middle_name: params[4],
+        last_name: params[5],
+        passport_number: params[6],
+        nationality: params[7],
+        gender: params[8],
+        birth_date: params[9],
+        expiry_date: params[10],
+        document_type: params[11],
+        issuing_country: params[12],
+        mrz_line_1: params[13],
+        mrz_line_2: params[14],
+        mrz_validation_json: params[15],
+        field_verification_json: params[16],
+        manual_corrections_json: params[17],
+        quality_gate_json: params[18],
+        tm30_status: params[21],
+        created_at: params[25],
       });
       return { meta: { changes: 1, last_row_id: id } };
     }
@@ -512,41 +545,95 @@ test("reception overview excludes every cancelled group room while unrelated act
 test("passport OCR endpoint stores one image and returns strict passport data", async (t) => {
   const r2 = new FakePassportR2();
   const data = env([movementsAccess], true, [], BOOKING, r2);
-  const extractedPassport = {
-    firstName: "MALI",
-    middleName: null,
-    lastName: "GUEST",
-    passportNumber: "AB1234567",
-    nationality: "THAI",
-    gender: "F",
-    birthDate: "1990-01-15",
+  const visualPassport = {
+    documentType: "P",
+    issuingCountry: "UTO",
+    surname: "ERIKSSON",
+    givenNames: "ANNA MARIA",
+    passportNumberVisual: "L898902C3",
+    nationality: "UTO",
+    dateOfBirth: "1974-08-12",
+    sex: "F",
+    expiryDate: "2012-04-15",
+    fieldStatus: {
+      documentType: "READ",
+      issuingCountry: "READ",
+      surname: "READ",
+      givenNames: "READ",
+      passportNumberVisual: "READ",
+      nationality: "READ",
+      dateOfBirth: "READ",
+      sex: "READ",
+      expiryDate: "READ",
+    },
+  };
+  const mrzPassport = {
+    mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+    mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+    mrzPassportNumber: "L898902C3",
+    passportNumberVisual: "L898902C3",
+    fieldStatus: {
+      mrzLine1: "READ",
+      mrzLine2: "READ",
+      mrzPassportNumber: "READ",
+      passportNumberVisual: "READ",
+    },
   };
   const originalFetch = globalThis.fetch;
+  const calls: Array<{ model: string; images: number; prompt: string; schema: Record<string, unknown> }> = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     assert.equal(String(input), "https://api.openai.com/v1/responses");
     assert.equal(init?.method, "POST");
     assert.equal((init?.headers as Record<string, string>).authorization, "Bearer test-openai-key");
     const body = JSON.parse(String(init?.body)) as {
-      temperature: number;
-      input: Array<{ content: Array<{ type: string; image_url?: string }> }>;
+      model: string;
+      input: Array<{ content: Array<{ type: string; text?: string; image_url?: string }> }>;
       text: { format: { type: string; strict: boolean; schema: { additionalProperties: boolean } } };
     };
-    assert.equal(body.temperature, 0);
+    const images = body.input[0]?.content.filter((item) => item.type === "input_image") ?? [];
+    const prompt = body.input[0]?.content[0]?.text ?? "";
+    calls.push({ model: body.model, images: images.length, prompt, schema: body.text.format.schema });
+    assert.equal(body.model, "gpt-5.6-terra");
+    assert.equal("temperature" in body, false);
     assert.equal(body.input[0]?.content[1]?.type, "input_image");
     assert.ok(body.input[0]?.content[1]?.image_url?.startsWith("data:image/jpeg;base64,"));
     assert.equal(body.text.format.type, "json_schema");
     assert.equal(body.text.format.strict, true);
     assert.equal(body.text.format.schema.additionalProperties, false);
+    assert.equal(JSON.stringify(body.text.format.schema).includes("rawVisualText"), false);
+    assert.equal(JSON.stringify(body.text.format.schema).includes("imageQualityAssessment"), false);
+    if (prompt.includes("human-readable biodata")) {
+      assert.equal(images.length, 1);
+      assert.equal(JSON.stringify(body.text.format.schema).includes("mrzLine1"), false);
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify(visualPassport) }] }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    assert.match(prompt, /machine-readable passport fields/);
+    assert.equal(images.length, 2);
+    assert.equal(JSON.stringify(body.text.format.schema).includes("givenNames"), false);
     return new Response(JSON.stringify({
-      output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(mrzPassport) }] }],
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
 
+  const expectedPassport = {
+    firstName: "ANNA MARIA",
+    middleName: null,
+    lastName: "ERIKSSON",
+    passportNumber: "L898902C3",
+    nationality: "UTO",
+    gender: "F",
+    birthDate: "1974-08-12",
+  };
+
   const formData = new FormData();
   formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  formData.set("passportNumberCrop", new File([new Uint8Array([4, 5, 6])], "number.jpg", { type: "image/jpeg" }));
+  formData.set("mrzCrop", new File([new Uint8Array([7, 8, 9])], "mrz.jpg", { type: "image/jpeg" }));
   const response = await request("/api/reception/passports/ocr", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },
@@ -559,7 +646,378 @@ test("passport OCR endpoint stores one image and returns strict passport data", 
   assert.ok(payload.objectKey?.startsWith("passports/"));
   assert.deepEqual([...r2.objects.keys()], [payload.objectKey]);
   assert.equal(r2.objects.get(payload.objectKey ?? "")?.options?.customMetadata, undefined);
-  assert.deepEqual(payload.passport, extractedPassport);
+  assert.equal(payload.passport?.passportNumber, expectedPassport.passportNumber);
+  assert.equal(payload.passport?.firstName, expectedPassport.firstName);
+  assert.ok(payload.passport?.verification);
+  assert.equal(payload.timing?.model, "gpt-5.6-terra+gpt-5.6-terra");
+  assert.equal(typeof payload.timing?.pass1Ms, "number");
+  assert.equal(payload.timing?.pass2Ms, 0);
+  assert.equal(payload.timing?.conditionalVerificationInvoked, false);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((call) => call.images).sort(), [1, 2]);
+  assert.equal(typeof payload.timing?.consensusMs, "number");
+});
+
+test("passport OCR primary visual and MRZ reads start in parallel with focused payloads", async () => {
+  let visualRelease: (() => void) | null = null;
+  let visualStarted = false;
+  let mrzStarted = false;
+  const fetcher = (async (_input: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as {
+      model: string;
+      input: Array<{ content: Array<{ type: string; text?: string; image_url?: string }> }>;
+    };
+    const prompt = body.input[0]?.content[0]?.text ?? "";
+    const images = body.input[0]?.content.filter((item) => item.type === "input_image") ?? [];
+    if (prompt.includes("human-readable biodata")) {
+      visualStarted = true;
+      assert.equal(images.length, 1);
+      await new Promise<void>((resolve) => {
+        visualRelease = resolve;
+      });
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify({
+          documentType: "P",
+          issuingCountry: "UTO",
+          surname: "ERIKSSON",
+          givenNames: "ANNA MARIA",
+          passportNumberVisual: "L898902C3",
+          nationality: "UTO",
+          dateOfBirth: "1974-08-12",
+          sex: "F",
+          expiryDate: "2012-04-15",
+          fieldStatus: {
+            documentType: "READ",
+            issuingCountry: "READ",
+            surname: "READ",
+            givenNames: "READ",
+            passportNumberVisual: "READ",
+            nationality: "READ",
+            dateOfBirth: "READ",
+            sex: "READ",
+            expiryDate: "READ",
+          },
+        }) }] }],
+      }), { status: 200, headers: { "content-type": "application/json", "x-request-id": "visual-request" } });
+    }
+    mrzStarted = true;
+    assert.equal(visualStarted, true);
+    assert.equal(images.length, 2);
+    visualRelease?.();
+    return new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify({
+        mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+        mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+        mrzPassportNumber: "L898902C3",
+        passportNumberVisual: "L898902C3",
+        fieldStatus: {
+          mrzLine1: "READ",
+          mrzLine2: "READ",
+          mrzPassportNumber: "READ",
+          passportNumberVisual: "READ",
+        },
+      }) }] }],
+    }), { status: 200, headers: { "content-type": "application/json", "x-request-id": "mrz-request" } });
+  }) as typeof fetch;
+
+  const passport = await extractPassportReview(
+    { OPENAI_API_KEY: "test-openai-key" },
+    {
+      image: new Uint8Array([1, 2, 3]).buffer,
+      passportNumberCrop: new Uint8Array([4, 5, 6]).buffer,
+      mrzCrop: new Uint8Array([7, 8, 9]).buffer,
+      contentType: "image/jpeg",
+    },
+    fetcher,
+  );
+
+  assert.equal(visualStarted, true);
+  assert.equal(mrzStarted, true);
+  assert.equal(passport.verification?.timing?.visualOpenAiRequestId, "visual-request");
+  assert.equal(passport.verification?.timing?.mrzOpenAiRequestId, "mrz-request");
+  assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, false);
+});
+
+test("passport OCR invokes Sol verifier only when visual and MRZ passport numbers conflict", async () => {
+  const models: string[] = [];
+  let verifierImages = 0;
+  let verifierPrompt = "";
+  let verifierSchema = "";
+  const fetcher = (async (_input: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as {
+      model: string;
+      input: Array<{ content: Array<{ type: string; text?: string; image_url?: string }> }>;
+      text: { format: { schema: unknown } };
+    };
+    models.push(body.model);
+    const prompt = body.input[0]?.content[0]?.text ?? "";
+    const images = body.input[0]?.content.filter((item) => item.type === "input_image") ?? [];
+    if (body.model === "gpt-5.6-sol") {
+      verifierImages = images.length;
+      verifierPrompt = prompt;
+      verifierSchema = JSON.stringify(body.text.format.schema);
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify({
+          resolved: true,
+          passportNumber: "L898902C3",
+          confidence: 0.94,
+          needsManualConfirmation: false,
+        }) }] }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    const responseText = prompt.includes("human-readable biodata")
+      ? JSON.stringify({
+        documentType: "P",
+        issuingCountry: "UTO",
+        surname: "ERIKSSON",
+        givenNames: "ANNA MARIA",
+        passportNumberVisual: "X898902C3",
+        nationality: "UTO",
+        dateOfBirth: "1974-08-12",
+        sex: "F",
+        expiryDate: "2012-04-15",
+        fieldStatus: {
+          documentType: "READ",
+          issuingCountry: "READ",
+          surname: "READ",
+          givenNames: "READ",
+          passportNumberVisual: "READ",
+          nationality: "READ",
+          dateOfBirth: "READ",
+          sex: "READ",
+          expiryDate: "READ",
+        },
+      })
+      : JSON.stringify({
+        mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+        mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+        mrzPassportNumber: "L898902C3",
+        passportNumberVisual: "L898902C3",
+        fieldStatus: {
+          mrzLine1: "READ",
+          mrzLine2: "READ",
+          mrzPassportNumber: "READ",
+          passportNumberVisual: "READ",
+        },
+      });
+    return new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: responseText }] }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  const passport = await extractPassportReview(
+    { OPENAI_API_KEY: "test-openai-key" },
+    {
+      image: new Uint8Array([1, 2, 3]).buffer,
+      passportNumberCrop: new Uint8Array([4, 5, 6]).buffer,
+      mrzCrop: new Uint8Array([7, 8, 9]).buffer,
+      contentType: "image/jpeg",
+    },
+    fetcher,
+  );
+
+  assert.deepEqual(models, ["gpt-5.6-terra", "gpt-5.6-terra", "gpt-5.6-sol"]);
+  assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, true);
+  assert.equal(passport.verification?.timing?.verifierTriggerCode, "PASSPORT_NUMBER_CONFLICT");
+  assert.equal(verifierImages, 2);
+  assert.match(verifierPrompt, /Trigger code: PASSPORT_NUMBER_CONFLICT/);
+  assert.doesNotMatch(verifierPrompt, /given names|surname|nationality|date of birth/i);
+  assert.match(verifierSchema, /needsManualConfirmation/);
+  assert.doesNotMatch(verifierSchema, /mrzLine1|givenNames|surname/);
+});
+
+test("passport OCR verifier timeout preserves primary results for manual confirmation review", async () => {
+  const passport = await extractPassportReview(
+    { OPENAI_API_KEY: "test-openai-key" },
+    {
+      image: new Uint8Array([1, 2, 3]).buffer,
+      passportNumberCrop: new Uint8Array([4, 5, 6]).buffer,
+      mrzCrop: new Uint8Array([7, 8, 9]).buffer,
+      contentType: "image/jpeg",
+    },
+    (async (_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        model: string;
+        input: Array<{ content: Array<{ type: string; text?: string }> }>;
+      };
+      const prompt = body.input[0]?.content[0]?.text ?? "";
+      if (body.model === "gpt-5.6-sol") throw new DOMException("Aborted", "AbortError");
+      const responseText = prompt.includes("human-readable biodata")
+        ? JSON.stringify({
+          documentType: "P",
+          issuingCountry: "UTO",
+          surname: "ERIKSSON",
+          givenNames: "ANNA MARIA",
+          passportNumberVisual: "X898902C3",
+          nationality: "UTO",
+          dateOfBirth: "1974-08-12",
+          sex: "F",
+          expiryDate: "2012-04-15",
+          fieldStatus: {
+            documentType: "READ",
+            issuingCountry: "READ",
+            surname: "READ",
+            givenNames: "READ",
+            passportNumberVisual: "READ",
+            nationality: "READ",
+            dateOfBirth: "READ",
+            sex: "READ",
+            expiryDate: "READ",
+          },
+        })
+        : JSON.stringify({
+          mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+          mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+          mrzPassportNumber: "L898902C3",
+          passportNumberVisual: "L898902C3",
+          fieldStatus: {
+            mrzLine1: "READ",
+            mrzLine2: "READ",
+            mrzPassportNumber: "READ",
+            passportNumberVisual: "READ",
+          },
+        });
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: responseText }] }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch,
+  );
+
+  assert.equal(passport.passportNumber, "L898902C3");
+  assert.equal(passport.firstName, "ANNA MARIA");
+  assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, true);
+  assert.equal(passport.verification?.timing?.verifierTimedOut, true);
+  assert.equal(passport.verification?.timing?.manualConfirmationRequired, true);
+  assert.equal(passport.verification?.consensus.fields.passportNumber.state, "NEEDS_CONFIRMATION");
+  assert.ok(passport.verification?.consensus.fields.passportNumber.issues.includes("VERIFICATION_TIMEOUT"));
+});
+
+test("passport OCR timeout reports the precise failed stage after both primary calls start", async () => {
+  let mrzStarted = false;
+  await assert.rejects(
+    extractPassportReview(
+      { OPENAI_API_KEY: "test-openai-key" },
+      {
+        image: new Uint8Array([1, 2, 3]).buffer,
+        passportNumberCrop: new Uint8Array([4, 5, 6]).buffer,
+        mrzCrop: new Uint8Array([7, 8, 9]).buffer,
+        contentType: "image/jpeg",
+      },
+      (async (_input: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as { input: Array<{ content: Array<{ type: string; text?: string }> }> };
+        const prompt = body.input[0]?.content[0]?.text ?? "";
+        if (prompt.includes("human-readable biodata")) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        mrzStarted = true;
+        return new Response(JSON.stringify({
+          output: [{ content: [{ type: "output_text", text: JSON.stringify({
+            mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+            mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+            mrzPassportNumber: "L898902C3",
+            passportNumberVisual: "L898902C3",
+            fieldStatus: {
+              mrzLine1: "READ",
+              mrzLine2: "READ",
+              mrzPassportNumber: "READ",
+              passportNumberVisual: "READ",
+            },
+          }) }] }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch,
+    ),
+    (error: unknown) => error instanceof PassportOcrError && error.code === "openai_timeout" && error.stage === "visual_biodata",
+  );
+  assert.equal(mrzStarted, true);
+});
+
+test("passport classification endpoint checks a biodata page without storing to R2", async (t) => {
+  const r2 = new FakePassportR2();
+  const data = env([movementsAccess], true, [], BOOKING, r2);
+  const classification = {
+    isPassport: true,
+    isPassportBiodataPage: true,
+    passportConfidence: 0.91,
+    passportComplete: true,
+    mrzVisible: true,
+    excessiveGlare: false,
+    unreadableBlur: false,
+    unreadableDarkness: false,
+    recommendation: "Ready to scan.",
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), "https://api.openai.com/v1/responses");
+    assert.equal(init?.method, "POST");
+    const body = JSON.parse(String(init?.body)) as {
+      model: string;
+      input: Array<{ content: Array<{ type: string; text?: string; image_url?: string }> }>;
+      text: { format: { type: string; strict: boolean; schema: { additionalProperties: boolean } } };
+    };
+    assert.equal(body.model, "gpt-5.6-terra");
+    assert.match(body.input[0]?.content[0]?.text ?? "", /Do not perform OCR/);
+    assert.ok(body.input[0]?.content[1]?.image_url?.startsWith("data:image/jpeg;base64,"));
+    assert.equal(body.text.format.type, "json_schema");
+    assert.equal(body.text.format.strict, true);
+    assert.equal(body.text.format.schema.additionalProperties, false);
+    return new Response(JSON.stringify({
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(classification) }] }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "passport.jpg", { type: "image/jpeg" }));
+  const response = await request("/api/reception/passports/classify", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 200);
+  const payload = await response.json() as PassportClassificationPayload;
+  assert.equal(payload.success, true);
+  assert.equal(payload.classification?.passportComplete, true);
+  assert.deepEqual(payload.decision, { ready: true, code: "passport_ready", messageKey: "passport.ready", message: "Ready to scan." });
+  assert.equal(payload.timing?.model, "gpt-5.6-terra");
+  assert.equal(typeof payload.timing?.classificationMs, "number");
+  assert.equal(r2.objects.size, 0);
+});
+
+test("passport classification endpoint blocks non-passport images before OCR", async (t) => {
+  const data = env([movementsAccess]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify({
+      isPassport: false,
+      isPassportBiodataPage: false,
+      passportConfidence: 0.01,
+      passportComplete: false,
+      mrzVisible: false,
+      excessiveGlare: false,
+      unreadableBlur: false,
+      unreadableDarkness: false,
+      recommendation: "This is not a passport.",
+    }) }] }],
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const formData = new FormData();
+  formData.set("passport", new File([new Uint8Array([1, 2, 3])], "table.png", { type: "image/png" }));
+  const response = await request("/api/reception/passports/classify", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+    body: formData,
+  }, data);
+
+  assert.equal(response.status, 200);
+  const payload = await response.json() as PassportClassificationPayload;
+  assert.equal(payload.success, true);
+  assert.deepEqual(payload.decision, { ready: false, code: "not_a_passport", messageKey: "passport.notPassport", message: "This is not a passport." });
 });
 
 test("passport OCR endpoint rejects images larger than 10 MB", async () => {
@@ -733,7 +1191,29 @@ test("booking passports repository persists and retrieves passports by booking i
   assert.equal(passport.id, 1);
   assert.equal(passport.bookingId, 9001);
   assert.equal(passport.objectKey, "passports/2026-07-31/test-one.jpg");
+  assert.equal(passport.source, "reception_ocr_flow");
   assert.deepEqual(await listBookingPassports(data, 9001), [passport]);
+});
+
+test("booking passport completion ignores records without reception OCR provenance", async () => {
+  const data = env([movementsAccess]);
+  const db = data.DB as unknown as FakeReceptionDB;
+  db.passports.push({
+    id: 1,
+    booking_id: 9001,
+    object_key: "passports/2026-07-31/manual.jpg",
+    source: "manual_sql",
+    first_name: "FAKE",
+    middle_name: null,
+    last_name: "PASSPORT",
+    passport_number: "MANUAL",
+    nationality: "THAI",
+    gender: "F",
+    birth_date: "1990-01-15",
+    created_at: "2026-07-31T00:00:00.000Z",
+  });
+
+  assert.deepEqual(await listBookingPassports(data, 9001), []);
 });
 
 test("booking passports retrieval supports multiple and zero passport bookings", async () => {
@@ -773,18 +1253,45 @@ test("booking scoped passport OCR endpoint persists the extracted passport after
   const r2 = new FakePassportR2();
   const data = env([movementsAccess], true, [], BOOKING, r2);
   const db = data.DB as unknown as FakeReceptionDB;
-  const extractedPassport = {
-    firstName: "MALI",
-    middleName: null,
-    lastName: "GUEST",
-    passportNumber: "AB1234567",
-    nationality: "THAI",
-    gender: "F",
-    birthDate: "1990-01-15",
+  const visualPassport = {
+    documentType: "P",
+    issuingCountry: "UTO",
+    surname: "ERIKSSON",
+    givenNames: "ANNA MARIA",
+    passportNumberVisual: "L898902C3",
+    nationality: "UTO",
+    dateOfBirth: "1974-08-12",
+    sex: "F",
+    expiryDate: "2012-04-15",
+    fieldStatus: {
+      documentType: "READ",
+      issuingCountry: "READ",
+      surname: "READ",
+      givenNames: "READ",
+      passportNumberVisual: "READ",
+      nationality: "READ",
+      dateOfBirth: "READ",
+      sex: "READ",
+      expiryDate: "READ",
+    },
+  };
+  const mrzPassport = {
+    mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+    mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+    mrzPassportNumber: "L898902C3",
+    passportNumberVisual: null,
+    fieldStatus: {
+      mrzLine1: "READ",
+      mrzLine2: "READ",
+      mrzPassportNumber: "READ",
+      passportNumberVisual: "NOT_FOUND",
+    },
   };
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response(JSON.stringify({
-    output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify(
+      String(init?.body).includes("human-readable biodata") ? visualPassport : mrzPassport,
+    ) }] }],
   }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
@@ -804,7 +1311,7 @@ test("booking scoped passport OCR endpoint persists the extracted passport after
   assert.equal(db.passports.length, 1);
   assert.equal(db.passports[0]?.booking_id, 9001);
   assert.equal(db.passports[0]?.object_key, payload.objectKey);
-  assert.equal(db.passports[0]?.passport_number, "AB1234567");
+  assert.equal(db.passports[0]?.passport_number, "L898902C3");
 
   const saved = await request("/api/reception/stays/9001/passports", {
     method: "GET",
@@ -821,18 +1328,45 @@ test("booking scoped passport OCR endpoint rolls back R2 after persistence failu
   const data = env([movementsAccess], true, [], BOOKING, r2);
   const db = data.DB as unknown as FakeReceptionDB;
   db.failPassportInsert = true;
-  const extractedPassport = {
-    firstName: "MALI",
-    middleName: null,
-    lastName: "GUEST",
-    passportNumber: "AB1234567",
-    nationality: "THAI",
-    gender: "F",
-    birthDate: "1990-01-15",
+  const visualPassport = {
+    documentType: "P",
+    issuingCountry: "UTO",
+    surname: "ERIKSSON",
+    givenNames: "ANNA MARIA",
+    passportNumberVisual: "L898902C3",
+    nationality: "UTO",
+    dateOfBirth: "1974-08-12",
+    sex: "F",
+    expiryDate: "2012-04-15",
+    fieldStatus: {
+      documentType: "READ",
+      issuingCountry: "READ",
+      surname: "READ",
+      givenNames: "READ",
+      passportNumberVisual: "READ",
+      nationality: "READ",
+      dateOfBirth: "READ",
+      sex: "READ",
+      expiryDate: "READ",
+    },
+  };
+  const mrzPassport = {
+    mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+    mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+    mrzPassportNumber: "L898902C3",
+    passportNumberVisual: null,
+    fieldStatus: {
+      mrzLine1: "READ",
+      mrzLine2: "READ",
+      mrzPassportNumber: "READ",
+      passportNumberVisual: "NOT_FOUND",
+    },
   };
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response(JSON.stringify({
-    output: [{ content: [{ type: "output_text", text: JSON.stringify(extractedPassport) }] }],
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+    output: [{ content: [{ type: "output_text", text: JSON.stringify(
+      String(init?.body).includes("human-readable biodata") ? visualPassport : mrzPassport,
+    ) }] }],
   }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;

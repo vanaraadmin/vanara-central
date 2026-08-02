@@ -20,12 +20,24 @@ export interface StaffOverviewCard {
   summaryLine2?: string;
 }
 
+export type StaffBookingEventType = "new" | "updated" | "cancelled";
+
+export interface StaffBookingEvent {
+  id: string;
+  type: StaffBookingEventType;
+  title: "NEW BOOKING" | "BOOKING UPDATED" | "BOOKING CANCELLED";
+  accommodation: string;
+  source: string | null;
+  occurredAt: string;
+}
+
 export interface StaffOverview {
   user: {
     id: string;
     displayName: string;
     role: string;
   };
+  bookingEvents: StaffBookingEvent[];
   cards: StaffOverviewCard[];
 }
 

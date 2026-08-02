@@ -95,6 +95,7 @@ class FakeHousekeepingTaskDB {
   }> = [];
   counters: CounterRow[] = [];
   receptionRelease = new Map<number, number>();
+  missNextIdempotencyLookup = new Set<string>();
   nextTaskId = 1;
   nextCounterId = 1;
 
@@ -103,8 +104,15 @@ class FakeHousekeepingTaskDB {
   }
 
   async first<T>(sql: string, params: unknown[]): Promise<T | null> {
-    if (sql.includes("FROM reception_stays")) return ({ room_released: this.receptionRelease.get(Number(params[0])) ?? 0 } as T) ?? null;
-    if (sql.includes("FROM housekeeping_tasks WHERE idempotency_key")) return (this.tasks.find((task) => task.idempotency_key === params[0]) as T) ?? null;
+    if (sql.includes("reception_stays")) return ({ room_released: this.receptionRelease.get(Number(params[0])) ?? 0 } as T) ?? null;
+    if (sql.includes("FROM housekeeping_tasks WHERE idempotency_key")) {
+      const key = String(params[0]);
+      if (this.missNextIdempotencyLookup.has(key)) {
+        this.missNextIdempotencyLookup.delete(key);
+        return null;
+      }
+      return (this.tasks.find((task) => task.idempotency_key === key) as T) ?? null;
+    }
     if (sql.includes("FROM housekeeping_tasks WHERE task_id")) return (this.tasks.find((task) => task.task_id === params[0]) as T) ?? null;
     if (sql.includes("FROM housekeeping_task_events")) {
       return (this.events.find((event) => event.task_id === params[0] && event.idempotency_key === params[1]) ? { task_id: params[0] } as T : null);
@@ -320,6 +328,10 @@ test("housekeeping task migration defines uniqueness and water quantity foundati
   assert.match(migration, /\('Tent', 2/);
 });
 
+test("housekeeping task migration does not reference a non-existent reception stay id", () => {
+  assert.doesNotMatch(migration, /REFERENCES reception_stays\(id\)/);
+});
+
 test("initial turnover state is gated by Reception room release without time fallback", async () => {
   assert.equal(initialHousekeepingTaskStatus({ taskType: "TURNOVER", receptionReleased: false }), "WAITING_FOR_RECEPTION");
   assert.equal(initialHousekeepingTaskStatus({ taskType: "TURNOVER", receptionReleased: true }), "AVAILABLE_FOR_CLAIM");
@@ -373,6 +385,26 @@ test("task creation is idempotent and duplicate active tasks are rejected", asyn
     operationalDate: "2026-08-01",
     dueCycleDate: "2026-08-01",
   }, actor()), HousekeepingTaskDomainError);
+});
+
+test("water refill duplicate insert with the same idempotency key replays the existing task", async () => {
+  const db = new FakeHousekeepingTaskDB();
+  const input = {
+    taskType: "WATER_REFILL" as const,
+    unitId: 1,
+    bookingId: 52,
+    operationalDate: "2026-08-01",
+    dueCycleDate: "2026-08-01",
+    idempotencyKey: "housekeeping:v2:water:1:2026-08-01",
+  };
+  const first = await createHousekeepingTask(env(db), input, actor());
+
+  db.missNextIdempotencyLookup.add(input.idempotencyKey);
+  const replay = await createHousekeepingTask(env(db), input, actor("stefano"));
+
+  assert.equal(replay.id, first.id);
+  assert.equal(db.tasks.length, 1);
+  assert.equal(db.events.filter((event) => event.event_type === "created").length, 1);
 });
 
 test("valid standard-cleaning transitions increment version and create audit events", async () => {

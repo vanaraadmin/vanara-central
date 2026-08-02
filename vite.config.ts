@@ -7,7 +7,7 @@ import { defineConfig } from "vite";
 const tm30TemplateSource = resolve("src/TM30_template/Template-InformAccom-ImportExcel.xlsx");
 const tm30TemplateOutput = resolve("dist/client/TM30_template/Template-InformAccom-ImportExcel.xlsx");
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     {
@@ -19,6 +19,7 @@ export default defineConfig({
     },
     cloudflare({
       configPath: "./wrangler.jsonc",
+      remoteBindings: command !== "serve",
     }),
-  ],
-});
+  ].filter(Boolean),
+}));

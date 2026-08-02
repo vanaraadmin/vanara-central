@@ -4,6 +4,7 @@
   type Beds24Bindings,
 } from "./beds24-client.service.js";
 import { sanitizeLogMessage } from "./log-safety.service.js";
+import { recordBookingEvent, type BookingEventSnapshot } from "./booking-events.service.js";
 import { SyncMetrics } from "./sync-metrics.service.js";
 import {
   acquireSyncLock,
@@ -451,6 +452,43 @@ function bindListPlaceholders(values: number[]): string {
   return values.map(() => "?").join(", ");
 }
 
+function bookingEventSnapshotSelect(whereClause: string): string {
+  return `
+    SELECT
+      b.booking_id AS bookingId,
+      b.beds24_booking_id AS beds24BookingId,
+      b.status,
+      b.arrival_date AS arrivalDate,
+      b.departure_date AS departureDate,
+      b.room_type_id AS roomTypeId,
+      b.unit_id AS unitId,
+      COALESCE(u.unit_name, rt.room_type_name) AS accommodation,
+      b.guest_name AS guestName,
+      b.adults,
+      b.children,
+      COALESCE(NULLIF(b.channel, ''), b.api_source) AS source
+    FROM bookings b
+    JOIN room_types rt ON rt.room_type_id = b.room_type_id
+    LEFT JOIN units u ON u.unit_id = b.unit_id
+    WHERE ${whereClause}
+  `;
+}
+
+async function loadBookingEventSnapshot(env: BookingsSyncBindings, beds24BookingId: number): Promise<BookingEventSnapshot | null> {
+  return env.DB.prepare(bookingEventSnapshotSelect("b.beds24_booking_id = ?"))
+    .bind(beds24BookingId)
+    .first<BookingEventSnapshot>();
+}
+
+async function loadBookingEventSnapshots(env: BookingsSyncBindings, whereClause: string, params: unknown[]): Promise<BookingEventSnapshot[]> {
+  const rows = await env.DB.prepare(bookingEventSnapshotSelect(whereClause)).bind(...params).all<BookingEventSnapshot>();
+  return rows.results ?? [];
+}
+
+function snapshotByBeds24Id(snapshots: BookingEventSnapshot[]): Map<number, BookingEventSnapshot> {
+  return new Map(snapshots.map((snapshot) => [snapshot.beds24BookingId, snapshot]));
+}
+
 async function propagateGroupCancellation(
   env: BookingsSyncBindings,
   booking: Beds24Booking,
@@ -484,6 +522,9 @@ async function propagateGroupCancellation(
     params.push(...targets.masterBeds24BookingIds);
   }
 
+  const whereClause = clauses.map((clause) => `(${clause})`).join(" OR ");
+  const previousSnapshots = await loadBookingEventSnapshots(env, whereClause, params);
+
   const result = await env.DB.prepare(`
     UPDATE bookings
     SET
@@ -495,7 +536,7 @@ async function propagateGroupCancellation(
       modified_time = COALESCE(?, modified_time),
       cancel_time = COALESCE(?, cancel_time),
       updated_at = ?
-    WHERE ${clauses.map((clause) => `(${clause})`).join(" OR ")}
+    WHERE ${whereClause}
   `).bind(
     text(booking.status) ?? "cancelled",
     text(booking.subStatus),
@@ -507,6 +548,14 @@ async function propagateGroupCancellation(
     syncedAt,
     ...params,
   ).run();
+
+  const currentSnapshots = snapshotByBeds24Id(await loadBookingEventSnapshots(env, whereClause, params));
+  for (const previous of previousSnapshots) {
+    const current = currentSnapshots.get(previous.beds24BookingId);
+    if (current) {
+      await recordBookingEvent(env, previous, current, syncedAt);
+    }
+  }
 
   return result.meta?.changes ?? 0;
 }
@@ -526,6 +575,7 @@ async function upsertBooking(
   const unitId = booking.unitId == null ? null : maps.units.get(`${roomTypeId}:${booking.unitId}`) ?? null;
   const offerId = booking.offerId == null ? null : maps.offers.get(`${roomTypeId}:${booking.offerId}`) ?? null;
   const normalized = normalizeBookingFields(booking);
+  const previousSnapshot = await loadBookingEventSnapshot(env, booking.id);
 
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(`
@@ -674,6 +724,10 @@ async function upsertBooking(
   }
 
   const results = await env.DB.batch(statements);
+  const currentSnapshot = await loadBookingEventSnapshot(env, booking.id);
+  if (currentSnapshot) {
+    await recordBookingEvent(env, previousSnapshot, currentSnapshot, syncedAt);
+  }
   const groupCancellationChanges = await propagateGroupCancellation(env, booking, normalized, syncedAt);
   return results.reduce((sum, row) => sum + (row.meta?.changes ?? 0), 0) + groupCancellationChanges;
 }

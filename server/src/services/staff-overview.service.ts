@@ -2,8 +2,9 @@ import { getHousekeepingOverview, type HousekeepingBindings, type HousekeepingOv
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getReceptionOverview, type ReceptionBindings } from "./reception.service.js";
 import { hasModulePermission, type CurrentUser, type ModuleKey } from "./current-user.service.js";
+import { listRecentBookingEvents, type BookingEventRecord, type BookingEventsBindings } from "./booking-events.service.js";
 
-export interface StaffOverviewBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings {
+export interface StaffOverviewBindings extends HousekeepingBindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings {
   DB: D1Database;
 }
 
@@ -33,6 +34,7 @@ export interface StaffOverview {
     displayName: string;
     role: string;
   };
+  bookingEvents: BookingEventRecord[];
   cards: StaffOverviewCard[];
 }
 
@@ -157,6 +159,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       displayName: user.displayName,
       role: user.role,
     },
+    bookingEvents: await listRecentBookingEvents(env, 3),
     cards,
   };
 }
