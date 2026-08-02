@@ -917,3 +917,32 @@ The room always remains the visual anchor.
 
 
 Everything else simply unfolds beneath it.
+
+\---
+
+\# 22. Expanded Operational Workspace Layer
+
+Compact cards belong to the dark Home layer.
+
+Expanded operational workspaces belong to the light operational layer.
+
+When a compact room card expands into Room Workspace, the expanded area must visually detach from the Home screen.
+
+Use:
+
+\- background: Vanara Cream, #F7F4EE or the current design-system cream
+\- primary text: dark forest green
+\- secondary text: muted green/grey
+\- cards inside: existing premium Vanara card treatment adapted for the cream layer
+
+Do not keep a green workspace inside the green Home background.
+
+The user should immediately perceive:
+
+"I am now working inside this room."
+
+not:
+
+"The card became larger."
+
+This same visual principle applies to every future expanded operational workspace in Rooms, Housekeeping, Reception, Maintenance, and Procurement.

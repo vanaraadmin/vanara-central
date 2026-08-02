@@ -195,16 +195,13 @@
   min-width: 0;
   gap: var(--vc-space-3);
   padding: var(--vc-space-3);
-  border: 1px solid rgba(244, 237, 223, 0.2);
+  border: 1px solid rgba(10, 39, 28, 0.12);
   border-radius: calc(var(--vc-radius-lg) + 4px);
-  background:
-    linear-gradient(180deg, rgba(244, 237, 223, 0.075), rgba(9, 31, 22, 0.34)),
-    rgba(9, 31, 22, 0.46);
+  color: #0a271c;
+  background: #f7f4ee;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 18px 44px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(16px) saturate(112%);
-  -webkit-backdrop-filter: blur(16px) saturate(112%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 18px 44px rgba(0, 0, 0, 0.24);
 }
 
 .room-hero {
@@ -279,6 +276,15 @@
   -webkit-backdrop-filter: blur(14px) saturate(112%);
 }
 
+.room-workspace-container .room-workspace-card {
+  border-color: rgba(10, 39, 28, 0.1);
+  color: #0a271c;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 10px 28px rgba(10, 39, 28, 0.08);
+}
+
 .room-workspace-card h3 {
   margin: 0;
   font-family: var(--vc-font-sans);
@@ -318,6 +324,14 @@
   text-transform: uppercase;
 }
 
+.room-workspace-container .room-domain-card__eyebrow,
+.room-workspace-container .room-domain-state__label,
+.room-workspace-container .room-operational-item__label,
+.room-workspace-container .guest-card__stay-fact dt,
+.room-workspace-container .room-domain-card__fact dt {
+  color: rgba(10, 39, 28, 0.58);
+}
+
 .room-workspace-card .room-domain-card__title {
   overflow-wrap: anywhere;
   color: rgba(250, 247, 238, 0.96);
@@ -326,6 +340,16 @@
   letter-spacing: 0;
   line-height: 1.2;
   text-transform: none;
+}
+
+.room-workspace-container .room-workspace-card h3,
+.room-workspace-container .room-domain-card__title,
+.room-workspace-container .guest-card__name,
+.room-workspace-container .room-domain-state__value,
+.room-workspace-container .room-operational-item__value,
+.room-workspace-container .guest-card__stay-fact dd,
+.room-workspace-container .room-domain-card__fact dd {
+  color: rgba(10, 39, 28, 0.94);
 }
 
 .room-domain-card__status {
@@ -340,6 +364,13 @@
   border: 1px solid rgba(244, 237, 223, 0.1);
   border-radius: var(--vc-radius-md);
   background: rgba(244, 237, 223, 0.055);
+}
+
+.room-workspace-container .room-domain-state,
+.room-workspace-container .room-operational-item,
+.room-workspace-container .guest-card__stay-fact {
+  border-color: rgba(10, 39, 28, 0.09);
+  background: rgba(10, 39, 28, 0.035);
 }
 
 .room-domain-state--success {
@@ -390,8 +421,21 @@
   line-height: 1.25;
 }
 
+.room-workspace-container .room-domain-state__detail,
+.room-workspace-container .room-operational-item__detail,
+.room-workspace-container .guest-card__meta,
+.room-workspace-container .reception-status-item__label {
+  color: rgba(10, 39, 28, 0.64);
+}
+
 .room-domain-state__meta {
   color: rgba(244, 237, 223, 0.48);
+}
+
+.room-workspace-container .room-domain-state__meta,
+.room-workspace-container .room-operational-item__meta,
+.room-workspace-container .guest-card__meta-separator {
+  color: rgba(10, 39, 28, 0.42);
 }
 
 .room-domain-card__secondary {
@@ -413,6 +457,11 @@
   gap: 4px;
   padding: 9px 0;
   border-bottom: 1px solid rgba(244, 237, 223, 0.1);
+}
+
+.room-workspace-container .room-domain-card__fact,
+.room-workspace-container .reception-status-item {
+  border-bottom-color: rgba(10, 39, 28, 0.09);
 }
 
 .room-domain-card__fact dt,
@@ -465,6 +514,12 @@
     color 180ms var(--vc-ease-standard);
 }
 
+.room-workspace-container .room-domain-card__primary-action {
+  border-color: rgba(10, 39, 28, 0.08);
+  color: #f7f4ee;
+  background: rgba(31, 90, 66, 0.96);
+}
+
 button.room-domain-card__primary-action {
   appearance: none;
 }
@@ -475,9 +530,19 @@ button.room-domain-card__primary-action {
   background: rgba(244, 237, 223, 0.12);
 }
 
+.room-workspace-container .room-domain-card__primary-action:hover,
+.room-workspace-container .room-domain-card__primary-action:focus-visible {
+  border-color: rgba(10, 39, 28, 0.16);
+  background: rgba(20, 72, 51, 0.98);
+}
+
 .room-domain-card__primary-action:focus-visible {
   outline: 2px solid rgba(244, 237, 223, 0.45);
   outline-offset: 2px;
+}
+
+.room-workspace-container .room-domain-card__primary-action:focus-visible {
+  outline-color: rgba(10, 39, 28, 0.38);
 }
 
 .room-domain-card__primary-action--disabled,
@@ -490,6 +555,36 @@ button.room-domain-card__primary-action {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
+}
+
+.room-workspace-container .operational-status-pill--success {
+  border-color: rgba(54, 124, 72, 0.22);
+  color: rgba(24, 91, 49, 0.96);
+  background: rgba(54, 124, 72, 0.1);
+}
+
+.room-workspace-container .operational-status-pill--info {
+  border-color: rgba(44, 102, 126, 0.22);
+  color: rgba(25, 80, 103, 0.96);
+  background: rgba(44, 102, 126, 0.1);
+}
+
+.room-workspace-container .operational-status-pill--neutral {
+  border-color: rgba(10, 39, 28, 0.13);
+  color: rgba(10, 39, 28, 0.62);
+  background: rgba(10, 39, 28, 0.055);
+}
+
+.room-workspace-container .operational-status-pill--warning {
+  border-color: rgba(143, 99, 38, 0.22);
+  color: rgba(112, 75, 23, 0.96);
+  background: rgba(143, 99, 38, 0.1);
+}
+
+.room-workspace-container .operational-status-pill--danger {
+  border-color: rgba(151, 62, 49, 0.22);
+  color: rgba(129, 47, 36, 0.96);
+  background: rgba(151, 62, 49, 0.1);
 }
 
 .reception-card__alerts {
@@ -706,6 +801,37 @@ button.room-domain-card__primary-action {
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-semibold);
   line-height: 1.18;
+}
+
+.room-workspace-container .room-workspace-card h3,
+.room-workspace-container .room-domain-card__title,
+.room-workspace-container .guest-card .guest-card__name,
+.room-workspace-container .room-domain-state__value,
+.room-workspace-container .room-operational-item__value,
+.room-workspace-container .guest-card__stay-fact dd,
+.room-workspace-container .room-domain-card__fact dd {
+  color: rgba(10, 39, 28, 0.94);
+}
+
+.room-workspace-container .room-domain-card__eyebrow,
+.room-workspace-container .room-domain-state__label,
+.room-workspace-container .room-operational-item__label,
+.room-workspace-container .guest-card__stay-fact dt,
+.room-workspace-container .room-domain-card__fact dt {
+  color: rgba(10, 39, 28, 0.58);
+}
+
+.room-workspace-container .room-domain-state__detail,
+.room-workspace-container .room-operational-item__detail,
+.room-workspace-container .guest-card__meta,
+.room-workspace-container .reception-status-item__label {
+  color: rgba(10, 39, 28, 0.64);
+}
+
+.room-workspace-container .room-domain-state__meta,
+.room-workspace-container .room-operational-item__meta,
+.room-workspace-container .guest-card__meta-separator {
+  color: rgba(10, 39, 28, 0.42);
 }
 
 @keyframes room-disclosure {

@@ -16,7 +16,7 @@ export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOC
 export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
 export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
 export type RoomDomainTone = "success" | "warning" | "danger" | "info" | "neutral";
-export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK";
+export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK" | "OPEN_MAINTENANCE";
 export type RoomMaintenanceActionType = "REPORT_ISSUE" | "OPEN_TICKET" | "CONTINUE_WORK";
 export type RoomHousekeepingCompletionMode = "STANDARD" | "FULL" | "WATER";
 
@@ -174,6 +174,7 @@ export interface RoomHousekeepingPrimaryAction {
   taskId: number | null;
   version: number | null;
   completionMode: RoomHousekeepingCompletionMode | null;
+  target: string | null;
 }
 
 export interface RoomHousekeepingDomainSummary {
@@ -508,6 +509,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
         taskId: row.active_task_id,
         version: row.active_task_version,
         completionMode: null,
+        target: null,
       };
     }
     if (capabilities.canComplete) {
@@ -517,6 +519,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
         taskId: row.active_task_id,
         version: row.active_task_version,
         completionMode: housekeepingCompletionMode(row.active_task_type),
+        target: null,
       };
     }
     return null;
@@ -529,6 +532,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
       taskId: null,
       version: null,
       completionMode: null,
+      target: null,
     };
   }
 
@@ -540,21 +544,11 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
   const activeTaskLabel = taskTypeLabel(row.active_task_type);
   const action = mapHousekeepingAction(row, occupancyState, user);
   const workState = housekeepingWorkState(row);
-
-  if (maintenanceState(row) === "BLOCKING") {
-    return {
-      primaryStatus: "Maintenance Block",
-      tone: "danger",
-      detail: row.primary_maintenance_title ?? "Housekeeping blocked by maintenance.",
-      secondaryInfo: "No cleaning actions available",
-      activeTask,
-      primaryAction: null,
-    };
-  }
+  const maintenanceTarget = row.primary_maintenance_ticket_id ? `/maintenance/${row.primary_maintenance_ticket_id}` : "/maintenance";
 
   if (workState === "IN_PROGRESS") {
     return {
-      primaryStatus: activeTaskLabel === "Water refill" ? "Water In Progress" : "Cleaning In Progress",
+      primaryStatus: "Cleaning In Progress",
       tone: "info",
       detail: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : "Assigned operator pending",
       secondaryInfo: activeTaskLabel,
@@ -563,33 +557,51 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
     };
   }
 
-  if (workState === "AVAILABLE") {
+  if (row.active_task_status === "WAITING_FOR_RECEPTION") {
     return {
-      primaryStatus: activeTaskLabel ?? "Cleaning Required",
+      primaryStatus: "Waiting For Reception",
       tone: "warning",
-      detail: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : "Ready to start",
-      secondaryInfo: row.ready_state === "NOT_READY" ? "Room not ready" : null,
+      detail: "Reception has not released the room",
+      secondaryInfo: activeTaskLabel,
       activeTask,
-      primaryAction: action,
+      primaryAction: null,
     };
   }
 
-  if (row.ready_state === "NOT_READY") {
+  if (maintenanceState(row) === "BLOCKING") {
     return {
-      primaryStatus: "Not Ready",
+      primaryStatus: "Cleaning Blocked",
+      tone: "danger",
+      detail: "Maintenance Issue",
+      secondaryInfo: row.primary_maintenance_title,
+      activeTask,
+      primaryAction: {
+        type: "OPEN_MAINTENANCE",
+        label: "Open Maintenance",
+        taskId: null,
+        version: null,
+        completionMode: null,
+        target: maintenanceTarget,
+      },
+    };
+  }
+
+  if (activeTask) {
+    return {
+      primaryStatus: row.active_task_type === "WATER_REFILL" ? "Water Refill" : "Cleaning Required",
       tone: "warning",
-      detail: "No active Housekeeping task",
-      secondaryInfo: occupancyState === "OCCUPIED" ? "On-demand cleaning available" : null,
+      detail: activeTaskLabel ?? "Housekeeping work required",
+      secondaryInfo: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : null,
       activeTask,
       primaryAction: action,
     };
   }
 
   return {
-    primaryStatus: "Ready",
+    primaryStatus: "READY",
     tone: "success",
     detail: "No work required",
-    secondaryInfo: occupancyState === "OCCUPIED" ? "Guest request cleaning available" : null,
+    secondaryInfo: null,
     activeTask,
     primaryAction: action,
   };

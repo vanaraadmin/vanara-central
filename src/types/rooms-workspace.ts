@@ -8,7 +8,7 @@ export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOC
 export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
 export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
 export type RoomDomainTone = "success" | "warning" | "danger" | "info" | "neutral";
-export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK";
+export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK" | "OPEN_MAINTENANCE";
 export type RoomMaintenanceActionType = "REPORT_ISSUE" | "OPEN_TICKET" | "CONTINUE_WORK";
 export type RoomHousekeepingCompletionMode = "STANDARD" | "FULL" | "WATER";
 
@@ -92,6 +92,7 @@ export interface RoomHousekeepingPrimaryAction {
   taskId: number | null;
   version: number | null;
   completionMode: RoomHousekeepingCompletionMode | null;
+  target: string | null;
 }
 
 export interface RoomHousekeepingDomainSummary {

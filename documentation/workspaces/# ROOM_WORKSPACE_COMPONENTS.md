@@ -396,6 +396,14 @@ Current operational work.
 
 
 
+Question answered:
+
+
+
+"What does Housekeeping need to do now?"
+
+
+
 Possible states
 
 
@@ -404,15 +412,19 @@ Ready
 
 
 
-Cleaning
+Cleaning Required
 
 
 
-Water
+Cleaning In Progress
 
 
 
-On Demand
+Waiting For Reception
+
+
+
+Cleaning Blocked
 
 
 
@@ -437,6 +449,18 @@ Never historical tasks.
 
 
 Never completed history.
+
+
+
+Never display physical room condition as the Housekeeping card state.
+
+
+
+The stored room condition remains in Room Status.
+
+
+
+The Housekeeping card presents operational work only.
 
 
 

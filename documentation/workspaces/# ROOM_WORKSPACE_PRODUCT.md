@@ -767,3 +767,39 @@ Room Workspace is successful when:
 \- The interface feels calm even when many operational states exist.
 
 \- Navigation outside Room Workspace becomes the exception rather than the rule.
+
+\---
+
+\# 21. Workspace Ownership
+
+Each workspace owns only its own domain.
+
+Rooms is the operational hub of every accommodation.
+
+It owns:
+
+\- room identity
+\- room status
+\- occupancy
+\- guest summary
+\- alerts
+\- room history
+\- navigation to all operational modules
+
+Every other workspace must enter through Rooms, never replace it.
+
+Housekeeping is a task workspace.
+
+It must never become the primary room browser.
+
+Reception is a guest workflow.
+
+It must never become the primary room browser.
+
+Maintenance is a technical workflow.
+
+It must never become the primary room browser.
+
+Rooms remains the single operational entry point for every accommodation.
+
+Other workspaces may temporarily open Room Workspace, but Room Workspace is always the canonical room view.

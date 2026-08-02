@@ -337,7 +337,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   const available = byName(overview.rooms, "Bungalow 6");
   const blocked = byName(overview.rooms, "Bungalow 7");
 
-  assert.equal(readyOccupied.housekeeping.primaryStatus, "Ready");
+  assert.equal(readyOccupied.housekeeping.primaryStatus, "READY");
   assert.equal(readyOccupied.housekeeping.detail, "No work required");
   assert.deepEqual(readyOccupied.housekeeping.primaryAction, {
     type: "CREATE_ON_DEMAND_CLEANING",
@@ -345,9 +345,10 @@ test("Housekeeping domain summary exposes work and one primary action without ch
     taskId: null,
     version: null,
     completionMode: null,
+    target: null,
   });
 
-  assert.equal(available.housekeeping.primaryStatus, "Cleaning");
+  assert.equal(available.housekeeping.primaryStatus, "Cleaning Required");
   assert.deepEqual(available.housekeeping.activeTask, {
     id: 6001,
     version: 1,
@@ -362,6 +363,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
     taskId: 6001,
     version: 1,
     completionMode: null,
+    target: null,
   });
 
   assert.equal(inProgress.housekeeping.primaryStatus, "Cleaning In Progress");
@@ -372,10 +374,104 @@ test("Housekeeping domain summary exposes work and one primary action without ch
     taskId: 4001,
     version: 3,
     completionMode: "STANDARD",
+    target: null,
   });
 
-  assert.equal(blocked.housekeeping.primaryStatus, "Maintenance Block");
-  assert.equal(blocked.housekeeping.primaryAction, null);
+  assert.equal(blocked.housekeeping.primaryStatus, "Cleaning Blocked");
+  assert.equal(blocked.housekeeping.detail, "Maintenance Issue");
+  assert.deepEqual(blocked.housekeeping.primaryAction, {
+    type: "OPEN_MAINTENANCE",
+    label: "Open Maintenance",
+    taskId: null,
+    version: null,
+    completionMode: null,
+    target: "/maintenance/7001",
+  });
+});
+
+test("Housekeeping card defaults to READY when no active task exists even if physical condition is NOT_READY", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 12,
+      unit_name: "Bungalow 12",
+      ready_state: "NOT_READY",
+      booking_id: 1201,
+      beds24_booking_id: 91201,
+      guest_name: "Ready Guest",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-05",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02", housekeepingCapableUser);
+  const defaultOverview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(defaultOverview.rooms, "Bungalow 12");
+
+  assert.equal(byName(overview.rooms, "Bungalow 7").operational.housekeeping.condition, "NOT_READY");
+  assert.equal(room.operational.housekeeping.condition, "NOT_READY");
+  assert.equal(room.housekeeping.primaryStatus, "READY");
+  assert.equal(room.housekeeping.detail, "No work required");
+  assert.deepEqual(room.housekeeping.primaryAction, {
+    type: "CREATE_ON_DEMAND_CLEANING",
+    label: "Start On-demand Cleaning",
+    taskId: null,
+    version: null,
+    completionMode: null,
+    target: null,
+  });
+});
+
+test("Housekeeping card prioritizes waiting Reception before cleaning actions", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 14,
+      unit_name: "Bungalow 14",
+      ready_state: "NOT_READY",
+      active_task_count: 1,
+      active_task_id: 14001,
+      active_task_version: 2,
+      active_task_status: "WAITING_FOR_RECEPTION",
+      active_task_type: "TURNOVER",
+      active_task_priority: "URGENT",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Bungalow 14");
+
+  assert.equal(room.housekeeping.primaryStatus, "Waiting For Reception");
+  assert.equal(room.housekeeping.detail, "Reception has not released the room");
+  assert.equal(room.housekeeping.primaryAction, null);
+});
+
+test("Housekeeping card displays turnover work as Cleaning Required with Start Cleaning", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 15,
+      unit_name: "Bungalow 15",
+      ready_state: "NOT_READY",
+      active_task_count: 1,
+      active_task_id: 15001,
+      active_task_version: 1,
+      active_task_status: "AVAILABLE_FOR_CLAIM",
+      active_task_type: "TURNOVER",
+      active_task_priority: "URGENT",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Bungalow 15");
+
+  assert.equal(room.housekeeping.primaryStatus, "Cleaning Required");
+  assert.equal(room.housekeeping.detail, "Turnover");
+  assert.deepEqual(room.housekeeping.primaryAction, {
+    type: "START_HOUSEKEEPING_TASK",
+    label: "Start Cleaning",
+    taskId: 15001,
+    version: 1,
+    completionMode: null,
+    target: null,
+  });
 });
 
 test("maintenance states distinguish blocking active and clear", async () => {

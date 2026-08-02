@@ -97,6 +97,13 @@ test("Expanded Rooms Workspace uses one parent container and removes Notes and H
   assert.match(css, /\.room-workspace-container/);
 });
 
+test("Expanded Room Workspace uses the cream operational layer", () => {
+  assert.match(css, /\.room-workspace-container[\s\S]*#f7f4ee/i);
+  assert.match(css, /\.room-workspace-container[\s\S]*color:\s*#0a271c/i);
+  assert.match(css, /\.room-workspace-container \.room-workspace-card/);
+  assert.match(css, /\.room-workspace-container \.room-domain-card__primary-action/);
+});
+
 test("Expanded Rooms Workspace renders GuestCard only for occupied current stays", () => {
   assert.match(roomExpandedWorkspace, /room\.currentStay \? <GuestCard stay=\{room\.currentStay\} \/> : null/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Guest"/);
@@ -140,11 +147,23 @@ test("Housekeeping and Maintenance cards share the RoomDomainCard structure", ()
   assert.match(housekeepingCard, /onCreateOnDemandCleaning/);
   assert.match(housekeepingCard, /onStartTask/);
   assert.match(housekeepingCard, /onCompleteTask/);
+  assert.match(housekeepingCard, /OPEN_MAINTENANCE/);
   assert.match(maintenanceCard, /Report Issue|action\.label/);
   assert.match(serverService, /mapHousekeepingSummary/);
   assert.match(serverService, /mapMaintenanceSummary/);
   assert.match(serverService, /primaryAction/);
 });
+
+test("Housekeeping card presentation is operational work state only", () => {
+  assert.match(serverService, /primaryStatus:\s*"READY"/);
+  assert.match(serverService, /"Cleaning Required"/);
+  assert.match(serverService, /primaryStatus:\s*"Cleaning In Progress"/);
+  assert.match(serverService, /primaryStatus:\s*"Waiting For Reception"/);
+  assert.match(serverService, /primaryStatus:\s*"Cleaning Blocked"/);
+  assert.doesNotMatch(serverService, /primaryStatus:\s*"Not Ready"/);
+  assert.doesNotMatch(serverService, /detail:\s*"No active Housekeeping task"/);
+});
+
 
 test("RoomDomainCard is reusable and not Reception-specific", () => {
   assert.match(roomDomainCard, /type RoomDomainCardProps/);

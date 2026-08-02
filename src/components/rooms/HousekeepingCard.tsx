@@ -41,6 +41,7 @@ export default function HousekeepingCard({
   const action = housekeeping.primaryAction;
   const runAction = () => {
     if (!action) return;
+    if (action.type === "OPEN_MAINTENANCE") return;
     if (action.type === "CREATE_ON_DEMAND_CLEANING") {
       onCreateOnDemandCleaning(roomId);
       return;
@@ -62,6 +63,7 @@ export default function HousekeepingCard({
           busy={actionPending}
           label={action.label}
           onClick={runAction}
+          to={action.target}
         />
       ) : null}
       className="housekeeping-domain-card"
