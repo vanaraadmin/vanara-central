@@ -27,6 +27,10 @@ interface RoomWorkspaceRow {
   booking_id: number | null;
   beds24_booking_id: number | null;
   guest_name: string | null;
+  country: string | null;
+  country_code: string | null;
+  arrival_date: string | null;
+  departure_date: string | null;
   api_source: string | null;
   channel: string | null;
   active_task_count: number | null;
@@ -46,7 +50,17 @@ export interface RoomsWorkspaceRoom {
   sortGroup: "bungalow" | "villa" | "tent" | "other";
   sortNumber: number;
   heroImageKey: string;
+  currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
+}
+
+export interface RoomCurrentStaySummary {
+  guestName: string;
+  nationality: string | null;
+  source: string | null;
+  arrivalDate: string;
+  departureDate: string;
+  stayNights: number | null;
 }
 
 export interface RoomOperationalSummary {
@@ -114,6 +128,20 @@ function seasonLabel(startDate: string | null, endDate: string | null): string |
   return start && end ? `${start} - ${end}` : null;
 }
 
+function dateOnlyToTime(value: string | null): number | null {
+  if (!value) return null;
+  const time = new Date(`${value}T00:00:00+07:00`).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function stayNights(arrivalDate: string | null, departureDate: string | null): number | null {
+  const arrival = dateOnlyToTime(arrivalDate);
+  const departure = dateOnlyToTime(departureDate);
+  if (arrival === null || departure === null) return null;
+  const nights = Math.round((departure - arrival) / 86_400_000);
+  return nights >= 0 ? nights : null;
+}
+
 function roomFamily(row: Pick<RoomWorkspaceRow, "unit_name" | "unit_type" | "room_type_name" | "room_name">): RoomsWorkspaceRoom["sortGroup"] {
   const unitName = row.unit_name.toLowerCase();
   if (unitName.includes("bungalow")) return "bungalow";
@@ -149,6 +177,10 @@ function sourceLabel(row: RoomWorkspaceRow): string | null {
   return row.api_source || row.channel || null;
 }
 
+function nationalitySource(row: RoomWorkspaceRow): string | null {
+  return row.country || row.country_code || null;
+}
+
 function taskTypeLabel(taskType: HousekeepingTaskType | null): string | null {
   if (!taskType) return null;
   if (taskType === "TURNOVER") return "Turnover";
@@ -174,6 +206,8 @@ function maintenanceState(row: RoomWorkspaceRow): RoomMaintenanceState {
 function mapRoom(row: RoomWorkspaceRow): RoomsWorkspaceRoom {
   const group = roomFamily(row);
   const occupancyState = row.beds24_booking_id ? "OCCUPIED" : "VACANT";
+  const guestName = row.guest_name || "Guest name unavailable";
+  const staySource = sourceLabel(row);
 
   return {
     unitId: row.unit_id,
@@ -183,6 +217,16 @@ function mapRoom(row: RoomWorkspaceRow): RoomsWorkspaceRoom {
     sortGroup: group,
     sortNumber: roomNumber(row.unit_name),
     heroImageKey: normalizeKey(row.unit_name),
+    currentStay: occupancyState === "OCCUPIED" && row.arrival_date && row.departure_date
+      ? {
+          guestName,
+          nationality: nationalitySource(row),
+          source: staySource,
+          arrivalDate: row.arrival_date,
+          departureDate: row.departure_date,
+          stayNights: stayNights(row.arrival_date, row.departure_date),
+        }
+      : null,
     operational: {
       availability: {
         state: row.availability_status === "NOT_OPERATING" ? "NOT_OPERATING" : "OPERATING",
@@ -193,9 +237,9 @@ function mapRoom(row: RoomWorkspaceRow): RoomsWorkspaceRoom {
       },
       occupancy: {
         state: occupancyState,
-        guestName: occupancyState === "OCCUPIED" ? row.guest_name || "Guest name unavailable" : null,
+        guestName: occupancyState === "OCCUPIED" ? guestName : null,
         bookingId: occupancyState === "OCCUPIED" ? row.beds24_booking_id : null,
-        source: occupancyState === "OCCUPIED" ? sourceLabel(row) : null,
+        source: occupancyState === "OCCUPIED" ? staySource : null,
       },
       housekeeping: {
         condition: row.ready_state === "NOT_READY" ? "NOT_READY" : "READY",
@@ -230,6 +274,10 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       b.booking_id,
       b.beds24_booking_id,
       b.guest_name,
+      b.country,
+      b.country_code,
+      b.arrival_date,
+      b.departure_date,
       b.api_source,
       b.channel,
       COALESCE(ht_count.active_task_count, 0) AS active_task_count,

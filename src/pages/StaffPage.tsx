@@ -21,11 +21,11 @@ import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
   "rooms",
-  "reception",
-  "availability",
   "housekeeping",
   "maintenance",
+  "reception",
   "procurement",
+  "availability",
 ];
 
 const HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>(["availability"]);

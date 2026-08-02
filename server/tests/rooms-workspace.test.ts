@@ -80,6 +80,10 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     booking_id: null,
     beds24_booking_id: null,
     guest_name: null,
+    country: null,
+    country_code: null,
+    arrival_date: null,
+    departure_date: null,
     api_source: null,
     channel: null,
     active_task_count: 0,
@@ -137,6 +141,10 @@ function defaultRooms() {
       booking_id: 301,
       beds24_booking_id: 9301,
       guest_name: "Mali Guest",
+      country: "Thailand",
+      country_code: "TH",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-07",
       api_source: "Direct",
     }),
     roomRow({
@@ -265,10 +273,36 @@ test("occupied rooms expose current guest and vacant rooms expose no guest", asy
   assert.equal(occupied.operational.occupancy.guestName, "Mali Guest");
   assert.equal(occupied.operational.occupancy.bookingId, 9301);
   assert.equal(occupied.operational.occupancy.source, "Direct");
+  assert.deepEqual(occupied.currentStay, {
+    guestName: "Mali Guest",
+    nationality: "Thailand",
+    source: "Direct",
+    arrivalDate: "2026-08-01",
+    departureDate: "2026-08-07",
+    stayNights: 6,
+  });
 
   assert.equal(vacant.operational.occupancy.state, "VACANT");
   assert.equal(vacant.operational.occupancy.guestName, null);
   assert.equal(vacant.operational.occupancy.bookingId, null);
+  assert.equal(vacant.currentStay, null);
+});
+
+test("guest card read model follows arrived occupancy and does not expose reception-only fields", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
+  const occupied = byName(overview.rooms, "Bungalow 3");
+
+  assert.ok(occupied.currentStay);
+  assert.equal(occupied.currentStay.guestName, "Mali Guest");
+  assert.equal(occupied.currentStay.nationality, "Thailand");
+  assert.equal(occupied.currentStay.source, "Direct");
+  assert.equal(occupied.currentStay.arrivalDate, "2026-08-01");
+  assert.equal(occupied.currentStay.departureDate, "2026-08-07");
+  assert.equal(occupied.currentStay.stayNights, 6);
+  assert.equal("passport" in occupied.currentStay, false);
+  assert.equal("deposit" in occupied.currentStay, false);
+  assert.equal("email" in occupied.currentStay, false);
+  assert.equal("phone" in occupied.currentStay, false);
 });
 
 test("rooms workspace read model exposes compact operational summary counts", async () => {

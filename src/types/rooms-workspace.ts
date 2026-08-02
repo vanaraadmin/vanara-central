@@ -33,6 +33,15 @@ export interface RoomOperationalSummary {
   };
 }
 
+export interface RoomCurrentStaySummary {
+  guestName: string;
+  nationality: string | null;
+  source: string | null;
+  arrivalDate: string;
+  departureDate: string;
+  stayNights: number | null;
+}
+
 export interface RoomsWorkspaceRoom {
   unitId: number;
   roomName: string;
@@ -42,6 +51,7 @@ export interface RoomsWorkspaceRoom {
   sortNumber: number;
   heroImageKey: string;
   heroImage: string | null;
+  currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
 }
 

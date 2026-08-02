@@ -1,3 +1,4 @@
+import GuestCard from "./GuestCard";
 import RoomHero from "./RoomHero";
 import RoomOperationalSummaryCard from "./RoomOperationalSummaryCard";
 import type { RoomsWorkspaceRoom } from "../../types/rooms-workspace";
@@ -22,7 +23,7 @@ export default function RoomExpandedWorkspace({ id, room }: RoomExpandedWorkspac
       <RoomHero room={room} />
       <RoomOperationalSummaryCard summary={room.operational} />
 
-      <WorkspacePlaceholder title="Guest" />
+      {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
       <WorkspacePlaceholder title="Reception" />
       <WorkspacePlaceholder title="Housekeeping" />
       <WorkspacePlaceholder title="Maintenance" />

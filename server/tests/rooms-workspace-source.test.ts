@@ -7,6 +7,7 @@ const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.m
 const roomCompactRow = readFileSync(new URL("../../src/components/rooms/RoomCompactRow.tsx", import.meta.url), "utf8");
 const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/RoomCompactSignals.tsx", import.meta.url), "utf8");
 const roomExpandedWorkspace = readFileSync(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
+const guestCard = readFileSync(new URL("../../src/components/rooms/GuestCard.tsx", import.meta.url), "utf8");
 const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/rooms/RoomOperationalSummaryCard.tsx", import.meta.url), "utf8");
 const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx", import.meta.url), "utf8");
 const statusPill = readFileSync(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
@@ -26,12 +27,19 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
+test("Staff Home hierarchy keeps Rooms then Booking Pulse then Housekeeping and Maintenance", () => {
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"housekeeping",\s*"maintenance",/);
+  assert.match(staffPage, /staff-workspaces--primary[\s\S]*<RecentBookings[\s\S]*staff-workspaces--secondary/);
+  assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);
+});
+
 test("Rooms Workspace consumes one dedicated read model and cards do not load services", () => {
   assert.match(roomsPage, /loadRoomsWorkspace/);
   assert.match(roomsService, /requestJson<RoomsWorkspaceResponse>\("\/api\/rooms"/);
   assert.doesNotMatch(roomsPage, /loadRoomDetail|loadMaintenance|loadHousekeeping|getReception/);
   assert.doesNotMatch(roomCompactRow, /services\//);
   assert.doesNotMatch(roomCompactSignals, /services\//);
+  assert.doesNotMatch(guestCard, /services\//);
   assert.doesNotMatch(roomOperationalSummaryCard, /services\//);
   assert.doesNotMatch(roomExpandedWorkspace, /services\//);
   assert.doesNotMatch(roomHero, /services\//);
@@ -74,13 +82,27 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
   assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
 });
 
+test("Expanded Rooms Workspace renders GuestCard only for occupied current stays", () => {
+  assert.match(roomExpandedWorkspace, /room\.currentStay \? <GuestCard stay=\{room\.currentStay\} \/> : null/);
+  assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Guest"/);
+  assert.match(guestCard, /type GuestCardProps = \{\s*stay: RoomCurrentStaySummary;/);
+  assert.match(guestCard, /function GuestIdentity/);
+  assert.match(guestCard, /function GuestBookingSummary/);
+  assert.match(guestCard, /function GuestStaySummary/);
+  assert.match(guestCard, /formatNationalityText\(stay\.nationality\)/);
+  assert.match(guestCard, /label="Arrived"/);
+  assert.match(guestCard, /label="Leaving"/);
+  assert.match(guestCard, /label="Stay"/);
+  assert.doesNotMatch(guestCard, /bookingId|Passport|Deposit|Email|Phone|payment|flag|countryCodeToFlag|UNKNOWN|N\/A/);
+});
+
 test("Operational status pill supports one reusable tone model", () => {
   for (const tone of ["success", "warning", "danger", "info", "neutral"]) {
     assert.match(statusPill, new RegExp(`operational-status-pill--\\$\\{tone\\}`));
     assert.match(css, new RegExp(`\\.operational-status-pill--${tone}`));
   }
   assert.match(css, /\.operational-status-pill/);
-  assert.match(css, /min-height:\s*24px/);
+  assert.match(css, /min-height:\s*22px/);
   assert.doesNotMatch(css, /pulse|blink|flash/);
 });
 
@@ -96,6 +118,11 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
   assert.match(serverService, /getRoomsWorkspaceOverview/);
   assert.match(serverService, /room_operational_availability/);
   assert.match(serverService, /room_housekeeping_state/);
+  assert.match(serverService, /b\.country/);
+  assert.match(serverService, /b\.country_code/);
+  assert.match(serverService, /b\.arrival_date/);
+  assert.match(serverService, /b\.departure_date/);
+  assert.match(serverService, /currentStay: occupancyState === "OCCUPIED"/);
   assert.match(serverService, /reception_stays rs2/);
   assert.match(serverService, /rs2\.guest_arrived = 1/);
   assert.match(serverService, /housekeeping_tasks/);
@@ -109,7 +136,7 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
 });
 
 test("Room Workspace UI copy does not present raw database or task enums", () => {
-  const ui = `${roomCompactRow}\n${roomCompactSignals}\n${roomOperationalSummaryCard}\n${presentation}`;
+  const ui = `${roomCompactRow}\n${roomCompactSignals}\n${guestCard}\n${roomOperationalSummaryCard}\n${presentation}`;
   for (const raw of ["AVAILABLE_FOR_CLAIM", "STANDARD_CLEANING", "ROOM_READY_OVERRIDE", "out_of_service", "guest_arrived", "metadata_json"]) {
     assert.doesNotMatch(ui, new RegExp(raw));
   }
