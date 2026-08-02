@@ -107,7 +107,8 @@ test("Booking Pulse read model enforces retention without deleting source data",
   assert.match(service, /BOOKING_PULSE_RETENTION_HOURS = 24/);
   assert.match(service, /isBookingPulseEventVisible/);
   assert.match(service, /ageMs >= 0 && ageMs < retentionMs/);
-  assert.match(service, /seenBookings/);
+  assert.match(service, /rowsByBooking/);
+  assert.match(service, /bookingPulseRowFor/);
   assert.doesNotMatch(service, /DELETE FROM booking_events|DELETE FROM bookings/);
 });
 

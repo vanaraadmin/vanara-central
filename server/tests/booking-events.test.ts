@@ -24,6 +24,12 @@ const baseSnapshot: BookingEventSnapshot = {
   adults: 2,
   children: 0,
   source: "Booking.com",
+  price: 12000,
+  apiSource: "Beds24",
+  channel: "Booking.com",
+  apiReference: "OTA-9001",
+  reference: "REF-9001",
+  voucher: "VOUCHER-9001",
 };
 
 class FakeStmt {
@@ -34,11 +40,13 @@ class FakeStmt {
     return this;
   }
   all<T>() { return this.db.all<T>(this.sql, this.params); }
+  first<T>() { return this.db.first<T>(this.sql, this.params); }
   run() { return this.db.run(this.sql, this.params); }
 }
 
 type FakeBookingEventRow = {
   booking_event_id: number;
+  booking_id: number;
   event_type: "new" | "updated" | "cancelled";
   beds24_booking_id: number;
   event_accommodation: string;
@@ -62,6 +70,7 @@ type FakeBookingEventRow = {
 function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow {
   return {
     booking_event_id: 1,
+    booking_id: 1,
     event_type: "new",
     beds24_booking_id: 9001,
     event_accommodation: "Villa 10",
@@ -118,6 +127,7 @@ class FakeBookingEventsDB {
     }),
   ];
   inserted: unknown[][] = [];
+  private insertedSignatures = new Set<string>();
   deleteStatements = 0;
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
@@ -132,19 +142,107 @@ class FakeBookingEventsDB {
     };
   }
 
+  async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM booking_events") && sql.includes("event_type = 'new'")) {
+      const bookingId = Number(params[0]);
+      const cutoff = String(params[1]);
+      const occurredAt = String(params[2]);
+      const row = this.rows
+        .filter((candidate) =>
+          candidate.booking_id === bookingId &&
+          candidate.event_type === "new" &&
+          candidate.occurred_at > cutoff &&
+          candidate.occurred_at <= occurredAt
+        )
+        .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.booking_event_id - a.booking_event_id)[0];
+      return (row as T | undefined) ?? null;
+    }
+    return null;
+  }
+
   async run(sql: string, params: unknown[]) {
     if (sql.includes("INSERT OR IGNORE INTO booking_events")) {
+      const signature = String(params[5]);
+      if (this.insertedSignatures.has(signature)) {
+        return { meta: { changes: 0, last_row_id: this.inserted.length } };
+      }
+      this.insertedSignatures.add(signature);
       this.inserted.push(params);
+      this.rows.push(eventRow({
+        booking_event_id: this.rows.length + 1,
+        booking_id: Number(params[1]),
+        event_type: params[0] as "new" | "updated" | "cancelled",
+        beds24_booking_id: Number(params[2]),
+        event_accommodation: String(params[3]),
+        event_source: params[4] as string | null,
+        occurred_at: String(params[6]),
+      }));
     }
     if (sql.includes("DELETE")) this.deleteStatements += 1;
     return { meta: { changes: 1, last_row_id: this.inserted.length } };
   }
 }
 
-test("booking event classification follows sync state transitions", () => {
+test("new booking generates a NEW business event", () => {
   assert.equal(bookingEventType(null, baseSnapshot), "new");
+});
+
+test("repeated synchronization keeps NEW and never creates UPDATED", async () => {
+  const db = new FakeBookingEventsDB();
+
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    null,
+    baseSnapshot,
+    "2026-07-31T10:00:00.000Z",
+  );
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    baseSnapshot,
+    { ...baseSnapshot },
+    "2026-07-31T10:10:00.000Z",
+  );
+
+  assert.deepEqual(db.inserted.map((params) => params[0]), ["new"]);
+});
+
+test("database timestamp changes alone do not generate UPDATED", () => {
+  const previous = { ...baseSnapshot, updatedAt: "2026-07-31T10:00:00.000Z" } as BookingEventSnapshot & { updatedAt: string };
+  const current = { ...baseSnapshot, updatedAt: "2026-07-31T10:10:00.000Z" } as BookingEventSnapshot & { updatedAt: string };
+
+  assert.equal(bookingEventType(previous, current), null);
+});
+
+test("arrival date changes generate UPDATED", () => {
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, arrivalDate: "2026-08-02" }), "updated");
+});
+
+test("departure date changes generate UPDATED", () => {
   assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, departureDate: "2026-08-04" }), "updated");
+});
+
+test("room changes generate UPDATED", () => {
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, unitId: 1002 }), "updated");
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, roomTypeId: 11 }), "updated");
+});
+
+test("guest count changes generate UPDATED", () => {
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, adults: 3 }), "updated");
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, children: 1 }), "updated");
+});
+
+test("guest name booking value and source payload changes generate UPDATED", () => {
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, guestName: "Mali Updated" }), "updated");
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, price: 13000 }), "updated");
+  assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, apiReference: "OTA-9001-REV-2" }), "updated");
+});
+
+test("cancellation generates CANCELLED and restored booking generates UPDATED", () => {
   assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, status: "Cancelled" }), "cancelled");
+  assert.equal(bookingEventType({ ...baseSnapshot, status: "Cancelled" }, { ...baseSnapshot, status: "Confirmed" }), "updated");
+});
+
+test("unchanged active and unchanged cancelled bookings generate no event", () => {
   assert.equal(bookingEventType(baseSnapshot, { ...baseSnapshot, status: "Confirmed" }), null);
   assert.equal(bookingEventType({ ...baseSnapshot, status: "Cancelled" }, { ...baseSnapshot, status: "Cancelled" }), null);
 });
@@ -153,13 +251,54 @@ test("booking event signature prevents duplicate replay inserts", () => {
   const first = bookingEventSignature("updated", { ...baseSnapshot, departureDate: "2026-08-04" });
   const replay = bookingEventSignature("updated", { ...baseSnapshot, departureDate: "2026-08-04" });
   const changed = bookingEventSignature("updated", { ...baseSnapshot, departureDate: "2026-08-05" });
+  const restored = bookingEventSignature(
+    "updated",
+    { ...baseSnapshot, status: "Confirmed" },
+    { ...baseSnapshot, status: "Cancelled" },
+  );
 
   assert.equal(first, replay);
   assert.notEqual(first, changed);
+  assert.notEqual(first, restored);
+});
+
+test("identical payload twice does not duplicate UPDATED", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [];
+  const updatedSnapshot = { ...baseSnapshot, departureDate: "2026-08-04" };
+
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    baseSnapshot,
+    updatedSnapshot,
+    "2026-07-31T10:30:00.000Z",
+  );
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    baseSnapshot,
+    updatedSnapshot,
+    "2026-07-31T10:35:00.000Z",
+  );
+
+  assert.deepEqual(db.inserted.map((params) => params[0]), ["updated"]);
+});
+
+test("active NEW retention suppresses UPDATED event creation", async () => {
+  const db = new FakeBookingEventsDB();
+
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    baseSnapshot,
+    { ...baseSnapshot, departureDate: "2026-08-04" },
+    "2026-07-31T10:30:00.000Z",
+  );
+
+  assert.deepEqual(db.inserted, []);
 });
 
 test("booking event persistence appends the sync-generated event envelope", async () => {
   const db = new FakeBookingEventsDB();
+  db.rows = [];
   await recordBookingEvent(
     { DB: db as unknown as D1Database },
     baseSnapshot,
@@ -230,17 +369,18 @@ test("booking pulse excludes expired invalid and future events without deleting 
   assert.equal(db.deleteStatements, 0);
 });
 
-test("booking pulse keeps the most recent meaningful event per booking", async () => {
+test("booking pulse keeps NEW visible for 24 hours unless CANCELLED is the latest event", async () => {
   const db = new FakeBookingEventsDB();
   db.rows = [
     eventRow({ booking_event_id: 21, event_type: "updated", beds24_booking_id: 9021, occurred_at: "2026-08-02T11:30:00.000Z" }),
     eventRow({ booking_event_id: 20, event_type: "new", beds24_booking_id: 9021, occurred_at: "2026-08-02T10:30:00.000Z" }),
     eventRow({ booking_event_id: 22, event_type: "cancelled", beds24_booking_id: 9022, occurred_at: "2026-08-02T11:00:00.000Z" }),
+    eventRow({ booking_event_id: 23, event_type: "new", beds24_booking_id: 9022, occurred_at: "2026-08-02T10:45:00.000Z" }),
   ];
 
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
 
-  assert.deepEqual(events.map((event) => `${event.bookingId}:${event.eventType}`), ["9021:UPDATED", "9022:CANCELLED"]);
+  assert.deepEqual(events.map((event) => `${event.bookingId}:${event.eventType}`), ["9022:CANCELLED", "9021:NEW"]);
 });
 
 test("booking pulse uses the resort local timezone convention", () => {

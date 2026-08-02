@@ -21,6 +21,12 @@ export interface BookingEventSnapshot {
   adults: number;
   children: number;
   source: string | null;
+  price: number | null;
+  apiSource: string | null;
+  channel: string | null;
+  apiReference: string | null;
+  reference: string | null;
+  voucher: string | null;
 }
 
 export interface BookingPulseItem {
@@ -77,6 +83,10 @@ function isCancelled(status: string | null): boolean {
   return value === "cancelled" || value === "canceled";
 }
 
+function normalizedNumber(value: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function significantFields(snapshot: BookingEventSnapshot) {
   return {
     arrivalDate: snapshot.arrivalDate,
@@ -85,12 +95,24 @@ function significantFields(snapshot: BookingEventSnapshot) {
     unitId: snapshot.unitId,
     guestName: normalizedText(snapshot.guestName),
     guests: snapshot.adults + snapshot.children,
+    price: normalizedNumber(snapshot.price),
     source: normalizedText(snapshot.source),
+    sourcePayload: {
+      apiSource: normalizedText(snapshot.apiSource),
+      channel: normalizedText(snapshot.channel),
+      apiReference: normalizedText(snapshot.apiReference),
+      reference: normalizedText(snapshot.reference),
+      voucher: normalizedText(snapshot.voucher),
+    },
   };
 }
 
 function stableSignature(input: unknown): string {
   return JSON.stringify(input);
+}
+
+function eventSortDescending(a: Pick<BookingEventRow, "booking_event_id" | "occurred_at">, b: Pick<BookingEventRow, "booking_event_id" | "occurred_at">): number {
+  return b.occurred_at.localeCompare(a.occurred_at) || b.booking_event_id - a.booking_event_id;
 }
 
 function pulseTypeFor(type: BookingEventType): BookingPulseEventType {
@@ -171,19 +193,50 @@ export function isBookingPulseEventVisible(eventTimestamp: string, now: Date): b
 export function bookingEventType(previous: BookingEventSnapshot | null, current: BookingEventSnapshot): BookingEventType | null {
   if (!previous) return "new";
   if (!isCancelled(previous.status) && isCancelled(current.status)) return "cancelled";
+  if (isCancelled(previous.status) && !isCancelled(current.status)) return "updated";
   if (isCancelled(current.status)) return null;
   return stableSignature(significantFields(previous)) === stableSignature(significantFields(current)) ? null : "updated";
 }
 
-export function bookingEventSignature(type: BookingEventType, snapshot: BookingEventSnapshot): string {
+export function bookingEventSignature(type: BookingEventType, snapshot: BookingEventSnapshot, previous?: BookingEventSnapshot | null): string {
   const eventSnapshot = type === "cancelled"
     ? { status: "cancelled", cancelTimeSource: normalizedText(snapshot.status), ...significantFields(snapshot) }
+    : type === "updated"
+      ? {
+          status: normalizedText(snapshot.status),
+          restoredFromCancelled: previous ? isCancelled(previous.status) && !isCancelled(snapshot.status) : false,
+          ...significantFields(snapshot),
+        }
     : significantFields(snapshot);
   return stableSignature({
     beds24BookingId: snapshot.beds24BookingId,
     type,
     eventSnapshot,
   });
+}
+
+function retentionCutoffFor(occurredAt: string): string | null {
+  const eventTime = new Date(occurredAt).getTime();
+  if (!Number.isFinite(eventTime)) return null;
+  return new Date(eventTime - BOOKING_PULSE_RETENTION_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+async function hasActiveNewEvent(env: BookingEventsBindings, bookingId: number, occurredAt: string): Promise<boolean> {
+  const cutoff = retentionCutoffFor(occurredAt);
+  if (!cutoff) return false;
+
+  const row = await env.DB.prepare(`
+    SELECT booking_event_id
+    FROM booking_events
+    WHERE booking_id = ?
+      AND event_type = 'new'
+      AND occurred_at > ?
+      AND occurred_at <= ?
+    ORDER BY occurred_at DESC, booking_event_id DESC
+    LIMIT 1
+  `).bind(bookingId, cutoff, occurredAt).first<{ booking_event_id: number }>();
+
+  return Boolean(row);
 }
 
 export async function recordBookingEvent(
@@ -194,6 +247,7 @@ export async function recordBookingEvent(
 ): Promise<void> {
   const eventType = bookingEventType(previous, current);
   if (!eventType || !current.bookingId) return;
+  if (eventType === "updated" && await hasActiveNewEvent(env, current.bookingId, occurredAt)) return;
 
   await env.DB.prepare(`
     INSERT OR IGNORE INTO booking_events (
@@ -213,10 +267,17 @@ export async function recordBookingEvent(
     current.beds24BookingId,
     current.accommodation,
     current.source,
-    bookingEventSignature(eventType, current),
+    bookingEventSignature(eventType, current, previous),
     occurredAt,
     occurredAt,
   ).run();
+}
+
+function bookingPulseRowFor(rows: BookingEventRow[]): BookingEventRow {
+  const sorted = rows.slice().sort(eventSortDescending);
+  const latest = sorted[0];
+  if (latest.event_type === "cancelled") return latest;
+  return sorted.find((row) => row.event_type === "new") ?? latest;
 }
 
 export async function listRecentBookingEvents(
@@ -257,18 +318,17 @@ export async function listRecentBookingEvents(
     LIMIT ?
   `).bind(readLimit).all<BookingEventRow>();
 
-  const seenBookings = new Set<string>();
-  const items: BookingPulseItem[] = [];
+  const rowsByBooking = new Map<string, BookingEventRow[]>();
 
   for (const row of rows.results ?? []) {
     if (!isBookingPulseEventVisible(row.occurred_at, now)) continue;
     const bookingKey = String(row.beds24_booking_id);
-    if (seenBookings.has(bookingKey)) continue;
-
-    seenBookings.add(bookingKey);
-    items.push(toBookingPulseItem(row, options));
-    if (items.length >= limit) break;
+    rowsByBooking.set(bookingKey, [...(rowsByBooking.get(bookingKey) ?? []), row]);
   }
 
-  return items;
+  return [...rowsByBooking.values()]
+    .map(bookingPulseRowFor)
+    .sort(eventSortDescending)
+    .slice(0, limit)
+    .map((row) => toBookingPulseItem(row, options));
 }

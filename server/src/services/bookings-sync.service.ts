@@ -466,7 +466,13 @@ function bookingEventSnapshotSelect(whereClause: string): string {
       b.guest_name AS guestName,
       b.adults,
       b.children,
-      COALESCE(NULLIF(b.channel, ''), b.api_source) AS source
+      COALESCE(NULLIF(b.channel, ''), b.api_source) AS source,
+      b.price,
+      b.api_source AS apiSource,
+      b.channel,
+      b.api_reference AS apiReference,
+      b.reference,
+      b.voucher
     FROM bookings b
     JOIN room_types rt ON rt.room_type_id = b.room_type_id
     LEFT JOIN units u ON u.unit_id = b.unit_id
