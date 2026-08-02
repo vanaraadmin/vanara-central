@@ -108,6 +108,13 @@ export interface MaintenanceAssignableOptions {
   externalFallbackAvailable: boolean;
 }
 
+export interface MaintenanceRoomTarget {
+  id: number;
+  name: string;
+  roomType: string | null;
+  label: string;
+}
+
 export interface CreateMaintenanceTicketPayload {
   targetType: MaintenanceTargetType;
   title: string;
@@ -156,6 +163,12 @@ export interface MaintenanceDetailResponse {
 export interface MaintenanceAssignableUsersResponse {
   success: boolean;
   data?: MaintenanceAssignableOptions;
+  error?: string;
+}
+
+export interface MaintenanceRoomTargetsResponse {
+  success: boolean;
+  data?: MaintenanceRoomTarget[];
   error?: string;
 }
 

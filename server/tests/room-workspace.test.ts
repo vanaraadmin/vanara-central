@@ -92,6 +92,14 @@ class FakeRoomDB {
         })) as T[],
       };
     }
+    if (sql.includes("SELECT u.unit_id, u.unit_name, rt.room_type_name, rt.room_name")) {
+      return {
+        results: [
+          { unit_id: 1, unit_name: "Villa 10", room_type_name: "Garden Villa", room_name: "Garden Villa" },
+          { unit_id: 2, unit_name: "Bungalow 1", room_type_name: "Bungalow", room_name: "Bungalow" },
+        ] as T[],
+      };
+    }
     if (sql.includes("WITH latest_housekeeping")) {
       return {
         results: [{
@@ -1029,4 +1037,18 @@ test("maintenance target model enforces Room or Other and Other never affects Ro
   assert.equal(room.status, 200);
   assert.equal((roomBody.data as { maintenance: { openIssues: number; outOfService: boolean } }).maintenance.openIssues, 0);
   assert.equal((roomBody.data as { maintenance: { openIssues: number; outOfService: boolean } }).maintenance.outOfService, false);
+});
+
+test("maintenance home exposes active rooms for the required Room target dropdown", async () => {
+  assert.equal((await request("/api/maintenance/rooms", { method: "GET" }, env([], { authenticated: false }))).status, 401);
+  assert.equal((await request("/api/maintenance/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 403);
+
+  const response = await request("/api/maintenance/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([maintenanceEdit]));
+  const body = await json(response);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.data, [
+    { id: 1, name: "Villa 10", roomType: "Garden Villa", label: "Villa 10 - Garden Villa" },
+    { id: 2, name: "Bungalow 1", roomType: "Bungalow", label: "Bungalow 1 - Bungalow" },
+  ]);
 });

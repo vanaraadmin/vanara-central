@@ -7,6 +7,7 @@ import type {
   MaintenanceListResponse,
   MaintenanceNoteResponse,
   MaintenancePhotoResponse,
+  MaintenanceRoomTargetsResponse,
   MaintenanceStatus,
   MaintenanceTicketDetail,
   MaintenanceTicketSummary,
@@ -68,6 +69,12 @@ export async function createMaintenanceTicket(payload: CreateMaintenanceTicketPa
 export async function loadMaintenanceAssignableUsers(signal?: AbortSignal): Promise<MaintenanceAssignableOptions> {
   const response = await requestJson<MaintenanceAssignableUsersResponse>("/api/maintenance/assignable-users", signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "Assignable maintenance users are unavailable");
+  return response.data;
+}
+
+export async function loadMaintenanceRoomTargets(signal?: AbortSignal) {
+  const response = await requestJson<MaintenanceRoomTargetsResponse>("/api/maintenance/rooms", signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance rooms are unavailable");
   return response.data;
 }
 

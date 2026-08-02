@@ -163,6 +163,7 @@ Photos are shown as a compact gallery. Tapping a photo opens a fullscreen previe
 
 Implemented API surface:
 
+- `GET /api/maintenance/rooms`
 - `GET /api/maintenance/tickets`
 - `GET /api/maintenance/tickets/:id`
 - `POST /api/maintenance/tickets`

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import WorkspaceShell from "../components/WorkspaceShell";
-import { addMaintenancePhoto, createMaintenanceTicket, loadMaintenanceAssignableUsers } from "../services/maintenance.service";
+import { addMaintenancePhoto, createMaintenanceTicket, loadMaintenanceAssignableUsers, loadMaintenanceRoomTargets } from "../services/maintenance.service";
 import type { MaintenancePriority, MaintenanceTargetType } from "../types/maintenance";
 import "../styles/MaintenancePage.css";
 
@@ -18,17 +18,24 @@ export default function CreateMaintenancePage() {
   const roomTargetLocked = Boolean(roomParam);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [targetType, setTargetType] = useState<MaintenanceTargetType>("ROOM");
+  const [targetType, setTargetType] = useState<MaintenanceTargetType | "">(roomTargetLocked ? "ROOM" : "");
   const [priority, setPriority] = useState<MaintenancePriority>("Normal");
   const [roomId, setRoomId] = useState(roomParam);
-  const [locationArea, setLocationArea] = useState(locationAreas[0] ?? "Restaurant");
+  const [locationArea, setLocationArea] = useState("");
   const [outOfService, setOutOfService] = useState(false);
   const [assignedUserId, setAssignedUserId] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const assignable = useQuery({ queryKey: ["maintenance", "assignable-users"], queryFn: ({ signal }) => loadMaintenanceAssignableUsers(signal) });
+  const rooms = useQuery({
+    queryKey: ["maintenance", "rooms"],
+    queryFn: ({ signal }) => loadMaintenanceRoomTargets(signal),
+    enabled: targetType === "ROOM" && !roomTargetLocked,
+  });
   const internalUsers = assignable.data?.users ?? [];
+  const roomOptions = rooms.data ?? [];
   const mutation = useMutation({
     mutationFn: async () => {
+      if (!targetType) throw new Error("Target is required.");
       const ticket = await createMaintenanceTicket({
         targetType,
         title,
@@ -62,10 +69,18 @@ export default function CreateMaintenancePage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const missingTarget = !targetType;
     const missingRoom = targetType === "ROOM" && !roomId.trim();
     const missingArea = targetType === "OTHER" && !locationArea.trim();
-    if (!title.trim() || !description.trim() || missingRoom || missingArea || mutation.isPending) return;
+    const waitingForRooms = targetType === "ROOM" && !roomTargetLocked && (rooms.isLoading || rooms.isError || roomOptions.length === 0);
+    if (!title.trim() || !description.trim() || missingTarget || missingRoom || missingArea || waitingForRooms || mutation.isPending) return;
     mutation.mutate();
+  }
+
+  function chooseTarget(next: MaintenanceTargetType) {
+    setTargetType(next);
+    if (next === "ROOM") setLocationArea("");
+    if (next === "OTHER") setRoomId("");
   }
 
   function updatePhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -88,35 +103,45 @@ export default function CreateMaintenancePage() {
       </div>
 
       <form className="maintenance-form-page" onSubmit={submit}>
-        {!roomTargetLocked && (
-          <fieldset className="maintenance-target-field">
-            <legend>Target</legend>
-            <label>
-              <input checked={targetType === "ROOM"} onChange={() => setTargetType("ROOM")} type="radio" />
-              <span>Room</span>
-            </label>
-            <label>
-              <input checked={targetType === "OTHER"} onChange={() => setTargetType("OTHER")} type="radio" />
-              <span>Other</span>
-            </label>
-          </fieldset>
-        )}
         <label><span>Title</span><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={140} required /></label>
         <label><span>Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} maxLength={2000} required /></label>
         <label><span>Photos</span><input accept="image/*" multiple onChange={updatePhotos} type="file" /></label>
         {photos.length > 0 && <p className="maintenance-muted">{photos.length} photo{photos.length === 1 ? "" : "s"} selected</p>}
+        {!roomTargetLocked && (
+          <fieldset className="maintenance-target-field">
+            <legend>Issue target</legend>
+            <label>
+              <input checked={targetType === "ROOM"} name="maintenance-target" onChange={() => chooseTarget("ROOM")} required type="radio" />
+              <span>Room</span>
+            </label>
+            <label>
+              <input checked={targetType === "OTHER"} name="maintenance-target" onChange={() => chooseTarget("OTHER")} required type="radio" />
+              <span>Other</span>
+            </label>
+          </fieldset>
+        )}
         <div className="maintenance-form-grid">
-          {!roomTargetLocked && targetType === "ROOM" && <label><span>Room</span><input inputMode="numeric" value={roomId} onChange={(event) => setRoomId(event.target.value)} placeholder="Example: 1" required /></label>}
+          {!roomTargetLocked && targetType === "ROOM" && (
+            <label>
+              <span>Room</span>
+              <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={rooms.isLoading || rooms.isError || roomOptions.length === 0}>
+                <option value="">{rooms.isLoading ? "Loading rooms..." : "Select room"}</option>
+                {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.label}</option>)}
+              </select>
+            </label>
+          )}
           {!roomTargetLocked && targetType === "OTHER" && (
             <label>
               <span>Area</span>
               <select value={locationArea} onChange={(event) => setLocationArea(event.target.value)} required>
+                <option value="">Select area</option>
                 {locationAreas.map((item) => <option key={item}>{item}</option>)}
               </select>
             </label>
           )}
           <label><span>Priority</span><select value={priority} onChange={(event) => setPriority(event.target.value as MaintenancePriority)}>{priorities.map((item) => <option key={item}>{item.toUpperCase()}</option>)}</select></label>
         </div>
+        {rooms.isError && targetType === "ROOM" && <p className="maintenance-form-error">Room list could not be loaded.</p>}
         <label className="maintenance-checkbox-field">
           <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
           <span>Blocking</span>
@@ -131,7 +156,7 @@ export default function CreateMaintenancePage() {
           </label>
         )}
         {mutation.isError && <p className="maintenance-form-error">Issue could not be saved. Please check the fields.</p>}
-        <button type="submit" disabled={!title.trim() || !description.trim() || (targetType === "ROOM" && !roomId.trim()) || (targetType === "OTHER" && !locationArea.trim()) || mutation.isPending}>{mutation.isPending ? "Creating..." : "Create Issue"}</button>
+        <button type="submit" disabled={!title.trim() || !description.trim() || !targetType || (targetType === "ROOM" && !roomId.trim()) || (targetType === "ROOM" && !roomTargetLocked && (rooms.isLoading || rooms.isError || roomOptions.length === 0)) || (targetType === "OTHER" && !locationArea.trim()) || mutation.isPending}>{mutation.isPending ? "Creating..." : "Create Issue"}</button>
       </form>
     </WorkspaceShell>
   );

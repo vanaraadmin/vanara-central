@@ -125,6 +125,13 @@ interface UnitRow {
   room_type_id: number | null;
 }
 
+interface RoomTargetRow {
+  unit_id: number;
+  unit_name: string;
+  room_type_name: string | null;
+  room_name: string | null;
+}
+
 export interface MaintenanceAssignment {
   type: MaintenanceAssignmentType | null;
   assignedUserId: string | null;
@@ -222,6 +229,13 @@ export interface MaintenanceAssignableOptions {
   users: MaintenanceAssignableUser[];
   externalAssignees: string[];
   externalFallbackAvailable: boolean;
+}
+
+export interface MaintenanceRoomTarget {
+  id: number;
+  name: string;
+  roomType: string | null;
+  label: string;
 }
 
 export interface CreateMaintenanceTicketInput {
@@ -664,6 +678,26 @@ export async function listAssignableMaintenanceUsers(env: MaintenanceBindings): 
     externalAssignees: [...EXTERNAL_ASSIGNEES],
     externalFallbackAvailable: users.length === 0,
   };
+}
+
+export async function listMaintenanceRoomTargets(env: MaintenanceBindings): Promise<MaintenanceRoomTarget[]> {
+  const rows = await env.DB.prepare(`
+    SELECT u.unit_id, u.unit_name, rt.room_type_name, rt.room_name
+    FROM units u
+    LEFT JOIN room_types rt ON rt.room_type_id = u.room_type_id
+    WHERE u.active = 1
+    ORDER BY COALESCE(u.position, 999), u.unit_name, u.unit_id
+  `).all<RoomTargetRow>();
+
+  return (rows.results ?? []).map((row) => {
+    const roomType = row.room_type_name ?? row.room_name ?? null;
+    return {
+      id: row.unit_id,
+      name: row.unit_name,
+      roomType,
+      label: roomType ? `${row.unit_name} - ${roomType}` : row.unit_name,
+    };
+  });
 }
 
 export async function listMaintenanceTickets(env: MaintenanceBindings, filters: MaintenanceFilters): Promise<MaintenanceTicketSummary[]> {
