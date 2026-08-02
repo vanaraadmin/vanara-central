@@ -666,16 +666,17 @@ function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, main
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isManager = user.role === "Manager";
   const isAssigned = task.assignedUserId === user.id;
+  const isUnassigned = task.assignedUserId === null;
   const active = !TERMINAL_STATUSES.has(task.status);
   const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
   const canRoomCreate = isOwner || isManager || user.role === "Housekeeping" || user.role === "Operations";
 
   return {
-    canClaim: base.canClaim && released && !maintenanceBlocked,
+    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released && !maintenanceBlocked,
     canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: task.status === "CLAIMED" && released && !maintenanceBlocked && (isAssigned || isOwner),
+    canStart: base.canStart && released && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
     canEditChecklist: false,
-    canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner),
+    canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
     canCancel: active && Boolean(isOwner || isManager),
     canReopen: TERMINAL_STATUSES.has(task.status) && Boolean(isOwner || isManager),

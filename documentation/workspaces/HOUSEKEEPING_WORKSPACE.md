@@ -41,12 +41,14 @@ The legacy Housekeeping API is preserved for compatibility, but it is not the im
 Housekeeping Workspace rules:
 
 - Initial view shows only Priority, Normal, and Water counters.
+- Counters display room-count wording: 0 Rooms, 1 Room, 2 Rooms, and so on.
 - Tapping a counter expands only that section.
 - A room with no active Housekeeping work must not appear.
 - A task appears in exactly one visible queue.
 - Room names link to the Room Workspace.
 - On-Demand Cleaning cannot be created from Housekeeping.
 - Staff-facing copy must avoid technical state, SQL, idempotency, version, and conflict-code wording.
+- Staff-facing task execution does not expose an explicit Claim step.
 
 Room Workspace rules:
 
@@ -88,6 +90,7 @@ Full Cleaning:
 Water:
 
 - Daily room-type bottle refill for eligible occupied in-house rooms.
+- Uses a simplified one-tap workflow: Available to Completed.
 - Water never escalates into Priority.
 
 Turnover:
@@ -102,21 +105,21 @@ Turnover:
 1. Guest checks out.
 2. Reception completes the checkout-release workflow.
 3. Turnover appears in Priority.
-4. Operator claims the task.
-5. Operator starts the task.
-6. Operator completes the task.
+4. Operator starts the task.
+5. Vanara assigns it to the operator and marks it In Progress.
+6. Operator finishes the task.
 7. Room disappears from Housekeeping.
 8. Room Workspace reflects the latest ready/housekeeping state.
 
-If the turnover task exists before Reception release, it remains Waiting Reception and is not claimable. When `room_released = 1`, the task is synchronized to Available for Claim from the Housekeeping read path.
+If the turnover task exists before Reception release, it remains Waiting Reception and cannot start. When `room_released = 1`, the task is synchronized to Available from the Housekeeping read path.
 
 ### Standard Cleaning
 
 1. Occupied in-house room reaches the cleaning cadence.
 2. Cleaning appears in Normal.
-3. Operator claims the task.
-4. Operator starts the task.
-5. Operator completes Cleaning.
+3. Operator starts the task.
+4. Vanara assigns it to the operator and marks it In Progress.
+5. Operator finishes Cleaning.
 6. Cleaning counter updates.
 7. Task leaves the queue.
 
@@ -125,7 +128,7 @@ Standard Cleaning is due every 3 occupied days by default.
 ### Full Cleaning
 
 1. A Cleaning or On-Demand Cleaning task is in progress.
-2. Operator selects Complete Full Cleaning.
+2. Operator selects Finish Full Cleaning.
 3. Cleaning counter updates.
 4. Linen counter updates.
 5. Task leaves the queue.
@@ -145,9 +148,11 @@ Full Cleaning is an intervention choice, not a separate checklist.
 2. Operator opens Room Workspace.
 3. Operator creates On-Demand Cleaning with optional note.
 4. Task appears immediately in Housekeeping Normal.
-5. Operator completes either Cleaning or Full Cleaning.
-6. Correct counters update.
-7. Task leaves the queue.
+5. Operator starts the task.
+6. Vanara assigns it to the operator and marks it In Progress.
+7. Operator finishes either Cleaning or Full Cleaning.
+8. Correct counters update.
+9. Task leaves the queue.
 
 On-Demand Cleaning requires an occupied in-house room.
 
@@ -155,8 +160,9 @@ On-Demand Cleaning requires an occupied in-house room.
 
 1. Eligible occupied in-house room appears in Water.
 2. Card displays fixed room-type quantity.
-3. Operator claims and completes the task.
-4. Task leaves the Water queue.
+3. Operator taps Complete.
+4. Vanara assigns the task to the operator, records completion, and writes the completion audit event.
+5. Task leaves the Water queue.
 
 Water is excluded for vacant rooms, checkout-day rooms, and rooms blocked by checkout-release workflow state.
 
@@ -216,9 +222,10 @@ Task statuses:
 Primary transitions:
 
 - Reception release: `WAITING_FOR_RECEPTION` to `AVAILABLE_FOR_CLAIM`.
-- Claim: `AVAILABLE_FOR_CLAIM` to `CLAIMED`.
+- Claim: retained as a compatibility/domain ownership transition, not exposed in the operator UX.
 - Release claim: `CLAIMED` to `AVAILABLE_FOR_CLAIM`.
-- Start: `CLAIMED` to `IN_PROGRESS`.
+- Start Cleaning, Full Cleaning, On-Demand Cleaning, or Turnover: `AVAILABLE_FOR_CLAIM` or `CLAIMED` to `IN_PROGRESS`; if unassigned, the same transition assigns the current operator.
+- Complete Water: `AVAILABLE_FOR_CLAIM`, `CLAIMED`, or `IN_PROGRESS` to `COMPLETED`; if unassigned, the same transition assigns the current operator.
 - Complete non-turnover: allowed from the task's completable active state to `COMPLETED`.
 - Complete turnover: the server advances through internal ready states and completes the task as one operator action.
 - Skip: allowed for skippable active tasks.
@@ -238,10 +245,10 @@ Write:
 
 - Housekeeping edit permission is required for Housekeeping task actions.
 - On-Demand Cleaning from Room Workspace requires room access and Housekeeping edit permission.
-- Claim is available only when the task is available, released when needed, and not maintenance-blocked.
-- Start is available to the assignee or Owner.
+- Start is available when the task is unassigned, or when it is assigned to the current operator, or to Owner.
 - Complete is available to the assignee or Owner.
-- Release claim is available to assignee, Manager, or Owner.
+- Water Complete is available when the Water task is unassigned, assigned to the current operator, or to Owner.
+- Explicit Claim and Release Claim are not shown in the operator UX.
 - Skip is available to assignee, Manager, or Owner when the task type allows skip.
 - Cancel and Reopen are Manager or Owner actions and require a reason.
 - Force Room Released is Owner only and requires a reason.

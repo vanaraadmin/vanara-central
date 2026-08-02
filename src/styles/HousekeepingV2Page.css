@@ -69,7 +69,7 @@
 .housekeeping-v2-summary__item strong {
   color: var(--vc-text-primary);
   font-family: var(--vc-font-display);
-  font-size: 2.1rem;
+  font-size: 1.55rem;
   line-height: 1;
 }
 
@@ -116,13 +116,15 @@
 }
 
 .housekeeping-v2-section__header span {
-  min-width: 36px;
+  min-width: 82px;
   min-height: 36px;
   display: grid;
   place-items: center;
+  padding: 0 12px;
   border-radius: var(--vc-radius-pill);
   background: var(--vc-bg-subtle);
   color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-heavy);
 }
 
@@ -247,6 +249,12 @@
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-bold);
   text-decoration: none;
+  gap: 6px;
+}
+
+.housekeeping-v2-card__actions svg {
+  width: 16px;
+  height: 16px;
 }
 
 .housekeeping-v2-secondary-action {

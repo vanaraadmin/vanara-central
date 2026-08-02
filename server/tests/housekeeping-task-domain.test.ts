@@ -409,8 +409,7 @@ test("water refill duplicate insert with the same idempotency key replays the ex
 
 test("valid standard-cleaning transitions increment version and create audit events", async () => {
   const { data, db, task } = await createTask("STANDARD_CLEANING");
-  const claimed = await transitionHousekeepingTask(data, task.id, { action: "claim", expectedVersion: task.version, actor: actor() });
-  const started = await transitionHousekeepingTask(data, claimed.id, { action: "start", expectedVersion: claimed.version, actor: actor() });
+  const started = await transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor() });
   const completed = await transitionHousekeepingTask(data, started.id, {
     action: "complete",
     expectedVersion: started.version,
@@ -420,8 +419,9 @@ test("valid standard-cleaning transitions increment version and create audit eve
   });
 
   assert.equal(completed.status, "COMPLETED");
-  assert.equal(completed.version, 4);
-  assert.deepEqual(db.events.map((event) => event.event_type), ["created", "claim", "start", "complete"]);
+  assert.equal(completed.assignedUserId, "nun");
+  assert.equal(completed.version, 3);
+  assert.deepEqual(db.events.map((event) => event.event_type), ["created", "start", "complete"]);
   assert.equal(db.counters[0]?.last_standard_cleaning_task_id, completed.id);
   assert.equal(db.counters[0]?.last_linen_change_task_id, null);
 });
@@ -443,42 +443,40 @@ test("blocked, cancelled, and completed tasks cannot resume silently", async () 
   await assert.rejects(() => transitionHousekeepingTask(cancelledCase.data, cancelled.id, { action: "claim", expectedVersion: cancelled.version, actor: actor() }), /Cancelled/);
 
   const completedCase = await createTask("WATER_REFILL", new FakeHousekeepingTaskDB());
-  const waterClaimed = await transitionHousekeepingTask(completedCase.data, completedCase.task.id, { action: "claim", expectedVersion: completedCase.task.version, actor: actor() });
-  const completed = await transitionHousekeepingTask(completedCase.data, waterClaimed.id, { action: "complete", expectedVersion: waterClaimed.version, actor: actor(), idempotencyKey: "water-complete" });
+  const completed = await transitionHousekeepingTask(completedCase.data, completedCase.task.id, { action: "complete", expectedVersion: completedCase.task.version, actor: actor(), idempotencyKey: "water-complete" });
   await assert.rejects(() => transitionHousekeepingTask(completedCase.data, completed.id, { action: "complete", expectedVersion: completed.version, actor: actor() }), /Completed/);
 });
 
 test("completion replay is idempotent and does not duplicate audit events", async () => {
   const { data, db, task } = await createTask("WATER_REFILL");
-  const claimed = await transitionHousekeepingTask(data, task.id, { action: "claim", expectedVersion: task.version, actor: actor() });
-  const first = await transitionHousekeepingTask(data, claimed.id, { action: "complete", expectedVersion: claimed.version, actor: actor(), idempotencyKey: "same-complete" });
+  const first = await transitionHousekeepingTask(data, task.id, { action: "complete", expectedVersion: task.version, actor: actor(), idempotencyKey: "same-complete" });
   const replay = await transitionHousekeepingTask(data, first.id, { action: "complete", expectedVersion: first.version, actor: actor(), idempotencyKey: "same-complete" });
 
   assert.equal(replay.id, first.id);
   assert.equal(db.events.filter((event) => event.event_type === "complete").length, 1);
 });
 
-test("stale version returns a stable conflict error and concurrent claim has one winner", async () => {
+test("stale version returns a stable conflict error and concurrent start has one winner", async () => {
   const { data, task } = await createTask("ON_DEMAND_CLEANING", new FakeHousekeepingTaskDB(), { onDemandSource: "manual" });
-  const winner = await transitionHousekeepingTask(data, task.id, { action: "claim", expectedVersion: task.version, actor: actor("nun") });
+  const winner = await transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor("nun") });
   assert.equal(winner.assignedUserId, "nun");
+  assert.equal(winner.status, "IN_PROGRESS");
 
   await assert.rejects(async () => {
-    await transitionHousekeepingTask(data, task.id, { action: "claim", expectedVersion: task.version, actor: actor("stefano") });
+    await transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor("stefano") });
   }, (error) => error instanceof HousekeepingTaskDomainError && error.code === "housekeeping_task_stale_version");
 });
 
-test("turnover transitions require release before claim and support ready completion", async () => {
+test("turnover transitions require release before start and support ready completion", async () => {
   const db = new FakeHousekeepingTaskDB();
   db.receptionRelease.set(100, 0);
   const data = env(db);
   const task = await createHousekeepingTask(data, { taskType: "TURNOVER", unitId: 1, bookingId: 100, operationalDate: "2026-08-01" }, actor());
   assert.equal(housekeepingTaskCapabilities(task).requiresReceptionRelease, true);
-  await assert.rejects(() => transitionHousekeepingTask(data, task.id, { action: "claim", expectedVersion: task.version, actor: actor() }), /invalid/);
+  await assert.rejects(() => transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor() }), /invalid/);
 
   const available = await transitionHousekeepingTask(data, task.id, { action: "release_from_reception", expectedVersion: task.version, actor: actor() });
-  const claimed = await transitionHousekeepingTask(data, available.id, { action: "claim", expectedVersion: available.version, actor: actor() });
-  const started = await transitionHousekeepingTask(data, claimed.id, { action: "start", expectedVersion: claimed.version, actor: actor() });
+  const started = await transitionHousekeepingTask(data, available.id, { action: "start", expectedVersion: available.version, actor: actor() });
   const checked = await transitionHousekeepingTask(data, started.id, { action: "checklist_complete", expectedVersion: started.version, actor: actor() });
   const ready = await transitionHousekeepingTask(data, checked.id, { action: "mark_ready", expectedVersion: checked.version, actor: actor() });
   const completed = await transitionHousekeepingTask(data, ready.id, { action: "complete", expectedVersion: ready.version, actor: actor(), completion: { standardCleaningCompleted: true, linenChangeCompleted: true } });

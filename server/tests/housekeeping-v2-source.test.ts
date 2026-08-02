@@ -141,14 +141,12 @@ test("v2 page starts as summary cards and expands only Priority, Normal or Water
 
 test("expanded v2 rows link room names to Room Workspace and gate task actions by server capabilities", () => {
   assert.match(page, /to=\{`\/rooms\/\$\{card\.unitId}`\}/);
-  assert.match(page, /card\.capabilities\.canClaim/);
-  assert.match(page, /card\.capabilities\.canReleaseClaim/);
   assert.match(page, /card\.capabilities\.canStart/);
   assert.match(page, /card\.capabilities\.canComplete/);
-  assert.match(page, /claimHousekeepingTask/);
-  assert.match(page, /releaseHousekeepingClaim/);
   assert.match(page, /startHousekeepingTask/);
   assert.match(page, /completeHousekeepingTask/);
+  assert.doesNotMatch(page, /claimHousekeepingTask|releaseHousekeepingClaim/);
+  assert.doesNotMatch(page, />Claim<|>Release</);
   assert.doesNotMatch(page, /\/housekeeping\/rooms\/\$\{card\.unitId}/);
   assert.doesNotMatch(page, /AssignmentControl/);
   assert.doesNotMatch(page, /<select/);
@@ -164,12 +162,14 @@ test("v2 task cards avoid staff-facing technical wording and raw task state", ()
 });
 
 test("v2 task actions render the next server-authorized step only", () => {
-  assert.match(page, /if \(card\.capabilities\.canClaim\)/);
+  assert.match(page, /if \(card\.taskType === "WATER_REFILL"\)/);
   assert.match(page, /if \(card\.capabilities\.canStart\)/);
   assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "ON_DEMAND_CLEANING"\)/);
   assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"\)/);
   assert.match(page, /if \(card\.capabilities\.canComplete\)/);
-  assert.match(page, /if \(card\.capabilities\.canReleaseClaim\)/);
+  assert.match(page, /waterRefillCompleted: true/);
+  assert.match(page, /<span>Complete<\/span>/);
+  assert.doesNotMatch(page, /if \(card\.capabilities\.canClaim\)|if \(card\.capabilities\.canReleaseClaim\)/);
   assert.match(page, /onSettled: \(\) =>/);
   assert.doesNotMatch(page, /Release claim/);
 });
@@ -180,8 +180,25 @@ test("v2 page uses intervention wording and informational help instead of checkl
   assert.match(page, /General room cleaning\./);
   assert.match(page, /Replace bed linen\./);
   assert.match(page, /Please also check room amenities before completion\./);
-  assert.match(page, /Complete Cleaning/);
-  assert.match(page, /Complete Full Cleaning/);
+  assert.match(page, /Finish Cleaning/);
+  assert.match(page, /Finish Full Cleaning/);
+});
+
+test("summary counters render room-count wording", () => {
+  assert.match(page, /function formatRoomCount\(value: number\): string/);
+  assert.match(page, /return `\$\{value}/);
+  assert.match(page, /value === 1 \? "Room" : "Rooms"/);
+  assert.match(page, /formatRoomCount\(housekeeping\.data\.summary\[item\.summaryKey\]\)/);
+  assert.match(page, /formatRoomCount\(section\.cards\.length\)/);
+  assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
+  assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);
+});
+
+test("water cards stay one-tap and avoid workflow indicators", () => {
+  assert.match(page, /if \(card\.taskType === "WATER_REFILL"\) return null/);
+  assert.match(page, /card\.taskType !== "WATER_REFILL" && \(/);
+  assert.match(page, /const completeWater = \(\) => action\.mutate\(completeHousekeepingTask\(taskId, version, \{ waterRefillCompleted: true \}\)\)/);
+  assert.doesNotMatch(page, /Complete Water|Start Water|Claim/);
 });
 
 test("read model contains only actionable housekeeping work, with existing on-demand tasks in Normal", () => {

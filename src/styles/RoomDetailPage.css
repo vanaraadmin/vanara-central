@@ -364,6 +364,10 @@
 
 .room-task-actions button {
   min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 0;
   border-radius: var(--vc-radius-lg);
   background: var(--vc-color-jungle-900);
@@ -371,6 +375,11 @@
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-heavy);
   padding: 0 var(--vc-space-3);
+}
+
+.room-task-actions button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .room-task-actions button:disabled {

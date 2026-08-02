@@ -200,7 +200,7 @@ export function isHousekeepingTaskStatus(value: string): value is HousekeepingTa
 export function housekeepingTaskCapabilities(task: Pick<HousekeepingTask, "taskType" | "status">): HousekeepingTaskCapabilities {
   return {
     canClaim: task.status === "AVAILABLE_FOR_CLAIM",
-    canStart: task.status === "CLAIMED",
+    canStart: task.taskType !== "WATER_REFILL" && (task.status === "AVAILABLE_FOR_CLAIM" || task.status === "CLAIMED"),
     canComplete: canCompleteStatus(task.taskType, task.status),
     canSkip: (task.taskType === "WATER_REFILL" || task.taskType === "STANDARD_CLEANING") && (task.status === "AVAILABLE_FOR_CLAIM" || task.status === "CLAIMED" || task.status === "IN_PROGRESS"),
     canCancel: !terminalStatuses.has(task.status),
@@ -415,7 +415,7 @@ function nextTransitionState(task: HousekeepingTask, input: TransitionHousekeepi
       if (task.status !== "CLAIMED") invalidTransition();
       return "AVAILABLE_FOR_CLAIM";
     case "start":
-      if (task.status !== "CLAIMED") invalidTransition();
+      if (task.taskType === "WATER_REFILL" || (task.status !== "AVAILABLE_FOR_CLAIM" && task.status !== "CLAIMED")) invalidTransition();
       return "IN_PROGRESS";
     case "checklist_complete":
       if (task.taskType !== "TURNOVER" || task.status !== "IN_PROGRESS") invalidTransition();
@@ -439,7 +439,7 @@ function nextTransitionState(task: HousekeepingTask, input: TransitionHousekeepi
 
 function canCompleteStatus(taskType: HousekeepingTaskType, status: HousekeepingTaskStatus): boolean {
   if (taskType === "TURNOVER") return status === "READY";
-  if (taskType === "WATER_REFILL") return status === "CLAIMED" || status === "IN_PROGRESS";
+  if (taskType === "WATER_REFILL") return status === "AVAILABLE_FOR_CLAIM" || status === "CLAIMED" || status === "IN_PROGRESS";
   return status === "IN_PROGRESS";
 }
 
@@ -449,6 +449,14 @@ function buildTransitionUpdate(task: HousekeepingTask, nextStatus: HousekeepingT
   const assignee = normalizeActor(input.assignTo ?? input.actor);
 
   if (input.action === "claim") {
+    assignments.push("assigned_user_id = ?", "assigned_user_name = ?", "claimed_at = ?");
+    params.push(assignee.id, assignee.displayName, now);
+  }
+  if (input.action === "start" && !task.assignedUserId) {
+    assignments.push("assigned_user_id = ?", "assigned_user_name = ?", "claimed_at = ?");
+    params.push(assignee.id, assignee.displayName, now);
+  }
+  if (input.action === "complete" && task.taskType === "WATER_REFILL" && !task.assignedUserId) {
     assignments.push("assigned_user_id = ?", "assigned_user_name = ?", "claimed_at = ?");
     params.push(assignee.id, assignee.displayName, now);
   }

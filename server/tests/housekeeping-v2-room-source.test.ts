@@ -51,8 +51,8 @@ test("task actions are additive v2 endpoints with expected version contracts", (
 test("server-derived capabilities enforce assignment, owner force release and maintenance blocking", () => {
   assert.match(roomService, /function taskCapabilitiesForUser/);
   assert.match(roomService, /isAssigned \|\| isOwner/);
-  assert.match(roomService, /canStart: task\.status === "CLAIMED" && released && !maintenanceBlocked && \(isAssigned \|\| isOwner\)/);
-  assert.match(roomService, /canComplete: base\.canComplete && released && !maintenanceBlocked && \(isAssigned \|\| isOwner\)/);
+  assert.match(roomService, /canStart: base\.canStart && released && !maintenanceBlocked && \(isUnassigned \|\| isAssigned \|\| isOwner\)/);
+  assert.match(roomService, /canComplete: base\.canComplete && released && !maintenanceBlocked && \(isAssigned \|\| isOwner \|\| \(task\.taskType === "WATER_REFILL" && isUnassigned\)\)/);
   assert.match(roomService, /canForceRelease: task\.taskType === "TURNOVER" && task\.status === "WAITING_FOR_RECEPTION" && isOwner/);
   assert.match(roomService, /out_of_service = 1/);
 });
@@ -73,8 +73,8 @@ test("task detail uses intervention help and trust completion instead of detaile
   assert.doesNotMatch(roomService, /missingChecklistItems|Checklist incomplete:/);
   assert.doesNotMatch(roomService, /updateHousekeepingV2ChecklistItem/);
   assert.match(roomService, /canEditChecklist: false/);
-  assert.match(roomWorkspace, /Complete Cleaning/);
-  assert.match(roomWorkspace, /Complete Full Cleaning/);
+  assert.match(roomWorkspace, /Finish Cleaning/);
+  assert.match(roomWorkspace, /Finish Full Cleaning/);
   assert.match(roomWorkspace, /task\.capabilities\.canComplete && task\.taskType === "STANDARD_CLEANING"/);
   assert.doesNotMatch(roomWorkspace, /function Checklist|updateHousekeepingTaskChecklist|Complete checklist/);
   assert.doesNotMatch(client, /updateHousekeepingTaskChecklist/);
@@ -123,7 +123,7 @@ test("Room Workspace task actions refresh on stale or changed task data", () => 
   assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["room-detail", roomId\] \}\)/);
   assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
   assert.match(roomWorkspace, /This task changed\. The room is refreshing\./);
-  assert.doesNotMatch(roomWorkspace, /Release claim/);
+  assert.doesNotMatch(roomWorkspace, />Claim<|>Release<|Release claim|claimHousekeepingTask|releaseHousekeepingClaim/);
 });
 
 test("Room Workspace displays carried-over cleaning as the same active Priority task", () => {

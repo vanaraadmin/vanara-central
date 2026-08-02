@@ -5,10 +5,8 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import { AlertIcon, CheckIcon, HousekeepingIcon, RefreshIcon } from "../components/OperationsIcons";
 import WorkspaceShell from "../components/WorkspaceShell";
 import {
-  claimHousekeepingTask,
   completeHousekeepingTask,
   loadHousekeepingV2Overview,
-  releaseHousekeepingClaim,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
 import type { HousekeepingV2Section, HousekeepingV2SectionId, HousekeepingV2TaskCard } from "../types/housekeeping-v2";
@@ -50,6 +48,10 @@ function taskLabel(card: HousekeepingV2TaskCard): string {
   return "Operational task";
 }
 
+function formatRoomCount(value: number): string {
+  return `${value} ${value === 1 ? "Room" : "Rooms"}`;
+}
+
 function reasonLabel(code: string): string {
   if (code === "standard_cleaning_previous_day") return "Was due yesterday";
   if (code === "on_demand_previous_day") return "Was due yesterday";
@@ -64,8 +66,8 @@ function reasonLabel(code: string): string {
 
 function statusLabel(card: HousekeepingV2TaskCard): string {
   if (card.isBlocked && card.blockReason) return card.blockReason;
-  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return "Unclaimed";
-  if (card.taskStatus === "CLAIMED") return `Claimed${card.assignee ? ` by ${card.assignee}` : ""}`;
+  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return "Available";
+  if (card.taskStatus === "CLAIMED") return card.assignee ? `Assigned to ${card.assignee}` : "Assigned";
   if (card.taskStatus === "IN_PROGRESS") return "In progress";
   if (card.taskStatus === "CHECKLIST_COMPLETE" || card.taskStatus === "READY_FOR_INSPECTION" || card.taskStatus === "READY") return "Ready";
   if (card.taskStatus === "COMPLETED") return "Completed";
@@ -87,11 +89,12 @@ function useOverviewAction() {
 }
 
 function CardMeta({ card }: { card: HousekeepingV2TaskCard }) {
+  if (card.taskType === "WATER_REFILL") return null;
   const reasonLabels = card.reasonCodes.map(reasonLabel).filter((label) => label !== card.displayReason);
   const details = [
     card.displayReason,
     card.blockReason,
-    card.assignee ? `Assigned to ${card.assignee}` : "Unassigned",
+    card.assignee ? `Assigned to ${card.assignee}` : null,
     ...reasonLabels,
   ].filter((item): item is string => Boolean(item));
 
@@ -121,17 +124,19 @@ function InterventionSheet({ type, onClose }: { type: InterventionType; onClose:
 function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard }) {
   const taskId = card.taskId;
   const version = card.taskVersion;
-  const completeRegularTask = () => {
-    if (card.taskType === "LINEN_CHANGE") action.mutate(completeHousekeepingTask(taskId, version, { linenChangeCompleted: true }));
-    else if (card.taskType === "WATER_REFILL") action.mutate(completeHousekeepingTask(taskId, version, { waterRefillCompleted: true }));
-    else action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true }));
-  };
-  const regularCompleteLabel = card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? "Complete Full Cleaning" : card.taskType === "WATER_REFILL" ? "Complete Water" : "Complete Cleaning";
+  const completeWater = () => action.mutate(completeHousekeepingTask(taskId, version, { waterRefillCompleted: true }));
+  const completeRegularTask = () => action.mutate(completeHousekeepingTask(taskId, version, card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? { linenChangeCompleted: true } : { standardCleaningCompleted: true }));
+  const regularFinishLabel = card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? "Finish Full Cleaning" : "Finish Cleaning";
 
-  if (card.capabilities.canClaim) {
+  if (card.taskType === "WATER_REFILL") {
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(claimHousekeepingTask(taskId, version))} type="button">Claim</button>
+        {card.capabilities.canComplete && (
+          <button disabled={action.isPending} onClick={completeWater} type="button">
+            <CheckIcon />
+            <span>Complete</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -140,7 +145,6 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
         <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(taskId, version))} type="button">Start</button>
-        {card.capabilities.canReleaseClaim && <button className="housekeeping-v2-secondary-action" disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(taskId, version))} type="button">Release</button>}
       </div>
     );
   }
@@ -148,8 +152,8 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
   if (card.capabilities.canComplete && card.taskType === "ON_DEMAND_CLEANING") {
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Complete Cleaning</button>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Complete Full Cleaning</button>
+        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Finish Cleaning</button>
+        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Finish Full Cleaning</button>
       </div>
     );
   }
@@ -157,8 +161,8 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
   if (card.capabilities.canComplete && card.taskType === "STANDARD_CLEANING") {
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Complete Cleaning</button>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Complete Full Cleaning</button>
+        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Finish Cleaning</button>
+        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Finish Full Cleaning</button>
       </div>
     );
   }
@@ -166,15 +170,7 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
   if (card.capabilities.canComplete) {
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{regularCompleteLabel}</button>
-      </div>
-    );
-  }
-
-  if (card.capabilities.canReleaseClaim) {
-    return (
-      <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(taskId, version))} type="button">Release</button>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{regularFinishLabel}</button>
       </div>
     );
   }
@@ -201,10 +197,12 @@ function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typ
         )}
       </div>
 
-      <div className="housekeeping-v2-card__state">
-        {card.isBlocked ? <AlertIcon /> : <HousekeepingIcon />}
-        <span>{statusLabel(card)}</span>
-      </div>
+      {card.taskType !== "WATER_REFILL" && (
+        <div className="housekeeping-v2-card__state">
+          {card.isBlocked ? <AlertIcon /> : <HousekeepingIcon />}
+          <span>{statusLabel(card)}</span>
+        </div>
+      )}
 
       <CardMeta card={card} />
       <TaskActions action={action} card={card} />
@@ -220,7 +218,7 @@ function Section({ action, onInterventionInfo, section }: { action: ReturnType<t
           {section.id === "water-refill" ? <RefreshIcon /> : <HousekeepingIcon />}
           <h2 id={`housekeeping-v2-${section.id}`}>{section.title}</h2>
         </div>
-        <span>{section.cards.length}</span>
+        <span>{formatRoomCount(section.cards.length)}</span>
       </header>
 
       {section.cards.length > 0 ? (
@@ -279,7 +277,7 @@ export default function HousekeepingV2Page() {
                 type="button"
               >
                 <span>{item.label}</span>
-                <strong>{housekeeping.data.summary[item.summaryKey]}</strong>
+                <strong>{formatRoomCount(housekeeping.data.summary[item.summaryKey])}</strong>
               </button>
             ))}
           </section>

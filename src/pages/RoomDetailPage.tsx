@@ -6,9 +6,7 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
 import {
-  claimHousekeepingTask,
   completeHousekeepingTask,
-  releaseHousekeepingClaim,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
 import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert } from "../services/room-detail.service";
@@ -151,7 +149,7 @@ function roomTaskCompletePayload(task: RoomHousekeepingTask) {
 
 function taskStatusLabel(task: RoomHousekeepingTask): string {
   if (task.status === "AVAILABLE_FOR_CLAIM") return "Available";
-  if (task.status === "CLAIMED") return task.assignee ? `Claimed by ${task.assignee.name}` : "Claimed";
+  if (task.status === "CLAIMED") return task.assignee ? `Assigned to ${task.assignee.name}` : "Assigned";
   if (task.status === "IN_PROGRESS") return "In progress";
   if (task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
   if (task.status === "READY") return "Ready";
@@ -162,10 +160,15 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
   const completeRegularTask = () => action.mutate(completeHousekeepingTask(task.id, task.version, roomTaskCompletePayload(task)));
   const completeCleaning = (includeLinen: boolean) => action.mutate(completeHousekeepingTask(task.id, task.version, { standardCleaningCompleted: true, linenChangeCompleted: includeLinen }));
 
-  if (task.capabilities.canClaim) {
+  if (task.taskType === "WATER_REFILL") {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(claimHousekeepingTask(task.id, task.version))} type="button">Claim</button>
+        {task.capabilities.canComplete && (
+          <button disabled={action.isPending} onClick={completeRegularTask} type="button">
+            <CheckIcon />
+            <span>Complete</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -174,7 +177,6 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
         <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(task.id, task.version))} type="button">Start</button>
-        {task.capabilities.canReleaseClaim && <button disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(task.id, task.version))} type="button">Release</button>}
       </div>
     );
   }
@@ -182,8 +184,8 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
   if (task.capabilities.canComplete && task.taskType === "ON_DEMAND_CLEANING") {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Complete Cleaning</button>
-        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Complete Full Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
       </div>
     );
   }
@@ -191,8 +193,8 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
   if (task.capabilities.canComplete && task.taskType === "STANDARD_CLEANING") {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Complete Cleaning</button>
-        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Complete Full Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
       </div>
     );
   }
@@ -200,15 +202,7 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
   if (task.capabilities.canComplete) {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "WATER_REFILL" ? "Complete Water" : task.taskType === "LINEN_CHANGE" || task.taskType === "TURNOVER" ? "Complete Full Cleaning" : "Complete Cleaning"}</button>
-      </div>
-    );
-  }
-
-  if (task.capabilities.canReleaseClaim) {
-    return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(releaseHousekeepingClaim(task.id, task.version))} type="button">Release</button>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "LINEN_CHANGE" || task.taskType === "TURNOVER" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
       </div>
     );
   }

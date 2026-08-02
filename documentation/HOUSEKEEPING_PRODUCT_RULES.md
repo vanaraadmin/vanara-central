@@ -18,6 +18,7 @@ Business Rules Specification for Housekeeping.
 
 ## Housekeeping Workspace
 - Initial state shows compact Priority, Normal, and Water summary cards only.
+- Summary counters display room-count wording: 0 Rooms, 1 Room, 2 Rooms, and so on.
 - Tapping a summary expands only that actionable list.
 - Do not show clean rooms.
 - Do not show a Ready / No Action Required room list.
@@ -26,6 +27,7 @@ Business Rules Specification for Housekeeping.
 - Room identity opens Room Workspace.
 - A task appears in one visible queue only.
 - Task rows show room name, intervention type, simple reason, assignee, execution state, and the next relevant action.
+- Task rows must not expose an explicit Claim action.
 - Staff-facing copy must not expose internal state-machine, idempotency, version, or conflict-code wording.
 
 ## Trust Model
@@ -62,12 +64,17 @@ Full Cleaning help text:
 ## Turnover
 - Reception owns room release.
 - Housekeeping cannot start turnover before room_release.
+- Turnover uses an operational workflow: Start, then Finish.
+- Start automatically assigns the task to the current operator when the task is unassigned.
 - Force Room Released = Owner only + mandatory reason.
 
 ## Cleaning Cadence
 - Cleaning is due every 3 occupied days.
 - Cleaning is independent from linen.
 - Cleaning completion resets only cleaning counters.
+- Cleaning and Full Cleaning use an operational workflow: Start, then Finish.
+- Start automatically assigns the task to the current operator when the task is unassigned.
+- If another operator already owns the task, Start is not available to regular operators.
 
 ## Priority Escalation
 - Escalation is derived from the resort-local operational calendar date.
@@ -96,6 +103,14 @@ Occupied rooms only.
 
 MVP quantity is hardcoded by accommodation type only. Guest Count is informational and must never be used for Water Refill quantity or eligibility.
 
+Water uses a simplified execution workflow:
+- Available.
+- Complete.
+
+Water has one operator action: Complete.
+Completing Water automatically assigns the current operator, records completion, creates the completion audit event, removes the task from Water, and refreshes the summary.
+Water does not expose Claim, Start, In Progress, or release actions in the operator UX.
+
 Exclude:
 - Vacant
 - Checkout
@@ -115,16 +130,17 @@ Read only:
 
 Never resolved by Housekeeping.
 
-## Claim
+## Execution Ownership
 One task.
 One assignee.
-Only assignee or Owner completes.
+Only assignee or Owner completes ongoing Cleaning and Turnover work.
 
-Action flow:
-- Unclaimed task: Claim.
-- Claimed by current operator: Start, with Release as secondary action.
-- In progress task: Complete.
-- Claimed by another operator: show assignee and only server-authorized actions.
+Operator action flow:
+- Cleaning, Full Cleaning, On-Demand Cleaning, and Turnover: Start, then Finish.
+- Start automatically assigns the task to the current operator when no assignee exists.
+- Water Refill: Complete.
+- Complete automatically assigns Water to the current operator when no assignee exists.
+- Tasks already owned by another operator do not show the next operator action to regular operators.
 - Completed, skipped, and cancelled tasks leave the active Housekeeping queue.
 - If the task changes elsewhere, refresh the current read model and show a concise explanation.
 

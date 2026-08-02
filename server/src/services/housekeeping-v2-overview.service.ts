@@ -569,13 +569,14 @@ function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isW
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isManager = user.role === "Manager";
   const isAssigned = task.assignedUserId === user.id;
+  const isUnassigned = task.assignedUserId === null;
   const active = !["COMPLETED", "SKIPPED", "CANCELLED"].includes(task.status);
 
   return {
-    canClaim: base.canClaim && !isWaitingRelease && !maintenanceBlocked,
+    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && !isWaitingRelease && !maintenanceBlocked,
     canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: task.status === "CLAIMED" && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner),
-    canComplete: base.canComplete && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner),
+    canStart: base.canStart && !isWaitingRelease && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
+    canComplete: base.canComplete && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
     canCancel: active && Boolean(isOwner || isManager),
     requiresReceptionRelease: base.requiresReceptionRelease || isWaitingRelease,

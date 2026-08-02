@@ -493,14 +493,15 @@ function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser): RoomHo
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isManager = user.role === "Manager";
   const isAssigned = task.assignedUserId === user.id;
+  const isUnassigned = task.assignedUserId === null;
   const active = !TERMINAL_TASK_STATUSES.has(task.status);
   const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
 
   return {
-    canClaim: base.canClaim && released,
+    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released,
     canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: task.status === "CLAIMED" && released && (isAssigned || isOwner),
-    canComplete: base.canComplete && released && (isAssigned || isOwner),
+    canStart: base.canStart && released && (isUnassigned || isAssigned || isOwner),
+    canComplete: base.canComplete && released && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
     canCancel: active && Boolean(isOwner || isManager),
     canReopen: TERMINAL_TASK_STATUSES.has(task.status) && Boolean(isOwner || isManager),

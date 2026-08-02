@@ -249,15 +249,17 @@ class FakeHousekeepingV2DB {
     task.status = params[0] as HousekeepingTaskStatus;
     task.updated_at = now;
     task.version += 1;
+    let index = 4;
     if (sql.includes("assigned_user_id = ?")) {
-      task.assigned_user_id = params[4] as string;
-      task.assigned_user_name = params[5] as string;
-      task.claimed_at = String(params[6]);
+      task.assigned_user_id = params[index] as string;
+      task.assigned_user_name = params[index + 1] as string;
+      task.claimed_at = String(params[index + 2]);
+      index += 3;
     }
-    if (sql.includes("started_at = ?")) task.started_at = String(params[4]);
-    if (sql.includes("completed_at = ?")) task.completed_at = String(params[4]);
-    if (sql.includes("skipped_at = ?")) task.skipped_at = String(params[4]);
-    if (sql.includes("cancelled_at = ?")) task.cancelled_at = String(params[4]);
+    if (sql.includes("started_at = ?")) task.started_at = String(params[index++]);
+    if (sql.includes("completed_at = ?")) task.completed_at = String(params[index++]);
+    if (sql.includes("skipped_at = ?")) task.skipped_at = String(params[index++]);
+    if (sql.includes("cancelled_at = ?")) task.cancelled_at = String(params[index]);
     if (sql.includes("assigned_user_id = NULL")) {
       task.assigned_user_id = null;
       task.assigned_user_name = null;
@@ -409,6 +411,44 @@ test("housekeeping v2 tasks returns 200 when repeated water refill creation repl
   assert.equal(quantities.get(3), 4);
 });
 
+test("water refill completes from Available without Claim Start or In Progress", async () => {
+  const db = new FakeHousekeepingV2DB();
+
+  const initial = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
+  const initialBody = await initial.json() as { success: boolean; data: { summary: { waterRefillDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; taskStatus: string; capabilities: { canClaim: boolean; canStart: boolean; canComplete: boolean } }> }> } };
+  assert.equal(initial.status, 200, JSON.stringify(initialBody));
+  const water = initialBody.data.sections.find((section) => section.id === "water-refill")?.cards.find((card) => card.taskType === "WATER_REFILL");
+  assert.ok(water);
+  assert.equal(water.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(water.capabilities.canClaim, false);
+  assert.equal(water.capabilities.canStart, false);
+  assert.equal(water.capabilities.canComplete, true);
+
+  const claim = await post(`/api/housekeeping/v2/tasks/${water.taskId}/claim`, db, { expectedVersion: 1 });
+  assert.equal(claim.status, 403, await claim.text());
+  const start = await post(`/api/housekeeping/v2/tasks/${water.taskId}/start`, db, { expectedVersion: 1 });
+  assert.equal(start.status, 403, await start.text());
+
+  const completed = await post(`/api/housekeeping/v2/tasks/${water.taskId}/complete`, db, {
+    expectedVersion: 1,
+    completion: { waterRefillCompleted: true },
+  });
+  assert.equal(completed.status, 200, await completed.text());
+  const stored = db.tasks.find((task) => task.task_id === water.taskId);
+  assert.equal(stored?.status, "COMPLETED");
+  assert.equal(stored?.assigned_user_id, "housekeeping-user");
+  assert.equal(typeof stored?.completed_at, "string");
+  assert.equal(db.events.some((event) => event.task_id === water.taskId && event.event_type === "claim"), false);
+  assert.equal(db.events.some((event) => event.task_id === water.taskId && event.event_type === "start"), false);
+  assert.equal(db.events.some((event) => event.task_id === water.taskId && event.event_type === "complete"), true);
+
+  const afterComplete = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
+  const afterBody = await afterComplete.json() as { success: boolean; data: { summary: { waterRefillDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  assert.equal(afterComplete.status, 200, JSON.stringify(afterBody));
+  assert.equal(afterBody.data.summary.waterRefillDue, initialBody.data.summary.waterRefillDue - 1);
+  assert.equal(afterBody.data.sections.find((section) => section.id === "water-refill")?.cards.some((card) => card.taskId === water.taskId), false);
+});
+
 test("housekeeping v2 standard cleaning uses current stay baseline and ignores stale counters", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
@@ -470,12 +510,15 @@ test("standard cleaning can be completed as Full Cleaning and updates cleaning p
   const standard = initialBody.data.sections.find((section) => section.id === "normal-cleaning")?.cards.find((card) => card.taskType === "STANDARD_CLEANING");
   assert.ok(standard);
 
-  const claimed = await post(`/api/housekeeping/v2/tasks/${standard.taskId}/claim`, db, { expectedVersion: 1 });
-  assert.equal(claimed.status, 200, await claimed.text());
-  const started = await post(`/api/housekeeping/v2/tasks/${standard.taskId}/start`, db, { expectedVersion: 2 });
+  const started = await post(`/api/housekeeping/v2/tasks/${standard.taskId}/start`, db, { expectedVersion: 1 });
   assert.equal(started.status, 200, await started.text());
+  const startedTask = db.tasks.find((task) => task.task_id === standard.taskId);
+  assert.equal(startedTask?.status, "IN_PROGRESS");
+  assert.equal(startedTask?.assigned_user_id, "housekeeping-user");
+  assert.equal(db.events.some((event) => event.task_id === standard.taskId && event.event_type === "claim"), false);
+  assert.equal(db.events.some((event) => event.task_id === standard.taskId && event.event_type === "start"), true);
   const completed = await post(`/api/housekeeping/v2/tasks/${standard.taskId}/complete`, db, {
-    expectedVersion: 3,
+    expectedVersion: 2,
     completion: { standardCleaningCompleted: true, linenChangeCompleted: true },
   });
   assert.equal(completed.status, 200, await completed.text());
@@ -692,7 +735,7 @@ test("turnover remains Priority and keeps Reception release gate unchanged", asy
   assert.equal(priority.some((card) => card.taskType === "TURNOVER" && card.currentQueue === "priority-turnover" && card.reasonCodes.includes("waiting_reception")), true);
 });
 
-test("released turnover is claimable from Housekeeping Priority without opening room detail first", async () => {
+test("released turnover can start from Housekeeping Priority without opening room detail first", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
     { ...booking(402, 940402, 1, "Released Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", room_released: 1 },
@@ -710,17 +753,32 @@ test("released turnover is claimable from Housekeeping Priority without opening 
   }));
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; taskStatus: string; reasonCodes: string[]; capabilities: { canClaim: boolean } }> }> } };
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskVersion: number; taskType: string; taskStatus: string; reasonCodes: string[]; capabilities: { canStart: boolean } }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   const turnover = body.data.sections.find((section) => section.id === "priority-turnover")?.cards.find((card) => card.taskId === 93);
   assert.ok(turnover);
   assert.equal(turnover.taskType, "TURNOVER");
   assert.equal(turnover.taskStatus, "AVAILABLE_FOR_CLAIM");
-  assert.equal(turnover.capabilities.canClaim, true);
+  assert.equal(turnover.capabilities.canStart, true);
   assert.equal(turnover.reasonCodes.includes("waiting_reception"), false);
   assert.equal(db.tasks.filter((task) => task.task_type === "TURNOVER" && task.unit_id === 1).length, 1);
   assert.equal(db.events.filter((event) => event.task_id === 93 && event.event_type === "release_from_reception").length, 1);
+
+  const started = await post(`/api/housekeeping/v2/tasks/${turnover.taskId}/start`, db, { expectedVersion: turnover.taskVersion });
+  assert.equal(started.status, 200, await started.text());
+  const startedTask = db.tasks.find((task) => task.task_id === turnover.taskId);
+  assert.equal(startedTask?.status, "IN_PROGRESS");
+  assert.equal(startedTask?.assigned_user_id, "housekeeping-user");
+  assert.equal(db.events.some((event) => event.task_id === turnover.taskId && event.event_type === "claim"), false);
+  assert.equal(db.events.some((event) => event.task_id === turnover.taskId && event.event_type === "start"), true);
+
+  const completed = await post(`/api/housekeeping/v2/tasks/${turnover.taskId}/complete`, db, {
+    expectedVersion: startedTask?.version,
+    completion: { standardCleaningCompleted: true, linenChangeCompleted: true },
+  });
+  assert.equal(completed.status, 200, await completed.text());
+  assert.equal(db.tasks.find((task) => task.task_id === turnover.taskId)?.status, "COMPLETED");
 });
 
 test("housekeeping v2 linen override creates a normal-cleaning linen task without automatic linen interval generation", async () => {
@@ -780,12 +838,14 @@ test("room workspace on-demand cleaning appears in Housekeeping Normal and is re
   const task = normal?.cards.find((card) => card.taskType === "ON_DEMAND_CLEANING");
   assert.ok(task);
 
-  const claimed = await post(`/api/housekeeping/v2/tasks/${task.taskId}/claim`, db, { expectedVersion: 1 });
-  assert.equal(claimed.status, 200, await claimed.text());
-  const started = await post(`/api/housekeeping/v2/tasks/${task.taskId}/start`, db, { expectedVersion: 2 });
+  const started = await post(`/api/housekeeping/v2/tasks/${task.taskId}/start`, db, { expectedVersion: 1 });
   assert.equal(started.status, 200, await started.text());
+  const startedTask = db.tasks.find((item) => item.task_id === task.taskId);
+  assert.equal(startedTask?.status, "IN_PROGRESS");
+  assert.equal(startedTask?.assigned_user_id, "housekeeping-user");
+  assert.equal(db.events.some((event) => event.task_id === task.taskId && event.event_type === "claim"), false);
   const completed = await post(`/api/housekeeping/v2/tasks/${task.taskId}/complete`, db, {
-    expectedVersion: 3,
+    expectedVersion: 2,
     completion: { standardCleaningCompleted: true, linenChangeCompleted: false },
   });
   assert.equal(completed.status, 200, await completed.text());
