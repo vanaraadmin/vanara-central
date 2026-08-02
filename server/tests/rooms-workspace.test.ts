@@ -298,6 +298,7 @@ test("rooms workspace read model returns every independent operational dimension
   assert.equal(bungalow7.operational.housekeeping.condition, "NOT_READY");
   assert.equal(bungalow7.operational.housekeeping.workState, "NONE");
   assert.equal(bungalow7.operational.maintenance.state, "BLOCKING");
+  assert.equal(bungalow7.alertSummary, "Maintenance blocking");
 });
 
 test("room workspace preserves product room ordering", async () => {
@@ -337,7 +338,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   const available = byName(overview.rooms, "Bungalow 6");
   const blocked = byName(overview.rooms, "Bungalow 7");
 
-  assert.equal(readyOccupied.housekeeping.primaryStatus, "READY");
+  assert.equal(readyOccupied.housekeeping.primaryStatus, "CLEAN");
   assert.equal(readyOccupied.housekeeping.detail, "No work required");
   assert.deepEqual(readyOccupied.housekeeping.primaryAction, {
     type: "CREATE_ON_DEMAND_CLEANING",
@@ -389,7 +390,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   });
 });
 
-test("Housekeeping card defaults to READY when no active task exists even if physical condition is NOT_READY", async () => {
+test("Housekeeping card defaults to CLEAN when no active task exists even if physical condition is NOT_READY", async () => {
   const rooms = [
     roomRow({
       unit_id: 12,
@@ -409,7 +410,7 @@ test("Housekeeping card defaults to READY when no active task exists even if phy
 
   assert.equal(byName(overview.rooms, "Bungalow 7").operational.housekeeping.condition, "NOT_READY");
   assert.equal(room.operational.housekeeping.condition, "NOT_READY");
-  assert.equal(room.housekeeping.primaryStatus, "READY");
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
   assert.equal(room.housekeeping.detail, "No work required");
   assert.deepEqual(room.housekeeping.primaryAction, {
     type: "CREATE_ON_DEMAND_CLEANING",
@@ -442,6 +443,7 @@ test("Housekeeping card prioritizes waiting Reception before cleaning actions", 
   assert.equal(room.housekeeping.primaryStatus, "Waiting For Reception");
   assert.equal(room.housekeeping.detail, "Reception has not released the room");
   assert.equal(room.housekeeping.primaryAction, null);
+  assert.equal(room.alertSummary, "Waiting for Reception");
 });
 
 test("Housekeeping card displays turnover work as Cleaning Required with Start Cleaning", async () => {
@@ -595,6 +597,7 @@ test("arrival due rooms expose pending Reception steps and capability-gated acti
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkIn.state, "PENDING");
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkOut.state, "NOT_REQUIRED");
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.primaryAction, null);
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").alertSummary, "Guest arriving today");
   assert.deepEqual(byName(actionable.rooms, "Bungalow 8").reception.primaryAction, {
     type: "COLLECT_PASSPORT",
     label: "Collect Passport",
@@ -624,6 +627,7 @@ test("departure due rooms prioritize checkout action over missing passport", asy
   assert.equal(room.reception.passport.state, "PENDING");
   assert.equal(room.reception.checkIn.state, "PENDING");
   assert.equal(room.reception.checkOut.state, "PENDING");
+  assert.equal(room.alertSummary, "Guest departing today");
   assert.deepEqual(room.reception.primaryAction, {
     type: "COMPLETE_CHECK_OUT",
     label: "Complete Check-out",
@@ -684,6 +688,32 @@ test("unresolved Reception alerts are exposed and resolved alerts are excluded",
   assert.deepEqual(room.reception.alerts, [
     { id: 1, type: "passport_missing", label: "Passport Missing", tone: "warning" },
   ]);
+  assert.equal(room.alertSummary, "Passport missing");
+});
+
+test("late checkout is exposed as a Reception alert summary, not a cleaning state", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 16,
+      unit_name: "Bungalow 16",
+      reception_booking_id: 1601,
+      reception_beds24_booking_id: 91601,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-01",
+      reception_guest_arrived: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+      reception_room_released: 0,
+      ready_state: "READY",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 16");
+
+  assert.equal(room.operational.housekeeping.condition, "READY");
+  assert.equal(room.alertSummary, "Late checkout");
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
 });
 
 test("Reception primary actions require the existing Reception action capability", async () => {

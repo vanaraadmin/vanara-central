@@ -22,6 +22,7 @@ Business Rules Specification for Housekeeping.
 - Operational Availability is either OPERATING or NOT_OPERATING.
 - Housekeeping Status is either READY or NOT_READY.
 - Housekeeping Status is the physical room condition, not a task.
+- UI presents READY as CLEAN and NOT_READY as DIRTY. Active work may present CLEANING IN PROGRESS.
 - The single authoritative source for physical Housekeeping Status is `room_housekeeping_state`.
 - READY / NOT_READY must never be inferred from active or historical Housekeeping tasks.
 - A room may be NOT_READY without appearing in Housekeeping.
@@ -29,6 +30,8 @@ Business Rules Specification for Housekeeping.
 - Maintenance blocks are derived from real Maintenance tickets.
 - Changing Operational Availability must never change Housekeeping Status.
 - Changing Housekeeping Status must never change Operational Availability.
+- Reception, Passport, Deposit, Maintenance, and other workflows must never alter or imply Housekeeping Status. They surface separate operational alerts.
+- Room summaries aggregate operational alerts such as Deposit pending, Passport missing, Waiting for Reception, Maintenance blocking, Guest arriving today, and Late checkout without collapsing them into Housekeeping Status.
 - NOT_OPERATING is an internal Vanara operational indicator only. Beds24 remains the booking availability source of truth.
 - NOT_OPERATING units remain visible in Room Workspace for Owner/Manager inspection and preparation.
 - NOT_OPERATING units are excluded from active operational Housekeeping counts and automatic task generation.

@@ -30,10 +30,15 @@ function maintenanceValue(summary: RoomOperationalSummary): Pick<RoomOperational
 
 function housekeepingWorkLabel(summary: RoomOperationalSummary): string | null {
   const task = summary.housekeeping.activeTaskType ?? "Cleaning";
-  if (summary.housekeeping.workState === "IN_PROGRESS") return `${task} in progress`;
   if (summary.housekeeping.workState === "BLOCKED") return `${task} blocked`;
   if (summary.housekeeping.workState === "AVAILABLE") return `${task} scheduled`;
   return null;
+}
+
+function housekeepingConditionValue(summary: RoomOperationalSummary): Pick<RoomOperationalItemModel, "value" | "tone"> {
+  if (summary.housekeeping.workState === "IN_PROGRESS") return { value: "Cleaning In Progress", tone: "info" };
+  if (summary.housekeeping.condition === "NOT_READY") return { value: "Dirty", tone: "warning" };
+  return { value: "Clean", tone: "success" };
 }
 
 export function getRoomOperationalSignals(summary: RoomOperationalSummary): RoomOperationalSignal[] {
@@ -48,23 +53,23 @@ export function getRoomOperationalSignals(summary: RoomOperationalSummary): Room
   }
 
   if (summary.housekeeping.workState === "IN_PROGRESS") {
-    signals.push(signal("CLEANING", "info", 3, true));
+    signals.push(signal("CLEANING IN PROGRESS", "info", 3, true));
   }
 
   if (summary.maintenance.state === "ACTIVE") {
     signals.push(signal("MAINTENANCE", "warning", 4, true));
   }
 
-  if (summary.housekeeping.condition === "NOT_READY") {
-    signals.push(signal("NOT READY", "warning", 5, true));
+  if (summary.housekeeping.workState !== "IN_PROGRESS" && summary.housekeeping.condition === "NOT_READY") {
+    signals.push(signal("DIRTY", "warning", 5, true));
   }
 
   signals.push(summary.occupancy.state === "OCCUPIED"
     ? signal("OCCUPIED", "info", 6)
     : signal("VACANT", "neutral", 6));
 
-  if (summary.housekeeping.condition === "READY") {
-    signals.push(signal("READY", "success", 7));
+  if (summary.housekeeping.workState !== "IN_PROGRESS" && summary.housekeeping.condition === "READY") {
+    signals.push(signal("CLEAN", "success", 7));
   }
 
   return signals.sort((left, right) => left.priority - right.priority);
@@ -73,7 +78,7 @@ export function getRoomOperationalSignals(summary: RoomOperationalSummary): Room
 export function getRoomOperationalItems(summary: RoomOperationalSummary): RoomOperationalItemModel[] {
   const availabilityDetail = summary.availability.reason;
   const availabilityMeta = summary.availability.seasonLabel;
-  const housekeepingCondition = summary.housekeeping.condition === "NOT_READY" ? "Not Ready" : "Ready";
+  const housekeepingCondition = housekeepingConditionValue(summary);
   const housekeepingDetail = housekeepingWorkLabel(summary);
   const maintenance = maintenanceValue(summary);
 
@@ -96,9 +101,9 @@ export function getRoomOperationalItems(summary: RoomOperationalSummary): RoomOp
     },
     {
       id: "housekeeping",
-      label: "Housekeeping",
-      value: housekeepingCondition,
-      tone: summary.housekeeping.condition === "NOT_READY" ? "warning" : "success",
+      label: "Cleaning",
+      value: housekeepingCondition.value,
+      tone: housekeepingCondition.tone,
       detail: housekeepingDetail,
       meta: summary.housekeeping.assignedTo ? `Assigned to ${summary.housekeeping.assignedTo}` : null,
     },

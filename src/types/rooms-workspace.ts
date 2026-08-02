@@ -127,6 +127,7 @@ export interface RoomsWorkspaceRoom {
   sortNumber: number;
   heroImageKey: string;
   heroImage: string | null;
+  alertSummary: string | null;
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
   reception: RoomReceptionSummary;

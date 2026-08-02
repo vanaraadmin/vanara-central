@@ -11,6 +11,7 @@ interface RoomCompactRowProps {
 export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompactRowProps) {
   const detailsId = `room-workspace-${room.unitId}`;
   const guestName = room.operational.occupancy.state === "OCCUPIED" ? room.operational.occupancy.guestName : null;
+  const summaryLine = room.alertSummary ?? guestName;
 
   return (
     <article className={`room-list-item${expanded ? " room-list-item--expanded" : ""}`}>
@@ -23,7 +24,7 @@ export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompact
       >
         <span className="room-row__identity">
           <strong className="room-row__name">{room.roomName}</strong>
-          {guestName ? <span className="room-row__guest">{guestName}</span> : null}
+          {summaryLine ? <span className="room-row__guest">{summaryLine}</span> : null}
         </span>
 
         <RoomCompactSignals summary={room.operational} />

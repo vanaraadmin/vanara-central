@@ -118,6 +118,17 @@ test("Room Workspace owns active housekeeping task and room operations", () => {
   assert.doesNotMatch(homePage, /<select/);
 });
 
+test("Room Workspace labels physical housekeeping condition as clean or dirty", () => {
+  assert.match(roomWorkspace, /Cleaning Status/);
+  assert.match(roomWorkspace, /<option value="READY">CLEAN<\/option>/);
+  assert.match(roomWorkspace, /<option value="NOT_READY">DIRTY<\/option>/);
+  assert.match(roomWorkspace, /cleaningStateLabel\(room\.housekeeping\.readyState\)/);
+  assert.match(roomDetailService, /label:\s*"Clean"/);
+  assert.match(roomDetailService, /label:\s*"Dirty"/);
+  assert.doesNotMatch(roomWorkspace, />NOT READY<|>READY<|Room Status could not be changed/);
+  assert.doesNotMatch(roomDetailService, /label:\s*"No active Housekeeping"|label:\s*"Not Ready"/);
+});
+
 test("Room Workspace task actions refresh on stale or changed task data", () => {
   assert.match(roomWorkspace, /onSettled: async \(\) =>/);
   assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["room-detail", roomId\] \}\)/);

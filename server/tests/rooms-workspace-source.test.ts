@@ -24,16 +24,19 @@ const css = readFileSync(new URL("../../src/styles/RoomsPage.css", import.meta.u
 
 test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", () => {
   assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>\(\["rooms"/);
-  assert.match(staffPage, /roomsWorkspace/);
-  assert.match(staffPage, /workspace=\{roomsWorkspace\}/);
   assert.match(staffPage, /<RecentBookings/);
+  assert.doesNotMatch(staffPage, /roomsWorkspace|remainingWorkspaces|staff-workspaces--primary|staff-workspaces--secondary/);
   assert.doesNotMatch(staffPage, /RoomExpandedWorkspace|loadRoomsWorkspace|rooms-home__list/);
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Rooms then Booking Pulse then Housekeeping and Maintenance", () => {
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"housekeeping",\s*"maintenance",/);
-  assert.match(staffPage, /staff-workspaces--primary[\s\S]*<RecentBookings[\s\S]*staff-workspaces--secondary/);
+test("Staff Home hierarchy keeps Booking Pulse then Rooms, Check-In, Housekeeping, and Maintenance", () => {
+  const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
+  const workspacesIndex = staffPage.indexOf('<section className="staff-workspaces"');
+
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"reception",\s*"housekeeping",\s*"maintenance",/);
+  assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
+  assert.ok(recentBookingsIndex < workspacesIndex);
   assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);
 });
 
@@ -68,11 +71,13 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
 
 test("Compact row signals are centrally mapped and prioritize operational blockers", () => {
   assert.match(roomCompactRow, /RoomCompactSignals summary=\{room\.operational\}/);
+  assert.match(roomCompactRow, /room\.alertSummary \?\? guestName/);
   assert.match(roomCompactSignals, /getRoomOperationalSignals\(summary\)/);
   assert.match(presentation, /signal\("OUT OF SERVICE", "danger", 1/);
   assert.match(presentation, /signal\("NOT OPERATING", "warning", 2/);
-  assert.match(presentation, /signal\("CLEANING", "info", 3/);
-  assert.match(presentation, /signal\("NOT READY", "warning", 5/);
+  assert.match(presentation, /signal\("CLEANING IN PROGRESS", "info", 3/);
+  assert.match(presentation, /signal\("DIRTY", "warning", 5/);
+  assert.match(presentation, /signal\("CLEAN", "success", 7/);
   assert.match(presentation, /OCCUPIED/);
   assert.match(presentation, /VACANT/);
   assert.match(roomCompactRow, /room\.operational\.occupancy\.state === "OCCUPIED"/);
@@ -83,7 +88,7 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
   assert.match(roomExpandedWorkspace, /RoomOperationalSummaryCard summary=\{room\.operational\}/);
   assert.match(roomOperationalSummaryCard, /Room Status/);
   assert.match(roomOperationalSummaryCard, /<dl className="room-operational-card__grid">/);
-  for (const label of ["Operational", "Occupancy", "Housekeeping", "Maintenance"]) {
+  for (const label of ["Operational", "Occupancy", "Cleaning", "Maintenance"]) {
     assert.match(presentation, new RegExp(label));
   }
   assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
@@ -155,13 +160,23 @@ test("Housekeeping and Maintenance cards share the RoomDomainCard structure", ()
 });
 
 test("Housekeeping card presentation is operational work state only", () => {
-  assert.match(serverService, /primaryStatus:\s*"READY"/);
+  assert.match(serverService, /primaryStatus:\s*"CLEAN"/);
   assert.match(serverService, /"Cleaning Required"/);
   assert.match(serverService, /primaryStatus:\s*"Cleaning In Progress"/);
   assert.match(serverService, /primaryStatus:\s*"Waiting For Reception"/);
   assert.match(serverService, /primaryStatus:\s*"Cleaning Blocked"/);
   assert.doesNotMatch(serverService, /primaryStatus:\s*"Not Ready"/);
   assert.doesNotMatch(serverService, /detail:\s*"No active Housekeeping task"/);
+});
+
+test("Room compact summary aggregates operational alerts without fake cleaning state", () => {
+  assert.match(serverService, /alertSummary:\s*compactAlertSummary\(row, reception, date\)/);
+  assert.match(serverService, /Maintenance blocking/);
+  assert.match(serverService, /Waiting for Reception/);
+  assert.match(serverService, /Guest arriving today/);
+  assert.match(serverService, /Late checkout/);
+  assert.doesNotMatch(serverService, /alertSummary[\s\S]{0,120}ready_state/);
+  assert.doesNotMatch(serverService, /compactAlertSummary[\s\S]*Not Ready/);
 });
 
 

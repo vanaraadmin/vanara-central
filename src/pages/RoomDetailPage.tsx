@@ -49,6 +49,10 @@ function statusTone(value: string): string {
   return value.toLowerCase().replaceAll(" ", "-");
 }
 
+function cleaningStateLabel(readyState: RoomReadyState): "CLEAN" | "DIRTY" {
+  return readyState === "READY" ? "CLEAN" : "DIRTY";
+}
+
 function CurrentStay({ stay }: { stay: RoomCurrentStay | null }) {
   if (!stay) {
     return (
@@ -152,7 +156,7 @@ function taskStatusLabel(task: RoomHousekeepingTask): string {
   if (task.status === "CLAIMED") return task.assignee ? `Assigned to ${task.assignee.name}` : "Assigned";
   if (task.status === "IN_PROGRESS") return "In progress";
   if (task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
-  if (task.status === "READY") return "Ready";
+  if (task.status === "READY") return "Clean";
   return task.status.replaceAll("_", " ");
 }
 
@@ -320,10 +324,10 @@ function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }
       }}>
         <div className="room-form-grid">
           <label>
-            Room Status
+            Cleaning Status
             <select onChange={(event) => setReadyState(event.target.value as RoomReadyState)} value={readyState}>
-              <option value="READY">READY</option>
-              <option value="NOT_READY">NOT READY</option>
+              <option value="READY">CLEAN</option>
+              <option value="NOT_READY">DIRTY</option>
             </select>
           </label>
           <label>
@@ -331,9 +335,9 @@ function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }
             <textarea maxLength={500} onChange={(event) => setReadyReason(event.target.value)} placeholder="Optional reason" rows={2} value={readyReason} />
           </label>
         </div>
-        <button disabled={!changed || changeReadyState.isPending} type="submit">Change Status</button>
+        <button disabled={!changed || changeReadyState.isPending} type="submit">Change Cleaning</button>
       </form>
-      {changeReadyState.isError && <p className="room-form-error">Room status could not be changed.</p>}
+      {changeReadyState.isError && <p className="room-form-error">Cleaning status could not be changed.</p>}
     </>
   );
 }
@@ -365,7 +369,7 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
         <dl>
           <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo ?? "Unassigned"}</dd></div>
           <div><dt>Updated</dt><dd>{room.housekeeping.lastUpdated ? formatDateTime(room.housekeeping.lastUpdated) : "Not updated"}</dd></div>
-          <div><dt>Room Status</dt><dd>{room.housekeeping.readyState === "READY" ? "READY" : "NOT READY"}</dd></div>
+          <div><dt>Cleaning</dt><dd>{cleaningStateLabel(room.housekeeping.readyState)}</dd></div>
           <div><dt>Active task</dt><dd>{room.housekeeping.activeTask?.title ?? "None"}</dd></div>
           <div><dt>Reason</dt><dd>{room.housekeeping.activeTask?.reason ?? "No active work"}</dd></div>
         </dl>

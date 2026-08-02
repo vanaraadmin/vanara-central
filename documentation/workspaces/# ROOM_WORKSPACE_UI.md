@@ -508,7 +508,15 @@ Examples:
 
 
 
-Ready
+Clean
+
+
+
+Dirty
+
+
+
+Cleaning In Progress
 
 
 

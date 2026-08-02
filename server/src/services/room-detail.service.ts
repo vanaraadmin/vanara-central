@@ -14,7 +14,7 @@ export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2
 }
 
 type TimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
-type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
+type RoomOperationalStatus = "Clean" | "Dirty" | "Cleaning scheduled" | "Cleaning In Progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Water refill";
 
 interface UnitRow {
   unit_id: number;
@@ -240,12 +240,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus, readyState: RoomReadyState): string {
+function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus): string {
   if (outOfService) return "Out of Service";
   if (availabilityStatus === "NOT_OPERATING") return "Not Operating";
   if (maintenanceOpenIssues > 0) return "Maintenance";
-  if (readyState === "NOT_READY") return "Not Ready";
-  if (operations.occupancyStatus === "Ready for Guest") return "Ready";
+  if (operations.occupancyStatus === "Ready for Guest") return "Vacant";
   return operations.occupancyStatus;
 }
 
@@ -292,21 +291,17 @@ function taskRank(task: HousekeepingTask): number {
   return 6;
 }
 
-function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenanceBlocked: boolean): { label: HousekeepingWorkflowStatus | RoomOperationalStatus; tone: string } {
+function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenanceBlocked: boolean, readyState: RoomReadyState): { label: HousekeepingWorkflowStatus | RoomOperationalStatus; tone: string } {
   if (maintenanceBlocked) return { label: "Maintenance Block", tone: "maintenance-block" };
-  if (!task) return { label: "No active Housekeeping", tone: statusTone("No active Housekeeping") };
+  if (!task) return readyState === "NOT_READY" ? { label: "Dirty", tone: "dirty" } : { label: "Clean", tone: "clean" };
   if (task.status === "WAITING_FOR_RECEPTION") return { label: "Waiting Reception", tone: "waiting-reception" };
   if (task.isCarriedOver) return { label: "Priority", tone: "priority" };
-  if (task.status === "IN_PROGRESS" || task.status === "CLAIMED") return { label: "Cleaning in progress", tone: "cleaning-in-progress" };
-  if (task.status === "READY" || task.status === "READY_FOR_INSPECTION") return { label: "Ready", tone: "ready" };
+  if (task.status === "IN_PROGRESS" || task.status === "CLAIMED") return { label: "Cleaning In Progress", tone: "cleaning-in-progress" };
+  if (task.status === "READY" || task.status === "READY_FOR_INSPECTION") return { label: "Clean", tone: "clean" };
   if (task.priority === "URGENT" || task.priority === "HIGH" || task.taskType === "TURNOVER") return { label: "Priority", tone: "priority" };
   if (task.taskType === "LINEN_CHANGE") return { label: "Full Cleaning", tone: "full-cleaning" };
   if (task.taskType === "WATER_REFILL") return { label: "Water refill", tone: "water-refill" };
   return { label: "Cleaning scheduled", tone: "cleaning-scheduled" };
-}
-
-function statusTone(value: string): string {
-  return value.toLowerCase().replaceAll(" ", "-");
 }
 
 async function resolveUnit(env: RoomDetailBindings, id: number): Promise<UnitRow | null> {
@@ -536,7 +531,7 @@ function roomReadyState(storedState: RoomHousekeepingState): RoomReadyState {
 function housekeepingDetail(tasks: HousekeepingTask[], storedState: RoomHousekeepingState, user: CurrentUser, maintenanceBlocked: boolean, today: string): RoomHousekeeping {
   const taskDtos = tasks.map((task) => mapRoomHousekeepingTask(task, user, today, maintenanceBlocked));
   const activeTask = taskDtos[0] ?? null;
-  const primary = primaryHousekeepingState(activeTask, maintenanceBlocked);
+  const primary = primaryHousekeepingState(activeTask, maintenanceBlocked, storedState.readyState);
 
   return {
     status: primary.label,
@@ -698,8 +693,8 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
     roomName: unit.unit_name,
     roomType: unitType(unit),
     accommodationType: unitType(unit),
-    roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.readyState === "NOT_READY" || housekeeping.primaryStatus === "No active Housekeeping"
-      ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status, housekeeping.readyState)
+    roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.primaryStatus === "Clean" || housekeeping.primaryStatus === "Dirty"
+      ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status)
       : housekeeping.primaryStatus,
     occupancyStatus: operations.occupancyStatus,
     housekeepingStatus: housekeeping.status,

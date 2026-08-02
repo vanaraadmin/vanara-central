@@ -69,7 +69,7 @@ test("read models consume operational availability instead of frontend constants
   assert.match(housekeepingOverview, /COALESCE\(roa\.status, 'OPERATING'\) = 'OPERATING'/);
   assert.match(housekeepingOverview, /context\.operationalAvailabilityStatus === "NOT_OPERATING"/);
   assert.match(housekeepingOverview, /if \(maintenanceBlocked\) return \[\]/);
-  assert.match(receptionService, /operationalAvailability\.status === "NOT_OPERATING"/);
+  assert.doesNotMatch(receptionService, /operationalAvailability\.status === "NOT_OPERATING"/);
   assert.match(receptionService, /storedHousekeepingState\.readyState === "NOT_READY"/);
 });
 

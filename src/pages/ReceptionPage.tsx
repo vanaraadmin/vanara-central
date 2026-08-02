@@ -132,8 +132,10 @@ function bookingSourceLabel(stay: ReceptionStay): string {
 }
 
 function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
-  if (roomStatus === "Ready") return "clean";
-  if (roomStatus === "Cleaning") return "in_progress";
+  const normalized = roomStatus.trim().toLowerCase();
+  if (normalized === "clean" || normalized === "ready") return "clean";
+  if (normalized === "cleaning" || normalized === "cleaning in progress") return "in_progress";
+  if (normalized === "dirty" || normalized === "not ready") return "dirty";
   return "dirty";
 }
 
@@ -141,10 +143,10 @@ function HousekeepingStatusRow({ roomStatus }: { roomStatus: string }) {
   const cleaningStatus = cleaningStatusFromRoomStatus(roomStatus);
   const housekeepingLabel =
     cleaningStatus === "clean"
-      ? "ROOM READY"
+      ? "ROOM CLEAN"
       : cleaningStatus === "in_progress"
-        ? "ROOM IN PROGRESS"
-        : "ROOM NOT READY";
+        ? "CLEANING IN PROGRESS"
+        : "ROOM DIRTY";
 
   return (
     <div

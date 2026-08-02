@@ -7,6 +7,7 @@ const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css"
 const passportWorkflow = await readFile(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportWorkflowState = await readFile(new URL("../../src/utils/passport-workflow-state.ts", import.meta.url), "utf8");
 const receptionService = await readFile(new URL("../../src/services/reception.service.ts", import.meta.url), "utf8");
+const serverReceptionService = await readFile(new URL("../src/services/reception.service.ts", import.meta.url), "utf8");
 const passportCrop = await readFile(new URL("../../src/utils/passport-crop.ts", import.meta.url), "utf8");
 const passportReview = await readFile(new URL("../../src/utils/passport-review.ts", import.meta.url), "utf8");
 const countryNationality = await readFile(new URL("../../src/utils/country-nationality.ts", import.meta.url), "utf8");
@@ -42,6 +43,17 @@ test("check-in and check-out cards render nationality text without flags", async
   const nationalityCss = receptionCss.match(/\.reception-nationality\s*\{[\s\S]*?\}/)?.[0] ?? "";
   assert.doesNotMatch(nationalityCss, /border|border-radius|box-shadow/);
   assert.doesNotMatch(receptionCss, /\.reception-nationality-flag/);
+});
+
+test("check-in cards expose housekeeping-only cleaning labels", () => {
+  assert.match(receptionPage, /ROOM CLEAN/);
+  assert.match(receptionPage, /ROOM DIRTY/);
+  assert.match(receptionPage, /CLEANING IN PROGRESS/);
+  assert.match(serverReceptionService, /status:\s*"Clean"/);
+  assert.match(serverReceptionService, /status:\s*"Dirty"/);
+  assert.match(serverReceptionService, /status:\s*"Cleaning In Progress"/);
+  assert.doesNotMatch(receptionPage, /ROOM READY|ROOM NOT READY|ROOM IN PROGRESS/);
+  assert.doesNotMatch(serverReceptionService, /status:\s*"Not Ready"|status:\s*"Maintenance"|status:\s*"Out Of Service"|operationalAvailability/);
 });
 
 test("check-in checklist is visible only for today's arrival", () => {

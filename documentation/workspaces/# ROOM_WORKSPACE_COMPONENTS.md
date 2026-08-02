@@ -162,9 +162,9 @@ Responsibilities
 
 \- room identity
 
-\- occupancy
+\- compact occupant hint when no operational alerts exist
 
-\- housekeeping state
+\- operational alert summary
 
 \- maintenance badge
 
@@ -408,7 +408,7 @@ Possible states
 
 
 
-Ready
+Clean
 
 
 
@@ -456,7 +456,7 @@ Never display physical room condition as the Housekeeping card state.
 
 
 
-The stored room condition remains in Room Status.
+The stored room condition is presented as Cleaning: Clean or Dirty in the Room Status summary.
 
 
 

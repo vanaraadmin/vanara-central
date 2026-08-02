@@ -4,7 +4,6 @@ import { isOperationalBookingStatus, operationalBookingStatusSql } from "./booki
 import { countryCodeFrom, countryFlagFrom, countryFlagUrlFrom } from "./country-flags.service.js";
 import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
-import { loadOperationalAvailabilityForUnit } from "./room-operational-state.service.js";
 import { loadRoomHousekeepingStateForUnit } from "./room-housekeeping-state.service.js";
 
 export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings {
@@ -442,10 +441,9 @@ async function roomOperationalState(env: ReceptionBindings, roomId: number | nul
       maintenance: { openIssues: 0, outOfService: false, label: null },
     };
   }
-  const [maintenance, task, operationalAvailability, storedHousekeepingState] = await Promise.all([
+  const [maintenance, task, storedHousekeepingState] = await Promise.all([
     listOpenMaintenanceTicketDetailsForRoom(env, roomId),
     activeRoomReadinessTask(env, roomId),
-    loadOperationalAvailabilityForUnit(env, roomId),
     loadRoomHousekeepingStateForUnit(env, roomId),
   ]);
   const outOfService = maintenance.some((ticket) => ticket.outOfService);
@@ -454,13 +452,9 @@ async function roomOperationalState(env: ReceptionBindings, roomId: number | nul
     outOfService,
     label: outOfService ? "Maintenance Out Of Service" : maintenance.length > 0 ? "Maintenance Active" : null,
   };
-  if (outOfService) return { status: "Out Of Service", maintenance: maintenanceSummary };
-  if (operationalAvailability.status === "NOT_OPERATING") return { status: "Not Operating", maintenance: maintenanceSummary };
-  if (maintenance.length > 0) return { status: "Maintenance", maintenance: maintenanceSummary };
-  if (storedHousekeepingState.readyState === "NOT_READY") return { status: "Not Ready", maintenance: maintenanceSummary };
-  if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return { status: "Waiting Reception", maintenance: maintenanceSummary };
-  if (task && (task.status === "IN_PROGRESS" || task.status === "CLAIMED")) return { status: "Cleaning", maintenance: maintenanceSummary };
-  return { status: "Ready", maintenance: maintenanceSummary };
+  if (task && (task.status === "IN_PROGRESS" || task.status === "CLAIMED")) return { status: "Cleaning In Progress", maintenance: maintenanceSummary };
+  if (storedHousekeepingState.readyState === "NOT_READY") return { status: "Dirty", maintenance: maintenanceSummary };
+  return { status: "Clean", maintenance: maintenanceSummary };
 }
 
 async function activeRoomReadinessTask(env: ReceptionBindings, roomId: number): Promise<ActiveRoomTaskRow | null> {

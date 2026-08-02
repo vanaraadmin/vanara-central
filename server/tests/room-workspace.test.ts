@@ -723,7 +723,7 @@ test("room workspace ignores legacy housekeeping rows for readiness", async () =
   const body = await json(response);
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.readyState, "READY");
-  assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.primaryStatus, "No active Housekeeping");
+  assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.primaryStatus, "Clean");
   assert.notEqual((body.data as { roomStatus: string }).roomStatus, "Dirty");
 });
 
@@ -742,10 +742,10 @@ test("room workspace shows baseline physical NOT_READY without creating a Housek
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string; tasks: unknown[]; notes: string | null }; roomStatus: string }).housekeeping.readyState, "NOT_READY");
-  assert.equal((body.data as { housekeeping: { primaryStatus: string } }).housekeeping.primaryStatus, "No active Housekeeping");
+  assert.equal((body.data as { housekeeping: { primaryStatus: string } }).housekeeping.primaryStatus, "Dirty");
   assert.equal((body.data as { housekeeping: { tasks: unknown[] } }).housekeeping.tasks.length, 0);
   assert.equal((body.data as { housekeeping: { notes: string | null } }).housekeeping.notes, "Product Owner physical baseline.");
-  assert.equal((body.data as { roomStatus: string }).roomStatus, "Not Ready");
+  assert.notEqual((body.data as { roomStatus: string }).roomStatus, "Not Ready");
   assert.equal(data.DB.tasks.length, 0);
 });
 

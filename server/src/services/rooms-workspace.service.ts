@@ -87,6 +87,7 @@ export interface RoomsWorkspaceRoom {
   sortGroup: "bungalow" | "villa" | "tent" | "other";
   sortNumber: number;
   heroImageKey: string;
+  alertSummary: string | null;
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
   reception: RoomReceptionSummary;
@@ -427,6 +428,37 @@ function alertLabel(type: ReceptionAlertRow["alert_type"], title: string): strin
   return title;
 }
 
+function alertSummaryLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1).toLowerCase()}`;
+}
+
+function compactAlertSummary(row: RoomWorkspaceRow, reception: RoomReceptionSummary, date: string): string | null {
+  const labels: string[] = [];
+  const push = (label: string | null) => {
+    if (label && !labels.includes(label)) labels.push(label);
+  };
+
+  if (maintenanceState(row) === "BLOCKING") push("Maintenance blocking");
+  if (row.active_task_status === "WAITING_FOR_RECEPTION") push("Waiting for Reception");
+
+  for (const alert of reception.alerts) {
+    push(alertSummaryLabel(alert.label));
+  }
+
+  if (reception.phase === "ARRIVAL_DUE") push("Guest arriving today");
+  if (reception.phase === "DEPARTURE_DUE") {
+    push(row.reception_departure_date && row.reception_departure_date < date ? "Late checkout" : "Guest departing today");
+  }
+  if (maintenanceState(row) === "ACTIVE") push("Maintenance active");
+  if (row.availability_status === "NOT_OPERATING") push("Not operating");
+
+  if (labels.length === 0) return null;
+  const visible = labels.slice(0, 2).join(" · ");
+  return labels.length > 2 ? `${visible} · +${labels.length - 2}` : visible;
+}
+
 function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, RoomReceptionAlertSummary[]> {
   const alerts = new Map<number, RoomReceptionAlertSummary[]>();
   for (const row of rows) {
@@ -598,7 +630,7 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
   }
 
   return {
-    primaryStatus: "READY",
+    primaryStatus: "CLEAN",
     tone: "success",
     detail: "No work required",
     secondaryInfo: null,
@@ -648,6 +680,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
   const occupancyState = row.beds24_booking_id ? "OCCUPIED" : "VACANT";
   const guestName = row.guest_name || "Guest name unavailable";
   const staySource = sourceLabel(row);
+  const reception = mapReceptionSummary(row, receptionAlerts, date, user);
 
   return {
     unitId: row.unit_id,
@@ -657,6 +690,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
     sortGroup: group,
     sortNumber: roomNumber(row.unit_name),
     heroImageKey: normalizeKey(row.unit_name),
+    alertSummary: compactAlertSummary(row, reception, date),
     currentStay: occupancyState === "OCCUPIED" && row.arrival_date && row.departure_date
       ? {
           guestName,
@@ -694,7 +728,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
         primaryTitle: row.primary_maintenance_title,
       },
     },
-    reception: mapReceptionSummary(row, receptionAlerts, date, user),
+    reception,
     housekeeping: mapHousekeepingSummary(row, occupancyState, user),
     maintenance: mapMaintenanceSummary(row, user),
   };
