@@ -1,6 +1,7 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import type { HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getBangkokDate } from "./today.service.js";
+import { hasActionPermission, hasModulePermission, type CurrentUser } from "./current-user.service.js";
 
 export interface RoomsWorkspaceBindings {
   DB: D1Database;
@@ -11,6 +12,9 @@ export type RoomOccupancyState = "VACANT" | "OCCUPIED";
 export type RoomHousekeepingCondition = "READY" | "NOT_READY";
 export type RoomHousekeepingWorkState = "NONE" | "AVAILABLE" | "IN_PROGRESS" | "BLOCKED";
 export type RoomMaintenanceState = "CLEAR" | "ACTIVE" | "BLOCKING";
+export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOCKED";
+export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
+export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
 
 interface RoomWorkspaceRow {
   unit_id: number;
@@ -40,6 +44,31 @@ interface RoomWorkspaceRow {
   active_ticket_count: number | null;
   blocking_ticket_count: number | null;
   primary_maintenance_title: string | null;
+  reception_booking_id: number | null;
+  reception_beds24_booking_id: number | null;
+  reception_arrival_date: string | null;
+  reception_departure_date: string | null;
+  reception_guest_arrived: number | null;
+  reception_passport_collected: number | null;
+  reception_deposit_collected: number | null;
+  reception_welcome_completed: number | null;
+  reception_keys_delivered: number | null;
+  reception_guest_left: number | null;
+  reception_keys_returned: number | null;
+  reception_deposit_returned: number | null;
+  reception_room_released: number | null;
+  reception_updated_at: string | null;
+  passport_completed_at: string | null;
+  deposit_completed_at: string | null;
+  check_in_completed_at: string | null;
+  check_out_completed_at: string | null;
+}
+
+interface ReceptionAlertRow {
+  alert_id: number;
+  unit_id: number;
+  alert_type: "passport_missing" | "deposit_pending";
+  title: string;
 }
 
 export interface RoomsWorkspaceRoom {
@@ -52,6 +81,7 @@ export interface RoomsWorkspaceRoom {
   heroImageKey: string;
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
+  reception: RoomReceptionSummary;
 }
 
 export interface RoomCurrentStaySummary {
@@ -89,6 +119,34 @@ export interface RoomOperationalSummary {
     blockingTicketCount: number;
     primaryTitle: string | null;
   };
+}
+
+export interface RoomReceptionStepSummary {
+  state: ReceptionStepState;
+  completedAt: string | null;
+}
+
+export interface RoomReceptionAlertSummary {
+  id: number;
+  type: string;
+  label: string;
+  tone: "warning" | "danger" | "info";
+}
+
+export interface RoomReceptionPrimaryAction {
+  type: ReceptionPrimaryActionType;
+  label: string;
+  target: string;
+}
+
+export interface RoomReceptionSummary {
+  phase: ReceptionStayPhase;
+  passport: RoomReceptionStepSummary;
+  deposit: RoomReceptionStepSummary;
+  checkIn: RoomReceptionStepSummary;
+  checkOut: RoomReceptionStepSummary;
+  alerts: RoomReceptionAlertSummary[];
+  primaryAction: RoomReceptionPrimaryAction | null;
 }
 
 export interface RoomsWorkspaceOverview {
@@ -203,7 +261,147 @@ function maintenanceState(row: RoomWorkspaceRow): RoomMaintenanceState {
   return "CLEAR";
 }
 
-function mapRoom(row: RoomWorkspaceRow): RoomsWorkspaceRoom {
+function flag(value: number | null): boolean {
+  return value === 1;
+}
+
+function emptyReceptionStep(): RoomReceptionStepSummary {
+  return { state: "NOT_REQUIRED", completedAt: null };
+}
+
+function emptyReceptionSummary(alerts: RoomReceptionAlertSummary[] = []): RoomReceptionSummary {
+  return {
+    phase: "NONE",
+    passport: emptyReceptionStep(),
+    deposit: emptyReceptionStep(),
+    checkIn: emptyReceptionStep(),
+    checkOut: emptyReceptionStep(),
+    alerts,
+    primaryAction: null,
+  };
+}
+
+function stepState(required: boolean, complete: boolean): ReceptionStepState {
+  if (complete) return "COMPLETE";
+  if (!required) return "NOT_REQUIRED";
+  return "PENDING";
+}
+
+function checkoutComplete(row: RoomWorkspaceRow): boolean {
+  if (!flag(row.reception_guest_left) || !flag(row.reception_keys_returned) || !flag(row.reception_room_released)) return false;
+  return flag(row.reception_deposit_collected) ? flag(row.reception_deposit_returned) : true;
+}
+
+function checkInComplete(row: RoomWorkspaceRow): boolean {
+  return flag(row.reception_guest_arrived)
+    && flag(row.reception_passport_collected)
+    && flag(row.reception_deposit_collected)
+    && flag(row.reception_welcome_completed)
+    && flag(row.reception_keys_delivered);
+}
+
+function receptionPhase(row: RoomWorkspaceRow, date: string): ReceptionStayPhase {
+  if (!row.reception_beds24_booking_id || !row.reception_arrival_date || !row.reception_departure_date) return "NONE";
+  const arrived = flag(row.reception_guest_arrived);
+  const checkedOut = checkoutComplete(row);
+
+  if (row.reception_departure_date === date && checkedOut) return "CHECKED_OUT";
+  if (row.reception_departure_date <= date && arrived && !checkedOut) return "DEPARTURE_DUE";
+  if (row.reception_arrival_date === date && !checkInComplete(row)) return "ARRIVAL_DUE";
+  if (row.reception_arrival_date <= date && row.reception_departure_date > date && arrived && !checkedOut) return "IN_HOUSE";
+  return "NONE";
+}
+
+function canUseReceptionActions(user?: CurrentUser): boolean {
+  return Boolean(user && hasModulePermission(user, "movements", "access") && hasActionPermission(user, "can_complete_checkin_checkout"));
+}
+
+function receptionPrimaryAction(summary: Omit<RoomReceptionSummary, "primaryAction">, canAct: boolean): RoomReceptionPrimaryAction | null {
+  if (!canAct) return null;
+  if (summary.phase === "DEPARTURE_DUE" && summary.checkOut.state !== "COMPLETE") {
+    return { type: "COMPLETE_CHECK_OUT", label: "Complete Check-out", target: "/reception" };
+  }
+  if (summary.passport.state === "PENDING") {
+    return { type: "COLLECT_PASSPORT", label: "Collect Passport", target: "/reception" };
+  }
+  if (summary.phase === "ARRIVAL_DUE" && summary.checkIn.state !== "COMPLETE") {
+    return { type: "COMPLETE_CHECK_IN", label: "Complete Check-in", target: "/reception" };
+  }
+  return null;
+}
+
+function mapReceptionSummary(row: RoomWorkspaceRow, alerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomReceptionSummary {
+  const phase = receptionPhase(row, date);
+  if (phase === "NONE" && alerts.length === 0) return emptyReceptionSummary();
+
+  const passportRequired = phase === "ARRIVAL_DUE" || phase === "IN_HOUSE" || phase === "DEPARTURE_DUE";
+  const depositRequired = passportRequired;
+  const checkInRequired = phase === "ARRIVAL_DUE" || phase === "IN_HOUSE" || phase === "DEPARTURE_DUE";
+  const checkOutRequired = phase === "DEPARTURE_DUE" || phase === "CHECKED_OUT";
+  const passportComplete = flag(row.reception_passport_collected);
+  const depositComplete = flag(row.reception_deposit_collected);
+  const checkInDone = checkInComplete(row);
+  const checkOutDone = checkoutComplete(row);
+
+  const summary: Omit<RoomReceptionSummary, "primaryAction"> = {
+    phase,
+    passport: {
+      state: stepState(passportRequired, passportComplete),
+      completedAt: passportComplete ? row.passport_completed_at ?? row.reception_updated_at : null,
+    },
+    deposit: {
+      state: stepState(depositRequired, depositComplete),
+      completedAt: depositComplete ? row.deposit_completed_at ?? row.reception_updated_at : null,
+    },
+    checkIn: {
+      state: stepState(checkInRequired, checkInDone),
+      completedAt: checkInDone ? row.check_in_completed_at ?? row.reception_updated_at : null,
+    },
+    checkOut: {
+      state: stepState(checkOutRequired, checkOutDone),
+      completedAt: checkOutDone ? row.check_out_completed_at ?? row.reception_updated_at : null,
+    },
+    alerts,
+  };
+
+  return {
+    ...summary,
+    primaryAction: receptionPrimaryAction(summary, canUseReceptionActions(user)),
+  };
+}
+
+function alertLabel(type: ReceptionAlertRow["alert_type"], title: string): string {
+  if (type === "passport_missing") return "Passport Missing";
+  if (type === "deposit_pending") return "Deposit Pending";
+  return title;
+}
+
+function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, RoomReceptionAlertSummary[]> {
+  const alerts = new Map<number, RoomReceptionAlertSummary[]>();
+  for (const row of rows) {
+    const current = alerts.get(row.unit_id) ?? [];
+    current.push({
+      id: row.alert_id,
+      type: row.alert_type,
+      label: alertLabel(row.alert_type, row.title),
+      tone: "warning",
+    });
+    alerts.set(row.unit_id, current);
+  }
+  return alerts;
+}
+
+async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<number, RoomReceptionAlertSummary[]>> {
+  const rows = await env.DB.prepare(`
+    SELECT alert_id, unit_id, alert_type, title
+    FROM reception_room_alerts
+    WHERE status = 'active'
+    ORDER BY created_at ASC, alert_id ASC
+  `).all<ReceptionAlertRow>();
+  return mapReceptionAlerts(rows.results ?? []);
+}
+
+function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
   const group = roomFamily(row);
   const occupancyState = row.beds24_booking_id ? "OCCUPIED" : "VACANT";
   const guestName = row.guest_name || "Guest name unavailable";
@@ -254,10 +452,11 @@ function mapRoom(row: RoomWorkspaceRow): RoomsWorkspaceRoom {
         primaryTitle: row.primary_maintenance_title,
       },
     },
+    reception: mapReceptionSummary(row, receptionAlerts, date, user),
   };
 }
 
-export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, date = getBangkokDate()): Promise<RoomsWorkspaceOverview> {
+export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, date = getBangkokDate(), user?: CurrentUser): Promise<RoomsWorkspaceOverview> {
   const rows = await env.DB.prepare(`
     SELECT
       u.unit_id,
@@ -286,7 +485,45 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       ht.active_task_assignee,
       COALESCE(mt.active_ticket_count, 0) AS active_ticket_count,
       COALESCE(mt.blocking_ticket_count, 0) AS blocking_ticket_count,
-      mt.primary_maintenance_title
+      mt.primary_maintenance_title,
+      rb.booking_id AS reception_booking_id,
+      rb.beds24_booking_id AS reception_beds24_booking_id,
+      rb.arrival_date AS reception_arrival_date,
+      rb.departure_date AS reception_departure_date,
+      COALESCE(rrs.guest_arrived, 0) AS reception_guest_arrived,
+      COALESCE(rrs.passport_collected, 0) AS reception_passport_collected,
+      COALESCE(rrs.deposit_collected, 0) AS reception_deposit_collected,
+      COALESCE(rrs.welcome_completed, 0) AS reception_welcome_completed,
+      COALESCE(rrs.keys_delivered, 0) AS reception_keys_delivered,
+      COALESCE(rrs.guest_left, 0) AS reception_guest_left,
+      COALESCE(rrs.keys_returned, 0) AS reception_keys_returned,
+      COALESCE(rrs.deposit_returned, 0) AS reception_deposit_returned,
+      COALESCE(rrs.room_released, 0) AS reception_room_released,
+      rrs.updated_at AS reception_updated_at,
+      (
+        SELECT MAX(re.created_at)
+        FROM reception_events re
+        WHERE re.beds24_booking_id = rb.beds24_booking_id
+          AND re.action IN ('passportCollected', 'passportRegistrationCompleted', 'checkInCompleted')
+      ) AS passport_completed_at,
+      (
+        SELECT MAX(re.created_at)
+        FROM reception_events re
+        WHERE re.beds24_booking_id = rb.beds24_booking_id
+          AND re.action IN ('depositCollected', 'checkInCompleted')
+      ) AS deposit_completed_at,
+      (
+        SELECT MAX(re.created_at)
+        FROM reception_events re
+        WHERE re.beds24_booking_id = rb.beds24_booking_id
+          AND re.action = 'checkInCompleted'
+      ) AS check_in_completed_at,
+      (
+        SELECT MAX(re.created_at)
+        FROM reception_events re
+        WHERE re.beds24_booking_id = rb.beds24_booking_id
+          AND re.action = 'checkOutCompleted'
+      ) AS check_out_completed_at
     FROM units u
     LEFT JOIN room_types rt ON rt.room_type_id = u.room_type_id
     LEFT JOIN room_operational_availability roa ON roa.unit_id = u.unit_id
@@ -303,6 +540,44 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       ORDER BY b2.arrival_date DESC, b2.booking_id DESC
       LIMIT 1
     )
+    LEFT JOIN bookings rb ON rb.booking_id = (
+      SELECT b2.booking_id
+      FROM bookings b2
+      LEFT JOIN reception_stays rs2 ON rs2.beds24_booking_id = b2.beds24_booking_id
+      WHERE b2.unit_id = u.unit_id
+        AND ${operationalBookingStatusSql("b2.status")}
+        AND (
+          b2.arrival_date = ?1
+          OR (
+            b2.arrival_date <= ?1
+            AND b2.departure_date > ?1
+            AND COALESCE(rs2.guest_arrived, 0) = 1
+            AND COALESCE(rs2.room_released, 0) = 0
+          )
+          OR (
+            b2.departure_date <= ?1
+            AND COALESCE(rs2.guest_arrived, 0) = 1
+            AND COALESCE(rs2.room_released, 0) = 0
+          )
+          OR (
+            b2.departure_date = ?1
+            AND COALESCE(rs2.guest_left, 0) = 1
+            AND COALESCE(rs2.room_released, 0) = 1
+          )
+        )
+      ORDER BY
+        CASE
+          WHEN b2.departure_date <= ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 AND COALESCE(rs2.room_released, 0) = 0 THEN 1
+          WHEN b2.arrival_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 0 THEN 2
+          WHEN b2.arrival_date <= ?1 AND b2.departure_date > ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 THEN 3
+          WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_left, 0) = 1 AND COALESCE(rs2.room_released, 0) = 1 THEN 4
+          ELSE 5
+        END,
+        b2.arrival_date DESC,
+        b2.booking_id DESC
+      LIMIT 1
+    )
+    LEFT JOIN reception_stays rrs ON rrs.beds24_booking_id = rb.beds24_booking_id
     LEFT JOIN (
       SELECT unit_id, COUNT(*) AS active_task_count
       FROM housekeeping_tasks
@@ -358,8 +633,9 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
     WHERE u.active = 1
   `).bind(date).all<RoomWorkspaceRow>();
 
+  const receptionAlerts = await loadReceptionAlerts(env);
   const rooms = (rows.results ?? [])
-    .map(mapRoom)
+    .map((row) => mapRoom(row, receptionAlerts.get(row.unit_id) ?? [], date, user))
     .sort((left, right) =>
       familyRank(left.sortGroup) - familyRank(right.sortGroup)
       || left.sortNumber - right.sortNumber

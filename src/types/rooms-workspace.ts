@@ -4,6 +4,9 @@ export type RoomHousekeepingCondition = "READY" | "NOT_READY";
 export type RoomHousekeepingWorkState = "NONE" | "AVAILABLE" | "IN_PROGRESS" | "BLOCKED";
 export type RoomMaintenanceState = "CLEAR" | "ACTIVE" | "BLOCKING";
 export type RoomsWorkspaceSortGroup = "bungalow" | "villa" | "tent" | "other";
+export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOCKED";
+export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
+export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
 
 export interface RoomOperationalSummary {
   availability: {
@@ -42,6 +45,34 @@ export interface RoomCurrentStaySummary {
   stayNights: number | null;
 }
 
+export interface RoomReceptionStepSummary {
+  state: ReceptionStepState;
+  completedAt: string | null;
+}
+
+export interface RoomReceptionAlertSummary {
+  id: number;
+  type: string;
+  label: string;
+  tone: "warning" | "danger" | "info";
+}
+
+export interface RoomReceptionPrimaryAction {
+  type: ReceptionPrimaryActionType;
+  label: string;
+  target: string;
+}
+
+export interface RoomReceptionSummary {
+  phase: ReceptionStayPhase;
+  passport: RoomReceptionStepSummary;
+  deposit: RoomReceptionStepSummary;
+  checkIn: RoomReceptionStepSummary;
+  checkOut: RoomReceptionStepSummary;
+  alerts: RoomReceptionAlertSummary[];
+  primaryAction: RoomReceptionPrimaryAction | null;
+}
+
 export interface RoomsWorkspaceRoom {
   unitId: number;
   roomName: string;
@@ -53,6 +84,7 @@ export interface RoomsWorkspaceRoom {
   heroImage: string | null;
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
+  reception: RoomReceptionSummary;
 }
 
 export interface RoomsWorkspaceOverview {

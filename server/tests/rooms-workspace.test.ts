@@ -3,10 +3,18 @@ import test from "node:test";
 
 import worker from "../src/index.ts";
 import { getRoomsWorkspaceOverview } from "../src/services/rooms-workspace.service.ts";
-import type { ModuleKey } from "../src/services/current-user.service.ts";
+import type { CurrentUser, ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
+type ActionPermission = { action_key: "can_complete_checkin_checkout"; allowed: number };
 type FakeRoomRow = Record<string, unknown>;
+type FakeReceptionAlertRow = {
+  alert_id: number;
+  unit_id: number;
+  alert_type: "passport_missing" | "deposit_pending";
+  title: string;
+  status: "active" | "resolved";
+};
 
 const USER_ROW = {
   user_id: "rooms-1",
@@ -36,7 +44,7 @@ class FakeStmt {
 }
 
 class FakeRoomsDB {
-  constructor(private permissions: Permission[], private options: { authenticated?: boolean; rooms?: FakeRoomRow[] } = {}) {}
+  constructor(private permissions: Permission[], private actionPermissions: ActionPermission[] = [], private options: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = {}) {}
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
@@ -44,6 +52,8 @@ class FakeRoomsDB {
     void _params;
     if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
+    if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: this.actionPermissions as T[] };
+    if (sql.includes("FROM reception_room_alerts")) return { results: (this.options.alerts ?? []).filter((alert) => alert.status === "active") as T[] };
     if (sql.includes("FROM units u") && sql.includes("LEFT JOIN room_operational_availability") && sql.includes("LEFT JOIN room_housekeeping_state")) {
       return { results: (this.options.rooms ?? defaultRooms()) as T[] };
     }
@@ -93,6 +103,24 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     active_ticket_count: 0,
     blocking_ticket_count: 0,
     primary_maintenance_title: null,
+    reception_booking_id: null,
+    reception_beds24_booking_id: null,
+    reception_arrival_date: null,
+    reception_departure_date: null,
+    reception_guest_arrived: 0,
+    reception_passport_collected: 0,
+    reception_deposit_collected: 0,
+    reception_welcome_completed: 0,
+    reception_keys_delivered: 0,
+    reception_guest_left: 0,
+    reception_keys_returned: 0,
+    reception_deposit_returned: 0,
+    reception_room_released: 0,
+    reception_updated_at: null,
+    passport_completed_at: null,
+    deposit_completed_at: null,
+    check_in_completed_at: null,
+    check_out_completed_at: null,
     ...overrides,
   };
 }
@@ -146,6 +174,19 @@ function defaultRooms() {
       arrival_date: "2026-08-01",
       departure_date: "2026-08-07",
       api_source: "Direct",
+      reception_booking_id: 301,
+      reception_beds24_booking_id: 9301,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-07",
+      reception_guest_arrived: 1,
+      reception_passport_collected: 1,
+      reception_deposit_collected: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+      reception_updated_at: "2026-08-01T07:30:00.000Z",
+      passport_completed_at: "2026-08-01T07:30:00.000Z",
+      deposit_completed_at: "2026-08-01T07:30:00.000Z",
+      check_in_completed_at: "2026-08-01T07:30:00.000Z",
     }),
     roomRow({
       unit_id: 4,
@@ -175,9 +216,15 @@ function defaultRooms() {
   ];
 }
 
-function env(permissions: Permission[], options?: { authenticated?: boolean; rooms?: FakeRoomRow[] }) {
+function env(
+  permissions: Permission[],
+  actionPermissionsOrOptions: ActionPermission[] | { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = [],
+  options?: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] },
+) {
+  const actionPermissions = Array.isArray(actionPermissionsOrOptions) ? actionPermissionsOrOptions : [];
+  const resolvedOptions = Array.isArray(actionPermissionsOrOptions) ? options : actionPermissionsOrOptions;
   return {
-    DB: new FakeRoomsDB(permissions, options) as unknown as D1Database,
+    DB: new FakeRoomsDB(permissions, actionPermissions, resolvedOptions) as unknown as D1Database,
   };
 }
 
@@ -190,6 +237,35 @@ async function json(response: Response) {
 }
 
 const roomsAccess: Permission = { module_key: "rooms", can_access: 1, can_edit: 0 };
+const movementsAccess: Permission = { module_key: "movements", can_access: 1, can_edit: 0 };
+const receptionCompletion: ActionPermission = { action_key: "can_complete_checkin_checkout", allowed: 1 };
+
+function currentUser(permissions: CurrentUser["permissions"], actionPermissions: CurrentUser["actionPermissions"] = []): CurrentUser {
+  return {
+    id: "rooms-1",
+    displayName: "Rooms Operator",
+    fullName: "Rooms Operator",
+    profilePhotoUrl: null,
+    role: "Operations",
+    preferredLanguage: "en",
+    username: "rooms",
+    email: null,
+    status: "active",
+    views: ["staff"],
+    permissions,
+    actionPermissions,
+    lastLoginAt: null,
+  };
+}
+
+const roomsUser = currentUser([{ module: "rooms", canAccess: true, canEdit: false }]);
+const receptionCapableUser = currentUser(
+  [
+    { module: "rooms", canAccess: true, canEdit: false },
+    { module: "movements", canAccess: true, canEdit: false },
+  ],
+  [{ action: "can_complete_checkin_checkout", allowed: true }],
+);
 
 function byName<T extends { roomName: string }>(rooms: T[], name: string): T {
   const room = rooms.find((item) => item.roomName === name);
@@ -303,6 +379,168 @@ test("guest card read model follows arrived occupancy and does not expose recept
   assert.equal("deposit" in occupied.currentStay, false);
   assert.equal("email" in occupied.currentStay, false);
   assert.equal("phone" in occupied.currentStay, false);
+});
+
+test("occupied in-house rooms return Reception phase and quiet completed steps", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02", roomsUser);
+  const occupied = byName(overview.rooms, "Bungalow 3");
+
+  assert.equal(occupied.reception.phase, "IN_HOUSE");
+  assert.equal(occupied.reception.passport.state, "COMPLETE");
+  assert.equal(occupied.reception.passport.completedAt, "2026-08-01T07:30:00.000Z");
+  assert.equal(occupied.reception.deposit.state, "COMPLETE");
+  assert.equal(occupied.reception.checkIn.state, "COMPLETE");
+  assert.equal(occupied.reception.checkOut.state, "NOT_REQUIRED");
+  assert.equal(occupied.reception.primaryAction, null);
+});
+
+test("arrival due rooms expose pending Reception steps and capability-gated action", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 8,
+      unit_name: "Bungalow 8",
+      reception_booking_id: 801,
+      reception_beds24_booking_id: 9801,
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-05",
+    }),
+  ];
+
+  const readOnly = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", roomsUser);
+  const actionable = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
+
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.phase, "ARRIVAL_DUE");
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.passport.state, "PENDING");
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.deposit.state, "PENDING");
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkIn.state, "PENDING");
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkOut.state, "NOT_REQUIRED");
+  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.primaryAction, null);
+  assert.deepEqual(byName(actionable.rooms, "Bungalow 8").reception.primaryAction, {
+    type: "COLLECT_PASSPORT",
+    label: "Collect Passport",
+    target: "/reception",
+  });
+});
+
+test("departure due rooms prioritize checkout action over missing passport", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 9,
+      unit_name: "Bungalow 9",
+      reception_booking_id: 901,
+      reception_beds24_booking_id: 9901,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-02",
+      reception_guest_arrived: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
+  const room = byName(overview.rooms, "Bungalow 9");
+
+  assert.equal(room.reception.phase, "DEPARTURE_DUE");
+  assert.equal(room.reception.passport.state, "PENDING");
+  assert.equal(room.reception.checkIn.state, "PENDING");
+  assert.equal(room.reception.checkOut.state, "PENDING");
+  assert.deepEqual(room.reception.primaryAction, {
+    type: "COMPLETE_CHECK_OUT",
+    label: "Complete Check-out",
+    target: "/reception",
+  });
+});
+
+test("completed checkout phase comes from Reception checkout state", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 10,
+      unit_name: "Bungalow 10",
+      reception_booking_id: 1001,
+      reception_beds24_booking_id: 91001,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-02",
+      reception_guest_arrived: 1,
+      reception_passport_collected: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+      reception_guest_left: 1,
+      reception_keys_returned: 1,
+      reception_room_released: 1,
+      reception_updated_at: "2026-08-02T05:00:00.000Z",
+      check_out_completed_at: "2026-08-02T05:00:00.000Z",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
+  const room = byName(overview.rooms, "Bungalow 10");
+
+  assert.equal(room.reception.phase, "CHECKED_OUT");
+  assert.equal(room.reception.checkOut.state, "COMPLETE");
+  assert.equal(room.reception.checkOut.completedAt, "2026-08-02T05:00:00.000Z");
+  assert.equal(room.reception.primaryAction, null);
+});
+
+test("vacant rooms with no operational Reception state return NONE and no card action", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02", receptionCapableUser);
+  const vacant = byName(overview.rooms, "Bungalow 2");
+
+  assert.equal(vacant.reception.phase, "NONE");
+  assert.deepEqual(vacant.reception.passport, { state: "NOT_REQUIRED", completedAt: null });
+  assert.deepEqual(vacant.reception.alerts, []);
+  assert.equal(vacant.reception.primaryAction, null);
+});
+
+test("unresolved Reception alerts are exposed and resolved alerts are excluded", async () => {
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], {
+    alerts: [
+      { alert_id: 1, unit_id: 2, alert_type: "passport_missing", title: "Legacy title", status: "active" },
+      { alert_id: 2, unit_id: 2, alert_type: "deposit_pending", title: "Deposit pending", status: "resolved" },
+    ],
+  }), "2026-08-02", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 2");
+
+  assert.equal(room.reception.phase, "NONE");
+  assert.deepEqual(room.reception.alerts, [
+    { id: 1, type: "passport_missing", label: "Passport Missing", tone: "warning" },
+  ]);
+});
+
+test("Reception primary actions require the existing Reception action capability", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 11,
+      unit_name: "Bungalow 11",
+      reception_booking_id: 1101,
+      reception_beds24_booking_id: 91101,
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-05",
+    }),
+  ];
+
+  const withoutAction = await request(
+    "/api/rooms",
+    { method: "GET", headers: { cookie: "vanara_session=x" } },
+    env([roomsAccess, movementsAccess], [], { rooms }),
+  );
+  const withAction = await request(
+    "/api/rooms",
+    { method: "GET", headers: { cookie: "vanara_session=x" } },
+    env([roomsAccess, movementsAccess], [receptionCompletion], { rooms }),
+  );
+  const withoutBody = await json(withoutAction);
+  const withBody = await json(withAction);
+  const withoutRoom = byName((withoutBody.data as { rooms: Array<{ roomName: string; reception: { primaryAction: unknown } }> }).rooms, "Bungalow 11");
+  const withRoom = byName((withBody.data as { rooms: Array<{ roomName: string; reception: { primaryAction: unknown } }> }).rooms, "Bungalow 11");
+
+  assert.equal(withoutAction.status, 200);
+  assert.equal(withAction.status, 200);
+  assert.equal(withoutRoom.reception.primaryAction, null);
+  assert.deepEqual(withRoom.reception.primaryAction, {
+    type: "COLLECT_PASSPORT",
+    label: "Collect Passport",
+    target: "/reception",
+  });
 });
 
 test("rooms workspace read model exposes compact operational summary counts", async () => {

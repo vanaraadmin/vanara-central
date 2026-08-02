@@ -554,9 +554,9 @@ app.get("/api/staff/overview", async (c) => {
 
 app.get("/api/rooms", async (c) => {
   try {
-    await authenticated(c, "rooms", "access");
+    const user = await authenticated(c, "rooms", "access");
     c.header("Cache-Control", "no-store");
-    return c.json({ success: true, data: await getRoomsWorkspaceOverview(c.env) });
+    return c.json({ success: true, data: await getRoomsWorkspaceOverview(c.env, undefined, user) });
   } catch (error) {
     console.error(JSON.stringify({ message: "Rooms workspace request failed", error: errorMessage(error), path: "/api/rooms" }));
     return c.json({
