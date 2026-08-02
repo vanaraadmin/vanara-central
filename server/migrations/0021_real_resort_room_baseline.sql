@@ -43,6 +43,44 @@ CREATE INDEX IF NOT EXISTS idx_room_operational_availability_status
 CREATE INDEX IF NOT EXISTS idx_room_operational_availability_events_unit
   ON room_operational_availability_events(unit_id, created_at);
 
+CREATE TABLE IF NOT EXISTS room_housekeeping_state (
+  unit_id INTEGER PRIMARY KEY,
+  ready_state TEXT NOT NULL DEFAULT 'READY' CHECK (ready_state IN ('READY', 'NOT_READY')),
+  reason TEXT,
+  source TEXT NOT NULL DEFAULT 'system',
+  updated_by TEXT,
+  updated_by_name TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (unit_id) REFERENCES units(unit_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS room_housekeeping_state_events (
+  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  unit_id INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  actor_user_id TEXT,
+  actor_name TEXT,
+  previous_ready_state TEXT,
+  new_ready_state TEXT,
+  previous_reason TEXT,
+  new_reason TEXT,
+  source TEXT,
+  idempotency_key TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (unit_id) REFERENCES units(unit_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_room_housekeeping_state_events_idempotency
+  ON room_housekeeping_state_events(idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_room_housekeeping_state_ready_state
+  ON room_housekeeping_state(ready_state);
+
+CREATE INDEX IF NOT EXISTS idx_room_housekeeping_state_events_unit
+  ON room_housekeeping_state_events(unit_id, created_at);
+
 DELETE FROM housekeeping;
 
 INSERT OR IGNORE INTO room_operational_availability (
@@ -271,80 +309,92 @@ WHERE unit_id IN (
   AND on_demand_source = 'ROOM_READY_OVERRIDE'
   AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED');
 
-INSERT OR IGNORE INTO housekeeping_tasks (
-  task_type, unit_id, booking_id, stay_id, operational_date, due_cycle_date,
-  status, priority, source, on_demand_source, idempotency_key,
-  created_by, created_by_name, updated_by, updated_by_name, created_at, updated_at
+INSERT OR IGNORE INTO room_housekeeping_state (
+  unit_id, ready_state, reason, source, updated_by, updated_by_name, created_at, updated_at
 )
 SELECT
-  'STANDARD_CLEANING',
-  u.unit_id,
+  unit_id,
+  'READY',
   NULL,
-  NULL,
-  date('now'),
-  date('now'),
-  'AVAILABLE_FOR_CLAIM',
-  'NORMAL',
-  'manual',
-  'ROOM_READY_OVERRIDE',
-  'room-ready-baseline:not-ready:' || u.unit_id,
-  'system-baseline',
-  'Product Owner Baseline',
+  'real_resort_room_baseline',
   'system-baseline',
   'Product Owner Baseline',
   datetime('now'),
   datetime('now')
+FROM units
+WHERE active = 1;
+
+INSERT OR IGNORE INTO room_housekeeping_state_events (
+  unit_id, event_type, actor_user_id, actor_name,
+  previous_ready_state, new_ready_state, previous_reason, new_reason,
+  source, idempotency_key, created_at
+)
+SELECT
+  u.unit_id,
+  'baseline_applied',
+  'system-baseline',
+  'Product Owner Baseline',
+  COALESCE(rhs.ready_state, 'READY'),
+  CASE
+    WHEN u.unit_name IN (
+      'Bungalow 1', 'Bungalow 7', 'Bungalow 8', 'Bungalow 9', 'Bungalow 11', 'Bungalow 12',
+      'Villa 10', 'Villa 13',
+      'Tent 1', 'Tent 2', 'Tent 3', 'Tent 4', 'Tent 5', 'Tent 6',
+      'Yurt 1', 'Yurt 2', 'Yurt 3', 'Yurt 4', 'Yurt 5', 'Yurt 6'
+    ) THEN 'NOT_READY'
+    ELSE 'READY'
+  END,
+  rhs.reason,
+  CASE
+    WHEN u.unit_name = 'Bungalow 7' THEN 'Maintenance blocked.'
+    WHEN u.unit_name IN (
+      'Bungalow 1', 'Bungalow 8', 'Bungalow 9', 'Bungalow 11', 'Bungalow 12',
+      'Villa 10', 'Villa 13',
+      'Tent 1', 'Tent 2', 'Tent 3', 'Tent 4', 'Tent 5', 'Tent 6',
+      'Yurt 1', 'Yurt 2', 'Yurt 3', 'Yurt 4', 'Yurt 5', 'Yurt 6'
+    ) THEN 'Product Owner physical baseline.'
+    ELSE NULL
+  END,
+  'real_resort_room_baseline',
+  'baseline:room-housekeeping-state:' || u.unit_id,
+  datetime('now')
 FROM units u
-WHERE u.unit_name IN (
-    'Bungalow 1', 'Bungalow 7', 'Bungalow 8', 'Bungalow 9', 'Bungalow 11', 'Bungalow 12',
-    'Villa 10', 'Villa 13',
-    'Tent 1', 'Tent 2', 'Tent 3', 'Tent 4', 'Tent 5', 'Tent 6',
-    'Yurt 1', 'Yurt 2', 'Yurt 3', 'Yurt 4', 'Yurt 5', 'Yurt 6'
-  )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM housekeeping_tasks ht
-    WHERE ht.unit_id = u.unit_id
-      AND ht.task_type IN ('TURNOVER', 'STANDARD_CLEANING', 'LINEN_CHANGE', 'ON_DEMAND_CLEANING')
-      AND ht.status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
-      AND NOT (ht.task_type = 'TURNOVER' AND ht.status = 'WAITING_FOR_RECEPTION')
-  );
+LEFT JOIN room_housekeeping_state rhs ON rhs.unit_id = u.unit_id
+WHERE u.active = 1;
 
-INSERT OR IGNORE INTO housekeeping_task_events (
-  task_id, event_type, actor_user_id, actor_name, previous_status, new_status,
-  reason, metadata_json, idempotency_key, created_at
-)
-SELECT
-  task_id,
-  'created',
-  'system-baseline',
-  'Product Owner Baseline',
-  NULL,
-  'AVAILABLE_FOR_CLAIM',
-  'Product Owner real resort baseline.',
-  '{"source":"real_resort_room_baseline"}',
-  'baseline:created:' || task_id,
-  created_at
-FROM housekeeping_tasks
-WHERE idempotency_key LIKE 'room-ready-baseline:not-ready:%';
-
-INSERT OR IGNORE INTO housekeeping_task_events (
-  task_id, event_type, actor_user_id, actor_name, previous_status, new_status,
-  reason, metadata_json, idempotency_key, created_at
-)
-SELECT
-  task_id,
-  'room_ready_override',
-  'system-baseline',
-  'Product Owner Baseline',
-  'READY',
-  'NOT_READY',
-  'Product Owner real resort baseline.',
-  '{"previousRoomStatus":"READY","newRoomStatus":"NOT_READY","source":"real_resort_room_baseline"}',
-  'baseline:room-ready-override:' || task_id,
-  created_at
-FROM housekeeping_tasks
-WHERE idempotency_key LIKE 'room-ready-baseline:not-ready:%';
+UPDATE room_housekeeping_state
+SET ready_state = CASE
+      WHEN unit_id IN (
+        SELECT unit_id
+        FROM units
+        WHERE unit_name IN (
+          'Bungalow 1', 'Bungalow 7', 'Bungalow 8', 'Bungalow 9', 'Bungalow 11', 'Bungalow 12',
+          'Villa 10', 'Villa 13',
+          'Tent 1', 'Tent 2', 'Tent 3', 'Tent 4', 'Tent 5', 'Tent 6',
+          'Yurt 1', 'Yurt 2', 'Yurt 3', 'Yurt 4', 'Yurt 5', 'Yurt 6'
+        )
+      ) THEN 'NOT_READY'
+      ELSE 'READY'
+    END,
+    reason = CASE
+      WHEN unit_id IN (SELECT unit_id FROM units WHERE unit_name = 'Bungalow 7') THEN 'Maintenance blocked.'
+      WHEN unit_id IN (
+        SELECT unit_id
+        FROM units
+        WHERE unit_name IN (
+          'Bungalow 1', 'Bungalow 8', 'Bungalow 9', 'Bungalow 11', 'Bungalow 12',
+          'Villa 10', 'Villa 13',
+          'Tent 1', 'Tent 2', 'Tent 3', 'Tent 4', 'Tent 5', 'Tent 6',
+          'Yurt 1', 'Yurt 2', 'Yurt 3', 'Yurt 4', 'Yurt 5', 'Yurt 6'
+        )
+      ) THEN 'Product Owner physical baseline.'
+      ELSE NULL
+    END,
+    source = 'real_resort_room_baseline',
+    updated_by = 'system-baseline',
+    updated_by_name = 'Product Owner Baseline',
+    updated_at = datetime('now')
+WHERE unit_id IN (SELECT unit_id FROM units WHERE active = 1);
 
 INSERT INTO maintenance_tickets (
   title, description, category, priority, status, room_id, accommodation_id, location_area,

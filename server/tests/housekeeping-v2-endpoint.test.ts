@@ -96,7 +96,8 @@ class FakeHousekeepingV2DB {
     if (sql.includes("FROM bookings b")) {
       const rows = this.bookings
         .filter((row) => params.length === 0 || !sql.includes("WHERE b.unit_id = ?") || row.unit_id === params[0])
-        .filter((row) => !sql.includes("room_operational_availability") || (this.operationalAvailability.get(row.unit_id) ?? "OPERATING") === "OPERATING");
+        .filter((row) => !sql.includes("room_operational_availability") || (this.operationalAvailability.get(row.unit_id) ?? "OPERATING") === "OPERATING")
+        .filter((row) => !sql.includes("maintenance_tickets") || !this.maintenanceTickets.some((ticket) => ticket.room_id === row.unit_id && !["Resolved", "Closed"].includes(ticket.status) && ticket.out_of_service === 1));
       return {
         results: rows as T[],
       };
@@ -678,6 +679,32 @@ test("manual room NOT READY override appears in Housekeeping Normal without acti
   assert.equal(body.data.summary.normalCleaningDue, 1);
 });
 
+test("baseline physical NOT READY snapshot task is ignored by Housekeeping queues", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [];
+  db.tasks.push(storedTask({
+    task_id: 124,
+    task_type: "STANDARD_CLEANING",
+    unit_id: 1,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready-baseline:not-ready:1",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number; priorityTurnovers: number }; tasks: Array<{ taskId: number }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.success, true);
+  assert.equal(body.data.tasks.some((card) => card.taskId === 124), false);
+  assert.equal(body.data.summary.normalCleaningDue, 0);
+  assert.equal(body.data.summary.priorityTurnovers, 0);
+});
+
 test("non-operating units generate no automatic water cleaning linen or turnover work", async () => {
   const db = new FakeHousekeepingV2DB();
   db.operationalAvailability.set(1, "NOT_OPERATING");
@@ -732,7 +759,7 @@ test("non-operating manual room readiness tasks remain out of Housekeeping queue
   });
 });
 
-test("out-of-service maintenance ticket blocks an operating room task without hardcoding the room", async () => {
+test("out-of-service maintenance ticket removes an operating room task from Housekeeping queues", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [];
   db.tasks.push(storedTask({
@@ -749,18 +776,31 @@ test("out-of-service maintenance ticket blocks an operating room task without ha
   db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { blockedRooms: number; priorityTurnovers: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; isBlocked: boolean; blockReason: string | null; currentQueue: string; reasonCodes: string[] }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { blockedRooms: number; priorityTurnovers: number; normalCleaningDue: number }; tasks: Array<{ taskId: number }>; sections: Array<{ id: string; cards: Array<{ taskId: number }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
-  const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
-  const card = priority.find((item) => item.taskId === 123);
-  assert.ok(card);
-  assert.equal(card.isBlocked, true);
-  assert.equal(card.blockReason, "Replace Air Conditioning");
-  assert.equal(card.currentQueue, "priority-turnover");
-  assert.equal(card.reasonCodes.includes("maintenance_block"), true);
-  assert.equal(body.data.summary.blockedRooms, 1);
-  assert.equal(body.data.summary.priorityTurnovers, 1);
+  assert.equal(body.success, true);
+  assert.equal(body.data.tasks.some((card) => card.taskId === 123), false);
+  assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 123), false);
+  assert.equal(body.data.summary.blockedRooms, 0);
+  assert.equal(body.data.summary.priorityTurnovers, 0);
+  assert.equal(body.data.summary.normalCleaningDue, 0);
+});
+
+test("out-of-service maintenance rooms generate no automatic cleaning or water work", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(301, 930301, 1, "Maintenance Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05", guest_arrived: 1 },
+  ];
+  db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { tasks: Array<{ unitId: number; taskType: string }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.success, true);
+  assert.equal(db.tasks.some((task) => task.unit_id === 1), false);
+  assert.equal(body.data.tasks.some((card) => card.unitId === 1), false);
 });
 
 test("completed and cancelled standard cleaning tasks do not escalate", async () => {

@@ -7,14 +7,14 @@ import { getReceptionStay, type ReceptionBindings } from "./reception.service.js
 import { getBangkokDate } from "./today.service.js";
 import { ForbiddenError, type CurrentUser } from "./current-user.service.js";
 import { canChangeOperationalAvailability, loadOperationalAvailabilityForUnit, type OperationalAvailabilityStatus, type RoomOperationalStateBindings } from "./room-operational-state.service.js";
+import { loadRoomHousekeepingStateForUnit, setRoomHousekeepingState, type RoomHousekeepingState, type RoomHousekeepingStateBindings, type RoomReadyState } from "./room-housekeeping-state.service.js";
 
-export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, RoomOperationalStateBindings {
+export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, RoomOperationalStateBindings, RoomHousekeepingStateBindings {
   DB: D1Database;
 }
 
 type TimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
 type RoomOperationalStatus = "No active Housekeeping" | "Cleaning scheduled" | "Cleaning in progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Ready" | "Water refill";
-type RoomReadyState = "READY" | "NOT_READY";
 
 interface UnitRow {
   unit_id: number;
@@ -240,10 +240,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus): string {
+function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus, readyState: RoomReadyState): string {
   if (outOfService) return "Out of Service";
   if (availabilityStatus === "NOT_OPERATING") return "Not Operating";
   if (maintenanceOpenIssues > 0) return "Maintenance";
+  if (readyState === "NOT_READY") return "Not Ready";
   if (operations.occupancyStatus === "Ready for Guest") return "Ready";
   return operations.occupancyStatus;
 }
@@ -351,6 +352,7 @@ async function loadActiveHousekeepingTasks(env: RoomDetailBindings, unitId: numb
     FROM housekeeping_tasks
     WHERE unit_id = ?
       AND status IN ('WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS', 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED')
+      AND (idempotency_key IS NULL OR idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
       AND (operational_date = ? OR due_cycle_date <= ?)
     ORDER BY
       CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 WHEN 'WATER_REFILL' THEN 5 ELSE 6 END,
@@ -484,7 +486,7 @@ function operationalFallback(unit: UnitRow, stay: RoomCurrentStay | null): House
   };
 }
 
-function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser): RoomHousekeepingTask["capabilities"] {
+function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): RoomHousekeepingTask["capabilities"] {
   const base = housekeepingTaskCapabilities(task);
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isManager = user.role === "Manager";
@@ -494,17 +496,17 @@ function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser): RoomHo
   const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
 
   return {
-    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released,
-    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: base.canStart && released && (isUnassigned || isAssigned || isOwner),
-    canComplete: base.canComplete && released && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
+    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released && !maintenanceBlocked,
+    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager) && !maintenanceBlocked,
+    canStart: base.canStart && released && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
+    canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
     canCancel: active && Boolean(isOwner || isManager),
     canReopen: TERMINAL_TASK_STATUSES.has(task.status) && Boolean(isOwner || isManager),
   };
 }
 
-function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, today: string): RoomHousekeepingTask {
+function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, today: string, maintenanceBlocked: boolean): RoomHousekeepingTask {
   return {
     id: task.id,
     taskType: task.taskType,
@@ -518,27 +520,21 @@ function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, toda
     operationalDate: task.operationalDate,
     dueCycleDate: task.dueCycleDate,
     updatedAt: task.updatedAt,
-    capabilities: roomTaskCapabilities(task, user),
+    capabilities: roomTaskCapabilities(task, user, maintenanceBlocked),
   };
 }
 
 function isRoomReadyOverrideTask(task: HousekeepingTask): boolean {
+  if (task.idempotencyKey?.startsWith("room-ready-baseline:not-ready:")) return false;
   return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
-function taskAffectsReadyState(task: HousekeepingTask): boolean {
-  if (TERMINAL_TASK_STATUSES.has(task.status)) return false;
-  if (task.taskType === "WATER_REFILL") return false;
-  if (task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return false;
-  return true;
+function roomReadyState(storedState: RoomHousekeepingState): RoomReadyState {
+  return storedState.readyState;
 }
 
-function roomReadyState(tasks: HousekeepingTask[]): RoomReadyState {
-  return tasks.some(taskAffectsReadyState) ? "NOT_READY" : "READY";
-}
-
-function housekeepingDetail(tasks: HousekeepingTask[], user: CurrentUser, maintenanceBlocked: boolean, today: string): RoomHousekeeping {
-  const taskDtos = tasks.map((task) => mapRoomHousekeepingTask(task, user, today));
+function housekeepingDetail(tasks: HousekeepingTask[], storedState: RoomHousekeepingState, user: CurrentUser, maintenanceBlocked: boolean, today: string): RoomHousekeeping {
+  const taskDtos = tasks.map((task) => mapRoomHousekeepingTask(task, user, today, maintenanceBlocked));
   const activeTask = taskDtos[0] ?? null;
   const primary = primaryHousekeepingState(activeTask, maintenanceBlocked);
 
@@ -546,7 +542,7 @@ function housekeepingDetail(tasks: HousekeepingTask[], user: CurrentUser, mainte
     status: primary.label,
     primaryStatus: primary.label,
     primaryStatusTone: primary.tone,
-    readyState: roomReadyState(tasks),
+    readyState: roomReadyState(storedState),
     assignedTo: activeTask?.assignee?.name ?? null,
     assignedAt: activeTask?.updatedAt ?? null,
     lastUpdated: activeTask?.updatedAt ?? null,
@@ -554,7 +550,7 @@ function housekeepingDetail(tasks: HousekeepingTask[], user: CurrentUser, mainte
     checklistLabel: "Not used",
     checklistCompleted: 0,
     checklistTotal: 0,
-    notes: null,
+    notes: storedState.reason,
     activeTask,
     tasks: taskDtos,
     canCreateOnDemandCleaning: canCreateRoomHousekeepingTask(user),
@@ -675,7 +671,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
 
   const today = getBangkokDate();
   await getHousekeepingV2Overview(env, user, today);
-  const [stayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement, operationalAvailability] = await Promise.all([
+  const [stayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement, operationalAvailability, storedHousekeepingState] = await Promise.all([
     loadCurrentStay(env, unit.unit_id, today),
     getHousekeepingOverview(env),
     loadActiveHousekeepingTasks(env, unit.unit_id, today),
@@ -685,6 +681,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
     loadReceptionRoomAlerts(env, unit.unit_id),
     loadProcurementAttention(env),
     loadOperationalAvailabilityForUnit(env, unit.unit_id),
+    loadRoomHousekeepingStateForUnit(env, unit.unit_id),
   ]);
 
   const currentStay = mapStay(stayRow);
@@ -694,15 +691,15 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
   const openIssues = tickets.length;
   const outOfService = tickets.some((ticket) => ticket.outOfService);
   const highestPriority = ["Critical", "High", "Medium", "Low"].find((priority) => tickets.some((ticket) => ticket.priority === priority)) ?? null;
-  const housekeeping = housekeepingDetail(roomScopedActiveTasks, user, outOfService, today);
+  const housekeeping = housekeepingDetail(roomScopedActiveTasks, storedHousekeepingState, user, outOfService, today);
 
   return {
     unitId: unit.unit_id,
     roomName: unit.unit_name,
     roomType: unitType(unit),
     accommodationType: unitType(unit),
-    roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.primaryStatus === "No active Housekeeping"
-      ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status)
+    roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.readyState === "NOT_READY" || housekeeping.primaryStatus === "No active Housekeeping"
+      ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status, housekeeping.readyState)
       : housekeeping.primaryStatus,
     occupancyStatus: operations.occupancyStatus,
     housekeepingStatus: housekeeping.status,
@@ -759,6 +756,7 @@ async function loadActiveRoomReadyOverrideTasks(env: RoomDetailBindings, unitId:
       AND task_type = 'STANDARD_CLEANING'
       AND source = 'manual'
       AND on_demand_source = ?
+      AND (idempotency_key IS NULL OR idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
       AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
     ORDER BY task_id
   `).bind(unitId, ROOM_READY_OVERRIDE_SOURCE).all<{ task_id: number }>();
@@ -823,6 +821,16 @@ export async function updateRoomHousekeepingStatus(env: RoomDetailBindings, id: 
       }, user);
       await insertRoomReadyAuditEvent(env, task, user, "READY", "NOT_READY", input.reason, `${task.idempotencyKey ?? task.id}:room-ready-override`, now);
     }
+    await setRoomHousekeepingState(
+      env,
+      unit.unit_id,
+      "NOT_READY",
+      input.reason,
+      "room_workspace_manual_cleaning_request",
+      user,
+      input.idempotencyKey ? `${input.idempotencyKey}:room-state` : `room-ready:not-ready:${unit.unit_id}:${now}`,
+      now,
+    );
   } else {
     for (const task of activeOverrides) {
       await transitionHousekeepingTask(env, task.id, {
@@ -834,6 +842,16 @@ export async function updateRoomHousekeepingStatus(env: RoomDetailBindings, id: 
         metadata: { previousRoomStatus: "NOT_READY", newRoomStatus: "READY", source: "room_workspace" },
       });
     }
+    await setRoomHousekeepingState(
+      env,
+      unit.unit_id,
+      "READY",
+      null,
+      "room_workspace_manual_ready_override",
+      user,
+      input.idempotencyKey ? `${input.idempotencyKey}:room-state` : `room-ready:ready:${unit.unit_id}:${now}`,
+      now,
+    );
   }
 
   return getRoomDetail(env, unit.unit_id, user);

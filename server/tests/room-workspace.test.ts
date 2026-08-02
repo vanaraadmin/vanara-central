@@ -67,6 +67,8 @@ class FakeRoomDB {
   taskEvents: Array<Record<string, unknown>> = [];
   availability: Array<Record<string, unknown>> = [];
   availabilityEvents: Array<Record<string, unknown>> = [];
+  housekeepingState: Array<Record<string, unknown>> = [];
+  housekeepingStateEvents: Array<Record<string, unknown>> = [];
   tickets: Array<Record<string, unknown>> = [];
   events: Array<Record<string, unknown>> = [];
 
@@ -123,11 +125,14 @@ class FakeRoomDB {
     if (sql.includes("FROM housekeeping_tasks ht")) return { results: [] as T[] };
     if (sql.includes("FROM housekeeping_tasks")) {
       const unitId = Number(params[0]);
-      const rows = this.tasks.filter((task) => !unitId || Number(task.unit_id) === unitId);
+      const rows = this.tasks
+        .filter((task) => !unitId || Number(task.unit_id) === unitId)
+        .filter((task) => !sql.includes("room-ready-baseline:not-ready:%") || !String(task.idempotency_key ?? "").startsWith("room-ready-baseline:not-ready:"));
       if (sql.includes("SELECT task_id")) return { results: rows.map((task) => ({ task_id: task.task_id })) as T[] };
       return { results: rows as T[] };
     }
     if (sql.includes("FROM room_operational_availability")) return { results: this.availability as T[] };
+    if (sql.includes("FROM room_housekeeping_state")) return { results: this.housekeepingState as T[] };
     if (sql.includes("FROM housekeeping_task_events")) return { results: this.taskEvents as T[] };
     if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
@@ -159,6 +164,9 @@ class FakeRoomDB {
     }
     if (sql.includes("FROM room_operational_availability") && sql.includes("WHERE unit_id")) {
       return (this.availability.find((row) => row.unit_id === params[0]) ?? null) as T | null;
+    }
+    if (sql.includes("FROM room_housekeeping_state") && sql.includes("WHERE unit_id")) {
+      return (this.housekeepingState.find((row) => row.unit_id === params[0]) ?? null) as T | null;
     }
     if (sql.includes("SELECT unit_id, room_type_id FROM units WHERE unit_id")) {
       return Number(params[0]) === UNIT.unit_id ? { unit_id: UNIT.unit_id, room_type_id: UNIT.room_type_id } as T : null;
@@ -282,6 +290,9 @@ class FakeRoomDB {
         task.cancelled_at = params[4];
         task.cancellation_reason = params[5];
       }
+      if (sql.includes("completed_at = ?")) {
+        task.completed_at = params[4];
+      }
       return { meta: { changes: 1, last_row_id: task.task_id } };
     }
     if (sql.includes("INSERT INTO room_operational_availability")) {
@@ -319,6 +330,40 @@ class FakeRoomDB {
         new_seasonal_end: params[10],
         idempotency_key: params[11],
         created_at: params[12],
+      });
+      return { meta: { changes: 1, last_row_id: event_id } };
+    }
+    if (sql.includes("INSERT INTO room_housekeeping_state")) {
+      const existing = this.housekeepingState.find((row) => row.unit_id === params[0]);
+      const next = {
+        unit_id: params[0],
+        ready_state: params[1],
+        reason: params[2],
+        source: params[3],
+        updated_by: params[4],
+        updated_by_name: params[5],
+        created_at: existing?.created_at ?? params[6],
+        updated_at: params[7],
+      };
+      if (existing) Object.assign(existing, next);
+      else this.housekeepingState.push(next);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO room_housekeeping_state_events")) {
+      const event_id = this.housekeepingStateEvents.length + 1;
+      this.housekeepingStateEvents.push({
+        event_id,
+        unit_id: params[0],
+        event_type: "ready_state_changed",
+        actor_user_id: params[1],
+        actor_name: params[2],
+        previous_ready_state: params[3],
+        new_ready_state: params[4],
+        previous_reason: params[5],
+        new_reason: params[6],
+        source: params[7],
+        idempotency_key: params[8],
+        created_at: params[9],
       });
       return { meta: { changes: 1, last_row_id: event_id } };
     }
@@ -658,6 +703,173 @@ test("room workspace ignores legacy housekeeping rows for readiness", async () =
   assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.readyState, "READY");
   assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string }; roomStatus: string }).housekeeping.primaryStatus, "No active Housekeeping");
   assert.notEqual((body.data as { roomStatus: string }).roomStatus, "Dirty");
+});
+
+test("room workspace shows baseline physical NOT_READY without creating a Housekeeping task", async () => {
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.housekeepingState.push({
+    unit_id: UNIT.unit_id,
+    ready_state: "NOT_READY",
+    reason: "Product Owner physical baseline.",
+    source: "real_resort_room_baseline",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const response = await request("/api/rooms/1", { method: "GET", headers: { cookie: "vanara_session=x" } }, data);
+  const body = await json(response);
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.data as { housekeeping: { readyState: string; primaryStatus: string; tasks: unknown[]; notes: string | null }; roomStatus: string }).housekeeping.readyState, "NOT_READY");
+  assert.equal((body.data as { housekeeping: { primaryStatus: string } }).housekeeping.primaryStatus, "No active Housekeeping");
+  assert.equal((body.data as { housekeeping: { tasks: unknown[] } }).housekeeping.tasks.length, 0);
+  assert.equal((body.data as { housekeeping: { notes: string | null } }).housekeeping.notes, "Product Owner physical baseline.");
+  assert.equal((body.data as { roomStatus: string }).roomStatus, "Not Ready");
+  assert.equal(data.DB.tasks.length, 0);
+});
+
+test("room workspace ignores historical baseline task rows and uses physical state instead", async () => {
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.housekeepingState.push({
+    unit_id: UNIT.unit_id,
+    ready_state: "NOT_READY",
+    reason: "Product Owner physical baseline.",
+    source: "real_resort_room_baseline",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+  data.DB.tasks.push({
+    task_id: 77,
+    task_type: "STANDARD_CLEANING",
+    unit_id: UNIT.unit_id,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready-baseline:not-ready:1",
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    version: 1,
+    created_at: "2026-08-02T08:15:05.000Z",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const response = await request("/api/rooms/1", { method: "GET", headers: { cookie: "vanara_session=x" } }, data);
+  const body = await json(response);
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.data as { housekeeping: { readyState: string; tasks: Array<{ id: number }> } }).housekeeping.readyState, "NOT_READY");
+  assert.equal((body.data as { housekeeping: { tasks: Array<{ id: number }> } }).housekeeping.tasks.some((task) => task.id === 77), false);
+});
+
+test("room workspace does not infer physical NOT_READY from an active housekeeping task", async () => {
+  const data = env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.tasks.push({
+    task_id: 87,
+    task_type: "STANDARD_CLEANING",
+    unit_id: UNIT.unit_id,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready:not-ready:runtime",
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    version: 1,
+    created_at: "2026-08-02T08:15:05.000Z",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const response = await request("/api/rooms/1", { method: "GET", headers: { cookie: "vanara_session=x" } }, data);
+  const body = await json(response);
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.data as { housekeeping: { readyState: string; tasks: Array<{ id: number }> } }).housekeeping.readyState, "READY");
+  assert.equal((body.data as { housekeeping: { tasks: Array<{ id: number }> } }).housekeeping.tasks.some((task) => task.id === 87), true);
+});
+
+test("starting real cleaning work persists physical NOT_READY instead of relying on inference", async () => {
+  const data = env([roomsAccess, housekeepingEdit], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.tasks.push({
+    task_id: 89,
+    task_type: "STANDARD_CLEANING",
+    unit_id: UNIT.unit_id,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready:not-ready:start",
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    version: 1,
+    created_at: "2026-08-02T08:15:05.000Z",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const started = await request("/api/housekeeping/v2/tasks/89/start", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ expectedVersion: 1, idempotencyKey: "start-cleaning-89" }),
+  }, data);
+
+  assert.equal(started.status, 200, await started.text());
+  assert.equal(data.DB.tasks.at(-1)?.status, "IN_PROGRESS");
+  assert.equal(data.DB.housekeepingState.at(-1)?.ready_state, "NOT_READY");
+  assert.equal(data.DB.housekeepingStateEvents.some((event) => event.source === "housekeeping_task_started"), true);
+});
+
+test("completing real cleaning work returns the physical room state to READY", async () => {
+  const data = env([roomsAccess, housekeepingEdit], { user: { ...ACTIVE_USER, role: "Owner" } });
+  data.DB.housekeepingState.push({
+    unit_id: UNIT.unit_id,
+    ready_state: "NOT_READY",
+    reason: "Cleaning in progress.",
+    source: "room_workspace_manual_cleaning_request",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+  data.DB.tasks.push({
+    task_id: 88,
+    task_type: "STANDARD_CLEANING",
+    unit_id: UNIT.unit_id,
+    booking_id: null,
+    stay_id: null,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    status: "IN_PROGRESS",
+    priority: "NORMAL",
+    source: "manual",
+    on_demand_source: "ROOM_READY_OVERRIDE",
+    idempotency_key: "room-ready:not-ready:1",
+    blocking_reason: null,
+    assigned_user_id: ACTIVE_USER.user_id,
+    assigned_user_name: ACTIVE_USER.full_name,
+    version: 1,
+    created_at: "2026-08-02T08:15:05.000Z",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const complete = await request("/api/housekeeping/v2/tasks/88/complete", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ expectedVersion: 1, idempotencyKey: "complete-cleaning-88" }),
+  }, data);
+  assert.equal(complete.status, 200, await complete.text());
+  assert.equal(data.DB.tasks.at(-1)?.status, "COMPLETED");
+  assert.equal(data.DB.housekeepingState.at(-1)?.ready_state, "READY");
+  assert.equal(data.DB.housekeepingStateEvents.some((event) => event.source === "housekeeping_task_completed"), true);
 });
 
 test("housekeeping workflow endpoint supports quick actions and checklist updates", async () => {

@@ -38,6 +38,12 @@ availability source of truth.
 -   READY
 -   NOT_READY
 
+Physical Housekeeping state is stored independently from Housekeeping tasks.
+A room can be NOT_READY without active queue work.
+`room_housekeeping_state` is the single authoritative source for READY /
+NOT_READY. Read models must not infer physical room condition from active,
+historical, completed, cancelled, or generated Housekeeping tasks.
+
 ### Maintenance
 
 -   CLEAR
@@ -47,11 +53,32 @@ These dimensions must never be merged into a single status field.
 
 ## housekeeping_tasks
 
+Operational work only. A task exists only after a real trigger:
+Reception turnover release flow, due occupied-room cleaning, on-demand cleaning,
+manual Owner/Manager cleaning request, linen override, or water refill.
+Tasks are transient operational work. They are not the physical state of a
+room.
+
 -   room
 -   priority
 -   assigned_to
 -   status
 -   checklist_progress
+
+## room_housekeeping_state
+
+-   unit_id
+-   ready_state
+-   reason
+-   source
+-   updated_by
+-   updated_at
+
+This table owns the physical READY / NOT_READY snapshot. It must not create
+Housekeeping queue work by itself.
+This table is persistent operational reality. Housekeeping task lifecycle
+events may update this table, but consumers must read READY / NOT_READY from
+this table only.
 
 ## maintenance_incidents
 

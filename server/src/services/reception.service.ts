@@ -5,6 +5,7 @@ import { countryCodeFrom, countryFlagFrom, countryFlagUrlFrom } from "./country-
 import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 import { loadOperationalAvailabilityForUnit } from "./room-operational-state.service.js";
+import { loadRoomHousekeepingStateForUnit } from "./room-housekeeping-state.service.js";
 
 export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings {
   DB: D1Database;
@@ -431,16 +432,18 @@ async function loadEvents(env: ReceptionBindings, bookingId: number): Promise<Re
 
 async function roomStatus(env: ReceptionBindings, roomId: number | null): Promise<string> {
   if (!roomId) return "Expected Arrival";
-  const [maintenance, task, operationalAvailability] = await Promise.all([
+  const [maintenance, task, operationalAvailability, storedHousekeepingState] = await Promise.all([
     listOpenMaintenanceTicketDetailsForRoom(env, roomId),
     activeRoomReadinessTask(env, roomId),
     loadOperationalAvailabilityForUnit(env, roomId),
+    loadRoomHousekeepingStateForUnit(env, roomId),
   ]);
   if (maintenance.some((ticket) => ticket.outOfService)) return "Out Of Service";
   if (operationalAvailability.status === "NOT_OPERATING") return "Not Operating";
   if (maintenance.length > 0) return "Maintenance";
+  if (storedHousekeepingState.readyState === "NOT_READY") return "Not Ready";
   if (task?.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
-  if (task) return task.status === "IN_PROGRESS" || task.status === "CLAIMED" ? "Cleaning" : "Not Ready";
+  if (task && (task.status === "IN_PROGRESS" || task.status === "CLAIMED")) return "Cleaning";
   return "Ready";
 }
 
@@ -451,6 +454,7 @@ async function activeRoomReadinessTask(env: ReceptionBindings, roomId: number): 
     WHERE unit_id = ?
       AND task_type IN ('TURNOVER', 'STANDARD_CLEANING', 'LINEN_CHANGE', 'ON_DEMAND_CLEANING')
       AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
+      AND (idempotency_key IS NULL OR idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
     ORDER BY
       CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 ELSE 5 END,
       task_id

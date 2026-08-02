@@ -334,9 +334,10 @@ function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unit
 
 function cardsForContext(context: OperationalContext, user: CurrentUser): HousekeepingV2TaskCard[] {
   if (context.operationalAvailabilityStatus === "NOT_OPERATING") return [];
+  const maintenanceBlocked = Boolean(context.maintenance && context.maintenance.critical > 0);
+  if (maintenanceBlocked) return [];
 
   const cards: HousekeepingV2TaskCard[] = [];
-  const maintenanceBlocked = Boolean(context.maintenance && context.maintenance.critical > 0);
   const turnover = taskFor(context.tasks.filter((task) => taskBelongsToDeparture(context, task)), "TURNOVER");
   if (turnover) {
     cards.push(cardFromContext(context, turnover, maintenanceBlocked, user));
@@ -540,7 +541,8 @@ function visibleQueueForTask(task: HousekeepingTask, reasonCodes: HousekeepingV2
   if (task.taskType === "TURNOVER") return "priority-turnover";
   if (task.taskType === "WATER_REFILL") return "water-refill";
   if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "priority-turnover";
-  if (task.priority === "URGENT" || waitingRelease || maintenanceBlocked || task.status === "BLOCKED") return "priority-turnover";
+  void maintenanceBlocked;
+  if (task.priority === "URGENT" || waitingRelease || task.status === "BLOCKED") return "priority-turnover";
   return "normal-cleaning";
 }
 
@@ -562,6 +564,7 @@ function taskBelongsToActiveStay(context: OperationalContext, task: Housekeeping
 }
 
 function taskBelongsToRoomReadyOverride(task: HousekeepingTask): boolean {
+  if (task.idempotencyKey?.startsWith("room-ready-baseline:not-ready:")) return false;
   return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
@@ -749,6 +752,13 @@ async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<
     WHERE b.unit_id IS NOT NULL
       AND u.active = 1
       AND COALESCE(roa.status, 'OPERATING') = 'OPERATING'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM maintenance_tickets mt
+        WHERE mt.room_id = b.unit_id
+          AND mt.status NOT IN ('Resolved', 'Closed')
+          AND (mt.out_of_service = 1 OR json_extract(mt.metadata_json, '$.outOfService') = 1)
+      )
       AND ${operationalBookingStatusSql("b.status")}
       AND (
         b.departure_date = ?

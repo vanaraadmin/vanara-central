@@ -1,4 +1,5 @@
 import type { CurrentUser } from "./current-user.service.js";
+import { setRoomHousekeepingState } from "./room-housekeeping-state.service.js";
 
 export type HousekeepingTaskType = "TURNOVER" | "STANDARD_CLEANING" | "LINEN_CHANGE" | "WATER_REFILL" | "ON_DEMAND_CLEANING";
 export type HousekeepingTaskStatus =
@@ -335,8 +336,42 @@ export async function transitionHousekeepingTask(env: HousekeepingTaskBindings, 
   const updated = await getHousekeepingTask(env, taskId);
   if (!updated) throw new HousekeepingTaskDomainError("housekeeping_task_not_found", "Housekeeping task was not found after transition.");
 
-  if (input.action === "complete") await applyCompletionCounters(env, updated, input.completion ?? {}, now);
+  if (input.action === "complete") {
+    await applyCompletionCounters(env, updated, input.completion ?? {}, now);
+    await markRoomReadyAfterCompletion(env, updated, actor, input.idempotencyKey, now);
+  }
+  if (input.action === "start") {
+    await markRoomNotReadyAfterStart(env, updated, actor, input.idempotencyKey, now);
+  }
   return updated;
+}
+
+async function markRoomNotReadyAfterStart(env: HousekeepingTaskBindings, task: HousekeepingTask, actor: HousekeepingActor, idempotencyKey: string | null | undefined, now: string): Promise<void> {
+  if (task.taskType === "WATER_REFILL") return;
+  await setRoomHousekeepingState(
+    env,
+    task.unitId,
+    "NOT_READY",
+    "Housekeeping work in progress.",
+    "housekeeping_task_started",
+    actor,
+    idempotencyKey ? `${idempotencyKey}:room-not-ready` : `housekeeping-task-started:${task.id}:room-not-ready`,
+    now,
+  );
+}
+
+async function markRoomReadyAfterCompletion(env: HousekeepingTaskBindings, task: HousekeepingTask, actor: HousekeepingActor, idempotencyKey: string | null | undefined, now: string): Promise<void> {
+  if (task.taskType === "WATER_REFILL") return;
+  await setRoomHousekeepingState(
+    env,
+    task.unitId,
+    "READY",
+    null,
+    "housekeeping_task_completed",
+    actor,
+    idempotencyKey ? `${idempotencyKey}:room-ready` : `housekeeping-task-completed:${task.id}:room-ready`,
+    now,
+  );
 }
 
 export async function applyCompletionCounters(env: HousekeepingTaskBindings, task: HousekeepingTask, completion: HousekeepingCompletionInput, now = new Date().toISOString()): Promise<void> {

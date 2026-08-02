@@ -21,6 +21,10 @@ Business Rules Specification for Housekeeping.
 ## Independent Room Dimensions
 - Operational Availability is either OPERATING or NOT_OPERATING.
 - Housekeeping Status is either READY or NOT_READY.
+- Housekeeping Status is the physical room condition, not a task.
+- The single authoritative source for physical Housekeeping Status is `room_housekeeping_state`.
+- READY / NOT_READY must never be inferred from active or historical Housekeeping tasks.
+- A room may be NOT_READY without appearing in Housekeeping.
 - Occupancy is derived from real stay and Reception state.
 - Maintenance blocks are derived from real Maintenance tickets.
 - Changing Operational Availability must never change Housekeeping Status.
@@ -40,6 +44,7 @@ Business Rules Specification for Housekeeping.
 - Do not create On-Demand Cleaning from Housekeeping Workspace.
 - Room identity opens Room Workspace.
 - A task appears in one visible queue only.
+- Baseline physical room state must never appear as a Housekeeping queue task.
 - Task rows show room name, intervention type, simple reason, assignee, execution state, and the next relevant action.
 - Task rows must not expose an explicit Claim action.
 - Staff-facing copy must not expose internal state-machine, idempotency, version, or conflict-code wording.
@@ -99,6 +104,8 @@ Full Cleaning help text:
 - Escalation does not create repeated audit events during read-only overview requests.
 - Normal contains same-day active Cleaning, On-Demand Cleaning, and Full Cleaning work.
 - Water Refill never escalates into Priority.
+- Maintenance tickets never escalate into Priority.
+- Rooms merely marked NOT_READY never escalate into Priority.
 
 Escalation display reason codes:
 - standard_cleaning_previous_day
@@ -137,6 +144,18 @@ Exclude:
 - Note is optional.
 - Completion choices are Cleaning or Full Cleaning.
 
+## Manual Room Readiness
+- Owner or Manager may mark a room NOT_READY from Room Workspace as a runtime cleaning request.
+- That runtime action creates one manual Cleaning task in Normal.
+- The initial Product Owner baseline snapshot is not a runtime cleaning request.
+- The baseline sets physical Housekeeping Status only and must not create synthetic Cleaning tasks, fake stays, fake checkouts, or artificial due dates.
+
+## Maintenance Boundary
+- Maintenance owns repairs and out-of-service blocks.
+- A room with an active out-of-service Maintenance ticket does not appear in Priority or Normal Housekeeping.
+- Housekeeping must not offer Cleaning, Full Cleaning, Start, or Finish while an out-of-service Maintenance ticket blocks the room.
+- The room returns to Housekeeping only after Maintenance is resolved and a real Housekeeping trigger exists.
+
 ## Reception Integration
 Read only:
 - room_released
@@ -171,9 +190,12 @@ Room identity opens Room Workspace.
 - Procurement owns purchasing.
 - Cleaning != Linen.
 - Housekeeping Workspace contains only rooms with actual Housekeeping work.
+- Housekeeping Status is persisted independently from Housekeeping tasks.
+- Housekeeping tasks are transient operational work and must never be used as the source of truth for physical room condition.
+- Room state is persistent operational reality.
 - Housekeeping Workspace excludes NOT_OPERATING units from active queues even when their independent Housekeeping Status is NOT_READY.
 - Normal list contains only active Cleaning, On-Demand Cleaning, and relevant Full Cleaning work.
-- Priority list contains active turnover work, previous-operational-day Cleaning, previous-operational-day On-Demand Cleaning, and existing urgent or blocked task work.
+- Priority list contains active turnover work, previous-operational-day Cleaning, previous-operational-day On-Demand Cleaning, and explicitly approved urgent Housekeeping work.
 - Water list contains only active daily refill work.
 - Water quantity is Bungalow 2, Yurt/Tent 2, Villa 4, independent of guest count.
 - Guest Count is informational only and must not feed Water Refill, Cleaning, Full Cleaning, Linen, Priority, task generation, Procurement, or Housekeeping logic.
