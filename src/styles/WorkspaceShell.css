@@ -119,6 +119,11 @@
   letter-spacing: -0.055em;
 }
 
+.workspace-sticky-trigger {
+  height: 0;
+  pointer-events: none;
+}
+
 .workspace-section-marker {
   display: flex;
   align-items: center;

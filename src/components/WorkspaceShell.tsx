@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import logo from "../assets/img/logo.png";
 import shadowCanopy from "../assets/img/shadow-canopy.svg";
+import StickyGlassHeader from "./StickyGlassHeader";
 import {
   preloadWorkspaceBackground,
   workspaceBackgroundStyle,
@@ -54,6 +55,8 @@ export default function WorkspaceShell({
   workspace,
 }: WorkspaceShellProps) {
   const backgroundKey = workspaceBackgroundKeys[workspace];
+  const stickyTriggerRef = useRef<HTMLDivElement>(null);
+  const today = useMemo(() => formatToday(), []);
 
   useEffect(() => {
     preloadWorkspaceBackground(backgroundKey);
@@ -64,6 +67,8 @@ export default function WorkspaceShell({
       <div className="workspace-page__veil" aria-hidden="true" />
 
       <section className="workspace-shell" aria-label={`${title} workspace`}>
+        <StickyGlassHeader date={today} logoSrc={logo} title={title} triggerRef={stickyTriggerRef} />
+
         <header className="workspace-masthead">
           <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
             <img src={logo} alt="Vanara" className="workspace-masthead__logo" />
@@ -74,13 +79,15 @@ export default function WorkspaceShell({
             </div>
           </Link>
 
-          <time className="workspace-masthead__date">{formatToday()}</time>
+          <time className="workspace-masthead__date">{today}</time>
         </header>
 
         <section className="workspace-intro" aria-labelledby="workspace-title">
           <p className="workspace-intro__eyebrow">Staff page</p>
           <h1 id="workspace-title">{title}</h1>
         </section>
+
+        <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 
         <section className="workspace-section-marker" aria-label="Workspace identifier">
           <span>Workspace</span>
