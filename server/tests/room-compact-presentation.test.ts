@@ -25,7 +25,6 @@ function room(overrides: RoomOverrides = {}): RoomsWorkspaceRoom {
     sortGroup: "bungalow",
     sortNumber: 2,
     heroImageKey: "bungalow-2",
-    heroImage: null,
     alertSummary: null,
     currentStay: null,
     operational: {

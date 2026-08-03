@@ -132,7 +132,6 @@ export interface RoomsWorkspaceRoom {
   sortGroup: RoomsWorkspaceSortGroup;
   sortNumber: number;
   heroImageKey: string;
-  heroImage: string | null;
   alertSummary: string | null;
   currentStay: RoomCurrentStaySummary | null;
   operational: RoomOperationalSummary;
@@ -154,8 +153,6 @@ export interface RoomsWorkspaceOverview {
 
 export interface RoomsWorkspaceResponse {
   success: boolean;
-  data?: Omit<RoomsWorkspaceOverview, "rooms"> & {
-    rooms: Array<Omit<RoomsWorkspaceRoom, "heroImage">>;
-  };
+  data?: RoomsWorkspaceOverview;
   error?: string;
 }

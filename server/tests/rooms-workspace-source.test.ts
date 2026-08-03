@@ -21,7 +21,6 @@ const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/ro
 const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx", import.meta.url), "utf8");
 const statusPill = readFileSync(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
 const presentation = readFileSync(new URL("../../src/config/roomOperationalPresentation.ts", import.meta.url), "utf8");
-const imageMapping = readFileSync(new URL("../../src/config/accommodationImages.ts", import.meta.url), "utf8");
 const roomsService = readFileSync(new URL("../../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const staffService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
 const serverService = readFileSync(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
@@ -319,12 +318,11 @@ test("Operational status pill supports one reusable tone model", () => {
   assert.doesNotMatch(css, /pulse|blink|flash/);
 });
 
-test("Accommodation images are centrally mapped with static imports", () => {
-  for (const image of ["room1.JPG", "room12.JPG", "room13.JPG", "villa10.JPG", "tent6.JPG"]) {
-    assert.match(imageMapping, new RegExp(image.replace(".", "\\.")));
-  }
-  assert.match(roomsService, /accommodationImageFor\(room\.heroImageKey\)/);
+test("Rooms Workspace no longer imports room hero photographs", () => {
+  assert.doesNotMatch(roomsService, /accommodationImageFor|accommodationImages|heroImage:/);
   assert.doesNotMatch(roomsService, /\/assets\/img\//);
+  assert.doesNotMatch(roomExpandedWorkspace, /heroImage|<img/);
+  assert.doesNotMatch(roomHero, /heroImage|<img|official room|image unavailable|RoomIcon/);
 });
 
 test("Rooms backend read model keeps all operational dimensions independent", () => {
