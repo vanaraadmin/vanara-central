@@ -31,17 +31,12 @@
 
 .staff-workspace:hover,
 .staff-workspace:focus-visible {
-  border-color: rgba(235, 241, 233, 0.2);
-  background:
-    linear-gradient(
-      145deg,
-      rgba(238, 244, 236, 0.095),
-      rgba(182, 211, 191, 0.044)
-    );
+  border-color: var(--vc-border-glass-medium);
+  background: var(--vc-glass-region-hover-background);
 }
 
 .staff-workspace:focus-visible {
-  outline: 2px solid rgba(242, 235, 213, 0.72);
+  outline: 2px solid var(--vc-focus-glass);
   outline-offset: 3px;
 }
 
@@ -137,19 +132,6 @@
 .staff-workspace__summary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: var(--vc-space-1);
-  padding: var(--vc-space-2) 0 0;
-  overflow: visible;
-  border: 0;
-  border-top: 1px solid rgba(235, 241, 233, 0.1);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.staff-workspace__summary-grid::before {
-  content: none;
 }
 
 .staff-workspace__summary-grid .vc-summary-item {

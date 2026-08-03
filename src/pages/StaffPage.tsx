@@ -111,6 +111,7 @@ function WorkspaceCard({
             ariaLabel={`${title} operational counters`}
             className="staff-workspace__summary-grid"
             items={metrics}
+            variant="compact"
           />
         ) : (
           <span className="staff-workspace__summary-lines">

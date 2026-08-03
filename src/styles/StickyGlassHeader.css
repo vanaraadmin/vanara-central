@@ -24,26 +24,17 @@
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;
-  border: 1px solid rgba(237, 241, 232, 0.26);
+  border: var(--vc-navigation-glass-border);
   outline: none;
-  border-radius: 28px;
+  border-radius: var(--vc-navigation-glass-radius);
   color: var(--workspace-cream, var(--vc-color-sand-100));
-  background:
-    linear-gradient(
-      145deg,
-      rgba(231, 237, 228, 0.16) 0%,
-      rgba(177, 194, 183, 0.10) 42%,
-      rgba(15, 45, 35, 0.18) 100%
-    );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.20),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.045),
-    0 16px 42px rgba(0, 12, 9, 0.16);
+  background: var(--vc-navigation-glass-background);
+  box-shadow: var(--vc-navigation-glass-shadow);
   font: inherit;
   text-align: inherit;
   -webkit-tap-highlight-color: transparent;
-  backdrop-filter: blur(14px) saturate(112%);
-  -webkit-backdrop-filter: blur(14px) saturate(112%);
+  backdrop-filter: var(--vc-navigation-glass-filter);
+  -webkit-backdrop-filter: var(--vc-navigation-glass-filter);
   transform-origin: center bottom;
   transition:
     opacity 280ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -56,15 +47,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    linear-gradient(
-      112deg,
-      transparent 0%,
-      transparent 20%,
-      rgba(255, 255, 255, 0.075) 34%,
-      rgba(255, 255, 255, 0.018) 47%,
-      transparent 62%
-    );
+  background: var(--vc-navigation-glass-reflection);
 }
 
 .sticky-glass-nav-logo-slot,
@@ -105,7 +88,7 @@
   overflow: hidden;
   color: inherit;
   font-family: var(--vc-font-display);
-  font-size: 26px;
+  font-size: var(--vc-navigation-title-size);
   font-weight: 400;
   line-height: 1;
   text-align: center;
@@ -121,7 +104,7 @@
   padding-right: 18px;
   color: rgba(247, 244, 238, 0.7);
   font-family: var(--vc-font-body);
-  font-size: 0.58rem;
+  font-size: var(--vc-navigation-date-size);
   font-weight: 700;
   line-height: 1.25;
   text-align: right;
@@ -130,7 +113,7 @@
 }
 
 .sticky-glass-nav-surface:focus-visible {
-  outline: 2px solid rgba(242, 235, 213, 0.72);
+  outline: 2px solid var(--vc-focus-glass);
   outline-offset: 3px;
 }
 
@@ -163,13 +146,13 @@
 
   .sticky-glass-nav-title {
     max-width: min(50%, 240px);
-    font-size: 26px;
+    font-size: var(--vc-navigation-title-size);
   }
 
   .sticky-glass-nav-date {
     max-width: 96px;
     padding-right: 14px;
-    font-size: 0.52rem;
+    font-size: var(--vc-navigation-date-size-compact);
   }
 }
 

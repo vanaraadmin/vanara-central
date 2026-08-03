@@ -108,14 +108,14 @@ export default function CreateMaintenancePage() {
 
       <form className="maintenance-form-page" onSubmit={submit}>
         <VanaraGlassSheet ariaLabel="Create maintenance issue" className="maintenance-form-sheet">
-          <header className="maintenance-sheet-identity">
-            <div className="maintenance-sheet-identity__icon" aria-hidden="true">
+          <header className="vc-sheet-identity maintenance-sheet-identity">
+            <div className="vc-sheet-identity__icon maintenance-sheet-identity__icon" aria-hidden="true">
               <MaintenanceIcon />
             </div>
-            <div className="maintenance-sheet-identity__content">
-              <span>{originLabel}</span>
-              <h1>Report Issue</h1>
-              <p>Create a Maintenance ticket for the current operational issue.</p>
+            <div className="vc-sheet-identity__content maintenance-sheet-identity__content">
+              <span className="vc-sheet-identity__eyebrow">{originLabel}</span>
+              <h1 className="vc-sheet-identity__title">Report Issue</h1>
+              <p className="vc-sheet-identity__subtitle">Create a Maintenance ticket for the current operational issue.</p>
             </div>
           </header>
 

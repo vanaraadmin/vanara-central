@@ -124,7 +124,7 @@ export default function RoomsPage() {
       workspace="rooms"
       bodyClassName="rooms-page"
       heroAction={(
-        <button className="vc-secondary-glass-button" type="button" onClick={() => navigate("/staff")}>
+        <button className="vc-secondary-glass-action rooms-home-back-button" type="button" onClick={() => navigate("/staff")}>
           <HomeIcon />
           <span>Staff Home</span>
         </button>

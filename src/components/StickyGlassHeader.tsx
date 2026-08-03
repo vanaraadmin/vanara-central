@@ -2,12 +2,15 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type RefObject 
 import logoSrc from "../assets/img/logo.png";
 import "../styles/StickyGlassHeader.css";
 
-interface StickyGlassHeaderProps {
+export type StickyGlassHeaderVariant = "default";
+
+export type StickyGlassHeaderProps = {
   date: string;
   heroLogoRef: RefObject<HTMLImageElement | null>;
   progress: number;
   title: string;
-}
+  variant?: StickyGlassHeaderVariant;
+};
 
 type ScrollContainer = Window | HTMLElement;
 
@@ -62,11 +65,26 @@ function clampProgress(value: number): number {
   return value;
 }
 
+/**
+ * Purpose: morphs the workspace hero logo into the shared bottom glass navigation.
+ *
+ * When to use: full workspace pages that already have a large hero and need
+ * persistent identity while the operator scrolls.
+ *
+ * When NOT to use: local card actions, modals, or page-specific navigation.
+ *
+ * Expected children: none; logo target, page title, and date are controlled by
+ * typed props.
+ *
+ * Accessibility notes: the button is keyboard reachable only while visible and
+ * keeps a single accessible "Return to top" action.
+ */
 export default function StickyGlassHeader({
   date,
   heroLogoRef,
   progress,
   title,
+  variant = "default",
 }: StickyGlassHeaderProps) {
   const compactLogoRef = useRef<HTMLImageElement>(null);
   const p = clampProgress(progress);
@@ -134,7 +152,7 @@ export default function StickyGlassHeader({
     >
       <button
         aria-label="Return to top"
-        className="sticky-glass-nav-surface sticky-glass-header__surface"
+        className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface`}
         onClick={scrollToPageTop}
         style={surfaceStyle}
         tabIndex={p > 0.05 ? 0 : -1}

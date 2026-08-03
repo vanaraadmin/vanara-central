@@ -1,4 +1,7 @@
-type VanaraSummaryTone = "clean" | "progress" | "warning" | "critical" | "neutral";
+import type { VanaraTone } from "./types";
+
+type VanaraSummaryTone = Extract<VanaraTone, "clean" | "progress" | "warning" | "critical" | "neutral">;
+export type VanaraSummaryVariant = "default" | "compact";
 
 export type VanaraSummaryItem = {
   id?: string;
@@ -7,22 +10,44 @@ export type VanaraSummaryItem = {
   tone?: VanaraSummaryTone;
 };
 
-type VanaraSummaryGridProps = {
+export type VanaraSummaryGridProps = {
   activeItemId?: string | null;
   ariaLabel: string;
   className?: string;
   items: VanaraSummaryItem[];
   onItemSelect?: (item: VanaraSummaryItem) => void;
+  variant?: VanaraSummaryVariant;
 };
 
+/**
+ * Purpose: renders the approved compact executive summary surface.
+ *
+ * When to use: a small set of operational counters with consistent semantic
+ * tones.
+ *
+ * When NOT to use: detailed task lists, long descriptions, or mixed domain
+ * facts.
+ *
+ * Expected children: data is supplied through typed `items`; the component owns
+ * the summary definition-list markup.
+ *
+ * Accessibility notes: when `onItemSelect` is provided, every summary item
+ * becomes a keyboard-reachable trigger with an accessible label.
+ */
 export default function VanaraSummaryGrid({
   activeItemId,
   ariaLabel,
   className,
   items,
   onItemSelect,
+  variant = "default",
 }: VanaraSummaryGridProps) {
-  const classNames = ["vc-glass-summary", "vc-glass-surface", className].filter(Boolean).join(" ");
+  const classNames = [
+    "vc-glass-summary",
+    variant === "default" ? "vc-glass-surface" : null,
+    `vc-glass-summary--${variant}`,
+    className,
+  ].filter(Boolean).join(" ");
   const isInteractive = Boolean(onItemSelect);
 
   return (

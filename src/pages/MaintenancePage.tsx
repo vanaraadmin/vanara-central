@@ -107,15 +107,15 @@ function TicketCard({
       {expanded && (
         <div className="maintenance-ticket-expanded-content" id={detailId}>
           <VanaraGlassSheet ariaLabel={`${ticket.title} details`} className="maintenance-ticket-sheet">
-            <header className="maintenance-sheet-identity">
-              <div className="maintenance-sheet-identity__icon" aria-hidden="true">
+            <header className="vc-sheet-identity maintenance-sheet-identity">
+              <div className="vc-sheet-identity__icon maintenance-sheet-identity__icon" aria-hidden="true">
                 {ticket.outOfService ? <AlertIcon /> : <MaintenanceIcon />}
               </div>
-              <div className="maintenance-sheet-identity__content">
-                <span>{ticket.category}</span>
-                <h2>{ticket.title}</h2>
-                <p>{target}</p>
-                <small>{assignmentLabel(ticket)} - {creationDate(ticket.createdAt)}</small>
+              <div className="vc-sheet-identity__content maintenance-sheet-identity__content">
+                <span className="vc-sheet-identity__eyebrow">{ticket.category}</span>
+                <h2 className="vc-sheet-identity__title">{ticket.title}</h2>
+                <p className="vc-sheet-identity__subtitle">{target}</p>
+                <small className="vc-sheet-identity__meta">{assignmentLabel(ticket)} - {creationDate(ticket.createdAt)}</small>
               </div>
             </header>
 

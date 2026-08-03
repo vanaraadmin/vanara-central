@@ -213,15 +213,15 @@ export default function MaintenanceDetailPage() {
       </div>
 
       <VanaraGlassSheet ariaLabel={`${ticket.title} maintenance ticket`} className={`maintenance-detail-sheet priority-${ticket.priority.toLowerCase()}`}>
-        <header className="maintenance-sheet-identity">
-          <div className="maintenance-sheet-identity__icon" aria-hidden="true">
+        <header className="vc-sheet-identity maintenance-sheet-identity">
+          <div className="vc-sheet-identity__icon maintenance-sheet-identity__icon" aria-hidden="true">
             {ticket.outOfService ? <AlertIcon /> : <MaintenanceIcon />}
           </div>
-          <div className="maintenance-sheet-identity__content">
-            <span>{ticket.category}</span>
-            <h1>{ticket.title}</h1>
-            <p>{locationLabel(ticket)}</p>
-            <small>{assignmentLabel(ticket)} - {formatDate(ticket.createdAt)}</small>
+          <div className="vc-sheet-identity__content maintenance-sheet-identity__content">
+            <span className="vc-sheet-identity__eyebrow">{ticket.category}</span>
+            <h1 className="vc-sheet-identity__title">{ticket.title}</h1>
+            <p className="vc-sheet-identity__subtitle">{locationLabel(ticket)}</p>
+            <small className="vc-sheet-identity__meta">{assignmentLabel(ticket)} - {formatDate(ticket.createdAt)}</small>
           </div>
         </header>
 

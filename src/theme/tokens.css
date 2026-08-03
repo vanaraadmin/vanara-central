@@ -111,6 +111,160 @@
   --vc-shadow-md: 0 14px 38px rgba(23, 59, 45, 0.1);
   --vc-shadow-lg: 0 22px 54px rgba(16, 39, 30, 0.16);
 
+  /* Vanara UI System v1 material tokens */
+  --vc-glass-list-border: 1px solid rgba(255, 255, 255, 0.16);
+  --vc-glass-list-radius: 1.75rem;
+  --vc-glass-list-background: linear-gradient(
+    145deg,
+    rgba(220, 235, 223, 0.11) 0%,
+    rgba(170, 210, 185, 0.05) 35%,
+    rgba(8, 40, 30, 0.16) 100%
+  );
+  --vc-glass-list-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 -1px rgba(255, 255, 255, 0.03),
+    0 18px 42px rgba(0, 0, 0, 0.18);
+  --vc-glass-list-filter: blur(18px) saturate(120%);
+  --vc-glass-list-reflection: linear-gradient(
+    112deg,
+    transparent 0%,
+    transparent 18%,
+    rgba(255, 255, 255, 0.06) 32%,
+    rgba(255, 255, 255, 0.012) 45%,
+    transparent 58%
+  );
+
+  --vc-glass-sheet-border: 1px solid rgba(238, 243, 234, 0.24);
+  --vc-glass-sheet-radius: 1.875rem;
+  --vc-glass-sheet-radius-tucked: 1.125rem;
+  --vc-glass-sheet-background: linear-gradient(
+    145deg,
+    rgba(218, 235, 222, 0.15) 0%,
+    rgba(129, 177, 150, 0.085) 42%,
+    rgba(10, 43, 32, 0.24) 100%
+  );
+  --vc-glass-sheet-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.21),
+    inset 0 -1px rgba(255, 255, 255, 0.045),
+    0 8px 18px rgba(0, 15, 10, 0.16),
+    0 28px 72px rgba(0, 13, 9, 0.26);
+  --vc-glass-sheet-filter: blur(22px) saturate(122%);
+  --vc-glass-sheet-reflection: linear-gradient(
+    112deg,
+    transparent 0%,
+    transparent 18%,
+    rgba(255, 255, 255, 0.072) 32%,
+    rgba(255, 255, 255, 0.014) 45%,
+    transparent 58%
+  );
+  --vc-glass-sheet-quiet-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.16),
+    0 12px 32px rgba(0, 13, 9, 0.18);
+  --vc-glass-sheet-edge: radial-gradient(
+    ellipse at center,
+    rgba(222, 239, 226, 0.17) 0%,
+    rgba(113, 162, 136, 0.07) 42%,
+    transparent 74%
+  );
+
+  --vc-glass-region-border: 1px solid rgba(235, 241, 233, 0.12);
+  --vc-glass-region-radius: var(--vc-radius-xl);
+  --vc-glass-region-background: linear-gradient(
+    145deg,
+    rgba(238, 244, 236, 0.075),
+    rgba(182, 211, 191, 0.032)
+  );
+  --vc-glass-region-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.085);
+  --vc-glass-region-compact-padding: var(--vc-space-3);
+
+  --vc-navigation-glass-border: 1px solid rgba(237, 241, 232, 0.26);
+  --vc-navigation-glass-radius: var(--vc-glass-list-radius);
+  --vc-navigation-glass-background: linear-gradient(
+    145deg,
+    rgba(231, 237, 228, 0.16) 0%,
+    rgba(177, 194, 183, 0.1) 42%,
+    rgba(15, 45, 35, 0.18) 100%
+  );
+  --vc-navigation-glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.045),
+    0 16px 42px rgba(0, 12, 9, 0.16);
+  --vc-navigation-glass-filter: blur(14px) saturate(112%);
+  --vc-navigation-glass-reflection: linear-gradient(
+    112deg,
+    transparent 0%,
+    transparent 20%,
+    rgba(255, 255, 255, 0.075) 34%,
+    rgba(255, 255, 255, 0.018) 47%,
+    transparent 62%
+  );
+  --vc-navigation-title-size: 1.625rem;
+  --vc-navigation-date-size: 0.58rem;
+  --vc-navigation-date-size-compact: 0.52rem;
+
+  --vc-surface-interactive: rgba(238, 244, 236, 0.075);
+  --vc-surface-interactive-subtle: rgba(255, 255, 255, 0.055);
+  --vc-surface-icon: rgba(235, 242, 233, 0.08);
+  --vc-surface-scrim: rgba(6, 24, 17, 0.42);
+  --vc-row-hover-background: rgba(255, 255, 255, 0.025);
+  --vc-row-expanded-background: linear-gradient(
+    90deg,
+    rgba(222, 238, 226, 0.075),
+    rgba(222, 238, 226, 0.028)
+  );
+  --vc-row-expanded-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  --vc-glass-region-hover-background: linear-gradient(
+    145deg,
+    rgba(238, 244, 236, 0.095),
+    rgba(182, 211, 191, 0.044)
+  );
+  --vc-border-glass-subtle: rgba(235, 241, 233, 0.12);
+  --vc-border-glass-medium: rgba(238, 243, 234, 0.18);
+  --vc-border-glass-strong: rgba(237, 241, 232, 0.26);
+  --vc-focus-glass: rgba(242, 235, 213, 0.74);
+  --vc-summary-active-shadow: inset 0 0 0 1px rgba(235, 241, 233, 0.14);
+
+  --vc-text-cream-strong: rgba(250, 247, 238, 0.97);
+  --vc-text-cream: rgba(250, 247, 238, 0.94);
+  --vc-text-cream-muted: rgba(244, 237, 223, 0.62);
+  --vc-text-cream-soft: rgba(247, 244, 238, 0.56);
+
+  --vc-state-clean-text: rgba(232, 255, 236, 0.98);
+  --vc-state-progress-text: rgba(232, 247, 255, 0.98);
+  --vc-state-warning-text: rgba(255, 239, 211, 0.98);
+  --vc-state-critical-text: rgba(255, 236, 232, 0.98);
+  --vc-state-neutral-text: rgba(255, 250, 240, 0.82);
+  --vc-state-closed-text: rgba(255, 250, 240, 0.62);
+  --vc-state-glow: 0 0 14px color-mix(in srgb, currentColor 16%, transparent);
+
+  --vc-action-height: 3.375rem;
+  --vc-action-radius: var(--vc-radius-lg);
+  --vc-action-primary-border: 1px solid var(--vc-border-glass-medium);
+  --vc-action-primary-background: rgba(31, 90, 66, 0.96);
+  --vc-action-secondary-border: 1px solid rgba(237, 241, 232, 0.22);
+  --vc-action-secondary-background: linear-gradient(
+    145deg,
+    rgba(231, 237, 228, 0.14) 0%,
+    rgba(177, 194, 183, 0.08) 42%,
+    rgba(15, 45, 35, 0.16) 100%
+  );
+  --vc-action-secondary-filter: blur(14px) saturate(112%);
+
+  --vc-compact-row-min-height: 6rem;
+  --vc-sheet-identity-grid: 4.75rem minmax(0, 1fr);
+  --vc-sheet-identity-min-height: 6.5rem;
+  --vc-sheet-identity-icon-size: 4.25rem;
+  --vc-sheet-identity-icon-radius: 1.25rem;
+  --vc-sheet-identity-background: linear-gradient(
+    140deg,
+    rgba(235, 242, 233, 0.11),
+    rgba(190, 215, 196, 0.048)
+  );
+  --vc-sheet-identity-border: 1px solid rgba(239, 243, 235, 0.15);
+  --vc-sheet-identity-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --vc-sheet-identity-icon-border: 1px solid rgba(235, 242, 233, 0.15);
+  --vc-sheet-identity-icon-color: rgba(247, 244, 238, 0.9);
+
   /* Motion */
   --vc-duration-fast: 120ms;
   --vc-duration-normal: 180ms;

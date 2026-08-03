@@ -192,7 +192,8 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
 
 test("Expanded Rooms Workspace uses one lifted glass sheet and removes Notes and History", () => {
   assert.match(roomExpandedWorkspace, /className="room-row-expanded-content room-expanded"/);
-  assert.match(roomExpandedWorkspace, /<section className="room-expanded-sheet vc-glass-sheet"/);
+  assert.match(roomExpandedWorkspace, /VanaraGlassSheet/);
+  assert.match(roomExpandedWorkspace, /variant="elevated"/);
   assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /<ReceptionCard/);
@@ -213,8 +214,9 @@ test("Expanded Room Workspace header uses accommodation icon instead of room pho
 });
 
 test("Expanded Room Workspace uses one forest glass sheet without large white cards", () => {
-  assert.match(css, /\.room-expanded-sheet[\s\S]*rgba\(10,\s*43,\s*32,\s*0\.24\)/);
-  assert.match(css, /\.room-expanded-section[\s\S]*rgba\(238,\s*244,\s*236,\s*0\.075\)/);
+  assert.match(roomExpandedWorkspace, /<VanaraGlassSheet ariaLabel=\{`\$\{room\.roomName\} details`\} className="room-expanded-sheet" variant="elevated">/);
+  assert.doesNotMatch(css, /\.room-expanded-sheet[\s\S]*rgba\(10,\s*43,\s*32,\s*0\.24\)/);
+  assert.doesNotMatch(css, /\.room-expanded-section[\s\S]*rgba\(238,\s*244,\s*236,\s*0\.075\)/);
   assert.match(css, /\.room-status-grid/);
   assert.match(css, /\.room-status-item[\s\S]*border-right/);
   assert.doesNotMatch(css, /background:\s*#fff/i);

@@ -4,6 +4,7 @@ import MaintenanceCard from "./MaintenanceCard";
 import RoomHero from "./RoomHero";
 import RoomOperationalSummaryCard from "./RoomOperationalSummaryCard";
 import TurnoverCard from "./TurnoverCard";
+import VanaraGlassSheet from "../vanara/VanaraGlassSheet";
 import { getRoomsWorkspaceTurnover } from "../../config/turnoverPresentation";
 import type { RoomHousekeepingCompletionMode, RoomsWorkspaceRoom } from "../../types/rooms-workspace";
 
@@ -30,7 +31,7 @@ export default function RoomExpandedWorkspace({
 
   return (
     <div id={id} className="room-row-expanded-content room-expanded" role="region" aria-label={`${room.roomName} workspace`}>
-      <section className="room-expanded-sheet vc-glass-sheet" aria-label={`${room.roomName} details`}>
+      <VanaraGlassSheet ariaLabel={`${room.roomName} details`} className="room-expanded-sheet" variant="elevated">
         <RoomHero room={room} />
         {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
         <RoomOperationalSummaryCard summary={room.operational} />
@@ -51,7 +52,7 @@ export default function RoomExpandedWorkspace({
           roomName={room.roomName}
         />
         <MaintenanceCard maintenance={room.maintenance} roomId={room.unitId} roomName={room.roomName} />
-      </section>
+      </VanaraGlassSheet>
     </div>
   );
 }

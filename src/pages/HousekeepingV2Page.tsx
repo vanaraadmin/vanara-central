@@ -331,15 +331,15 @@ function TaskCard({
       {expanded && (
         <div className="housekeeping-v2-task-expanded">
           <VanaraGlassSheet className="housekeeping-v2-task-sheet">
-            <header className="housekeeping-v2-task-identity">
-              <div className="housekeeping-v2-task-identity__icon" aria-hidden="true">
+            <header className="vc-sheet-identity housekeeping-v2-task-identity">
+              <div className="vc-sheet-identity__icon housekeeping-v2-task-identity__icon" aria-hidden="true">
                 {card.isBlocked ? <AlertIcon /> : <HousekeepingIcon />}
               </div>
-              <div className="housekeeping-v2-task-identity__copy">
-                <span>{taskLabel(card)}</span>
-                <strong>{card.unitName}</strong>
-                <p className={`vc-state-${tone}`}>{statusLabel(card)}</p>
-                <small>{formatDate(card.operationalDate)}</small>
+              <div className="vc-sheet-identity__content housekeeping-v2-task-identity__copy">
+                <span className="vc-sheet-identity__eyebrow">{taskLabel(card)}</span>
+                <strong className="vc-sheet-identity__title">{card.unitName}</strong>
+                <p className={`vc-sheet-identity__subtitle vc-state-${tone}`}>{statusLabel(card)}</p>
+                <small className="vc-sheet-identity__meta">{formatDate(card.operationalDate)}</small>
               </div>
             </header>
 
@@ -352,10 +352,10 @@ function TaskCard({
                 headingId={`housekeeping-v2-task-state-${card.taskId}`}
                 title="Current State"
               />
-              <div className={`housekeeping-v2-current-state housekeeping-v2-current-state--${tone}`}>
-                <span>Current state</span>
-                <strong>{statusLabel(card)}</strong>
-                <p>{taskStateDescription(card)}</p>
+              <div className={`vc-operational-state housekeeping-v2-current-state vc-state-${tone}`}>
+                <span className="vc-operational-state__label">Current state</span>
+                <strong className="vc-operational-state__value">{statusLabel(card)}</strong>
+                <p className="vc-operational-state__description">{taskStateDescription(card)}</p>
               </div>
             </VanaraGlassRegion>
 

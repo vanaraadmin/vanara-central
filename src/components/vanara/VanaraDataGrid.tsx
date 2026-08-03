@@ -1,17 +1,32 @@
 import type { ReactNode } from "react";
+import type { VanaraTone } from "./types";
 
 export type VanaraDataGridItem = {
   label: string;
-  tone?: "clean" | "progress" | "warning" | "critical" | "maintenance" | "neutral" | "closed";
+  tone?: VanaraTone;
   value: ReactNode;
 };
 
-type VanaraDataGridProps = {
+export type VanaraDataGridProps = {
   ariaLabel: string;
   className?: string;
   items: VanaraDataGridItem[];
 };
 
+/**
+ * Purpose: renders compact comparable facts inside a glass region.
+ *
+ * When to use: two to six short operational attributes that benefit from
+ * separators instead of individual cards.
+ *
+ * When NOT to use: long prose, action rows, nested forms, or page summaries.
+ *
+ * Expected children: data is supplied through typed `items`; the component owns
+ * the `<dl>`, `<dt>`, and `<dd>` structure.
+ *
+ * Accessibility notes: provide an `ariaLabel` because this definition list does
+ * not always sit under a visible heading.
+ */
 export default function VanaraDataGrid({
   ariaLabel,
   className,

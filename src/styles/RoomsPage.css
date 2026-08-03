@@ -8,7 +8,7 @@
   gap: var(--vc-space-3);
 }
 
-.vc-secondary-glass-button {
+.rooms-home-back-button {
   appearance: none;
   min-height: 38px;
   display: inline-flex;
@@ -16,30 +16,17 @@
   justify-content: center;
   gap: 8px;
   padding: 0 13px;
-  border: 1px solid rgba(237, 241, 232, 0.26);
   border-radius: var(--vc-radius-pill);
   color: rgba(247, 244, 238, 0.92);
-  background:
-    linear-gradient(
-      145deg,
-      rgba(231, 237, 228, 0.16) 0%,
-      rgba(177, 194, 183, 0.10) 42%,
-      rgba(15, 45, 35, 0.18) 100%
-    );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 12px 28px rgba(0, 12, 9, 0.12);
   font-family: var(--vc-font-sans);
   font-size: 0.66rem;
   font-weight: var(--vc-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   cursor: pointer;
-  backdrop-filter: blur(14px) saturate(112%);
-  -webkit-backdrop-filter: blur(14px) saturate(112%);
 }
 
-.vc-secondary-glass-button svg {
+.rooms-home-back-button svg {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
@@ -48,11 +35,6 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
-}
-
-.vc-secondary-glass-button:focus-visible {
-  outline: 2px solid rgba(242, 235, 213, 0.72);
-  outline-offset: 3px;
 }
 
 .rooms-home__summary {
@@ -138,22 +120,22 @@
 
 .room-row:hover,
 .room-row:focus-visible {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--vc-row-hover-background);
 }
 
 .room-row:focus-visible {
   z-index: 1;
-  outline: 2px solid rgba(244, 237, 223, 0.34);
+  outline: 2px solid var(--vc-focus-glass);
   outline-offset: -3px;
 }
 
 .room-row:active {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--vc-row-hover-background);
   transform: translateY(1px);
 }
 
 .room-row--expanded {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--vc-row-hover-background);
 }
 
 .room-row--maintenance_blocked {
@@ -388,14 +370,8 @@
 .room-row--expanded {
   position: relative;
   z-index: 2;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(222, 238, 226, 0.075),
-      rgba(222, 238, 226, 0.028)
-    );
-  box-shadow:
-    inset 0 -1px 0 rgba(255, 255, 255, 0.10);
+  background: var(--vc-row-expanded-background);
+  box-shadow: var(--vc-row-expanded-shadow);
 }
 
 .room-row-expanded-content {
@@ -409,33 +385,10 @@
 }
 
 .room-expanded-sheet {
-  position: relative;
-  isolation: isolate;
   width: 100%;
   margin: 10px 0 22px;
   padding: 22px 18px 24px;
   color: var(--vc-text-primary, var(--workspace-cream));
-  background:
-    linear-gradient(
-      145deg,
-      rgba(218, 235, 222, 0.15) 0%,
-      rgba(129, 177, 150, 0.085) 34%,
-      rgba(10, 43, 32, 0.24) 100%
-    );
-  border:
-    1px solid rgba(238, 243, 234, 0.24);
-  border-radius:
-    30px;
-  -webkit-backdrop-filter:
-    blur(22px) saturate(122%);
-  backdrop-filter:
-    blur(22px) saturate(122%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.21),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.045),
-    0 8px 18px rgba(0, 15, 10, 0.16),
-    0 28px 72px rgba(0, 13, 9, 0.26);
-  overflow: hidden;
   transform-origin: top center;
   animation:
     room-sheet-lift-in
@@ -445,88 +398,18 @@
 }
 
 .room-row-expanded-content .room-expanded-sheet {
-  border-top-left-radius: 18px;
-  border-top-right-radius: 18px;
-}
-
-.room-expanded-sheet::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  left: 7%;
-  right: 7%;
-  top: -9px;
-  height: 18px;
-  border-radius: 50%;
-  background:
-    radial-gradient(
-      ellipse at center,
-      rgba(222, 239, 226, 0.17) 0%,
-      rgba(113, 162, 136, 0.07) 42%,
-      transparent 74%
-    );
-  filter: blur(7px);
-  pointer-events: none;
-}
-
-.room-expanded-sheet::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  background:
-    linear-gradient(
-      113deg,
-      transparent 0%,
-      transparent 16%,
-      rgba(255, 255, 255, 0.072) 29%,
-      rgba(255, 255, 255, 0.022) 41%,
-      transparent 56%,
-      transparent 100%
-    );
-  opacity: 0.82;
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-
-.room-expanded-sheet > * {
-  position: relative;
-  z-index: 1;
+  border-top-left-radius: var(--vc-glass-sheet-radius-tucked);
+  border-top-right-radius: var(--vc-glass-sheet-radius-tucked);
 }
 
 .room-expanded-sheet__identity {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  min-height: 104px;
   padding: 14px 14px 16px;
-  background:
-    linear-gradient(
-      140deg,
-      rgba(235, 242, 233, 0.11),
-      rgba(190, 215, 196, 0.048)
-    );
-  border:
-    1px solid rgba(239, 243, 235, 0.15);
-  border-radius:
-    22px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .room-expanded-sheet__identity-icon {
-  width: 68px;
-  height: 68px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 20px;
-  color: rgba(247, 244, 238, 0.9);
-  background:
-    rgba(235, 242, 233, 0.08);
-  border:
-    1px solid rgba(235, 242, 233, 0.15);
 }
 
 .room-expanded-sheet__identity-icon svg {
@@ -578,21 +461,8 @@
 }
 
 .room-expanded-sheet .room-expanded-section {
-  position: relative;
   margin-top: 14px;
   padding: 18px 16px 16px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(238, 244, 236, 0.075),
-      rgba(182, 211, 191, 0.032)
-    );
-  border:
-    1px solid rgba(235, 241, 233, 0.12);
-  border-radius:
-    22px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.085);
 }
 
 .room-expanded-sheet .room-expanded-section__header {
@@ -926,7 +796,7 @@ button.room-domain-card__primary-action {
 
 .room-expanded-sheet .room-domain-card__primary-action:focus-visible {
   outline:
-    2px solid rgba(242, 235, 213, 0.74);
+    2px solid var(--vc-focus-glass);
   outline-offset: 3px;
 }
 
@@ -1047,12 +917,12 @@ button.room-domain-card__primary-action {
 }
 
 @media (max-width: 759px) {
-  .vc-secondary-glass-button {
+  .rooms-home-back-button {
     width: 38px;
     padding: 0;
   }
 
-  .vc-secondary-glass-button span {
+  .rooms-home-back-button span {
     position: absolute;
     width: 1px;
     height: 1px;
