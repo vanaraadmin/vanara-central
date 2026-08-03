@@ -1,9 +1,30 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 function readSource(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+}
+
+function readSourcesUnder(path: string): string {
+  const root = new URL(`../../${path}`, import.meta.url);
+  const sources: string[] = [];
+
+  function visit(url: URL) {
+    for (const entry of readdirSync(url, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, url);
+      if (entry.isDirectory()) {
+        visit(child);
+        continue;
+      }
+
+      if (!entry.name.match(/\.(ts|tsx|css)$/)) continue;
+      sources.push(readFileSync(child, "utf8"));
+    }
+  }
+
+  if (statSync(root).isDirectory()) visit(root);
+  return sources.join("\n");
 }
 
 const vanaraComponents = [
@@ -19,10 +40,9 @@ const stickyGlassHeader = readSource("src/components/StickyGlassHeader.tsx");
 const appRoot = readSource("src/App.tsx");
 const glassPhysicsHook = readSource("src/hooks/useGlassPhysics.ts");
 const interactiveGlass = readSource("src/components/vanara/VanaraInteractiveGlass.tsx");
-const uiSoundService = readSource("src/services/uiSound.service.ts");
-const uiTapHook = readSource("src/hooks/useUiTapSound.ts");
 const tokens = readSource("src/theme/tokens.css");
 const vanaraUi = readSource("src/theme/vanara-ui.css");
+const appSources = readSourcesUnder("src/");
 const migratedWorkspaceCss = [
   "src/styles/RoomsPage.css",
   "src/styles/StaffPage.css",
@@ -112,26 +132,19 @@ test("Rooms and Staff Home consume shared presentation instead of page glass cop
   assert.match(readSource("src/pages/RoomsPage.tsx"), /vc-secondary-glass-action rooms-home-back-button/);
 });
 
-test("Vanara UI tap sound is centralized and uses the approved bundled asset", () => {
+test("Vanara UI tap sound is removed from the active application path", () => {
   assert.equal(existsSync(new URL("../../src/utils/navigation-sound.ts", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../src/hooks/useUiTapSound.ts", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../src/services/uiSound.service.ts", import.meta.url)), false);
   assert.equal(existsSync(new URL("../../public/audio/ui-tap-soft.mp3", import.meta.url)), false);
-  assert.equal(existsSync(new URL("../../src/assets/sounds/click.mp3", import.meta.url)), true);
-  assert.match(uiSoundService, /export const UI_TAP_VOLUME = 0\.2/);
-  assert.match(uiSoundService, /import uiTapSoftSrc from "\.\.\/assets\/sounds\/click\.mp3"/);
-  assert.match(uiSoundService, /const UI_TAP_SOFT_SRC = uiTapSoftSrc/);
-  assert.match(uiSoundService, /export function playUiTap\(\): void/);
-  assert.match(uiSoundService, /uiTapUnavailable = true/);
-  assert.match(uiSoundService, /warnUiSoundFailure/);
-  assert.doesNotMatch(uiSoundService, /\/audio\/ui-tap-soft\.mp3/);
-  assert.doesNotMatch(uiSoundService, /UI_TAP_ASSET_ENABLED/);
-  assert.doesNotMatch(uiSoundService, /export function play(?:Success|Warning|Critical)/);
+  assert.equal(existsSync(new URL("../../src/assets/sounds/click.mp3", import.meta.url)), false);
 
-  assert.match(uiTapHook, /document\.addEventListener\("pointerdown", handlePointerDown, \{ capture: true \}\)/);
-  assert.match(uiTapHook, /document\.addEventListener\("keydown", handleKeyDown, \{ capture: true \}\)/);
-  assert.match(uiTapHook, /input/);
-  assert.match(uiTapHook, /textarea/);
-  assert.match(uiTapHook, /select/);
-  assert.match(uiTapHook, /playUiTap\(\)/);
-  assert.match(appRoot, /useUiTapSound\(\)/);
-  assert.doesNotMatch(`${appRoot}\n${uiTapHook}\n${stickyGlassHeader}`, /\bnew Audio\(|\bAudio\(/);
+  assert.doesNotMatch(appSources, /useUiTapSound/);
+  assert.doesNotMatch(appSources, /playUiTap/);
+  assert.doesNotMatch(appSources, /new Audio\(/);
+  assert.doesNotMatch(appSources, /\bAudio\(/);
+  assert.doesNotMatch(appSources, /preload\s*=/);
+  assert.doesNotMatch(appSources, /\/audio\/ui-tap-soft\.mp3/);
+  assert.doesNotMatch(appSources, /assets\/sounds\/click\.mp3/);
+  assert.doesNotMatch(appRoot, /useUiTapSound\(\)/);
 });
