@@ -718,6 +718,38 @@ test("turnover scenario 6: cleaning completed after check-in removes Turnover ca
   assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02"), null);
 });
 
+test("turnover scenario 7: checked-in occupied room never keeps Waiting for Today's Check-in", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 37,
+      unit_name: "Bungalow 37",
+      ready_state: "READY",
+      booking_id: 3701,
+      beds24_booking_id: 93701,
+      guest_name: "Arrived Guest",
+      arrival_date: "2026-08-02",
+      departure_date: "2026-08-06",
+      api_source: "Direct",
+      reception_booking_id: 3701,
+      reception_beds24_booking_id: 93701,
+      reception_guest_name: "Arrived Guest",
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-06",
+      reception_arrival_today_count: 1,
+      reception_guest_arrived: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const room = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 37");
+  const turnover = getRoomsWorkspaceTurnover(room, "2026-08-02");
+
+  assert.equal(room.operational.occupancy.state, "OCCUPIED");
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
+  assert.equal(turnover, null);
+});
+
 test("maintenance states distinguish blocking active and clear", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess]), "2026-08-02");
 

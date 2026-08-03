@@ -80,6 +80,7 @@ function roomWorkspaceHasActiveTurnover(room: RoomsWorkspaceRoom): boolean {
 
 export function getRoomsWorkspaceTurnover(room: RoomsWorkspaceRoom, date = todayBangkok()): TurnoverPresentation | null {
   if (roomWorkspaceTurnoverInProgress(room) && room.reception.checkIn.state === "COMPLETE") return buildPresentation("GUEST_WAITING_FOR_ROOM");
+  if (room.reception.today.checkIn && room.currentStay && !roomWorkspaceTurnoverInProgress(room)) return null;
   if (room.reception.phase === "DEPARTURE_DUE") return buildPresentation("WAITING_FOR_TODAYS_CHECKOUT");
   if (room.reception.phase === "CHECKED_OUT" && roomWorkspaceHasActiveTurnover(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");
   if (roomWorkspaceTurnoverInProgress(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");

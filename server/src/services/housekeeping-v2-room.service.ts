@@ -434,7 +434,8 @@ export async function createHousekeepingV2OnDemandCleaning(env: HousekeepingV2Ro
   const booking = await activeInHouseBooking(env, unitId, date);
   if (!booking) throw new HousekeepingV2RoomError("On-demand cleaning requires an occupied in-house room.", 409);
 
-  await createHousekeepingTask(env, {
+  const idempotencyKey = input.idempotencyKey ?? `housekeeping:v2:on-demand:${unitId}:${input.source}:${date}`;
+  const task = await createHousekeepingTask(env, {
     taskType: "ON_DEMAND_CLEANING",
     unitId,
     bookingId: booking.booking_id,
@@ -444,9 +445,18 @@ export async function createHousekeepingV2OnDemandCleaning(env: HousekeepingV2Ro
     priority: input.priority,
     source: input.taskSource,
     onDemandSource: input.source,
-    idempotencyKey: input.idempotencyKey ?? `housekeeping:v2:on-demand:${unitId}:${input.source}:${date}`,
+    idempotencyKey,
     creationMetadata: { source: input.source, note: input.note, includeLinen: input.includeLinen },
   }, user);
+  if (task.status === "AVAILABLE_FOR_CLAIM" || task.status === "CLAIMED") {
+    await transitionHousekeepingTask(env, task.id, {
+      action: "start",
+      expectedVersion: task.version,
+      actor: user,
+      idempotencyKey: `${idempotencyKey}:start`,
+      metadata: { source: input.source, note: input.note, includeLinen: input.includeLinen },
+    });
+  }
 
   const detail = await getHousekeepingV2RoomDetail(env, user, unitId, date);
   if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);

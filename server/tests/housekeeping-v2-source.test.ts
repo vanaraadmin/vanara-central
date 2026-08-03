@@ -52,6 +52,9 @@ test("housekeeping v2 generates approved scheduled and manual-cleaning task cate
 test("normal cleaning and water refill follow occupied arrived-stay rules", () => {
   assert.match(service, /guest_arrived !== 1/);
   assert.match(service, /booking\.departure_date === date/);
+  assert.match(service, /function isWaterRefillEligible\(booking: BookingRow, date: string\): boolean/);
+  assert.match(service, /booking\.arrival_date < date/);
+  assert.match(service, /booking\.departure_date > date/);
   assert.match(service, /DEFAULT_STANDARD_INTERVAL_DAYS = 3/);
   assert.match(service, /standardCleaningDueCycle/);
   assert.match(service, /completedWaterToday/);

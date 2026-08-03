@@ -300,6 +300,8 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
       createdOrReused += 1;
     }
 
+    if (!isWaterRefillEligible(booking, date)) continue;
+
     const completedWaterToday = activeTasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && task.operationalDate === date && (task.status === "COMPLETED" || task.status === "SKIPPED"));
     if (!completedWaterToday && !hasTask(activeTasks, "WATER_REFILL", booking.unit_id, null, date)) {
       attempted += 1;
@@ -674,6 +676,10 @@ function sectionEmpty(id: HousekeepingV2SectionId): string {
 
 function isOccupiedOn(booking: BookingRow, date: string): boolean {
   return booking.arrival_date <= date && booking.departure_date > date;
+}
+
+function isWaterRefillEligible(booking: BookingRow, date: string): boolean {
+  return isOccupiedOn(booking, date) && booking.arrival_date < date && booking.departure_date > date && booking.guest_arrived === 1;
 }
 
 function taskCompletedOn(task: HousekeepingTask, date: string): boolean {

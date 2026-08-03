@@ -103,6 +103,8 @@ test("on-demand and linen override preserve explicit counter choices", () => {
   assert.doesNotMatch(roomService, /On-demand cleaning note is required/);
   assert.match(roomService, /taskType: "ON_DEMAND_CLEANING"/);
   assert.match(roomService, /source: "HOUSEKEEPING_MANUAL"/);
+  assert.match(roomService, /action: "start"/);
+  assert.match(roomService, /`\$\{idempotencyKey}:start`/);
   assert.match(roomService, /On-demand completion requires Cleaning or Full Cleaning selection/);
   assert.match(roomService, /linen_override_selected/);
   assert.match(roomService, /linen_override_cancelled/);
