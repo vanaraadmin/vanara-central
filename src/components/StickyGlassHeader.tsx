@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type RefObject } from "react";
-import { playNavigationSound } from "../utils/navigation-sound";
+import logoSrc from "../assets/img/logo.png";
 import "../styles/StickyGlassHeader.css";
 
 interface StickyGlassHeaderProps {
@@ -9,9 +9,34 @@ interface StickyGlassHeaderProps {
   title: string;
 }
 
-function scrollToWorkspaceTop(): void {
-  playNavigationSound();
-  window.scrollTo({
+type ScrollContainer = Window | HTMLElement;
+
+function resolveActualScrollContainer(): ScrollContainer {
+  const scrollingElement = document.scrollingElement as HTMLElement | null;
+  if (scrollingElement && scrollingElement.scrollHeight > scrollingElement.clientHeight) {
+    return window;
+  }
+
+  const appScrollContainer = document.querySelector<HTMLElement>(".workspace-page, .staff-page");
+  if (appScrollContainer && appScrollContainer.scrollHeight > appScrollContainer.clientHeight) {
+    return appScrollContainer;
+  }
+
+  return window;
+}
+
+function scrollToPageTop(): void {
+  const scrollContainer = resolveActualScrollContainer();
+
+  if (scrollContainer === window) {
+    window.scrollTo({
+      behavior: "smooth",
+      top: 0,
+    });
+    return;
+  }
+
+  scrollContainer.scrollTo({
     behavior: "smooth",
     top: 0,
   });
@@ -43,10 +68,11 @@ export default function StickyGlassHeader({
   progress,
   title,
 }: StickyGlassHeaderProps) {
-  const logoTargetRef = useRef<HTMLSpanElement>(null);
+  const compactLogoRef = useRef<HTMLImageElement>(null);
   const p = clampProgress(progress);
   const translateY = Math.round((1 - p) * 24 * 100) / 100;
   const scale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
+  const compactLogoVisible = p >= 0.995;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -58,46 +84,47 @@ export default function StickyGlassHeader({
   }, [p]);
 
   useLayoutEffect(() => {
-    const logo = heroLogoRef.current;
-    const target = logoTargetRef.current;
+    const heroLogo = heroLogoRef.current;
+    const compactLogo = compactLogoRef.current;
 
-    if (!logo || !target || p <= 0) {
-      resetHeroLogo(logo);
+    if (!heroLogo || !compactLogo || p <= 0 || compactLogoVisible) {
+      resetHeroLogo(heroLogo);
       return;
     }
 
-    const first = logo.parentElement?.getBoundingClientRect();
-    const last = target.getBoundingClientRect();
+    const first = heroLogo.parentElement?.getBoundingClientRect();
+    const last = compactLogo.getBoundingClientRect();
     if (!first || first.width <= 0 || first.height <= 0 || last.width <= 0 || last.height <= 0) {
-      resetHeroLogo(logo);
+      resetHeroLogo(heroLogo);
       return;
     }
 
     const lastSize = Math.min(last.width, last.height);
-    const lastLeft = last.left;
-    const lastTop = last.top;
     const scale = 1 + (lastSize / first.width - 1) * p;
-    const x = (lastLeft - first.left) * p;
-    const y = (lastTop - first.top) * p;
+    const x = (last.left - first.left) * p;
+    const y = (last.top - first.top) * p;
 
-    logo.style.position = "fixed";
-    logo.style.left = `${first.left}px`;
-    logo.style.top = `${first.top}px`;
-    logo.style.width = `${first.width}px`;
-    logo.style.height = `${first.height}px`;
-    logo.style.zIndex = "90";
-    logo.style.transformOrigin = "top left";
-    logo.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-    logo.style.willChange = "transform";
-    logo.style.pointerEvents = p > 0.05 ? "none" : "";
-  }, [heroLogoRef, p]);
+    heroLogo.style.position = "fixed";
+    heroLogo.style.left = `${first.left}px`;
+    heroLogo.style.top = `${first.top}px`;
+    heroLogo.style.width = `${first.width}px`;
+    heroLogo.style.height = `${first.height}px`;
+    heroLogo.style.zIndex = "90";
+    heroLogo.style.transformOrigin = "top left";
+    heroLogo.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+    heroLogo.style.willChange = "transform";
+    heroLogo.style.pointerEvents = "none";
+  }, [compactLogoVisible, heroLogoRef, p]);
 
   useLayoutEffect(() => () => resetHeroLogo(heroLogoRef.current), [heroLogoRef]);
 
-  const motionStyle: CSSProperties = {
+  const surfaceStyle: CSSProperties = {
     opacity: p,
-    transform: `translateY(${translateY}px) scale(${scale})`,
     pointerEvents: p > 0.05 ? "auto" : "none",
+    transform: `translateY(${translateY}px) scale(${scale})`,
+  };
+  const compactLogoStyle: CSSProperties = {
+    opacity: compactLogoVisible ? 1 : 0,
   };
 
   return (
@@ -105,25 +132,30 @@ export default function StickyGlassHeader({
       aria-hidden={p <= 0}
       className="sticky-glass-nav-positioner sticky-glass-header"
     >
-      <div className="sticky-glass-nav-motion" style={motionStyle}>
-        <button
-          aria-label={`Scroll to top of ${title}`}
-          className="sticky-glass-header__surface"
-          onClick={scrollToWorkspaceTop}
-          tabIndex={p > 0.05 ? 0 : -1}
-          type="button"
-        >
-          <span className="sticky-glass-header__logo-target" aria-hidden="true">
-            <span ref={logoTargetRef} className="sticky-glass-header__logo-final-frame" />
-          </span>
+      <button
+        aria-label="Return to top"
+        className="sticky-glass-nav-surface sticky-glass-header__surface"
+        onClick={scrollToPageTop}
+        style={surfaceStyle}
+        tabIndex={p > 0.05 ? 0 : -1}
+        type="button"
+      >
+        <span className="sticky-glass-nav-logo-slot sticky-glass-header__logo-target">
+          <img
+            ref={compactLogoRef}
+            alt=""
+            className="sticky-glass-nav-logo"
+            src={logoSrc}
+            style={compactLogoStyle}
+          />
+        </span>
 
-          <span className="sticky-glass-header__title">
-            {title}
-          </span>
+        <span className="sticky-glass-nav-title sticky-glass-header__title">
+          {title}
+        </span>
 
-          <time className="sticky-glass-header__date">{date}</time>
-        </button>
-      </div>
+        <span className="sticky-glass-nav-date sticky-glass-header__date">{date}</span>
+      </button>
     </div>
   );
 }
