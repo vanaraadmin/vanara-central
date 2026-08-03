@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import airplaneLandingIcon from "../assets/img/airplane-landing-light.svg";
 import bedIcon from "../assets/img/bed-light.svg";
 import logo from "../assets/img/logo.png";
@@ -12,6 +12,7 @@ import chatIcon from "../assets/img/wechat-logo-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RecentBookings from "../components/RecentBookings";
 import { RoomIcon } from "../components/OperationsIcons";
+import StickyGlassHeader from "../components/StickyGlassHeader";
 import {
   preloadWorkspaceBackground,
   workspaceBackgroundStyle,
@@ -54,6 +55,12 @@ function formatToday() {
     day: "2-digit",
     month: "long",
   }).format(new Date());
+}
+
+function clampProgress(value: number): number {
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
 }
 
 function firstName(displayName: string) {
@@ -141,8 +148,51 @@ function WorkspaceCard({
 }
 
 export default function StaffPage() {
+  const heroLogoRef = useRef<HTMLImageElement>(null);
+  const stickyTriggerRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(0);
+  const [progress, setProgress] = useState(0);
+  const today = useMemo(() => formatToday(), []);
+
   useEffect(() => {
     preloadWorkspaceBackground("staffHome");
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const updateProgress = () => {
+      frame = 0;
+      const trigger = stickyTriggerRef.current;
+      if (!trigger) return;
+
+      const next = clampProgress(Math.max(0, -trigger.getBoundingClientRect().top) / 96);
+      if (Math.abs(next - progressRef.current) < 0.005) return;
+
+      progressRef.current = next;
+      setProgress(next);
+    };
+
+    const requestProgress = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateProgress);
+    };
+
+    const observer = "IntersectionObserver" in window
+      ? new IntersectionObserver(requestProgress, { root: null, threshold: [0, 1] })
+      : null;
+
+    if (stickyTriggerRef.current) observer?.observe(stickyTriggerRef.current);
+    requestProgress();
+    window.addEventListener("scroll", requestProgress, { passive: true });
+    window.addEventListener("resize", requestProgress);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("scroll", requestProgress);
+      window.removeEventListener("resize", requestProgress);
+    };
   }, []);
 
   const staff = useQuery({
@@ -162,9 +212,13 @@ export default function StaffPage() {
       <div className="staff-page__veil" aria-hidden="true" />
 
       <section className="staff-shell" aria-label="Vanara Central home">
+        <StickyGlassHeader date={today} heroLogoRef={heroLogoRef} progress={progress} title="Home" />
+
         <header className="staff-masthead">
           <div className="staff-masthead__brand">
-            <img src={logo} alt="Vanara" className="staff-masthead__logo" />
+            <span className="staff-masthead__logo-slot" aria-hidden="true">
+              <img ref={heroLogoRef} src={logo} alt="Vanara" className="staff-masthead__logo" />
+            </span>
 
             <div className="staff-masthead__wordmark">
               <span>Vanara</span>
@@ -172,7 +226,7 @@ export default function StaffPage() {
             </div>
           </div>
 
-          <time className="staff-masthead__date">{formatToday()}</time>
+          <time className="staff-masthead__date">{today}</time>
         </header>
 
         <section className="staff-intro" aria-labelledby="staff-intro-title">
@@ -181,6 +235,8 @@ export default function StaffPage() {
             {name ? `Sawasdee, ${name}` : "Sawasdee"}
           </h1>
         </section>
+
+        <div ref={stickyTriggerRef} className="staff-sticky-trigger" aria-hidden="true" />
 
         <RecentBookings
           canViewBookingValue={canViewBookingValue}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type CSSProperties, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type RefObject } from "react";
 import { playNavigationSound } from "../utils/navigation-sound";
 import "../styles/StickyGlassHeader.css";
 
@@ -43,15 +43,25 @@ export default function StickyGlassHeader({
   progress,
   title,
 }: StickyGlassHeaderProps) {
-  const logoTargetRef = useRef<HTMLButtonElement>(null);
+  const logoTargetRef = useRef<HTMLSpanElement>(null);
   const p = clampProgress(progress);
-  const translateY = Math.round((1 - p) * -10 * 100) / 100;
-  const contentTranslateY = Math.round((1 - p) * 6 * 100) / 100;
+  const translateY = Math.round((1 - p) * 20 * 100) / 100;
+  const scale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
+  const contentTranslateY = Math.round((1 - p) * 8 * 100) / 100;
   const blur = Math.round((8 + 10 * p) * 100) / 100;
   const saturate = Math.round((100 + 14 * p) * 100) / 100;
   const borderAlpha = Math.round((0.04 + 0.26 * p) * 1000) / 1000;
   const shadowAlpha = Math.round(0.28 * p * 1000) / 1000;
   const insetAlpha = Math.round(0.2 * p * 1000) / 1000;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("vc-sticky-glass-visible", p > 0.05);
+
+    return () => {
+      root.classList.remove("vc-sticky-glass-visible");
+    };
+  }, [p]);
 
   useLayoutEffect(() => {
     const logo = heroLogoRef.current;
@@ -95,7 +105,7 @@ export default function StickyGlassHeader({
   };
   const surfaceStyle: CSSProperties = {
     opacity: p,
-    transform: `translateY(${translateY}px)`,
+    transform: `translateY(${translateY}px) scale(${scale})`,
     borderColor: `rgba(247, 244, 238, ${borderAlpha})`,
     boxShadow: `0 18px 36px rgba(0, 0, 0, ${shadowAlpha}), inset 0 1px 0 rgba(255, 255, 255, ${insetAlpha})`,
     backdropFilter: `blur(${blur}px) saturate(${saturate}%)`,
@@ -112,28 +122,29 @@ export default function StickyGlassHeader({
       className="sticky-glass-header"
       style={shellStyle}
     >
-      <div className="sticky-glass-header__surface" style={surfaceStyle}>
-        <button
+      <button
+        aria-label={`Scroll to top of ${title}`}
+        className="sticky-glass-header__surface"
+        onClick={scrollToWorkspaceTop}
+        style={surfaceStyle}
+        tabIndex={p > 0.05 ? 0 : -1}
+        type="button"
+      >
+        <span
           ref={logoTargetRef}
-          aria-label="Scroll to top"
+          aria-hidden="true"
           className="sticky-glass-header__logo-target"
-          onClick={scrollToWorkspaceTop}
-          tabIndex={p > 0.05 ? 0 : -1}
-          type="button"
         />
 
-        <button
+        <span
           className="sticky-glass-header__title"
-          onClick={scrollToWorkspaceTop}
           style={contentStyle}
-          tabIndex={p > 0.05 ? 0 : -1}
-          type="button"
         >
           {title}
-        </button>
+        </span>
 
         <time className="sticky-glass-header__date" style={contentStyle}>{date}</time>
-      </div>
+      </button>
     </div>
   );
 }

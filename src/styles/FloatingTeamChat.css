@@ -10,6 +10,10 @@
   pointer-events: none;
 }
 
+:root.vc-sticky-glass-visible .staff-chat {
+  bottom: calc(94px + env(safe-area-inset-bottom));
+}
+
 .staff-chat__orb,
 .staff-chat__panel {
   pointer-events: auto;
