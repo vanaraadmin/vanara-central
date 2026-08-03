@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 function readSource(path: string): string {
@@ -15,6 +15,9 @@ const vanaraComponents = [
 ];
 
 const stickyGlassHeader = readSource("src/components/StickyGlassHeader.tsx");
+const appRoot = readSource("src/App.tsx");
+const uiSoundService = readSource("src/services/uiSound.service.ts");
+const uiTapHook = readSource("src/hooks/useUiTapSound.ts");
 const tokens = readSource("src/theme/tokens.css");
 const vanaraUi = readSource("src/theme/vanara-ui.css");
 const migratedWorkspaceCss = [
@@ -76,4 +79,23 @@ test("Rooms and Staff Home consume shared presentation instead of page glass cop
   assert.match(readSource("src/components/rooms/RoomHero.tsx"), /vc-sheet-identity/);
   assert.match(readSource("src/pages/StaffPage.tsx"), /variant="compact"/);
   assert.match(readSource("src/pages/RoomsPage.tsx"), /vc-secondary-glass-action rooms-home-back-button/);
+});
+
+test("Vanara UI tap sound is centralized and graceful when the asset is absent", () => {
+  assert.equal(existsSync(new URL("../../src/utils/navigation-sound.ts", import.meta.url)), false);
+  assert.match(uiSoundService, /export const UI_TAP_VOLUME = 0\.2/);
+  assert.match(uiSoundService, /const UI_TAP_SOFT_SRC = "\/audio\/ui-tap-soft\.mp3"/);
+  assert.match(uiSoundService, /TODO: Add the official Vanara UI Tap asset at public\/audio\/ui-tap-soft\.mp3/);
+  assert.match(uiSoundService, /export function playUiTap\(\): void/);
+  assert.match(uiSoundService, /uiTapUnavailable = true/);
+  assert.doesNotMatch(uiSoundService, /export function play(?:Success|Warning|Critical)/);
+
+  assert.match(uiTapHook, /document\.addEventListener\("pointerdown", handlePointerDown, \{ capture: true \}\)/);
+  assert.match(uiTapHook, /document\.addEventListener\("keydown", handleKeyDown, \{ capture: true \}\)/);
+  assert.match(uiTapHook, /input/);
+  assert.match(uiTapHook, /textarea/);
+  assert.match(uiTapHook, /select/);
+  assert.match(uiTapHook, /playUiTap\(\)/);
+  assert.match(appRoot, /useUiTapSound\(\)/);
+  assert.doesNotMatch(`${appRoot}\n${uiTapHook}\n${stickyGlassHeader}`, /\bnew Audio\(|\bAudio\(/);
 });
