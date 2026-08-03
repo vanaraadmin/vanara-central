@@ -1711,7 +1711,7 @@ app.post("/sync/bootstrap", async (c) => {
 app.get("/sync/status", async (c) => {
   try {
   await owner(c);
-  const [runs, counts, cursors] = await Promise.all([
+  const [runs, counts, cursors, bookingHealth, recordIssues, unresolvedIssues] = await Promise.all([
     c.env.DB.prepare(`
       SELECT sync_type, started_at, finished_at, status, records_read, records_written, records_failed, error_message
       FROM sync_runs
@@ -1729,8 +1729,59 @@ app.get("/sync/status", async (c) => {
         (SELECT COUNT(*) FROM unit_availability_cache) AS unit_availability_cache
     `).first(),
     c.env.DB.prepare("SELECT cursor_name, cursor_value, updated_at FROM sync_cursors ORDER BY cursor_name").all(),
+    c.env.DB.prepare(`
+      SELECT sync_type, started_at, finished_at, status, records_read, records_written, records_failed, error_message
+      FROM sync_runs
+      WHERE sync_type = 'bookings'
+        AND status IN ('success', 'partial_success')
+      ORDER BY finished_at DESC, sync_run_id DESC
+      LIMIT 1
+    `).first(),
+    c.env.DB.prepare(`
+      SELECT
+        sync_type,
+        issue_type,
+        provider_record_id,
+        first_failure_at,
+        latest_failure_at,
+        attempt_count,
+        error_category,
+        error_message,
+        status,
+        resolved_at,
+        updated_at
+      FROM sync_record_issues
+      WHERE sync_type = 'bookings'
+      ORDER BY latest_failure_at DESC, sync_record_issue_id DESC
+      LIMIT 20
+    `).all(),
+    c.env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM sync_record_issues
+      WHERE sync_type = 'bookings'
+        AND status = 'pending'
+    `).first<{ total: number }>(),
   ]);
-  return c.json({ ok: true, counts, cursors: cursors.results ?? [], latestRuns: runs.results ?? [] });
+  const latestRuns = runs.results ?? [];
+  const bookingRun = latestRuns.find((run) => run.sync_type === "bookings") ?? null;
+  const bookingCursor = (cursors.results ?? []).find((cursor) => cursor.cursor_name === "bookings_modified_cursor") ?? null;
+  const unresolvedRecordIssues = unresolvedIssues?.total ?? 0;
+  return c.json({
+    ok: true,
+    counts,
+    cursors: cursors.results ?? [],
+    latestRuns,
+    syncHealth: {
+      bookings: {
+        healthy: Boolean(bookingHealth) && bookingRun?.status !== "failed" && unresolvedRecordIssues === 0,
+        currentCursor: bookingCursor,
+        lastSuccessfulSync: bookingHealth ?? null,
+        latestRun: bookingRun,
+        unresolvedRecordIssues,
+        recentRecordIssues: recordIssues.results ?? [],
+      },
+    },
+  });
   } catch (error) {
     return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }

@@ -62,6 +62,7 @@ type FakeBookingEventRow = {
   arrival_date: string | null;
   departure_date: string | null;
   booking_status: string | null;
+  booking_sub_status: string | null;
   adults: number | null;
   children: number | null;
   price: number | null;
@@ -103,6 +104,7 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     arrival_date: "2026-08-04",
     departure_date: "2026-08-06",
     booking_status: "Confirmed",
+    booking_sub_status: null,
     adults: 2,
     children: 0,
     price: 12000,
@@ -565,6 +567,31 @@ test("booking pulse keeps NEW visible for 24 hours unless CANCELLED is the lates
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
 
   assert.deepEqual(events.map((event) => `${event.bookingId}:${event.eventType}`), ["9022:CANCELLED", "9021:NEW"]);
+});
+
+test("Booking Pulse active feed hides provider-deleted reconciliation events while preserving stored history", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 31,
+      event_type: "cancelled",
+      beds24_booking_id: 9031,
+      booking_status: "cancelled",
+      booking_sub_status: "provider_deleted",
+      occurred_at: "2026-08-02T11:30:00.000Z",
+    }),
+    eventRow({
+      booking_event_id: 30,
+      event_type: "new",
+      beds24_booking_id: 9030,
+      occurred_at: "2026-08-02T11:00:00.000Z",
+    }),
+  ];
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
+
+  assert.deepEqual(events.map((event) => event.bookingId), ["9030"]);
+  assert.equal(db.deleteStatements, 0);
 });
 
 test("booking pulse uses the resort local timezone convention", () => {

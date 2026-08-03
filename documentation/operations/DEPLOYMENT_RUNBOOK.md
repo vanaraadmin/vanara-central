@@ -17,7 +17,7 @@ Wrangler config:
 - Compatibility date: `2026-07-28`
 - Compatibility flags: `nodejs_compat`
 - Static assets: `./dist/client`
-- Worker-first routes: `/api/*`, `/health`
+- Worker-first routes: `/api/*`, `/health`, `/sync/*`
 
 D1 binding:
 

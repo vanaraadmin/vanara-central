@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { beds24Get, Beds24ApiError } from "../src/services/beds24-client.service.ts";
 import {
   bookingSyncQueries,
   cancellationPropagationTargets,
+  deduplicateBookingGuestsForPersistence,
+  deduplicateBookingInfoItemsForPersistence,
   isCancelledBeds24BookingStatus,
   normalizeBookingFields,
   normalizeBookingGroupMembers,
+  providerDeletedBookingIds,
   shouldAdvanceBookingsCursor,
 } from "../src/services/bookings-sync.service.ts";
 import { sanitizeLogMessage } from "../src/services/log-safety.service.ts";
@@ -18,6 +22,10 @@ const env = {
   BEDS24_BASE_URL: "https://beds24.test/v2",
   BEDS24_LONG_LIFE_TOKEN: "test-token-value-not-real",
 };
+
+const syncIssueMigration = await readFile(new URL("../migrations/0024_sync_record_issues.sql", import.meta.url), "utf8");
+const syncServiceSource = await readFile(new URL("../src/services/bookings-sync.service.ts", import.meta.url), "utf8");
+const wranglerConfig = await readFile(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
 
 function jsonResponse(status: number, payload: unknown, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(payload), { status, headers });
@@ -229,9 +237,100 @@ test("records_failed remains distinct from records_skipped", () => {
   });
 });
 
-test("bookings cursor advances only after success", () => {
+test("bookings cursor advances after successful and partially successful runs", () => {
   assert.equal(shouldAdvanceBookingsCursor("success"), true);
+  assert.equal(shouldAdvanceBookingsCursor("partial_success"), true);
   assert.equal(shouldAdvanceBookingsCursor("failed"), false);
+});
+
+test("duplicate guest child records inside one Beds24 payload are deduplicated by provider guest id", () => {
+  const guests = deduplicateBookingGuestsForPersistence({
+    id: 90811066,
+    guests: [
+      { id: 101, firstName: "Paolo" },
+      { id: 101, firstName: "Paolo", lastName: "Duplicate" },
+      { id: 102, firstName: "Guest" },
+      { firstName: "Anonymous" },
+      { firstName: "Anonymous duplicate without provider id" },
+    ],
+  });
+
+  assert.deepEqual(
+    guests.map((guest) => ({ id: guest.id, firstName: guest.firstName, lastName: guest.lastName })),
+    [
+      { id: 101, firstName: "Paolo", lastName: undefined },
+      { id: 102, firstName: "Guest", lastName: undefined },
+      { id: undefined, firstName: "Anonymous", lastName: undefined },
+      { id: undefined, firstName: "Anonymous duplicate without provider id", lastName: undefined },
+    ],
+  );
+});
+
+test("duplicate booking info child records inside one Beds24 payload are deduplicated by info code", () => {
+  const infoItems = deduplicateBookingInfoItemsForPersistence({
+    id: 90811005,
+    infoItems: [
+      { code: "door-code", name: "Door code", value: "1111" },
+      { code: "door-code", name: "Door code", value: "2222" },
+      { code: "flight", name: "Flight", value: "PG123" },
+      { name: "Missing code", value: "kept for existing skip handling" },
+    ],
+  });
+
+  assert.deepEqual(
+    infoItems.map((item) => ({ code: item.code, value: item.value })),
+    [
+      { code: "door-code", value: "1111" },
+      { code: "flight", value: "PG123" },
+      { code: undefined, value: "kept for existing skip handling" },
+    ],
+  );
+});
+
+test("normalizeBookingFields exposes duplicate-safe child payloads for persistence", () => {
+  const normalized = normalizeBookingFields({
+    id: 90858176,
+    propertyId: 1,
+    roomId: 2,
+    guests: [
+      { id: 2001, firstName: "Daniel" },
+      { id: 2001, firstName: "Daniel" },
+    ],
+    infoItems: [
+      { code: "source-ref", value: "A" },
+      { code: "source-ref", value: "A" },
+    ],
+  });
+
+  assert.equal(normalized.guests.length, 1);
+  assert.equal(normalized.infoItems.length, 1);
+});
+
+test("deleted provider bookings are identified without deleting local booking history", () => {
+  assert.deepEqual(
+    providerDeletedBookingIds([90858176, 90858177], [90858176, 90811066, 90811005, 90811005]),
+    [90811066, 90811005],
+  );
+});
+
+test("record-level sync issues are retryable and automatically resolvable", () => {
+  assert.match(syncIssueMigration, /provider_record_id TEXT NOT NULL/);
+  assert.match(syncIssueMigration, /first_failure_at TEXT NOT NULL/);
+  assert.match(syncIssueMigration, /latest_failure_at TEXT NOT NULL/);
+  assert.match(syncIssueMigration, /attempt_count INTEGER NOT NULL DEFAULT 1/);
+  assert.match(syncIssueMigration, /status TEXT NOT NULL DEFAULT 'pending'/);
+  assert.match(syncIssueMigration, /resolved_at TEXT/);
+  assert.match(syncIssueMigration, /UNIQUE \(sync_type, provider_record_id, issue_type\)/);
+  assert.match(syncServiceSource, /loadPendingIssueBookingIds/);
+  assert.match(syncServiceSource, /resolveSyncRecordIssues/);
+  assert.match(syncServiceSource, /currentProviderBookings\.get\(bookingId\)/);
+});
+
+test("sync endpoints are routed to the Worker in production assets mode", () => {
+  assert.match(wranglerConfig, /"run_worker_first"\s*:\s*\[/);
+  assert.match(wranglerConfig, /"\/api\/\*"/);
+  assert.match(wranglerConfig, /"\/health"/);
+  assert.match(wranglerConfig, /"\/sync\/\*"/);
 });
 
 test("booking sync includes cancelled updates with a focused recovery lookback", () => {

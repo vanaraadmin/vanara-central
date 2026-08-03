@@ -156,6 +156,8 @@ interface Beds24BookingsResponse {
   pages?: { nextPageExists?: boolean; nextPageLink?: string | null };
 }
 
+type BookingsSyncRunStatus = "success" | "partial_success" | "failed";
+
 interface PropertyMapRow {
   property_id: number;
   beds24_property_id: number;
@@ -217,6 +219,9 @@ const INITIAL_FROM = "2000-01-01T00:00:00Z";
 const OVERLAP_MS = 5 * 60 * 1000;
 const CANCELLED_BOOKING_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const BOOKING_SYNC_STATUS_FILTERS = [null, "cancelled"] as const;
+const PROVIDER_EXISTENCE_RECONCILIATION_QUERY: Record<string, string | boolean> = {
+  modifiedFrom: INITIAL_FROM,
+};
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -301,6 +306,57 @@ function normalizeInfoItems(booking: Beds24Booking): Beds24InfoItem[] {
   return Array.isArray(booking.infoItems) ? booking.infoItems : [];
 }
 
+export function deduplicateBookingGuestsForPersistence(
+  booking: Pick<Beds24Booking, "id" | "guests" | "guest">,
+): Beds24Guest[] {
+  const guests = normalizeGuests(booking as Beds24Booking);
+  const seen = new Set<string>();
+  const deduped: Beds24Guest[] = [];
+
+  for (const guest of guests) {
+    const guestId = numberOrNull(guest.id);
+    if (guestId === null) {
+      deduped.push(guest);
+      continue;
+    }
+
+    const key = `${booking.id}:${guestId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(guest);
+  }
+
+  return deduped;
+}
+
+export function deduplicateBookingInfoItemsForPersistence(
+  booking: Pick<Beds24Booking, "id" | "infoItems">,
+): Beds24InfoItem[] {
+  const seen = new Set<string>();
+  const deduped: Beds24InfoItem[] = [];
+
+  for (const item of normalizeInfoItems(booking as Beds24Booking)) {
+    const code = text(item.code);
+    if (!code) {
+      deduped.push(item);
+      continue;
+    }
+
+    const key = `${booking.id}:${code}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
 function bookingGroupRootMasterId(payload: Beds24BookingGroupPayload | undefined): number | null {
   if (!payload || Array.isArray(payload)) {
     return null;
@@ -375,8 +431,8 @@ export function normalizeBookingFields(booking: Beds24Booking): NormalizedBookin
     countryCode: countryCodeFrom(booking),
     cancellationType: cancellation.type,
     cancellationDaysBeforeArrival: cancellation.daysBeforeArrival,
-    guests: normalizeGuests(booking),
-    infoItems: normalizeInfoItems(booking),
+    guests: deduplicateBookingGuestsForPersistence(booking),
+    infoItems: deduplicateBookingInfoItemsForPersistence(booking),
     bookingGroupMembers: normalizeBookingGroupMembers(booking),
   };
 }
@@ -419,8 +475,8 @@ export function cancellationPropagationTargets(
   };
 }
 
-export function shouldAdvanceBookingsCursor(status: "success" | "failed"): boolean {
-  return status === "success";
+export function shouldAdvanceBookingsCursor(status: BookingsSyncRunStatus): boolean {
+  return status === "success" || status === "partial_success";
 }
 
 export function bookingSyncQueries(modifiedFrom: string): Record<string, string | boolean>[] {
@@ -495,6 +551,104 @@ function snapshotByBeds24Id(snapshots: BookingEventSnapshot[]): Map<number, Book
   return new Map(snapshots.map((snapshot) => [snapshot.beds24BookingId, snapshot]));
 }
 
+async function recordSyncRecordIssue(
+  env: BookingsSyncBindings,
+  input: {
+    syncType: string;
+    issueType: "failed" | "skipped";
+    providerRecordId: number | string;
+    errorCategory: string;
+    errorMessage: string;
+    occurredAt: string;
+  },
+): Promise<void> {
+  try {
+    await env.DB.prepare(`
+      INSERT INTO sync_record_issues (
+        sync_type,
+        issue_type,
+        provider_record_id,
+        first_failure_at,
+        latest_failure_at,
+        attempt_count,
+        error_category,
+        error_message,
+        status,
+        resolved_at,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'pending', NULL, ?, ?)
+      ON CONFLICT (sync_type, provider_record_id, issue_type)
+      DO UPDATE SET
+        latest_failure_at = excluded.latest_failure_at,
+        attempt_count = sync_record_issues.attempt_count + 1,
+        error_category = excluded.error_category,
+        error_message = excluded.error_message,
+        status = 'pending',
+        resolved_at = NULL,
+        updated_at = excluded.updated_at
+    `).bind(
+      input.syncType,
+      input.issueType,
+      String(input.providerRecordId),
+      input.occurredAt,
+      input.occurredAt,
+      input.errorCategory,
+      sanitizeLogMessage(input.errorMessage, "Unknown sync record issue"),
+      input.occurredAt,
+      input.occurredAt,
+    ).run();
+  } catch (error) {
+    console.error("Unable to log sync record issue", sanitizeLogMessage(error, "Unknown D1 logging error"));
+  }
+}
+
+async function resolveSyncRecordIssues(
+  env: BookingsSyncBindings,
+  providerRecordId: number | string,
+  resolvedAt: string,
+): Promise<void> {
+  try {
+    await env.DB.prepare(`
+      UPDATE sync_record_issues
+      SET
+        status = 'resolved',
+        resolved_at = ?,
+        updated_at = ?
+      WHERE sync_type = ?
+        AND provider_record_id = ?
+        AND status = 'pending'
+    `).bind(resolvedAt, resolvedAt, SYNC_TYPE, String(providerRecordId)).run();
+  } catch (error) {
+    console.error("Unable to resolve sync record issue", sanitizeLogMessage(error, "Unknown D1 logging error"));
+  }
+}
+
+async function loadPendingIssueBookingIds(env: BookingsSyncBindings): Promise<number[]> {
+  try {
+    const rows = await env.DB.prepare(`
+      SELECT provider_record_id
+      FROM sync_record_issues
+      WHERE sync_type = ?
+        AND status = 'pending'
+      ORDER BY latest_failure_at ASC, sync_record_issue_id ASC
+    `).bind(SYNC_TYPE).all<{ provider_record_id: string }>();
+
+    const ids = new Set<number>();
+    for (const row of rows.results ?? []) {
+      const id = Number(row.provider_record_id);
+      if (Number.isFinite(id)) {
+        ids.add(id);
+      }
+    }
+    return [...ids];
+  } catch (error) {
+    console.error("Unable to load pending sync record issues", sanitizeLogMessage(error, "Unknown D1 issue query error"));
+    return [];
+  }
+}
+
 async function propagateGroupCancellation(
   env: BookingsSyncBindings,
   booking: Beds24Booking,
@@ -564,6 +718,111 @@ async function propagateGroupCancellation(
   }
 
   return result.meta?.changes ?? 0;
+}
+
+async function loadCurrentProviderBookings(env: BookingsSyncBindings): Promise<Map<number, Beds24Booking>> {
+  const bookings = new Map<number, Beds24Booking>();
+  let response = await beds24Get<Beds24BookingsResponse>(
+    env,
+    "/bookings",
+    {
+      ...PROVIDER_EXISTENCE_RECONCILIATION_QUERY,
+      includeBookingGroup: true,
+      includeGuests: true,
+      includeInfoItems: true,
+    },
+  );
+
+  while (true) {
+    if (response.success === false) {
+      throw new Error(response.error ?? "Beds24 bookings existence reconciliation returned success=false");
+    }
+
+    for (const booking of response.data ?? []) {
+      const id = numberOrNull(booking.id);
+      if (id !== null) {
+        bookings.set(id, booking);
+      }
+    }
+
+    const next = response.pages?.nextPageExists ? response.pages.nextPageLink : null;
+    if (!next) {
+      break;
+    }
+
+    response = await beds24GetAbsolute<Beds24BookingsResponse>(env, next);
+  }
+
+  return bookings;
+}
+
+export function providerDeletedBookingIds(
+  providerBookingIds: Iterable<number>,
+  localActiveBeds24BookingIds: Iterable<number>,
+): number[] {
+  const provider = new Set(providerBookingIds);
+  return [...new Set(localActiveBeds24BookingIds)].filter((bookingId) => !provider.has(bookingId));
+}
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function reconcileProviderDeletedBookings(
+  env: BookingsSyncBindings,
+  syncedAt: string,
+  providerBookings: Map<number, Beds24Booking>,
+): Promise<number> {
+  const localActiveSnapshots = await loadBookingEventSnapshots(
+    env,
+    "lower(trim(b.status)) IN ('confirmed', 'new')",
+    [],
+  );
+  const missingIds = providerDeletedBookingIds(
+    providerBookings.keys(),
+    localActiveSnapshots.map((snapshot) => snapshot.beds24BookingId),
+  );
+
+  if (missingIds.length === 0) {
+    return 0;
+  }
+
+  const previousById = snapshotByBeds24Id(localActiveSnapshots);
+  let changes = 0;
+
+  for (const chunk of chunkValues(missingIds, 50)) {
+    const placeholders = bindListPlaceholders(chunk);
+    const result = await env.DB.prepare(`
+      UPDATE bookings
+      SET
+        status = 'cancelled',
+        sub_status = 'provider_deleted',
+        cancel_time = COALESCE(cancel_time, ?),
+        modified_time = COALESCE(modified_time, ?),
+        updated_at = ?
+      WHERE beds24_booking_id IN (${placeholders})
+        AND lower(trim(status)) IN ('confirmed', 'new')
+    `).bind(syncedAt, syncedAt, syncedAt, ...chunk).run();
+    changes += result.meta?.changes ?? 0;
+
+    const currentSnapshots = snapshotByBeds24Id(
+      await loadBookingEventSnapshots(env, `b.beds24_booking_id IN (${placeholders})`, chunk),
+    );
+    for (const id of chunk) {
+      const previous = previousById.get(id) ?? null;
+      const current = currentSnapshots.get(id);
+      if (current) {
+        await recordBookingEvent(env, previous, current, syncedAt);
+      }
+      await resolveSyncRecordIssues(env, id, syncedAt);
+    }
+  }
+
+  return changes;
 }
 
 async function upsertBooking(
@@ -674,6 +933,36 @@ async function upsertBooking(
         (SELECT booking_id FROM bookings WHERE beds24_booking_id = ?),
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
+      ON CONFLICT (booking_id, beds24_guest_id)
+      DO UPDATE SET
+        guest_title = excluded.guest_title,
+        first_name = excluded.first_name,
+        last_name = excluded.last_name,
+        email = excluded.email,
+        phone = excluded.phone,
+        mobile = excluded.mobile,
+        company = excluded.company,
+        address = excluded.address,
+        city = excluded.city,
+        state = excluded.state,
+        postcode = excluded.postcode,
+        country = excluded.country,
+        country_code = excluded.country_code,
+        flag_text = excluded.flag_text,
+        flag_color = excluded.flag_color,
+        note = excluded.note,
+        custom1 = excluded.custom1,
+        custom2 = excluded.custom2,
+        custom3 = excluded.custom3,
+        custom4 = excluded.custom4,
+        custom5 = excluded.custom5,
+        custom6 = excluded.custom6,
+        custom7 = excluded.custom7,
+        custom8 = excluded.custom8,
+        custom9 = excluded.custom9,
+        custom10 = excluded.custom10,
+        raw_json = excluded.raw_json,
+        updated_at = excluded.updated_at
     `).bind(
       booking.id, numberOrNull(guest.id), text(guest.title), text(guest.firstName), text(guest.lastName),
       text(guest.email), text(guest.phone), text(guest.mobile), text(guest.company), text(guest.address), text(guest.city),
@@ -697,6 +986,12 @@ async function upsertBooking(
         (SELECT booking_id FROM bookings WHERE beds24_booking_id = ?),
         ?, ?, ?, ?, ?, ?
       )
+      ON CONFLICT (booking_id, info_code)
+      DO UPDATE SET
+        info_name = excluded.info_name,
+        info_value = excluded.info_value,
+        raw_json = excluded.raw_json,
+        updated_at = excluded.updated_at
     `).bind(
       booking.id,
       code,
@@ -736,6 +1031,49 @@ async function upsertBooking(
   }
   const groupCancellationChanges = await propagateGroupCancellation(env, booking, normalized, syncedAt);
   return results.reduce((sum, row) => sum + (row.meta?.changes ?? 0), 0) + groupCancellationChanges;
+}
+
+async function importBookingWithIsolation(
+  env: BookingsSyncBindings,
+  booking: Beds24Booking,
+  maps: Awaited<ReturnType<typeof loadMaps>>,
+  syncedAt: string,
+  metrics: SyncMetrics,
+  processedBookingIds: Set<number>,
+): Promise<void> {
+  processedBookingIds.add(booking.id);
+  try {
+    const changes = await upsertBooking(env, booking, maps, syncedAt);
+    if (changes === 0) {
+      metrics.skipped();
+      await recordSyncRecordIssue(env, {
+        syncType: SYNC_TYPE,
+        issueType: "skipped",
+        providerRecordId: booking.id,
+        errorCategory: "mapping_or_required_field_missing",
+        errorMessage: "Booking skipped because required property, room, arrival, or departure mapping is missing.",
+        occurredAt: syncedAt,
+      });
+    } else {
+      metrics.written(changes);
+      await resolveSyncRecordIssues(env, booking.id, syncedAt);
+    }
+  } catch (error) {
+    metrics.failed();
+    const message = sanitizeLogMessage(error, "Unknown booking sync record error");
+    await recordSyncRecordIssue(env, {
+      syncType: SYNC_TYPE,
+      issueType: "failed",
+      providerRecordId: booking.id,
+      errorCategory: "booking_persistence_error",
+      errorMessage: message,
+      occurredAt: syncedAt,
+    });
+    console.error("Booking sync record failed and remains pending for retry", {
+      beds24BookingId: booking.id,
+      error: message,
+    });
+  }
 }
 
 function skippedResult(
@@ -781,6 +1119,9 @@ export async function syncBookings(env: BookingsSyncBindings): Promise<BookingsS
       throw new Error("No active property/room mappings found. Run POST /sync/properties first.");
     }
 
+    const pendingRetryBookingIds = await loadPendingIssueBookingIds(env);
+    const processedBookingIds = new Set<number>();
+
     for (const query of bookingSyncQueries(modifiedFrom)) {
       let response = await beds24Get<Beds24BookingsResponse>(env, "/bookings", query);
 
@@ -792,12 +1133,7 @@ export async function syncBookings(env: BookingsSyncBindings): Promise<BookingsS
 
         for (const booking of response.data ?? []) {
           metrics.read();
-          const changes = await upsertBooking(env, booking, maps, startedAt);
-          if (changes === 0) {
-            metrics.skipped();
-          } else {
-            metrics.written(changes);
-          }
+          await importBookingWithIsolation(env, booking, maps, startedAt, metrics, processedBookingIds);
         }
 
         const next = response.pages?.nextPageExists ? response.pages.nextPageLink : null;
@@ -809,8 +1145,30 @@ export async function syncBookings(env: BookingsSyncBindings): Promise<BookingsS
       }
     }
 
+    const currentProviderBookings = await loadCurrentProviderBookings(env);
+    for (const bookingId of pendingRetryBookingIds) {
+      if (processedBookingIds.has(bookingId)) {
+        continue;
+      }
+      const booking = currentProviderBookings.get(bookingId);
+      if (!booking) {
+        continue;
+      }
+      metrics.read();
+      await importBookingWithIsolation(env, booking, maps, startedAt, metrics, processedBookingIds);
+    }
+
+    const reconciliationChanges = await reconcileProviderDeletedBookings(env, startedAt, currentProviderBookings);
+    if (reconciliationChanges > 0) {
+      metrics.written(reconciliationChanges);
+    }
+
     const finishedAt = new Date().toISOString();
     const snapshot = metrics.snapshot();
+    const status: BookingsSyncRunStatus = snapshot.recordsFailed > 0 || snapshot.recordsSkipped > 0 ? "partial_success" : "success";
+    const errorMessage = status === "partial_success"
+      ? "One or more bookings remain pending for retry. See sync_record_issues for record-level details."
+      : null;
     await env.DB.batch([
       env.DB.prepare(`
         INSERT INTO sync_cursors (cursor_name, cursor_value, updated_at) VALUES (?, ?, ?)
@@ -818,8 +1176,16 @@ export async function syncBookings(env: BookingsSyncBindings): Promise<BookingsS
       `).bind(CURSOR_NAME, startedAt, finishedAt),
       env.DB.prepare(`
         INSERT INTO sync_runs (sync_type, started_at, finished_at, status, records_read, records_written, records_failed, error_message)
-        VALUES ('bookings', ?, ?, 'success', ?, ?, 0, NULL)
-      `).bind(startedAt, finishedAt, snapshot.recordsRead, snapshot.recordsWritten),
+        VALUES ('bookings', ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        startedAt,
+        finishedAt,
+        status,
+        snapshot.recordsRead,
+        snapshot.recordsWritten,
+        snapshot.recordsFailed,
+        errorMessage,
+      ),
     ]);
 
     return {

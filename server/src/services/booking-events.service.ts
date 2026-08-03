@@ -70,6 +70,7 @@ interface BookingEventRow {
   arrival_date: string | null;
   departure_date: string | null;
   booking_status: string | null;
+  booking_sub_status: string | null;
   adults: number | null;
   children: number | null;
   price: number | null;
@@ -150,6 +151,10 @@ function sourceFor(row: BookingEventRow): string | null {
 
 function pulseGroupKeyFor(row: BookingEventRow): number {
   return row.pulse_group_beds24_booking_id ?? row.master_beds24_booking_id ?? row.beds24_booking_id;
+}
+
+function isProviderDeletedBookingPulseRow(row: BookingEventRow): boolean {
+  return normalizedText(row.booking_sub_status) === "provider_deleted";
 }
 
 function accommodationFamilyFor(value: string | null | undefined): string | null {
@@ -462,6 +467,7 @@ export async function listRecentBookingEvents(
       b.arrival_date,
       b.departure_date,
       b.status AS booking_status,
+      b.sub_status AS booking_sub_status,
       b.adults,
       b.children,
       b.price,
@@ -480,6 +486,7 @@ export async function listRecentBookingEvents(
     LEFT JOIN room_types rt
       ON rt.room_type_id = b.room_type_id
     WHERE be.event_type IN ('new', 'updated', 'cancelled')
+      AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
     ORDER BY be.occurred_at DESC, be.booking_event_id DESC
     LIMIT ?
   `).bind(readLimit).all<BookingEventRow>();
@@ -488,6 +495,7 @@ export async function listRecentBookingEvents(
 
   for (const row of rows.results ?? []) {
     if (!isBookingPulseEventVisible(row.occurred_at, now)) continue;
+    if (isProviderDeletedBookingPulseRow(row)) continue;
     const bookingKey = String(pulseGroupKeyFor(row));
     rowsByGroup.set(bookingKey, [...(rowsByGroup.get(bookingKey) ?? []), row]);
   }
