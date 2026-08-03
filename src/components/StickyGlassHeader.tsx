@@ -45,14 +45,8 @@ export default function StickyGlassHeader({
 }: StickyGlassHeaderProps) {
   const logoTargetRef = useRef<HTMLSpanElement>(null);
   const p = clampProgress(progress);
-  const translateY = Math.round((1 - p) * 20 * 100) / 100;
+  const translateY = Math.round((1 - p) * 24 * 100) / 100;
   const scale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
-  const contentTranslateY = Math.round((1 - p) * 8 * 100) / 100;
-  const blur = Math.round((8 + 10 * p) * 100) / 100;
-  const saturate = Math.round((100 + 14 * p) * 100) / 100;
-  const borderAlpha = Math.round((0.04 + 0.26 * p) * 1000) / 1000;
-  const shadowAlpha = Math.round(0.28 * p * 1000) / 1000;
-  const insetAlpha = Math.round(0.2 * p * 1000) / 1000;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -79,9 +73,9 @@ export default function StickyGlassHeader({
       return;
     }
 
-    const lastSize = Math.max(24, Math.min(last.width, last.height) - 12);
-    const lastLeft = last.left + (last.width - lastSize) / 2;
-    const lastTop = last.top + (last.height - lastSize) / 2;
+    const lastSize = Math.min(last.width, last.height);
+    const lastLeft = last.left;
+    const lastTop = last.top;
     const scale = 1 + (lastSize / first.width - 1) * p;
     const x = (lastLeft - first.left) * p;
     const y = (lastTop - first.top) * p;
@@ -100,51 +94,36 @@ export default function StickyGlassHeader({
 
   useLayoutEffect(() => () => resetHeroLogo(heroLogoRef.current), [heroLogoRef]);
 
-  const shellStyle: CSSProperties = {
-    pointerEvents: p > 0.05 ? "auto" : "none",
-  };
-  const surfaceStyle: CSSProperties = {
+  const motionStyle: CSSProperties = {
     opacity: p,
     transform: `translateY(${translateY}px) scale(${scale})`,
-    borderColor: `rgba(247, 244, 238, ${borderAlpha})`,
-    boxShadow: `0 18px 36px rgba(0, 0, 0, ${shadowAlpha}), inset 0 1px 0 rgba(255, 255, 255, ${insetAlpha})`,
-    backdropFilter: `blur(${blur}px) saturate(${saturate}%)`,
-    WebkitBackdropFilter: `blur(${blur}px) saturate(${saturate}%)`,
-  };
-  const contentStyle: CSSProperties = {
-    opacity: p,
-    transform: `translateY(${contentTranslateY}px)`,
+    pointerEvents: p > 0.05 ? "auto" : "none",
   };
 
   return (
     <div
       aria-hidden={p <= 0}
-      className="sticky-glass-header"
-      style={shellStyle}
+      className="sticky-glass-nav-positioner sticky-glass-header"
     >
-      <button
-        aria-label={`Scroll to top of ${title}`}
-        className="sticky-glass-header__surface"
-        onClick={scrollToWorkspaceTop}
-        style={surfaceStyle}
-        tabIndex={p > 0.05 ? 0 : -1}
-        type="button"
-      >
-        <span
-          ref={logoTargetRef}
-          aria-hidden="true"
-          className="sticky-glass-header__logo-target"
-        />
-
-        <span
-          className="sticky-glass-header__title"
-          style={contentStyle}
+      <div className="sticky-glass-nav-motion" style={motionStyle}>
+        <button
+          aria-label={`Scroll to top of ${title}`}
+          className="sticky-glass-header__surface"
+          onClick={scrollToWorkspaceTop}
+          tabIndex={p > 0.05 ? 0 : -1}
+          type="button"
         >
-          {title}
-        </span>
+          <span className="sticky-glass-header__logo-target" aria-hidden="true">
+            <span ref={logoTargetRef} className="sticky-glass-header__logo-final-frame" />
+          </span>
 
-        <time className="sticky-glass-header__date" style={contentStyle}>{date}</time>
-      </button>
+          <span className="sticky-glass-header__title">
+            {title}
+          </span>
+
+          <time className="sticky-glass-header__date">{date}</time>
+        </button>
+      </div>
     </div>
   );
 }

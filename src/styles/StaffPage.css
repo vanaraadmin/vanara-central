@@ -417,7 +417,7 @@
 }
 
 :root.vc-sticky-glass-visible .staff-chat {
-  bottom: calc(94px + env(safe-area-inset-bottom));
+  bottom: calc(208px + env(safe-area-inset-bottom));
 }
 
 .staff-chat__orb,
@@ -613,5 +613,17 @@
   .staff-chat__orb,
   .staff-chat__panel {
     transition: none;
+  }
+}
+
+@media (max-height: 699px) {
+  :root.vc-sticky-glass-visible .staff-chat {
+    bottom: calc(186px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 760px) {
+  :root.vc-sticky-glass-visible .staff-chat {
+    bottom: 132px;
   }
 }
