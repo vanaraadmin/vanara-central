@@ -69,20 +69,19 @@ test("water refill quantity is room-type based and never guest-count based", () 
   assert.doesNotMatch(service, /\badults\b|\bchildren\b|guest_count|guestCount/);
 });
 
-test("summary exposes the approved operational counters and fixed section order", () => {
+test("summary exposes only the approved actionable Housekeeping counters and fixed section order", () => {
   for (const key of [
-    "awaitingReceptionRelease",
-    "priorityTurnovers",
-    "normalCleaningDue",
-    "waterRefillDue",
-    "tasksClaimed",
-    "tasksInProgress",
-    "blockedRooms",
-    "completedToday",
-    "procurementAttention",
+    "toClean",
+    "cleaningInProgress",
+    "completedCleaningToday",
+    "waterDue",
   ]) {
     assert.match(service, new RegExp(key));
   }
+  assert.doesNotMatch(service, /completedToday:/);
+  assert.doesNotMatch(service, /blockedRooms:/);
+  assert.doesNotMatch(service, /tasksClaimed:/);
+  assert.doesNotMatch(service, /procurementAttention,/);
   assert.match(service, /taskCompletedOn\(task, date\)/);
   assert.match(service, /completed_at IS NOT NULL AND substr\(completed_at, 1, 10\) = \?/);
   assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
@@ -121,7 +120,7 @@ test("room-only operational context moved out of the Housekeeping queue", () => 
   assert.match(service, /FROM maintenance_tickets/);
   assert.match(service, /FROM procurement_requests/);
   assert.match(service, /nextArrival/);
-  assert.match(service, /procurementAttention/);
+  assert.match(service, /loadProcurementAttention/);
   assert.doesNotMatch(service, /procurementAttentionCard/);
   assert.match(service, /json_extract\(metadata_json, '\$\.outOfService'\)/);
   assert.doesNotMatch(page, /card\.guestName|card\.arrivalDate|card\.departureDate|card\.roomType|card\.alertSummary|card\.maintenanceSummary/);
@@ -190,7 +189,7 @@ test("summary counters render room-count wording", () => {
   assert.match(page, /function formatRoomCount\(value: number\): string/);
   assert.match(page, /return `\$\{value}/);
   assert.match(page, /value === 1 \? "Room" : "Rooms"/);
-  assert.match(page, /formatRoomCount\(housekeeping\.data\.summary\[item\.summaryKey\]\)/);
+  assert.match(page, /formatRoomCount\(housekeeping\.data\.sections\.find\(\(section\) => section\.id === item\.id\)\?\.cards\.length \?\? 0\)/);
   assert.match(page, /formatRoomCount\(section\.cards\.length\)/);
   assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
   assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);

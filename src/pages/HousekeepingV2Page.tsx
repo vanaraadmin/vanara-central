@@ -12,10 +12,10 @@ import {
 import type { HousekeepingV2Section, HousekeepingV2SectionId, HousekeepingV2TaskCard } from "../types/housekeeping-v2";
 import "../styles/HousekeepingV2Page.css";
 
-const homeSections: Array<{ id: HousekeepingV2SectionId; label: string; summaryKey: "priorityTurnovers" | "normalCleaningDue" | "waterRefillDue" }> = [
-  { id: "priority-turnover", label: "Priority", summaryKey: "priorityTurnovers" },
-  { id: "normal-cleaning", label: "Normal", summaryKey: "normalCleaningDue" },
-  { id: "water-refill", label: "Water", summaryKey: "waterRefillDue" },
+const homeSections: Array<{ id: HousekeepingV2SectionId; label: string }> = [
+  { id: "priority-turnover", label: "Priority" },
+  { id: "normal-cleaning", label: "Normal" },
+  { id: "water-refill", label: "Water" },
 ];
 
 type InterventionType = "cleaning" | "full-cleaning";
@@ -281,7 +281,7 @@ export default function HousekeepingV2Page() {
                 type="button"
               >
                 <span>{item.label}</span>
-                <strong>{formatRoomCount(housekeeping.data.summary[item.summaryKey])}</strong>
+                <strong>{formatRoomCount(housekeeping.data.sections.find((section) => section.id === item.id)?.cards.length ?? 0)}</strong>
               </button>
             ))}
           </section>

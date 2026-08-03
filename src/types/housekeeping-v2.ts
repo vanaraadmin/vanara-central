@@ -6,15 +6,10 @@ export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_
 export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "on_demand_previous_day" | "cleaning_due_today" | "on_demand_cleaning" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Summary {
-  awaitingReceptionRelease: number;
-  priorityTurnovers: number;
-  normalCleaningDue: number;
-  waterRefillDue: number;
-  tasksClaimed: number;
-  tasksInProgress: number;
-  blockedRooms: number;
-  completedToday: number;
-  procurementAttention: number;
+  toClean: number;
+  cleaningInProgress: number;
+  completedCleaningToday: number;
+  waterDue: number;
 }
 
 export interface HousekeepingV2TaskCard {

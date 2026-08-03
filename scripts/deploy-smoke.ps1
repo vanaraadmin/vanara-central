@@ -277,6 +277,14 @@ function Get-Section {
   return @($Overview.data.sections | Where-Object { $_.id -eq $Id }) | Select-Object -First 1
 }
 
+function Get-StaffCard {
+  param(
+    [object]$Overview,
+    [string]$Id
+  )
+  return @($Overview.data.cards | Where-Object { $_.id -eq $Id }) | Select-Object -First 1
+}
+
 if ($UseTemporarySmokeSession -and $Cookie) {
   Write-Host "Smoke authentication: explicit temporary session flag provided; VANARA_SMOKE_COOKIE will be ignored."
 }
@@ -305,10 +313,35 @@ try {
 
   $summary = Invoke-SmokeGet "/api/housekeeping/v2/summary"
   Assert-JsonSuccess $summary "Housekeeping summary"
-  foreach ($key in @("awaitingReceptionRelease", "priorityTurnovers", "normalCleaningDue", "waterRefillDue", "tasksClaimed", "tasksInProgress", "blockedRooms", "completedToday", "procurementAttention")) {
+  foreach ($key in @("toClean", "cleaningInProgress", "completedCleaningToday", "waterDue")) {
     if (-not $summary.data.PSObject.Properties.Name.Contains($key)) { throw "Housekeeping summary missing $key" }
   }
+  if ($summary.data.PSObject.Properties.Name.Contains("blockedRooms")) { throw "Housekeeping summary must not expose blockedRooms" }
   Write-Host "[OK] Housekeeping Summary structure"
+  Write-Host ("[OK] Housekeeping Summary values: {0} To Clean / {1} Cleaning In Progress / {2} Completed Cleaning Today / {3} Water Due" -f $summary.data.toClean, $summary.data.cleaningInProgress, $summary.data.completedCleaningToday, $summary.data.waterDue)
+
+  $staffOverview = Invoke-SmokeGet "/api/staff/overview"
+  Assert-JsonSuccess $staffOverview "Staff overview"
+  $housekeepingCard = Get-StaffCard $staffOverview "housekeeping"
+  if (-not $housekeepingCard) { throw "Staff overview missing Housekeeping card" }
+  $labels = @($housekeepingCard.metrics | ForEach-Object { $_.label })
+  $expectedLabels = @("To Clean", "Cleaning In Progress", "Completed Cleaning Today", "Water Due")
+  if ($labels.Count -ne $expectedLabels.Count) { throw "Staff Home Housekeeping summary must expose exactly four metrics" }
+  for ($i = 0; $i -lt $expectedLabels.Count; $i += 1) {
+    if ($labels[$i] -ne $expectedLabels[$i]) { throw "Unexpected Staff Home Housekeeping metric '$($labels[$i])'" }
+  }
+  if ($labels -contains "Blocked") { throw "Staff Home Housekeeping summary must not expose Blocked" }
+  if ($labels -contains "Completed Today") { throw "Staff Home Housekeeping summary must not expose generic Completed Today" }
+  if ($labels -contains "Water Completed Today") { throw "Staff Home Housekeeping summary must not expose Water Completed Today" }
+  $metricValues = @{}
+  foreach ($metric in @($housekeepingCard.metrics)) {
+    $metricValues[[string]$metric.label] = [int]$metric.value
+  }
+  if ($metricValues["To Clean"] -ne [int]$summary.data.toClean) { throw "Staff Home To Clean does not match Housekeeping summary" }
+  if ($metricValues["Cleaning In Progress"] -ne [int]$summary.data.cleaningInProgress) { throw "Staff Home Cleaning In Progress does not match Housekeeping summary" }
+  if ($metricValues["Completed Cleaning Today"] -ne [int]$summary.data.completedCleaningToday) { throw "Staff Home Completed Cleaning Today does not match Housekeeping summary" }
+  if ($metricValues["Water Due"] -ne [int]$summary.data.waterDue) { throw "Staff Home Water Due does not match Housekeeping summary" }
+  Write-Host "[OK] Staff Home Housekeeping summary uses approved cleaning and water counters"
 
   $tasks = Invoke-SmokeGet "/api/housekeeping/v2/tasks"
   Assert-JsonSuccess $tasks "Housekeeping tasks"

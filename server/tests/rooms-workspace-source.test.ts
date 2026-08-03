@@ -89,7 +89,7 @@ test("Staff Home Housekeeping summary consumes the V2 operational task engine", 
   assert.match(staffService, /getHousekeepingV2Overview/);
   assert.match(staffService, /staffHousekeepingMetrics/);
   assert.match(staffService, /Water Due/);
-  assert.match(staffService, /Completed Today/);
+  assert.match(staffService, /Completed Cleaning Today/);
   assert.match(staffService, /Cleaning In Progress/);
   assert.doesNotMatch(staffService, /getHousekeepingOverview/);
   assert.doesNotMatch(staffService, /cleanFirst \+ overview\.summary\.cleanToday/);

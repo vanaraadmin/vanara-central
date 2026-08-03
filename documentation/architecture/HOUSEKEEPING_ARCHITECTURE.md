@@ -224,19 +224,16 @@ Opening a room identity reveals the complete Room Workspace. Opening a task-spec
 
 ### 6.1 Required Counters
 
-The current-day summary must include at least:
+The Staff Home Housekeeping summary exposes only actionable Housekeeping counters:
 
 | Counter | Meaning | Calculation | Source |
 |---|---|---|---|
-| Awaiting Reception Release | Check-outs expected or due, not yet released by Reception | Turnover candidates where `room_released != 1` | `bookings`, `reception_stays` |
-| Priority Turnovers | Released rooms requiring turnover before next arrival | Turnover tasks in `AVAILABLE_FOR_CLAIM`, `CLAIMED`, `CLEANING_IN_PROGRESS`, `CHECKLIST_COMPLETE`, or inspection state | Housekeeping tasks plus Reception release |
-| Normal Cleaning Due | Occupied rooms due for standard cleaning today | Occupied stay where `next_standard_cleaning_due <= today` and no completed standard cleaning today | Housekeeping counters/tasks |
-| Water Refill Due | Occupied rooms due for daily refill | Occupied rooms without completed refill today | Housekeeping refill tasks |
-| Tasks Claimed | Tasks assigned but not complete | Task has assignee and active status | Housekeeping tasks |
-| Tasks In Progress | Active tasks marked in progress | Task state `IN_PROGRESS` or equivalent | Housekeeping tasks |
-| Blocked Rooms | Rooms blocked by Reception release or maintenance | Waiting release or maintenance out-of-service | Reception and Maintenance |
-| Completed Today | Tasks completed today | `completed_at` on current date | Housekeeping tasks |
-| Procurement Attention | Housekeeping supply requests requiring action | Requested or urgent requests not resolved | Procurement requests |
+| To Clean | Active cleaning work not yet in progress | Cleaning task card is active, not blocked, and not in an in-progress state | Housekeeping tasks |
+| Cleaning In Progress | Cleaning work currently being performed | Cleaning task card is in `IN_PROGRESS`, `CHECKLIST_COMPLETE`, or `READY_FOR_INSPECTION` | Housekeeping tasks |
+| Completed Cleaning Today | Cleaning work completed today | Completed Turnover, Standard Cleaning, or On-Demand Cleaning task on the current date | Housekeeping tasks |
+| Water Due | Rooms still needing daily water refill | Active Water Refill task cards in the Water queue | Housekeeping tasks |
+
+The summary must not expose Blocked, Maintenance Blocked, Water Completed Today, Procurement Attention, or placeholder counters. Maintenance-blocked rooms are counted in Rooms and Maintenance summaries only. If a Housekeeping task itself is blocked, that state is displayed on the individual task card, not as a summary counter.
 
 ### 6.2 Update Behavior
 

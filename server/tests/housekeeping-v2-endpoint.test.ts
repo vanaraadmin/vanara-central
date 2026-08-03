@@ -433,7 +433,7 @@ test("water refill completes from Available without Claim Start or In Progress",
   const db = new FakeHousekeepingV2DB();
 
   const initial = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
-  const initialBody = await initial.json() as { success: boolean; data: { summary: { waterRefillDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; taskStatus: string; capabilities: { canClaim: boolean; canStart: boolean; canComplete: boolean } }> }> } };
+  const initialBody = await initial.json() as { success: boolean; data: { summary: { completedCleaningToday: number; waterDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; taskStatus: string; capabilities: { canClaim: boolean; canStart: boolean; canComplete: boolean } }> }> } };
   assert.equal(initial.status, 200, JSON.stringify(initialBody));
   const water = initialBody.data.sections.find((section) => section.id === "water-refill")?.cards.find((card) => card.taskType === "WATER_REFILL");
   assert.ok(water);
@@ -461,9 +461,10 @@ test("water refill completes from Available without Claim Start or In Progress",
   assert.equal(db.events.some((event) => event.task_id === water.taskId && event.event_type === "complete"), true);
 
   const afterComplete = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
-  const afterBody = await afterComplete.json() as { success: boolean; data: { summary: { waterRefillDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  const afterBody = await afterComplete.json() as { success: boolean; data: { summary: { completedCleaningToday: number; waterDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
   assert.equal(afterComplete.status, 200, JSON.stringify(afterBody));
-  assert.equal(afterBody.data.summary.waterRefillDue, initialBody.data.summary.waterRefillDue - 1);
+  assert.equal(afterBody.data.summary.waterDue, initialBody.data.summary.waterDue - 1);
+  assert.equal(afterBody.data.summary.completedCleaningToday, initialBody.data.summary.completedCleaningToday);
   assert.equal(afterBody.data.sections.find((section) => section.id === "water-refill")?.cards.some((card) => card.taskId === water.taskId), false);
 });
 
@@ -501,7 +502,7 @@ test("standard cleaning due today stays in Normal with original operational date
   ];
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; reasonCodes: string[] }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; reasonCodes: string[] }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
@@ -513,7 +514,7 @@ test("standard cleaning due today stays in Normal with original operational date
   assert.equal(standard.currentQueue, "normal-cleaning");
   assert.equal(standard.reasonCodes.includes("cleaning_due_today"), true);
   assert.equal(priority.some((card) => card.taskType === "STANDARD_CLEANING"), false);
-  assert.equal(body.data.summary.normalCleaningDue, 1);
+  assert.equal(body.data.summary.toClean, 1);
 });
 
 test("standard cleaning can be completed as Full Cleaning and updates cleaning plus linen counters", async () => {
@@ -546,9 +547,9 @@ test("standard cleaning can be completed as Full Cleaning and updates cleaning p
   assert.equal(counter?.next_linen_change_due_date, "2026-08-05");
 
   const afterComplete = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const completedBody = await afterComplete.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  const completedBody = await afterComplete.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
   assert.equal(afterComplete.status, 200, JSON.stringify(completedBody));
-  assert.equal(completedBody.data.summary.normalCleaningDue, 0);
+  assert.equal(completedBody.data.summary.toClean, 0);
   assert.equal(completedBody.data.sections.find((section) => section.id === "normal-cleaning")?.cards.some((card) => card.taskId === standard.taskId), false);
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
 });
@@ -574,7 +575,7 @@ test("previous-day standard cleaning moves to Priority without duplication or lo
   db.events.push({ task_id: 51, event_type: "claim", idempotency_key: "claim:51" });
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { priorityTurnovers: number; normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; displayReason: string | null; assignee: string | null; reasonCodes: string[] }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; displayReason: string | null; assignee: string | null; reasonCodes: string[] }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
@@ -591,8 +592,9 @@ test("previous-day standard cleaning moves to Priority without duplication or lo
   assert.equal(normal.some((card) => card.taskId === 51), false);
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
   assert.equal(db.events.some((event) => event.task_id === 51 && event.event_type === "claim"), true);
-  assert.equal(body.data.summary.priorityTurnovers, 1);
-  assert.equal(body.data.summary.normalCleaningDue, 0);
+  assert.equal(priority.length, 1);
+  assert.equal(normal.length, 0);
+  assert.equal(body.data.summary.toClean, 1);
 
   const repeated = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
   assert.equal(repeated.status, 200, await repeated.text());
@@ -671,12 +673,12 @@ test("manual room NOT READY override appears in Housekeeping Normal without acti
   }));
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; currentQueue: string }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; currentQueue: string }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
   assert.equal(normal.some((card) => card.taskId === 121 && card.taskType === "STANDARD_CLEANING" && card.currentQueue === "normal-cleaning"), true);
-  assert.equal(body.data.summary.normalCleaningDue, 1);
+  assert.equal(body.data.summary.toClean, 1);
 });
 
 test("baseline physical NOT READY snapshot task is ignored by Housekeeping queues", async () => {
@@ -696,13 +698,12 @@ test("baseline physical NOT READY snapshot task is ignored by Housekeeping queue
   }));
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number; priorityTurnovers: number }; tasks: Array<{ taskId: number }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; tasks: Array<{ taskId: number }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
   assert.equal(body.data.tasks.some((card) => card.taskId === 124), false);
-  assert.equal(body.data.summary.normalCleaningDue, 0);
-  assert.equal(body.data.summary.priorityTurnovers, 0);
+  assert.equal(body.data.summary.toClean, 0);
 });
 
 test("non-operating units generate no automatic water cleaning linen or turnover work", async () => {
@@ -741,22 +742,18 @@ test("non-operating manual room readiness tasks remain out of Housekeeping queue
   }));
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { normalCleaningDue: number; priorityTurnovers: number; waterRefillDue: number }; tasks: Array<{ taskId: number }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number; cleaningInProgress: number; completedCleaningToday: number; waterDue: number }; tasks: Array<{ taskId: number }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
   assert.equal(body.data.tasks.some((card) => card.taskId === 122), false);
   assert.deepEqual(body.data.summary, {
-    awaitingReceptionRelease: 0,
-    priorityTurnovers: 0,
-    normalCleaningDue: 0,
-    waterRefillDue: 0,
-    tasksClaimed: 0,
-    tasksInProgress: 0,
-    blockedRooms: 0,
-    completedToday: 0,
-    procurementAttention: 0,
+    toClean: 0,
+    cleaningInProgress: 0,
+    completedCleaningToday: 0,
+    waterDue: 0,
   });
+  assert.equal("blockedRooms" in body.data.summary, false);
 });
 
 test("out-of-service maintenance ticket removes an operating room task from Housekeeping queues", async () => {
@@ -776,15 +773,19 @@ test("out-of-service maintenance ticket removes an operating room task from Hous
   db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { blockedRooms: number; priorityTurnovers: number; normalCleaningDue: number }; tasks: Array<{ taskId: number }>; sections: Array<{ id: string; cards: Array<{ taskId: number }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: Record<string, number>; tasks: Array<{ taskId: number }>; sections: Array<{ id: string; cards: Array<{ taskId: number }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
   assert.equal(body.data.tasks.some((card) => card.taskId === 123), false);
   assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 123), false);
-  assert.equal(body.data.summary.blockedRooms, 0);
-  assert.equal(body.data.summary.priorityTurnovers, 0);
-  assert.equal(body.data.summary.normalCleaningDue, 0);
+  assert.equal("blockedRooms" in body.data.summary, false);
+  assert.deepEqual(body.data.summary, {
+    toClean: 0,
+    cleaningInProgress: 0,
+    completedCleaningToday: 0,
+    waterDue: 0,
+  });
 });
 
 test("out-of-service maintenance rooms generate no automatic cleaning or water work", async () => {
@@ -898,7 +899,7 @@ test("previous-day on-demand cleaning becomes Priority while Water remains in Wa
   );
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { priorityTurnovers: number; normalCleaningDue: number; waterRefillDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; currentQueue: string; reasonCodes: string[]; waterQuantity: number | null }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number; waterDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; currentQueue: string; reasonCodes: string[]; waterQuantity: number | null }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
@@ -908,9 +909,11 @@ test("previous-day on-demand cleaning becomes Priority while Water remains in Wa
   assert.equal(normal.some((card) => card.taskId === 81), false);
   assert.equal(priority.some((card) => card.taskType === "WATER_REFILL"), false);
   assert.equal(water.some((card) => card.taskType === "WATER_REFILL" && card.waterQuantity === 2), true);
-  assert.equal(body.data.summary.priorityTurnovers, 1);
-  assert.equal(body.data.summary.normalCleaningDue, 0);
-  assert.equal(body.data.summary.waterRefillDue, 1);
+  assert.equal(priority.length, 1);
+  assert.equal(normal.length, 0);
+  assert.equal(water.length, 1);
+  assert.equal(body.data.summary.toClean, 1);
+  assert.equal(body.data.summary.waterDue, 1);
 });
 
 test("turnover remains Priority and keeps Reception release gate unchanged", async () => {
@@ -1023,9 +1026,9 @@ test("room workspace on-demand cleaning appears in Housekeeping Normal and is re
   assert.equal(created.status, 200, await created.text());
 
   const afterCreate = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
-  const createdBody = await afterCreate.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  const createdBody = await afterCreate.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
   assert.equal(afterCreate.status, 200, JSON.stringify(createdBody));
-  assert.equal(createdBody.data.summary.normalCleaningDue, 1);
+  assert.equal(createdBody.data.summary.toClean, 1);
   const normal = createdBody.data.sections.find((section) => section.id === "normal-cleaning");
   const task = normal?.cards.find((card) => card.taskType === "ON_DEMAND_CLEANING");
   assert.ok(task);
@@ -1043,9 +1046,9 @@ test("room workspace on-demand cleaning appears in Housekeeping Normal and is re
   assert.equal(completed.status, 200, await completed.text());
 
   const afterComplete = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
-  const completedBody = await afterComplete.json() as { success: boolean; data: { summary: { normalCleaningDue: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  const completedBody = await afterComplete.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
   assert.equal(afterComplete.status, 200, JSON.stringify(completedBody));
-  assert.equal(completedBody.data.summary.normalCleaningDue, 0);
+  assert.equal(completedBody.data.summary.toClean, 0);
   assert.equal(completedBody.data.sections.find((section) => section.id === "normal-cleaning")?.cards.some((card) => card.taskId === task.taskId), false);
   assert.equal(db.tasks.filter((item) => item.task_type === "ON_DEMAND_CLEANING" && item.unit_id === 1).length, 1);
 });

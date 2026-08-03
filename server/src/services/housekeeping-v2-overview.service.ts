@@ -12,15 +12,10 @@ export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
 
 export interface HousekeepingV2Summary {
-  awaitingReceptionRelease: number;
-  priorityTurnovers: number;
-  normalCleaningDue: number;
-  waterRefillDue: number;
-  tasksClaimed: number;
-  tasksInProgress: number;
-  blockedRooms: number;
-  completedToday: number;
-  procurementAttention: number;
+  toClean: number;
+  cleaningInProgress: number;
+  completedCleaningToday: number;
+  waterDue: number;
 }
 
 export interface HousekeepingV2TaskCard {
@@ -181,8 +176,9 @@ interface OperationalContext {
 }
 
 const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
-const CLAIMED_STATUSES = new Set<HousekeepingTaskStatus>(["CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
 const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
+const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING", "LINEN_CHANGE"]);
+const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING"]);
 const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STANDARD_INTERVAL_DAYS = 3;
@@ -219,7 +215,7 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
   const contexts = buildContexts(units, bookings, tasks, counters, alerts, maintenance, waterConfig, date);
   const allCards = contexts.flatMap((context) => cardsForContext(context, user));
   const sections = buildSections(allCards);
-  const summary = buildSummary(sections, allCards, tasks, date, procurement.attentionCount);
+  const summary = buildSummary(sections, allCards, tasks, date);
 
   return {
     operationalDate: date,
@@ -417,17 +413,13 @@ function buildSections(cards: HousekeepingV2TaskCard[]): HousekeepingV2Section[]
   }));
 }
 
-function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], tasks: HousekeepingTask[], date: string, procurementAttention: number): HousekeepingV2Summary {
+function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], tasks: HousekeepingTask[], date: string): HousekeepingV2Summary {
+  const cleaningCards = cards.filter((card) => CLEANING_TASK_TYPES.has(card.taskType));
   return {
-    awaitingReceptionRelease: cards.filter((card) => card.reasonCodes.includes("waiting_reception")).length,
-    priorityTurnovers: sections.find((section) => section.id === "priority-turnover")?.cards.length ?? 0,
-    normalCleaningDue: sections.find((section) => section.id === "normal-cleaning")?.cards.length ?? 0,
-    waterRefillDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,
-    tasksClaimed: cards.filter((card) => card.assignee && CLAIMED_STATUSES.has(card.taskStatus)).length,
-    tasksInProgress: cards.filter((card) => IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
-    blockedRooms: cards.filter((card) => card.isBlocked).length,
-    completedToday: tasks.filter((task) => taskCompletedOn(task, date)).length,
-    procurementAttention,
+    toClean: cleaningCards.filter((card) => !IN_PROGRESS_STATUSES.has(card.taskStatus) && !card.isBlocked).length,
+    cleaningInProgress: cleaningCards.filter((card) => IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
+    completedCleaningToday: tasks.filter((task) => COMPLETED_CLEANING_TASK_TYPES.has(task.taskType) && taskCompletedOn(task, date)).length,
+    waterDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,
   };
 }
 

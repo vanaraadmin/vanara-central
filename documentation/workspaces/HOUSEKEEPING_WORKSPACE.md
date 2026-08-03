@@ -203,6 +203,15 @@ Implemented room-origin action endpoints:
 
 The V2 checklist endpoint is not part of the implemented workspace.
 
+The V2 summary contract exposes only:
+
+- `toClean`
+- `cleaningInProgress`
+- `completedCleaningToday`
+- `waterDue`
+
+`completedCleaningToday` counts completed cleaning work only. Water Refill completion only decreases `waterDue`; it never increments a completed-cleaning counter. Maintenance-blocked rooms are represented by Rooms and Maintenance, not by Housekeeping summary.
+
 ## State Machines
 
 Task statuses:

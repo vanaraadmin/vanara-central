@@ -40,6 +40,10 @@ Business Rules Specification for Housekeeping.
 ## Housekeeping Workspace
 - Initial state shows compact Priority, Normal, and Water summary cards only.
 - Summary counters display room-count wording: 0 Rooms, 1 Room, 2 Rooms, and so on.
+- Staff Home Housekeeping summary exposes only actionable Housekeeping counters: To Clean, Cleaning In Progress, Completed Cleaning Today, and Water Due.
+- Completed Cleaning Today counts only completed cleaning tasks: Turnover Cleaning, Standard Cleaning, and On-Demand Cleaning.
+- Water Refill completion must never increment Completed Cleaning Today.
+- Housekeeping summary must never expose Blocked, Maintenance Blocked, Water Completed Today, or placeholder counters.
 - Tapping a summary expands only that actionable list.
 - Do not show clean rooms.
 - Do not show a Ready / No Action Required room list.
@@ -156,6 +160,8 @@ Exclude:
 ## Maintenance Boundary
 - Maintenance owns repairs and out-of-service blocks.
 - A room with an active out-of-service Maintenance ticket does not appear in Priority or Normal Housekeeping.
+- Maintenance-blocked rooms belong to Rooms and Maintenance summaries only.
+- Housekeeping ignores maintenance-blocked rooms in summary counters unless a real Housekeeping task card itself carries a blocked state.
 - Housekeeping must not offer Cleaning, Full Cleaning, Start, or Finish while an out-of-service Maintenance ticket blocks the room.
 - The room returns to Housekeeping only after Maintenance is resolved and a real Housekeeping trigger exists.
 
@@ -201,5 +207,6 @@ Room identity opens Room Workspace.
 - Priority list contains active turnover work, previous-operational-day Cleaning, previous-operational-day On-Demand Cleaning, and explicitly approved urgent Housekeeping work.
 - Water list contains only active daily refill work.
 - Water quantity is Bungalow 2, Yurt/Tent 2, Villa 4, independent of guest count.
+- Water is tracked only as Water Due in Housekeeping summary; there is no Water Completed Today counter.
 - Guest Count is informational only and must not feed Water Refill, Cleaning, Full Cleaning, Linen, Priority, task generation, Procurement, or Housekeeping logic.
 - Future changes to guest-count usage require explicit Product Owner decision.

@@ -1,4 +1,4 @@
-import { getHousekeepingV2Overview, type HousekeepingV2Bindings, type HousekeepingV2Overview, type HousekeepingV2TaskCard } from "./housekeeping-v2-overview.service.js";
+import { getHousekeepingV2Overview, type HousekeepingV2Bindings, type HousekeepingV2Overview } from "./housekeeping-v2-overview.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./rooms-workspace.service.js";
 import { getReceptionOverview, type ReceptionBindings } from "./reception.service.js";
@@ -64,21 +64,12 @@ function withSummaryLines(card: StaffOverviewCard): StaffOverviewCard {
   };
 }
 
-const IN_PROGRESS_STATUSES = new Set(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
-const CLEANING_TASK_TYPES = new Set(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING", "LINEN_CHANGE"]);
-
-function isCleaningTask(card: HousekeepingV2TaskCard): boolean {
-  return CLEANING_TASK_TYPES.has(card.taskType);
-}
-
 function staffHousekeepingMetrics(overview: HousekeepingV2Overview): StaffOverviewMetric[] {
-  const toClean = overview.tasks.filter((card) => isCleaningTask(card) && !IN_PROGRESS_STATUSES.has(card.taskStatus) && !card.isBlocked).length;
   return [
-    { label: "To Clean", value: toClean, tone: toClean > 0 ? "attention" : "good" },
-    { label: "Cleaning In Progress", value: overview.summary.tasksInProgress, tone: overview.summary.tasksInProgress > 0 ? "attention" : "neutral" },
-    { label: "Completed Today", value: overview.summary.completedToday, tone: "good" },
-    { label: "Water Due", value: overview.summary.waterRefillDue, tone: overview.summary.waterRefillDue > 0 ? "attention" : "good" },
-    { label: "Blocked", value: overview.summary.blockedRooms, tone: overview.summary.blockedRooms > 0 ? "urgent" : "neutral" },
+    { label: "To Clean", value: overview.summary.toClean, tone: overview.summary.toClean > 0 ? "attention" : "good" },
+    { label: "Cleaning In Progress", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
+    { label: "Completed Cleaning Today", value: overview.summary.completedCleaningToday, tone: "good" },
+    { label: "Water Due", value: overview.summary.waterDue, tone: overview.summary.waterDue > 0 ? "attention" : "good" },
   ];
 }
 
@@ -146,7 +137,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Housekeeping",
       metrics,
       summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Cleaning In Progress`,
-      summaryLine2: `${metrics[2].value} Completed Today / ${metrics[3].value} Water Due / ${metrics[4].value} Blocked`,
+      summaryLine2: `${metrics[2].value} Completed Cleaning Today / ${metrics[3].value} Water Due`,
     }));
   }
 

@@ -435,12 +435,14 @@ test("staff overview housekeeping summary derives from the Housekeeping V2 task 
   assert.deepEqual(card.metrics, [
     { label: "To Clean", value: 0, tone: "good" },
     { label: "Cleaning In Progress", value: 1, tone: "attention" },
-    { label: "Completed Today", value: 1, tone: "good" },
+    { label: "Completed Cleaning Today", value: 1, tone: "good" },
     { label: "Water Due", value: 1, tone: "attention" },
-    { label: "Blocked", value: 0, tone: "neutral" },
   ]);
+  assert.equal(card.metrics.length, 4);
+  assert.equal(card.metrics.some((metric) => metric.label === "Blocked"), false);
+  assert.equal(card.metrics.some((metric) => metric.label === "Completed Today"), false);
   assert.equal(card.summaryLine1, "0 To Clean / 1 Cleaning In Progress");
-  assert.equal(card.summaryLine2, "1 Completed Today / 1 Water Due / 0 Blocked");
+  assert.equal(card.summaryLine2, "1 Completed Cleaning Today / 1 Water Due");
 });
 
 test("staff overview rooms summary exposes reconciled operating counters from the Rooms read model", async () => {
