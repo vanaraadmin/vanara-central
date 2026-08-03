@@ -96,6 +96,11 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     departure_date: null,
     api_source: null,
     channel: null,
+    reception_guest_name: null,
+    reception_country: null,
+    reception_country_code: null,
+    reception_api_source: null,
+    reception_channel: null,
     active_task_count: 0,
     active_task_id: null,
     active_task_version: null,
@@ -387,7 +392,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   });
 
   assert.equal(inProgress.housekeeping.primaryStatus, "Cleaning In Progress");
-  assert.equal(inProgress.housekeeping.detail, "Assigned Dao");
+  assert.equal(inProgress.housekeeping.detail, "Assigned: Dao");
   assert.deepEqual(inProgress.housekeeping.primaryAction, {
     type: "COMPLETE_HOUSEKEEPING_TASK",
     label: "Finish Cleaning",
@@ -460,7 +465,7 @@ test("Housekeeping card presents waiting turnover before cleaning actions", asyn
   const room = byName(overview.rooms, "Bungalow 14");
 
   assert.equal(room.housekeeping.primaryStatus, "Waiting for Check-out");
-  assert.equal(room.housekeeping.detail, "Guest still in room.");
+  assert.equal(room.housekeeping.detail, "Reception has not released the room.");
   assert.equal(room.housekeeping.primaryAction, null);
   assert.equal(room.alertSummary, "Waiting for Check-out");
 });
@@ -484,7 +489,7 @@ test("Housekeeping card displays turnover work as Cleaning Required with Start C
   const room = byName(overview.rooms, "Bungalow 15");
 
   assert.equal(room.housekeeping.primaryStatus, "Cleaning Required");
-  assert.equal(room.housekeeping.detail, "Turnover");
+  assert.equal(room.housekeeping.detail, "Start cleaning.");
   assert.deepEqual(room.housekeeping.primaryAction, {
     type: "START_HOUSEKEEPING_TASK",
     label: "Start Cleaning",
@@ -565,7 +570,7 @@ test("occupied rooms expose current guest and vacant rooms expose no guest", asy
   assert.equal(vacant.currentStay, null);
 });
 
-test("Rooms occupancy comes from operational bookings, not Reception guest arrival flags", async () => {
+test("Rooms occupancy uses Beds24 for in-house stays outside today's turnover", async () => {
   const rooms = [
     roomRow({
       unit_id: 18,
@@ -598,6 +603,119 @@ test("Rooms occupancy comes from operational bookings, not Reception guest arriv
     vacant: 1,
     maintenanceBlocked: 0,
     seasonClosed: 0,
+  });
+});
+
+test("today checkout completion makes the room vacant while cleaning work continues", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 20,
+      unit_name: "Villa 10",
+      unit_type: "villa",
+      room_type_name: "Garden Villa",
+      booking_id: 2001,
+      beds24_booking_id: 92001,
+      guest_name: "Departed Guest",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-03",
+      api_source: "Direct",
+      reception_booking_id: 2001,
+      reception_beds24_booking_id: 92001,
+      reception_guest_name: "Departed Guest",
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-03",
+      reception_guest_arrived: 1,
+      reception_guest_left: 1,
+      reception_room_released: 1,
+      active_task_count: 1,
+      active_task_id: 20001,
+      active_task_version: 2,
+      active_task_status: "IN_PROGRESS",
+      active_task_type: "TURNOVER",
+      active_task_priority: "URGENT",
+      active_task_assignee: "Nun",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-03", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Villa 10");
+
+  assert.equal(room.operational.occupancy.state, "VACANT");
+  assert.equal(room.operational.occupancy.guestName, null);
+  assert.equal(room.currentStay, null);
+  assert.equal(room.housekeeping.primaryStatus, "Cleaning In Progress");
+  assert.equal(room.housekeeping.detail, "Assigned: Nun");
+  assert.deepEqual(overview.summary, {
+    total: 1,
+    occupied: 0,
+    vacant: 1,
+    maintenanceBlocked: 0,
+    seasonClosed: 0,
+  });
+});
+
+test("past departures do not enter today's Reception operational lifecycle", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 21,
+      unit_name: "Bungalow 21",
+      booking_id: null,
+      beds24_booking_id: null,
+      guest_name: "Past Departure",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-02",
+      reception_booking_id: 2101,
+      reception_beds24_booking_id: 92101,
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-02",
+      reception_guest_arrived: 1,
+      reception_room_released: 0,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-03", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 21");
+
+  assert.equal(room.reception.phase, "NONE");
+  assert.equal(room.operational.occupancy.state, "VACANT");
+  assert.equal(room.currentStay, null);
+});
+
+test("today arrival becomes occupied only after Reception check-in execution", async () => {
+  const arrivingRoom = roomRow({
+    unit_id: 22,
+    unit_name: "Bungalow 22",
+    booking_id: 2201,
+    beds24_booking_id: 92201,
+    guest_name: "Today Arrival",
+    arrival_date: "2026-08-02",
+    departure_date: "2026-08-07",
+    api_source: "Direct",
+    reception_booking_id: 2201,
+    reception_beds24_booking_id: 92201,
+    reception_guest_name: "Today Arrival",
+    reception_country: "Italian",
+    reception_arrival_date: "2026-08-02",
+    reception_departure_date: "2026-08-07",
+    reception_api_source: "Direct",
+  });
+
+  const waiting = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms: [arrivingRoom] }), "2026-08-02", roomsUser);
+  const checkedIn = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms: [{ ...arrivingRoom, reception_guest_arrived: 1 }] }), "2026-08-02", roomsUser);
+  const waitingRoom = byName(waiting.rooms, "Bungalow 22");
+  const occupiedRoom = byName(checkedIn.rooms, "Bungalow 22");
+
+  assert.equal(waitingRoom.operational.occupancy.state, "VACANT");
+  assert.equal(waitingRoom.currentStay, null);
+  assert.equal(occupiedRoom.operational.occupancy.state, "OCCUPIED");
+  assert.equal(occupiedRoom.operational.occupancy.guestName, "Today Arrival");
+  assert.deepEqual(occupiedRoom.currentStay, {
+    guestName: "Today Arrival",
+    nationality: "Italian",
+    source: "Direct",
+    arrivalDate: "2026-08-02",
+    departureDate: "2026-08-07",
+    stayNights: 5,
   });
 });
 
@@ -739,6 +857,8 @@ test("completed checkout phase comes from Reception checkout state", async () =>
   assert.equal(room.reception.checkOut.state, "COMPLETE");
   assert.equal(room.reception.checkOut.completedAt, "2026-08-02T05:00:00.000Z");
   assert.equal(room.reception.primaryAction, null);
+  assert.equal(room.operational.occupancy.state, "VACANT");
+  assert.equal(room.currentStay, null);
 });
 
 test("vacant rooms with no operational Reception state return NONE and no card action", async () => {
@@ -767,7 +887,7 @@ test("unresolved Reception alerts are exposed and resolved alerts are excluded",
   assert.equal(room.alertSummary, "Passport missing");
 });
 
-test("late checkout is exposed as a Reception alert summary, not a cleaning state", async () => {
+test("past checkout dates do not create Reception alerts or cleaning state changes", async () => {
   const rooms = [
     roomRow({
       unit_id: 16,
@@ -788,8 +908,9 @@ test("late checkout is exposed as a Reception alert summary, not a cleaning stat
   const room = byName(overview.rooms, "Bungalow 16");
 
   assert.equal(room.operational.housekeeping.condition, "READY");
-  assert.equal(room.alertSummary, "Late checkout");
+  assert.equal(room.alertSummary, null);
   assert.equal(room.housekeeping.primaryStatus, "CLEAN");
+  assert.equal(room.reception.phase, "NONE");
 });
 
 test("Reception primary actions require the existing Reception action capability", async () => {

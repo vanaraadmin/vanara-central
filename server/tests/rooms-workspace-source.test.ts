@@ -223,13 +223,13 @@ test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead 
   assert.match(roomExpandedWorkspace, /TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Reception"/);
   assert.match(turnoverCard, /eyebrow="Turnover"/);
-  assert.match(turnoverPresentation, /label:\s*"Start Cleaning"/);
-  assert.match(turnoverPresentation, /label:\s*"Finish Cleaning"/);
-  assert.match(turnoverPresentation, /Guest In House[\s\S]*Nothing to do/);
-  assert.match(turnoverPresentation, /Waiting for Check-out[\s\S]*Guest still in room/);
-  assert.match(turnoverPresentation, /Check-out Completed[\s\S]*Ready to start cleaning/);
-  assert.match(turnoverPresentation, /Ready for Check-in[\s\S]*Waiting next arrival/);
-  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Turnover complete/);
+  assert.match(turnoverCard, /title="Current State"/);
+  assert.match(turnoverPresentation, /Guest In House[\s\S]*Guest is still in the room/);
+  assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
+  assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
+  assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);
+  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Today's check-in is complete/);
+  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|HousekeepingTask|activeTask|Task #/);
   assert.doesNotMatch(turnoverCard, /Passport|Deposit|Open Reception|Arrival Due|Reception/);
 });
 
@@ -237,6 +237,9 @@ test("Housekeeping and Maintenance cards share the RoomDomainCard structure", ()
   for (const card of [turnoverCard, housekeepingCard, maintenanceCard]) {
     assert.match(card, /RoomDomainCard/);
     assert.match(card, /OperationalStateBlock/);
+  }
+  assert.doesNotMatch(turnoverCard, /PrimaryActionRow/);
+  for (const card of [housekeepingCard, maintenanceCard]) {
     assert.match(card, /PrimaryActionRow/);
   }
   assert.match(housekeepingCard, /Start On-demand Cleaning|action\.label/);

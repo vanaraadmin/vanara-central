@@ -33,11 +33,7 @@ export default function RoomExpandedWorkspace({
         {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
         <RoomOperationalSummaryCard summary={room.operational} />
         <TurnoverCard
-          actionPending={actionPending}
-          onCompleteTask={onCompleteHousekeepingTask}
-          onStartTask={onStartHousekeepingTask}
           roomId={room.unitId}
-          roomName={room.roomName}
           turnover={turnover}
         />
         <HousekeepingCard

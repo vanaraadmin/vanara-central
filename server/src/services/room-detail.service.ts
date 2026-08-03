@@ -3,7 +3,7 @@ import { createHousekeepingTask, getHousekeepingTask, housekeepingTaskCapabiliti
 import { getHousekeepingV2Overview, type HousekeepingV2Bindings } from "./housekeeping-v2-overview.service.js";
 import { createMaintenanceTicket, listOpenMaintenanceTicketDetailsForRoom, normalizeCreateMaintenanceTicketInput, type CreateMaintenanceTicketInput, type MaintenanceBindings, type MaintenanceTicketDetail } from "./maintenance.service.js";
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import { getReceptionStay, type ReceptionBindings } from "./reception.service.js";
+import { getReceptionStay, type ReceptionBindings, type ReceptionStay } from "./reception.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { ForbiddenError, type CurrentUser } from "./current-user.service.js";
 import { canChangeOperationalAvailability, loadOperationalAvailabilityForUnit, type OperationalAvailabilityStatus, type RoomOperationalStateBindings } from "./room-operational-state.service.js";
@@ -240,11 +240,23 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function roomReleasedSql(alias: string): string {
+  return `(
+    COALESCE(${alias}.guest_left, 0) = 1
+    AND COALESCE(${alias}.room_released, 0) = 1
+  )`;
+}
+
 function roomStatus(operations: HousekeepingRoom, maintenanceOpenIssues: number, outOfService: boolean, availabilityStatus: OperationalAvailabilityStatus): string {
   if (outOfService) return "Out of Service";
   if (availabilityStatus === "NOT_OPERATING") return "Not Operating";
   if (maintenanceOpenIssues > 0) return "Maintenance";
-  if (operations.occupancyStatus === "Ready for Guest") return "Vacant";
+  if (operations.occupancyStatus === "Ready for Guest" || operations.occupancyStatus === "Checked Out") return "Vacant";
+  return operations.occupancyStatus;
+}
+
+function roomOccupancyLabel(operations: HousekeepingRoom): string {
+  if (operations.occupancyStatus === "Ready for Guest" || operations.occupancyStatus === "Checked Out") return "Vacant";
   return operations.occupancyStatus;
 }
 
@@ -329,14 +341,54 @@ async function resolveUnit(env: RoomDetailBindings, id: number): Promise<UnitRow
 
 async function loadCurrentStay(env: RoomDetailBindings, unitId: number, today: string): Promise<StayRow | null> {
   return env.DB.prepare(`
-    SELECT booking_id, beds24_booking_id, guest_name, arrival_date, departure_date, adults, children,
-           api_source, channel, api_reference, reference
-    FROM bookings
-    WHERE unit_id = ?1
-      AND arrival_date <= ?2
-      AND departure_date > ?2
-      AND ${operationalBookingStatusSql("status")}
-    ORDER BY arrival_date DESC
+    SELECT b.booking_id, b.beds24_booking_id, b.guest_name, b.arrival_date, b.departure_date, b.adults, b.children,
+           b.api_source, b.channel, b.api_reference, b.reference
+    FROM bookings b
+    LEFT JOIN reception_stays rs_current ON rs_current.beds24_booking_id = b.beds24_booking_id
+    WHERE b.unit_id = ?1
+      AND ${operationalBookingStatusSql("b.status")}
+      AND (
+        (
+          b.arrival_date = ?2
+          AND COALESCE(rs_current.guest_arrived, 0) = 1
+          AND NOT ${roomReleasedSql("rs_current")}
+        )
+        OR (
+          b.arrival_date < ?2
+          AND b.departure_date = ?2
+          AND NOT ${roomReleasedSql("rs_current")}
+        )
+        OR (
+          b.arrival_date < ?2
+          AND b.departure_date > ?2
+        )
+      )
+    ORDER BY
+      CASE
+        WHEN COALESCE(rs_current.guest_arrived, 0) = 1 AND NOT ${roomReleasedSql("rs_current")} THEN 1
+        ELSE 2
+      END,
+      b.arrival_date DESC,
+      b.booking_id DESC
+    LIMIT 1
+  `).bind(unitId, today).first<StayRow>();
+}
+
+async function loadTodayTurnoverStay(env: RoomDetailBindings, unitId: number, today: string): Promise<StayRow | null> {
+  return env.DB.prepare(`
+    SELECT b.booking_id, b.beds24_booking_id, b.guest_name, b.arrival_date, b.departure_date, b.adults, b.children,
+           b.api_source, b.channel, b.api_reference, b.reference
+    FROM bookings b
+    WHERE b.unit_id = ?1
+      AND ${operationalBookingStatusSql("b.status")}
+      AND (b.arrival_date = ?2 OR b.departure_date = ?2)
+    ORDER BY
+      CASE
+        WHEN b.departure_date = ?2 THEN 1
+        WHEN b.arrival_date = ?2 THEN 2
+        ELSE 3
+      END,
+      b.booking_id DESC
     LIMIT 1
   `).bind(unitId, today).first<StayRow>();
 }
@@ -481,6 +533,32 @@ function operationalFallback(unit: UnitRow, stay: RoomCurrentStay | null): House
   };
 }
 
+function roomOperationsForStay(operations: HousekeepingRoom, stay: RoomCurrentStay | null): HousekeepingRoom {
+  if (stay) {
+    return {
+      ...operations,
+      operationalPriority: "Occupied",
+      occupancyStatus: "Occupied",
+    };
+  }
+  if (operations.occupancyStatus === "Ready for Guest") return operations;
+  return {
+    ...operations,
+    operationalPriority: operations.operationalPriority === "Occupied" ? "Ready" : operations.operationalPriority,
+    occupancyStatus: "Ready for Guest",
+  };
+}
+
+function receptionCheckoutCompleted(reception: ReceptionStay | null, turnoverStay: RoomCurrentStay | null, today: string): boolean {
+  return Boolean(
+    reception
+      && turnoverStay
+      && turnoverStay.departure === today
+      && reception.checkOut.guestLeft
+      && reception.checkOut.roomReleased,
+  );
+}
+
 function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): RoomHousekeepingTask["capabilities"] {
   const base = housekeepingTaskCapabilities(task);
   const isOwner = user.role === "Owner" && user.views.includes("owner");
@@ -556,7 +634,7 @@ function housekeepingDetail(tasks: HousekeepingTask[], storedState: RoomHousekee
 function roomTaskBelongsToCurrentStay(task: HousekeepingTask, stay: RoomCurrentStay | null): boolean {
   if (isRoomReadyOverrideTask(task)) return true;
   if (task.taskType === "TURNOVER") return true;
-  if (!stay) return false;
+  if (!stay) return true;
   if (task.bookingId !== null) return task.bookingId === stay.bookingId;
   if (task.stayId !== null) return task.stayId === stay.beds24BookingId;
   return false;
@@ -666,8 +744,9 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
 
   const today = getBangkokDate();
   await getHousekeepingV2Overview(env, user, today);
-  const [stayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement, operationalAvailability, storedHousekeepingState] = await Promise.all([
+  const [stayRow, turnoverStayRow, housekeepingOverview, activeTasks, tickets, notes, chatContext, receptionAlerts, procurement, operationalAvailability, storedHousekeepingState] = await Promise.all([
     loadCurrentStay(env, unit.unit_id, today),
+    loadTodayTurnoverStay(env, unit.unit_id, today),
     getHousekeepingOverview(env),
     loadActiveHousekeepingTasks(env, unit.unit_id, today),
     listOpenMaintenanceTicketDetailsForRoom(env, unit.unit_id),
@@ -680,13 +759,19 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
   ]);
 
   const currentStay = mapStay(stayRow);
+  const turnoverStay = mapStay(turnoverStayRow);
   const roomScopedActiveTasks = activeTasks.filter((task) => roomTaskBelongsToCurrentStay(task, currentStay));
-  const reception = currentStay ? await getReceptionStay(env, currentStay.beds24BookingId) : null;
-  const operations = housekeepingOverview.rooms.find((room) => room.unitId === unit.unit_id) ?? operationalFallback(unit, currentStay);
+  const receptionStay = turnoverStay ?? currentStay;
+  const reception = receptionStay ? await getReceptionStay(env, receptionStay.beds24BookingId) : null;
+  const operations = roomOperationsForStay(
+    housekeepingOverview.rooms.find((room) => room.unitId === unit.unit_id) ?? operationalFallback(unit, currentStay),
+    currentStay,
+  );
   const openIssues = tickets.length;
   const outOfService = tickets.some((ticket) => ticket.outOfService);
   const highestPriority = ["High", "Normal", "Low"].find((priority) => tickets.some((ticket) => ticket.priority === priority)) ?? null;
   const housekeeping = housekeepingDetail(roomScopedActiveTasks, storedHousekeepingState, user, outOfService, today);
+  const checkoutCompleted = receptionCheckoutCompleted(reception, turnoverStay, today) || operations.checkoutCompleted;
 
   return {
     unitId: unit.unit_id,
@@ -696,7 +781,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
     roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.primaryStatus === "Clean" || housekeeping.primaryStatus === "Dirty"
       ? roomStatus(operations, openIssues, outOfService, operationalAvailability.status)
       : housekeeping.primaryStatus,
-    occupancyStatus: operations.occupancyStatus,
+    occupancyStatus: roomOccupancyLabel(operations),
     housekeepingStatus: housekeeping.status,
     operationalAvailability: {
       status: operationalAvailability.status,
@@ -709,11 +794,11 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
       canChange: canChangeOperationalAvailability(user),
     },
     operationalPriority: operations.operationalPriority,
-    checkoutCompleted: operations.checkoutCompleted,
+    checkoutCompleted,
     checkoutCompletionSource: operations.checkoutCompletionSource,
     newGuestToday: operations.newGuestToday,
-    arrival: currentStay?.arrival ?? null,
-    departure: currentStay?.departure ?? null,
+    arrival: currentStay?.arrival ?? turnoverStay?.arrival ?? null,
+    departure: currentStay?.departure ?? turnoverStay?.departure ?? null,
     currentStay,
     housekeeping,
     maintenance: {

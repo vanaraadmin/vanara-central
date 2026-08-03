@@ -14,7 +14,6 @@ import {
 import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
 import type { MaintenancePriority } from "../types/maintenance";
 import type { OperationalAvailabilityStatus, RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
-import type { RoomHousekeepingCompletionMode } from "../types/rooms-workspace";
 import "../styles/RoomDetailPage.css";
 
 const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Normal", "High"];
@@ -39,10 +38,6 @@ function formatDateTime(value: string) {
 
 function statusTone(value: string): string {
   return value.toLowerCase().replaceAll(" ", "-");
-}
-
-function cleaningStateLabel(readyState: RoomReadyState): "CLEAN" | "DIRTY" {
-  return readyState === "READY" ? "CLEAN" : "DIRTY";
 }
 
 function CurrentStay({ stay }: { stay: RoomCurrentStay | null }) {
@@ -93,17 +88,20 @@ function RoomHeader({ room }: { room: RoomDetail }) {
   );
 }
 
-function turnoverCompletionPayload(mode: RoomHousekeepingCompletionMode) {
-  if (mode === "FULL") return { standardCleaningCompleted: true, linenChangeCompleted: true };
-  if (mode === "WATER") return { waterRefillCompleted: true };
-  return { standardCleaningCompleted: true, linenChangeCompleted: false };
-}
-
 function roomTaskCompletePayload(task: RoomHousekeepingTask) {
   if (task.taskType === "TURNOVER") return { standardCleaningCompleted: true, linenChangeCompleted: true };
   if (task.taskType === "LINEN_CHANGE") return { linenChangeCompleted: true };
   if (task.taskType === "WATER_REFILL") return { waterRefillCompleted: true };
   return { standardCleaningCompleted: true };
+}
+
+function TaskExecutionSteps({ task }: { task: RoomHousekeepingTask }) {
+  return (
+    <div className="room-task-checklist" aria-label={`Checklist for ${task.title}`}>
+      <span>Checklist</span>
+      <p>{task.taskType === "WATER_REFILL" ? "Water delivery ready for completion." : "Cleaning ready for completion."}</p>
+    </div>
+  );
 }
 
 function taskStatusLabel(task: RoomHousekeepingTask): string {
@@ -184,15 +182,11 @@ function useRoomTaskAction(roomId: string) {
 
 function TurnoverPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   const turnover = getRoomDetailTurnover(room);
-  const action = useRoomTaskAction(roomId);
+  void roomId;
 
   return (
     <TurnoverCard
-      actionPending={action.isPending}
-      onCompleteTask={(taskId, version, completionMode) => action.mutate(completeHousekeepingTask(taskId, version, turnoverCompletionPayload(completionMode)))}
-      onStartTask={(taskId, version) => action.mutate(startHousekeepingTask(taskId, version))}
       roomId={room.unitId}
-      roomName={room.roomName}
       turnover={turnover}
     />
   );
@@ -329,21 +323,20 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
       ]);
     },
   });
+  const hasActiveTask = room.housekeeping.tasks.length > 0;
   const hasOnDemand = room.housekeeping.tasks.some((task) => task.taskType === "ON_DEMAND_CLEANING");
-  const canCreateOnDemand = room.housekeeping.canCreateOnDemandCleaning && Boolean(room.currentStay);
+  const canCreateOnDemand = !hasActiveTask && room.housekeeping.canCreateOnDemandCleaning && Boolean(room.currentStay);
 
   return (
     <section className="room-section" aria-label="Housekeeping">
       <header><HousekeepingIcon /><h2>Housekeeping</h2></header>
       <div className="room-operation-card">
         <span className={`room-status-badge is-${room.housekeeping.primaryStatusTone}`}>{room.housekeeping.primaryStatus}</span>
-        <dl>
-          <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo ?? "Unassigned"}</dd></div>
-          <div><dt>Updated</dt><dd>{room.housekeeping.lastUpdated ? formatDateTime(room.housekeeping.lastUpdated) : "Not updated"}</dd></div>
-          <div><dt>Cleaning</dt><dd>{cleaningStateLabel(room.housekeeping.readyState)}</dd></div>
-          <div><dt>Active task</dt><dd>{room.housekeeping.activeTask?.title ?? "None"}</dd></div>
-          <div><dt>Reason</dt><dd>{room.housekeeping.activeTask?.reason ?? "No active work"}</dd></div>
-        </dl>
+        {room.housekeeping.assignedTo && (
+          <dl>
+            <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo}</dd></div>
+          </dl>
+        )}
       </div>
 
       {room.housekeeping.canChangeReadyState && (
@@ -356,24 +349,27 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
           <article className="room-task-card" key={task.id}>
             <div>
               <strong>{task.title}</strong>
-              <span>{taskStatusLabel(task)} - {task.reason}</span>
+              <span>Task Status</span>
+              <b>{taskStatusLabel(task)}</b>
             </div>
-            <span className={`room-status-badge is-${statusTone(task.isCarriedOver ? "Priority" : task.priority)}`}>{task.isCarriedOver ? "Priority" : task.priority}</span>
+            <TaskExecutionSteps task={task} />
             <RoomTaskActions action={taskAction} task={task} />
           </article>
         ))}
       </div>
 
-      <form className="room-on-demand-form" onSubmit={(event) => {
-        event.preventDefault();
-        if (canCreateOnDemand) createOnDemand.mutate();
-      }}>
-        <label>
-          On-Demand Cleaning
-          <textarea maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" rows={2} value={note} />
-        </label>
-        <button disabled={!canCreateOnDemand || createOnDemand.isPending || hasOnDemand} type="submit"><PlusIcon />Create On-Demand Cleaning</button>
-      </form>
+      {!hasActiveTask && (
+        <form className="room-on-demand-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (canCreateOnDemand) createOnDemand.mutate();
+        }}>
+          <label>
+            On-Demand Cleaning
+            <textarea maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" rows={2} value={note} />
+          </label>
+          <button disabled={!canCreateOnDemand || createOnDemand.isPending || hasOnDemand} type="submit"><PlusIcon />Create On-Demand Cleaning</button>
+        </form>
+      )}
 
       {hasOnDemand && <p className="room-form-help">An On-Demand Cleaning task is already active.</p>}
       {taskAction.isError && <p className="room-form-error">This task changed. The room is refreshing.</p>}

@@ -111,10 +111,12 @@ test("Housekeeping no longer owns a duplicate room detail surface", () => {
 });
 
 test("Room Workspace owns active housekeeping task and room operations", () => {
-  assert.match(roomWorkspace, /Active task/);
+  assert.match(roomWorkspace, /Task Status/);
   assert.match(roomWorkspace, /room\.housekeeping\.tasks/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>/);
   assert.match(roomWorkspace, /getRoomDetailTurnover\(room\)/);
+  assert.match(roomDetailService, /function roomOccupancyLabel/);
+  assert.match(roomDetailService, /occupancyStatus:\s*roomOccupancyLabel\(operations\)/);
   assert.doesNotMatch(roomWorkspace, /ReceptionPanel/);
   assert.match(roomWorkspace, /room\.procurement/);
   assert.doesNotMatch(homePage, /function Checklist/);
@@ -126,14 +128,13 @@ test("Housekeeping room path uses Turnover language instead of Reception workflo
   assert.match(roomExpandedWorkspace, /<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>[\s\S]*<HousekeepingPanel/);
   assert.match(turnoverCard, /eyebrow="Turnover"/);
-  assert.match(turnoverPresentation, /label:\s*"Start Cleaning"/);
-  assert.match(turnoverPresentation, /label:\s*"Finish Cleaning"/);
-  assert.match(turnoverPresentation, /Guest In House[\s\S]*Nothing to do/);
-  assert.match(turnoverPresentation, /Waiting for Check-out[\s\S]*Guest still in room/);
-  assert.match(turnoverPresentation, /Check-out Completed[\s\S]*Ready to start cleaning/);
-  assert.match(turnoverPresentation, /Cleaning In Progress[\s\S]*Assigned to \$\{task\.assignee\}/);
-  assert.match(turnoverPresentation, /Ready for Check-in[\s\S]*Waiting next arrival/);
-  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Turnover complete/);
+  assert.match(turnoverCard, /title="Current State"/);
+  assert.match(turnoverPresentation, /Guest In House[\s\S]*Guest is still in the room/);
+  assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
+  assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
+  assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);
+  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Today's check-in is complete/);
+  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|HousekeepingTask|activeTask|Task #/);
   assert.doesNotMatch(`${homePage}\n${turnoverCard}`, /Passport|Deposit|Open Reception|Arrival Due|Reception internal|room release|guest arrived/);
 });
 
@@ -141,7 +142,6 @@ test("Room Workspace labels physical housekeeping condition as clean or dirty", 
   assert.match(roomWorkspace, /Cleaning Status/);
   assert.match(roomWorkspace, /<option value="READY">CLEAN<\/option>/);
   assert.match(roomWorkspace, /<option value="NOT_READY">DIRTY<\/option>/);
-  assert.match(roomWorkspace, /cleaningStateLabel\(room\.housekeeping\.readyState\)/);
   assert.match(roomDetailService, /label:\s*"Clean"/);
   assert.match(roomDetailService, /label:\s*"Dirty"/);
   assert.doesNotMatch(roomWorkspace, />NOT READY<|>READY<|Room Status could not be changed/);
@@ -156,13 +156,13 @@ test("Room Workspace task actions refresh on stale or changed task data", () => 
   assert.doesNotMatch(roomWorkspace, />Claim<|>Release<|Release claim|claimHousekeepingTask|releaseHousekeepingClaim/);
 });
 
-test("Room Workspace displays carried-over cleaning as the same active Priority task", () => {
+test("Room Workspace keeps carried-over cleaning as the same active task without SLA wording", () => {
   assert.match(roomDetailService, /function taskIsCarriedOver/);
   assert.match(roomDetailService, /task\.operationalDate < today/);
   assert.match(roomDetailService, /Was scheduled previously\. Please do this first today\./);
   assert.match(roomDetailService, /roomTaskBelongsToCurrentStay/);
   assert.match(roomDetailService, /task\.isCarriedOver/);
-  assert.match(roomWorkspace, /task\.isCarriedOver \? "Priority" : task\.priority/);
+  assert.doesNotMatch(roomWorkspace, /task\.isCarriedOver \? "Priority" : task\.priority/);
   assert.doesNotMatch(roomDetailService, /Cleaning overdue|overdue by|SLA/i);
 });
 

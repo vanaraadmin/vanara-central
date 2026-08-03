@@ -365,10 +365,31 @@
   font-weight: var(--vc-weight-heavy);
 }
 
+.room-task-card b {
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+}
+
 .room-task-card span {
   color: var(--vc-text-secondary);
   font-size: var(--vc-text-sm);
   font-weight: var(--vc-weight-bold);
+}
+
+.room-task-checklist {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 3px;
+  padding: var(--vc-space-2);
+  border-radius: var(--vc-radius-md);
+  background: var(--vc-bg-subtle);
+}
+
+.room-task-checklist p {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
 }
 
 .room-task-actions {

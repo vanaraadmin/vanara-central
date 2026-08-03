@@ -12,23 +12,6 @@ type HousekeepingCardProps = {
   onCompleteTask: (taskId: number, version: number, completionMode: RoomHousekeepingCompletionMode) => void;
 };
 
-function HousekeepingTaskSummary({ housekeeping }: { housekeeping: RoomHousekeepingDomainSummary }) {
-  if (!housekeeping.activeTask) return null;
-
-  return (
-    <dl className="room-domain-card__facts">
-      <div className="room-domain-card__fact">
-        <dt>Task</dt>
-        <dd>{housekeeping.activeTask.taskType}</dd>
-      </div>
-      <div className="room-domain-card__fact">
-        <dt>Operator</dt>
-        <dd>{housekeeping.activeTask.assignee ?? "Unassigned"}</dd>
-      </div>
-    </dl>
-  );
-}
-
 export default function HousekeepingCard({
   actionPending,
   housekeeping,
@@ -79,8 +62,6 @@ export default function HousekeepingCard({
       )}
       status={<OperationalStatusPill label={housekeeping.primaryStatus} tone={housekeeping.tone} emphasis />}
       title="Work"
-    >
-      <HousekeepingTaskSummary housekeeping={housekeeping} />
-    </RoomDomainCard>
+    />
   );
 }

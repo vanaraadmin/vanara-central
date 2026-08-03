@@ -41,6 +41,11 @@ interface RoomWorkspaceRow {
   departure_date: string | null;
   api_source: string | null;
   channel: string | null;
+  reception_guest_name: string | null;
+  reception_country: string | null;
+  reception_country_code: string | null;
+  reception_api_source: string | null;
+  reception_channel: string | null;
   active_task_count: number | null;
   active_task_id: number | null;
   active_task_version: number | null;
@@ -296,10 +301,6 @@ function sourceLabel(row: RoomWorkspaceRow): string | null {
   return row.api_source || row.channel || null;
 }
 
-function nationalitySource(row: RoomWorkspaceRow): string | null {
-  return row.country || row.country_code || null;
-}
-
 function taskTypeLabel(taskType: HousekeepingTaskType | null): string | null {
   if (!taskType) return null;
   if (taskType === "TURNOVER") return "Turnover";
@@ -326,6 +327,13 @@ function flag(value: number | null): boolean {
   return value === 1;
 }
 
+function roomReleasedSql(alias: string): string {
+  return `(
+    COALESCE(${alias}.guest_left, 0) = 1
+    AND COALESCE(${alias}.room_released, 0) = 1
+  )`;
+}
+
 function emptyReceptionStep(): RoomReceptionStepSummary {
   return { state: "NOT_REQUIRED", completedAt: null };
 }
@@ -349,9 +357,48 @@ function stepState(required: boolean, complete: boolean): ReceptionStepState {
   return "PENDING";
 }
 
+function roomReleasedByReception(row: RoomWorkspaceRow): boolean {
+  return flag(row.reception_guest_left) && flag(row.reception_room_released);
+}
+
 function checkoutComplete(row: RoomWorkspaceRow): boolean {
-  if (!flag(row.reception_guest_left) || !flag(row.reception_keys_returned) || !flag(row.reception_room_released)) return false;
-  return flag(row.reception_deposit_collected) ? flag(row.reception_deposit_returned) : true;
+  return roomReleasedByReception(row);
+}
+
+function isTodayTurnover(row: RoomWorkspaceRow, date: string): boolean {
+  return row.reception_arrival_date === date || row.reception_departure_date === date;
+}
+
+function roomOccupancyState(row: RoomWorkspaceRow, date: string): RoomOccupancyState {
+  const inTodayTurnover = isTodayTurnover(row, date);
+  if (inTodayTurnover && roomReleasedByReception(row)) return "VACANT";
+  if (inTodayTurnover && flag(row.reception_guest_arrived)) return "OCCUPIED";
+  if (inTodayTurnover && row.reception_arrival_date === date) return "VACANT";
+  return row.beds24_booking_id ? "OCCUPIED" : "VACANT";
+}
+
+function operationalGuestName(row: RoomWorkspaceRow): string {
+  return row.reception_guest_name || row.guest_name || "Guest name unavailable";
+}
+
+function operationalNationality(row: RoomWorkspaceRow): string | null {
+  return row.reception_country || row.reception_country_code || row.country || row.country_code || null;
+}
+
+function operationalSource(row: RoomWorkspaceRow): string | null {
+  return row.reception_api_source || row.reception_channel || sourceLabel(row);
+}
+
+function operationalArrival(row: RoomWorkspaceRow): string | null {
+  return row.reception_arrival_date || row.arrival_date;
+}
+
+function operationalDeparture(row: RoomWorkspaceRow): string | null {
+  return row.reception_departure_date || row.departure_date;
+}
+
+function operationalBookingId(row: RoomWorkspaceRow): number | null {
+  return row.reception_beds24_booking_id ?? row.beds24_booking_id;
 }
 
 function checkInComplete(row: RoomWorkspaceRow): boolean {
@@ -368,7 +415,7 @@ function receptionPhase(row: RoomWorkspaceRow, date: string): ReceptionStayPhase
   const checkedOut = checkoutComplete(row);
 
   if (row.reception_departure_date === date && checkedOut) return "CHECKED_OUT";
-  if (row.reception_departure_date <= date && arrived && !checkedOut) return "DEPARTURE_DUE";
+  if (row.reception_departure_date === date && arrived && !checkedOut) return "DEPARTURE_DUE";
   if (row.reception_arrival_date === date && !checkInComplete(row)) return "ARRIVAL_DUE";
   if (row.reception_arrival_date <= date && row.reception_departure_date > date && arrived && !checkedOut) return "IN_HOUSE";
   return "NONE";
@@ -595,17 +642,17 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
 
 function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccupancyState, user?: CurrentUser): RoomHousekeepingDomainSummary {
   const activeTask = mapHousekeepingActiveTask(row);
-  const activeTaskLabel = taskTypeLabel(row.active_task_type);
   const action = mapHousekeepingAction(row, occupancyState, user);
   const workState = housekeepingWorkState(row);
   const maintenanceTarget = row.primary_maintenance_ticket_id ? `/maintenance/${row.primary_maintenance_ticket_id}` : "/maintenance";
+  const assignedOperator = row.active_task_assignee ? `Assigned: ${row.active_task_assignee}` : "Assigned operator pending";
 
   if (workState === "IN_PROGRESS") {
     return {
       primaryStatus: "Cleaning In Progress",
       tone: "info",
-      detail: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : "Assigned operator pending",
-      secondaryInfo: activeTaskLabel,
+      detail: assignedOperator,
+      secondaryInfo: null,
       activeTask,
       primaryAction: action,
     };
@@ -615,8 +662,8 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
     return {
       primaryStatus: "Waiting for Check-out",
       tone: "warning",
-      detail: "Guest still in room.",
-      secondaryInfo: activeTaskLabel,
+      detail: "Reception has not released the room.",
+      secondaryInfo: null,
       activeTask,
       primaryAction: null,
     };
@@ -627,7 +674,7 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
       primaryStatus: "Cleaning Blocked",
       tone: "danger",
       detail: "Maintenance Issue",
-      secondaryInfo: row.primary_maintenance_title,
+      secondaryInfo: null,
       activeTask,
       primaryAction: {
         type: "OPEN_MAINTENANCE",
@@ -644,8 +691,10 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
     return {
       primaryStatus: row.active_task_type === "WATER_REFILL" ? "Water Refill" : "Cleaning Required",
       tone: "warning",
-      detail: activeTaskLabel ?? "Housekeeping work required",
-      secondaryInfo: row.active_task_assignee ? `Assigned ${row.active_task_assignee}` : null,
+      detail: row.active_task_assignee
+        ? `Assigned: ${row.active_task_assignee}`
+        : row.active_task_type === "WATER_REFILL" ? "Deliver water." : "Start cleaning.",
+      secondaryInfo: null,
       activeTask,
       primaryAction: action,
     };
@@ -699,9 +748,12 @@ function mapMaintenanceSummary(row: RoomWorkspaceRow, user?: CurrentUser): RoomM
 
 function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
   const group = roomFamily(row);
-  const occupancyState = row.beds24_booking_id ? "OCCUPIED" : "VACANT";
-  const guestName = row.guest_name || "Guest name unavailable";
-  const staySource = sourceLabel(row);
+  const occupancyState = roomOccupancyState(row, date);
+  const guestName = operationalGuestName(row);
+  const staySource = operationalSource(row);
+  const arrival = operationalArrival(row);
+  const departure = operationalDeparture(row);
+  const bookingId = operationalBookingId(row);
   const reception = mapReceptionSummary(row, receptionAlerts, date, user);
 
   return {
@@ -713,14 +765,14 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
     sortNumber: roomNumber(row.unit_name),
     heroImageKey: normalizeKey(row.unit_name),
     alertSummary: compactAlertSummary(row, reception, date),
-    currentStay: occupancyState === "OCCUPIED" && row.arrival_date && row.departure_date
+    currentStay: occupancyState === "OCCUPIED" && arrival && departure
       ? {
           guestName,
-          nationality: nationalitySource(row),
+          nationality: operationalNationality(row),
           source: staySource,
-          arrivalDate: row.arrival_date,
-          departureDate: row.departure_date,
-          stayNights: stayNights(row.arrival_date, row.departure_date),
+          arrivalDate: arrival,
+          departureDate: departure,
+          stayNights: stayNights(arrival, departure),
         }
       : null,
     operational: {
@@ -734,7 +786,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
       occupancy: {
         state: occupancyState,
         guestName: occupancyState === "OCCUPIED" ? guestName : null,
-        bookingId: occupancyState === "OCCUPIED" ? row.beds24_booking_id : null,
+        bookingId: occupancyState === "OCCUPIED" ? bookingId : null,
         source: occupancyState === "OCCUPIED" ? staySource : null,
       },
       housekeeping: {
@@ -792,8 +844,13 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       mt.primary_maintenance_title,
       rb.booking_id AS reception_booking_id,
       rb.beds24_booking_id AS reception_beds24_booking_id,
+      rb.guest_name AS reception_guest_name,
+      rb.country AS reception_country,
+      rb.country_code AS reception_country_code,
       rb.arrival_date AS reception_arrival_date,
       rb.departure_date AS reception_departure_date,
+      rb.api_source AS reception_api_source,
+      rb.channel AS reception_channel,
       (
         SELECT COUNT(*)
         FROM bookings b_arrival
@@ -849,10 +906,12 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
     LEFT JOIN bookings b ON b.booking_id = (
       SELECT b2.booking_id
       FROM bookings b2
+      LEFT JOIN reception_stays rs_current ON rs_current.beds24_booking_id = b2.beds24_booking_id
       WHERE b2.unit_id = u.unit_id
         AND b2.arrival_date <= ?1
         AND b2.departure_date > ?1
         AND ${operationalBookingStatusSql("b2.status")}
+        AND NOT (b2.departure_date = ?1 AND ${roomReleasedSql("rs_current")})
       ORDER BY b2.arrival_date DESC, b2.booking_id DESC
       LIMIT 1
     )
@@ -871,11 +930,6 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
             AND COALESCE(rs2.room_released, 0) = 0
           )
           OR (
-            b2.departure_date <= ?1
-            AND COALESCE(rs2.guest_arrived, 0) = 1
-            AND COALESCE(rs2.room_released, 0) = 0
-          )
-          OR (
             b2.departure_date = ?1
             AND COALESCE(rs2.guest_left, 0) = 1
             AND COALESCE(rs2.room_released, 0) = 1
@@ -883,7 +937,7 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
         )
       ORDER BY
         CASE
-          WHEN b2.departure_date <= ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 AND COALESCE(rs2.room_released, 0) = 0 THEN 1
+          WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 AND COALESCE(rs2.room_released, 0) = 0 THEN 1
           WHEN b2.arrival_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 0 THEN 2
           WHEN b2.arrival_date <= ?1 AND b2.departure_date > ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 THEN 3
           WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_left, 0) = 1 AND COALESCE(rs2.room_released, 0) = 1 THEN 4
