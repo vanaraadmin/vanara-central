@@ -88,7 +88,8 @@ export default function AppRouter() {
           <Route path="housekeeping-v2" element={<HousekeepingV2Page />} />
           <Route path="housekeeping/rooms/:unitId" element={<HousekeepingRoomRedirect />} />
           <Route path="housekeeping/checklist/:roomId" element={<HousekeepingRoomRedirect />} />
-          <Route path="availability" element={<AvailabilityPage />} />
+          <Route path="availability" element={<Navigate replace to="/availability-prices" />} />
+          <Route path="availability-prices" element={<AvailabilityPage />} />
           <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="maintenance/new" element={<CreateMaintenancePage />} />
           <Route path="maintenance/:issueId" element={<MaintenanceDetailPage />} />

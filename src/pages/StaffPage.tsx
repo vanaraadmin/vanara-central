@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, useMemo } from "react";
 import airplaneLandingIcon from "../assets/img/airplane-landing-light.svg";
 import bedIcon from "../assets/img/bed-light.svg";
+import calendarCheckIcon from "../assets/img/calendar-check-light.svg";
 import shoppingCartIcon from "../assets/img/shopping-cart-light.svg";
 import sprayBottleIcon from "../assets/img/spray-bottle-light.svg";
 import wrenchIcon from "../assets/img/wrench-light.svg";
@@ -20,6 +21,7 @@ import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
   "rooms",
+  "availability",
   "reception",
   "housekeeping",
   "maintenance",
@@ -29,11 +31,24 @@ const WORKSPACE_ORDER: StaffCardId[] = [
 
 const workspaceIcons: Record<StaffCardId, string> = {
   rooms: bedIcon,
+  availability: calendarCheckIcon,
   reception: airplaneLandingIcon,
   housekeeping: sprayBottleIcon,
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
   chat: chatIcon,
+};
+
+const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
+  id: "availability",
+  module: "rooms",
+  title: "Availability & Prices",
+  description: "Check stay availability and pricing.",
+  href: "/availability-prices",
+  cta: "Open workspace",
+  metrics: [],
+  summaryLine1: "Arrival / Departure",
+  summaryLine2: "Read-only search",
 };
 
 const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {
@@ -58,6 +73,11 @@ function sortWorkspaces(workspaces: StaffOverviewCard[]) {
     (a, b) =>
       WORKSPACE_ORDER.indexOf(a.id) - WORKSPACE_ORDER.indexOf(b.id),
   );
+}
+
+function withAvailabilityWorkspace(workspaces: StaffOverviewCard[]) {
+  if (workspaces.some((workspace) => workspace.id === "availability")) return workspaces;
+  return [...workspaces, AVAILABILITY_WORKSPACE_CARD];
 }
 
 function iconStyle(iconUrl: string): CSSProperties {
@@ -145,7 +165,7 @@ export default function StaffPage() {
     refetchInterval: 60_000,
   });
 
-  const workspaces = staff.data ? sortWorkspaces(staff.data.cards) : [];
+  const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
