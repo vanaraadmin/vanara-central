@@ -54,8 +54,11 @@ export interface ListRecentBookingEventsOptions {
 
 interface BookingEventRow {
   booking_event_id: number;
+  booking_id: number;
   event_type: BookingEventType;
   beds24_booking_id: number;
+  master_beds24_booking_id: number | null;
+  pulse_group_beds24_booking_id: number | null;
   event_accommodation: string;
   event_source: string | null;
   occurred_at: string;
@@ -72,9 +75,24 @@ interface BookingEventRow {
   price: number | null;
   api_source: string | null;
   channel: string | null;
+  unit_type: string | null;
+  room_type_name: string | null;
+  room_name: string | null;
 }
 
-function normalizedText(value: string | null): string {
+interface BookingPulseGroupMemberRow {
+  beds24_booking_id: number;
+  master_beds24_booking_id: number | null;
+  unit_id: number | null;
+  unit_name: string | null;
+  unit_type: string | null;
+  room_type_name: string | null;
+  room_name: string | null;
+  arrival_date: string | null;
+  departure_date: string | null;
+}
+
+function normalizedText(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
@@ -130,6 +148,110 @@ function sourceFor(row: BookingEventRow): string | null {
   return cleanOptionalText(row.event_source) ?? cleanOptionalText(row.channel) ?? cleanOptionalText(row.api_source);
 }
 
+function pulseGroupKeyFor(row: BookingEventRow): number {
+  return row.pulse_group_beds24_booking_id ?? row.master_beds24_booking_id ?? row.beds24_booking_id;
+}
+
+function accommodationFamilyFor(value: string | null | undefined): string | null {
+  const normalized = normalizedText(value);
+  if (!normalized) return null;
+  if (normalized.includes("villa")) return "Villa";
+  if (normalized.includes("bungalow")) return "Bungalow";
+  if (normalized.includes("tent") || normalized.includes("yurt")) return "Tent";
+  return null;
+}
+
+function accommodationFamilyForMember(row: Pick<BookingPulseGroupMemberRow, "room_name" | "room_type_name" | "unit_name" | "unit_type">): string {
+  if (row.unit_type) {
+    const normalized = normalizedText(row.unit_type);
+    if (normalized === "villa") return "Villa";
+    if (normalized === "bungalow") return "Bungalow";
+    if (normalized === "tent" || normalized === "yurt") return "Tent";
+  }
+
+  return accommodationFamilyFor(row.unit_name)
+    ?? accommodationFamilyFor(row.room_type_name)
+    ?? accommodationFamilyFor(row.room_name)
+    ?? cleanOptionalText(row.room_type_name)
+    ?? cleanOptionalText(row.room_name)
+    ?? "Room";
+}
+
+function pluralAccommodation(label: string, count: number): string {
+  if (count === 1) return label;
+  if (label === "Bungalow") return "Bungalows";
+  if (label === "Villa") return "Villas";
+  if (label === "Tent") return "Tents";
+  if (label.endsWith("s")) return label;
+  return `${label}s`;
+}
+
+function sortAccommodationLabel(left: string, right: string): number {
+  const rank = new Map<string, number>([
+    ["Villa", 1],
+    ["Bungalow", 2],
+    ["Tent", 3],
+  ]);
+  return (rank.get(left) ?? 99) - (rank.get(right) ?? 99) || left.localeCompare(right);
+}
+
+function uniqueGroupMembers(members: BookingPulseGroupMemberRow[]): BookingPulseGroupMemberRow[] {
+  const byBooking = new Map<number, BookingPulseGroupMemberRow>();
+  for (const member of members) {
+    byBooking.set(member.beds24_booking_id, member);
+  }
+  return [...byBooking.values()];
+}
+
+function roomMembersForSummary(members: BookingPulseGroupMemberRow[]): BookingPulseGroupMemberRow[] {
+  const unique = uniqueGroupMembers(members);
+  const withPhysicalUnit = unique.filter((member) => member.unit_id !== null);
+  return withPhysicalUnit.length > 0 ? withPhysicalUnit : unique;
+}
+
+function isGroupPulse(row: BookingEventRow, members: BookingPulseGroupMemberRow[]): boolean {
+  return pulseGroupKeyFor(row) !== row.beds24_booking_id || uniqueGroupMembers(members).length > 1;
+}
+
+function accommodationSummaryFor(row: BookingEventRow, members: BookingPulseGroupMemberRow[]): string | null {
+  if (!isGroupPulse(row, members)) {
+    return cleanOptionalText(row.unit_name) ?? cleanOptionalText(row.event_accommodation);
+  }
+
+  const counts = new Map<string, number>();
+  for (const member of roomMembersForSummary(members)) {
+    const label = accommodationFamilyForMember(member);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  const summary = [...counts.entries()]
+    .sort(([left], [right]) => sortAccommodationLabel(left, right))
+    .map(([label, count]) => `${count} ${pluralAccommodation(label, count)}`)
+    .join(" + ");
+
+  return cleanOptionalText(summary) ?? cleanOptionalText(row.unit_name) ?? cleanOptionalText(row.event_accommodation);
+}
+
+function groupUnitIdFor(row: BookingEventRow, members: BookingPulseGroupMemberRow[]): number | null {
+  if (!isGroupPulse(row, members)) return row.unit_id;
+  const unitIds = new Set(roomMembersForSummary(members).map((member) => member.unit_id).filter((value): value is number => value !== null));
+  return unitIds.size === 1 ? [...unitIds][0] : null;
+}
+
+function groupDateFor(
+  row: BookingEventRow,
+  members: BookingPulseGroupMemberRow[],
+  field: "arrival_date" | "departure_date",
+): string | null {
+  if (!isGroupPulse(row, members)) return row[field];
+  const values = roomMembersForSummary(members)
+    .map((member) => member[field])
+    .filter((value): value is string => Boolean(value));
+  if (values.length === 0) return row[field];
+  values.sort();
+  return field === "arrival_date" ? values[0] : values[values.length - 1];
+}
+
 function dateOnlyToTime(value: string | null | undefined): number | null {
   if (!value) return null;
   const time = new Date(`${value}T00:00:00+07:00`).getTime();
@@ -155,23 +277,26 @@ function cleanOptionalNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEventsOptions): BookingPulseItem {
+function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEventsOptions, groupMembers: BookingPulseGroupMemberRow[] = []): BookingPulseItem {
   const eventType = pulseTypeFor(row.event_type);
   const includeBookingValue = options.includeBookingValue === true;
+  const groupKey = pulseGroupKeyFor(row);
+  const arrivalDate = groupDateFor(row, groupMembers, "arrival_date");
+  const departureDate = groupDateFor(row, groupMembers, "departure_date");
   return {
-    eventId: `${row.beds24_booking_id}:${eventType}:${row.occurred_at}`,
-    bookingId: String(row.beds24_booking_id),
+    eventId: `${groupKey}:${eventType}:${row.occurred_at}`,
+    bookingId: String(groupKey),
     eventType,
     eventTimestamp: row.occurred_at,
     guestName: cleanOptionalText(row.guest_name) ?? "Guest name unavailable",
     nationality: cleanOptionalText(row.country) ?? cleanOptionalText(row.country_code),
     countryCode: cleanOptionalText(row.country_code),
-    unitId: row.unit_id,
-    unitName: cleanOptionalText(row.unit_name) ?? cleanOptionalText(row.event_accommodation),
+    unitId: groupUnitIdFor(row, groupMembers),
+    unitName: accommodationSummaryFor(row, groupMembers),
     source: sourceFor(row),
-    arrivalDate: row.arrival_date,
-    departureDate: row.departure_date,
-    stayNights: stayNights(row.arrival_date, row.departure_date),
+    arrivalDate,
+    departureDate,
+    stayNights: stayNights(arrivalDate, departureDate),
     bookingStatus: cleanOptionalText(row.booking_status),
     guestCount: guestCount(row),
     totalPrice: includeBookingValue ? cleanOptionalNumber(row.price) : null,
@@ -280,6 +405,37 @@ function bookingPulseRowFor(rows: BookingEventRow[]): BookingEventRow {
   return sorted.find((row) => row.event_type === "new") ?? latest;
 }
 
+async function loadBookingPulseGroupMembers(env: BookingEventsBindings, groupKey: number): Promise<BookingPulseGroupMemberRow[]> {
+  const rows = await env.DB.prepare(`
+    SELECT DISTINCT
+      b.beds24_booking_id,
+      b.master_beds24_booking_id,
+      b.unit_id,
+      u.unit_name,
+      u.unit_type,
+      rt.room_type_name,
+      rt.room_name,
+      b.arrival_date,
+      b.departure_date
+    FROM bookings b
+    LEFT JOIN booking_group_members gm
+      ON gm.member_beds24_booking_id = b.beds24_booking_id
+    LEFT JOIN units u
+      ON u.unit_id = b.unit_id
+    LEFT JOIN room_types rt
+      ON rt.room_type_id = b.room_type_id
+    WHERE b.beds24_booking_id = ?
+       OR b.master_beds24_booking_id = ?
+       OR gm.master_beds24_booking_id = ?
+    ORDER BY
+      CASE WHEN b.beds24_booking_id = ? THEN 0 ELSE 1 END,
+      u.position,
+      b.beds24_booking_id
+  `).bind(groupKey, groupKey, groupKey, groupKey).all<BookingPulseGroupMemberRow>();
+
+  return rows.results ?? [];
+}
+
 export async function listRecentBookingEvents(
   env: BookingEventsBindings,
   limit = 3,
@@ -290,8 +446,11 @@ export async function listRecentBookingEvents(
   const rows = await env.DB.prepare(`
     SELECT
       be.booking_event_id,
+      be.booking_id,
       be.event_type,
       be.beds24_booking_id,
+      b.master_beds24_booking_id,
+      COALESCE(b.master_beds24_booking_id, gm.master_beds24_booking_id, b.beds24_booking_id) AS pulse_group_beds24_booking_id,
       be.accommodation AS event_accommodation,
       be.source AS event_source,
       be.occurred_at,
@@ -307,28 +466,42 @@ export async function listRecentBookingEvents(
       b.children,
       b.price,
       b.api_source,
-      b.channel
+      b.channel,
+      u.unit_type,
+      rt.room_type_name,
+      rt.room_name
     FROM booking_events be
     INNER JOIN bookings b
       ON b.booking_id = be.booking_id
+    LEFT JOIN booking_group_members gm
+      ON gm.member_beds24_booking_id = b.beds24_booking_id
     LEFT JOIN units u
       ON u.unit_id = b.unit_id
+    LEFT JOIN room_types rt
+      ON rt.room_type_id = b.room_type_id
     WHERE be.event_type IN ('new', 'updated', 'cancelled')
     ORDER BY be.occurred_at DESC, be.booking_event_id DESC
     LIMIT ?
   `).bind(readLimit).all<BookingEventRow>();
 
-  const rowsByBooking = new Map<string, BookingEventRow[]>();
+  const rowsByGroup = new Map<string, BookingEventRow[]>();
 
   for (const row of rows.results ?? []) {
     if (!isBookingPulseEventVisible(row.occurred_at, now)) continue;
-    const bookingKey = String(row.beds24_booking_id);
-    rowsByBooking.set(bookingKey, [...(rowsByBooking.get(bookingKey) ?? []), row]);
+    const bookingKey = String(pulseGroupKeyFor(row));
+    rowsByGroup.set(bookingKey, [...(rowsByGroup.get(bookingKey) ?? []), row]);
   }
 
-  return [...rowsByBooking.values()]
+  const pulseRows = [...rowsByGroup.values()]
     .map(bookingPulseRowFor)
     .sort(eventSortDescending)
-    .slice(0, limit)
-    .map((row) => toBookingPulseItem(row, options));
+    .slice(0, limit);
+
+  const groupMembers = new Map<number, BookingPulseGroupMemberRow[]>();
+  await Promise.all(pulseRows.map(async (row) => {
+    const groupKey = pulseGroupKeyFor(row);
+    groupMembers.set(groupKey, await loadBookingPulseGroupMembers(env, groupKey));
+  }));
+
+  return pulseRows.map((row) => toBookingPulseItem(row, options, groupMembers.get(pulseGroupKeyFor(row)) ?? []));
 }

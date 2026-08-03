@@ -107,9 +107,17 @@ test("Booking Pulse read model enforces retention without deleting source data",
   assert.match(service, /BOOKING_PULSE_RETENTION_HOURS = 24/);
   assert.match(service, /isBookingPulseEventVisible/);
   assert.match(service, /ageMs >= 0 && ageMs < retentionMs/);
-  assert.match(service, /rowsByBooking/);
+  assert.match(service, /rowsByGroup/);
   assert.match(service, /bookingPulseRowFor/);
   assert.doesNotMatch(service, /DELETE FROM booking_events|DELETE FROM bookings/);
+});
+
+test("Booking Pulse groups Beds24 master booking children without guest-date heuristics", () => {
+  assert.match(service, /booking_group_members/);
+  assert.match(service, /master_beds24_booking_id/);
+  assert.match(service, /pulseGroupKeyFor/);
+  assert.match(service, /accommodationSummaryFor/);
+  assert.doesNotMatch(service, /guest_name[\s\S]*GROUP BY|arrival_date[\s\S]*GROUP BY|departure_date[\s\S]*GROUP BY/);
 });
 
 test("Booking Pulse source does not touch Passport or Housekeeping implementation", () => {

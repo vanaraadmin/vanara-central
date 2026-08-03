@@ -49,6 +49,8 @@ type FakeBookingEventRow = {
   booking_id: number;
   event_type: "new" | "updated" | "cancelled";
   beds24_booking_id: number;
+  master_beds24_booking_id: number | null;
+  pulse_group_beds24_booking_id: number | null;
   event_accommodation: string;
   event_source: string | null;
   occurred_at: string;
@@ -65,6 +67,21 @@ type FakeBookingEventRow = {
   price: number | null;
   api_source: string | null;
   channel: string | null;
+  unit_type: string | null;
+  room_type_name: string | null;
+  room_name: string | null;
+};
+
+type FakeGroupMemberRow = {
+  beds24_booking_id: number;
+  master_beds24_booking_id: number | null;
+  unit_id: number | null;
+  unit_name: string | null;
+  unit_type: string | null;
+  room_type_name: string | null;
+  room_name: string | null;
+  arrival_date: string | null;
+  departure_date: string | null;
 };
 
 function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow {
@@ -73,6 +90,8 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     booking_id: 1,
     event_type: "new",
     beds24_booking_id: 9001,
+    master_beds24_booking_id: null,
+    pulse_group_beds24_booking_id: null,
     event_accommodation: "Villa 10",
     event_source: "Booking.com",
     occurred_at: "2026-08-02T10:00:00.000Z",
@@ -89,6 +108,24 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     price: 12000,
     api_source: "Beds24",
     channel: "Direct",
+    unit_type: "villa",
+    room_type_name: "Villa",
+    room_name: "Villa",
+    ...overrides,
+  };
+}
+
+function groupMember(overrides: Partial<FakeGroupMemberRow>): FakeGroupMemberRow {
+  return {
+    beds24_booking_id: 9001,
+    master_beds24_booking_id: null,
+    unit_id: 10,
+    unit_name: "Villa 10",
+    unit_type: "villa",
+    room_type_name: "Villa",
+    room_name: "Villa",
+    arrival_date: "2026-08-04",
+    departure_date: "2026-08-06",
     ...overrides,
   };
 }
@@ -126,13 +163,40 @@ class FakeBookingEventsDB {
       occurred_at: "2026-07-31T10:00:00.000Z",
     }),
   ];
+  groupMembers = new Map<number, FakeGroupMemberRow[]>();
   inserted: unknown[][] = [];
   private insertedSignatures = new Set<string>();
   deleteStatements = 0;
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
-  async all<T>(_sql: string, params: unknown[]) {
+  async all<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM bookings b") && !sql.includes("FROM booking_events")) {
+      const groupKey = Number(params[0]);
+      const configured = this.groupMembers.get(groupKey);
+      if (configured) return { results: configured as T[] };
+
+      const row = this.rows.find((candidate) =>
+        candidate.beds24_booking_id === groupKey ||
+        candidate.master_beds24_booking_id === groupKey ||
+        candidate.pulse_group_beds24_booking_id === groupKey
+      );
+
+      return {
+        results: row ? [groupMember({
+          beds24_booking_id: row.beds24_booking_id,
+          master_beds24_booking_id: row.master_beds24_booking_id,
+          unit_id: row.unit_id,
+          unit_name: row.unit_name,
+          unit_type: row.unit_type,
+          room_type_name: row.room_type_name,
+          room_name: row.room_name,
+          arrival_date: row.arrival_date,
+          departure_date: row.departure_date,
+        }) as T] : [],
+      };
+    }
+
     return {
       results: this.rows
         .slice()
@@ -318,6 +382,126 @@ test("booking pulse read model returns NEW UPDATED and CANCELLED events", async 
 
   assert.deepEqual(events.map((event) => event.eventType), ["CANCELLED", "UPDATED", "NEW"]);
   assert.deepEqual(events.map((event) => event.guestName), ["Cancelled Guest", "Updated Guest", "Mali Guest"]);
+});
+
+test("single booking remains unchanged in Booking Pulse", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 1,
+      beds24_booking_id: 9101,
+      event_accommodation: "Villa 10",
+      unit_id: 10,
+      unit_name: "Villa 10",
+      unit_type: "villa",
+      occurred_at: "2026-08-02T10:00:00.000Z",
+    }),
+  ];
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 3, new Date("2026-08-02T11:00:00.000Z"));
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.bookingId, "9101");
+  assert.equal(events[0]?.eventId, "9101:NEW:2026-08-02T10:00:00.000Z");
+  assert.equal(events[0]?.unitName, "Villa 10");
+});
+
+test("master booking with three bungalows returns one Booking Pulse event", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [90858176, 90858177, 90858178].map((beds24BookingId, index) => eventRow({
+    booking_event_id: index + 1,
+    booking_id: index + 1,
+    beds24_booking_id: beds24BookingId,
+    master_beds24_booking_id: beds24BookingId === 90858176 ? null : 90858176,
+    pulse_group_beds24_booking_id: 90858176,
+    guest_name: "Daniel Padurariu",
+    event_accommodation: `Bungalow ${index + 1}`,
+    unit_id: index + 1,
+    unit_name: `Bungalow ${index + 1}`,
+    unit_type: "bungalow",
+    room_type_name: "Bungalow",
+    room_name: "Bungalow",
+    arrival_date: "2026-12-28",
+    departure_date: "2027-01-01",
+    occurred_at: `2026-08-02T10:00:0${index}.000Z`,
+  }));
+  db.groupMembers.set(90858176, [1, 2, 3].map((roomNumber, index) => groupMember({
+    beds24_booking_id: 90858176 + index,
+    master_beds24_booking_id: index === 0 ? null : 90858176,
+    unit_id: roomNumber,
+    unit_name: `Bungalow ${roomNumber}`,
+    unit_type: "bungalow",
+    room_type_name: "Bungalow",
+    room_name: "Bungalow",
+    arrival_date: "2026-12-28",
+    departure_date: "2027-01-01",
+  })));
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.bookingId, "90858176");
+  assert.equal(events[0]?.guestName, "Daniel Padurariu");
+  assert.equal(events[0]?.unitName, "3 Bungalows");
+  assert.equal(events[0]?.arrivalDate, "2026-12-28");
+  assert.equal(events[0]?.departureDate, "2027-01-01");
+});
+
+test("master booking with villa and tent returns mixed accommodation summary", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 1,
+      beds24_booking_id: 9201,
+      pulse_group_beds24_booking_id: 9201,
+      unit_id: 10,
+      unit_name: "Villa 10",
+      unit_type: "villa",
+    }),
+    eventRow({
+      booking_event_id: 2,
+      booking_id: 2,
+      beds24_booking_id: 9202,
+      master_beds24_booking_id: 9201,
+      pulse_group_beds24_booking_id: 9201,
+      unit_id: 102,
+      unit_name: "Tent 2",
+      unit_type: "yurt",
+    }),
+  ];
+  db.groupMembers.set(9201, [
+    groupMember({ beds24_booking_id: 9201, unit_id: 10, unit_name: "Villa 10", unit_type: "villa" }),
+    groupMember({ beds24_booking_id: 9202, master_beds24_booking_id: 9201, unit_id: 102, unit_name: "Tent 2", unit_type: "yurt" }),
+  ]);
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.unitName, "1 Villa + 1 Tent");
+});
+
+test("master booking with two bungalows and one tent returns mixed plural summary", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [9301, 9302, 9303].map((beds24BookingId, index) => eventRow({
+    booking_event_id: index + 1,
+    booking_id: index + 1,
+    beds24_booking_id: beds24BookingId,
+    master_beds24_booking_id: index === 0 ? null : 9301,
+    pulse_group_beds24_booking_id: 9301,
+    unit_id: index + 1,
+    unit_name: index < 2 ? `Bungalow ${index + 1}` : "Tent 1",
+    unit_type: index < 2 ? "bungalow" : "yurt",
+  }));
+  db.groupMembers.set(9301, [
+    groupMember({ beds24_booking_id: 9301, unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow" }),
+    groupMember({ beds24_booking_id: 9302, master_beds24_booking_id: 9301, unit_id: 2, unit_name: "Bungalow 2", unit_type: "bungalow" }),
+    groupMember({ beds24_booking_id: 9303, master_beds24_booking_id: 9301, unit_id: 101, unit_name: "Tent 1", unit_type: "yurt" }),
+  ]);
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.unitName, "2 Bungalows + 1 Tent");
 });
 
 test("recent booking event query returns newest first with a maximum limit", async () => {
