@@ -42,10 +42,10 @@ type PrimaryActionRowProps = {
 
 export function RoomSectionHeader({ eyebrow, headingId, status, title }: RoomSectionHeaderProps) {
   return (
-    <header className="room-domain-card__header">
+    <header className="room-expanded-section__header room-domain-card__header">
       <div className="room-domain-card__heading">
-        <p className="room-domain-card__eyebrow">{eyebrow}</p>
-        <h3 className="room-domain-card__title" id={headingId}>{title}</h3>
+        <span className="room-expanded-section__eyebrow vc-section-eyebrow room-domain-card__eyebrow">{eyebrow}</span>
+        <h3 className="room-expanded-section__title room-domain-card__title" id={headingId}>{title}</h3>
       </div>
       {status ? <div className="room-domain-card__status">{status}</div> : null}
     </header>
@@ -54,11 +54,11 @@ export function RoomSectionHeader({ eyebrow, headingId, status, title }: RoomSec
 
 export function OperationalStateBlock({ detail, label = "Current state", secondaryInfo, tone, value }: OperationalStateBlockProps) {
   return (
-    <div className={`room-domain-state room-domain-state--${tone}`}>
-      <span className="room-domain-state__label">{label}</span>
-      <strong className="room-domain-state__value">{value}</strong>
-      <span className="room-domain-state__detail">{detail}</span>
-      {secondaryInfo ? <span className="room-domain-state__meta">{secondaryInfo}</span> : null}
+    <div className={`room-expanded-current-state room-domain-state room-domain-state--${tone}`}>
+      <span className="room-expanded-current-state__label room-domain-state__label">{label}</span>
+      <strong className="room-expanded-current-state__value room-domain-state__value">{value}</strong>
+      <span className="room-expanded-current-state__description room-domain-state__detail">{detail}</span>
+      {secondaryInfo ? <span className="room-expanded-current-state__description room-domain-state__meta">{secondaryInfo}</span> : null}
     </div>
   );
 }
@@ -95,16 +95,18 @@ export function PrimaryActionRow({ ariaLabel, busy = false, disabled = false, la
 export default function RoomDomainCard({ action, children, className, eyebrow, footer, headingId, secondary, state, status, title }: RoomDomainCardProps) {
   const generatedHeadingId = useId();
   const resolvedHeadingId = headingId ?? generatedHeadingId;
-  const classNames = ["room-workspace-card", "room-domain-card", className].filter(Boolean).join(" ");
+  const classNames = ["room-expanded-section", "vc-glass-region", "room-domain-card", className].filter(Boolean).join(" ");
 
   return (
     <section className={classNames} aria-labelledby={resolvedHeadingId}>
       <RoomSectionHeader eyebrow={eyebrow} headingId={resolvedHeadingId} status={status} title={title} />
-      {state}
-      {secondary ? <div className="room-domain-card__secondary">{secondary}</div> : null}
-      {children}
-      {action ? <div className="room-domain-card__action-row">{action}</div> : null}
-      {footer ? <footer className="room-domain-card__footer">{footer}</footer> : null}
+      <div className="room-expanded-section__content">
+        {state}
+        {secondary ? <div className="room-domain-card__secondary">{secondary}</div> : null}
+        {children}
+        {action ? <div className="room-expanded-section__action room-domain-card__action-row">{action}</div> : null}
+        {footer ? <footer className="room-domain-card__footer">{footer}</footer> : null}
+      </div>
     </section>
   );
 }

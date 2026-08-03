@@ -8,12 +8,12 @@ type RoomOperationalSummaryCardProps = {
 
 function RoomOperationalItem({ item }: { item: RoomOperationalItemModel }) {
   return (
-    <div className={`room-operational-item room-operational-item--${item.tone}`}>
-      <dt className="room-operational-item__label">{item.label}</dt>
-      <dd className="room-operational-item__body">
-        <span className="room-operational-item__value">{item.value}</span>
-        {item.detail ? <span className="room-operational-item__detail">{item.detail}</span> : null}
-        {item.meta ? <span className="room-operational-item__meta">{item.meta}</span> : null}
+    <div className={`room-status-item vc-data-item room-status-item--${item.tone} room-operational-item room-operational-item--${item.tone}`}>
+      <dt className="room-status-item__label room-operational-item__label">{item.label}</dt>
+      <dd className="room-status-item__body room-operational-item__body">
+        <strong className="room-status-item__value room-operational-item__value">{item.value}</strong>
+        {item.detail ? <span className="room-status-item__detail room-operational-item__detail">{item.detail}</span> : null}
+        {item.meta ? <span className="room-status-item__meta room-operational-item__meta">{item.meta}</span> : null}
       </dd>
     </div>
   );
@@ -24,16 +24,21 @@ export default function RoomOperationalSummaryCard({ summary }: RoomOperationalS
   const items = getRoomOperationalItems(summary);
 
   return (
-    <section className="room-workspace-card room-operational-card" aria-labelledby={headingId}>
-      <header className="room-operational-card__header">
-        <h3 id={headingId}>Room Status</h3>
+    <section className="room-expanded-section vc-glass-region room-operational-card" aria-labelledby={headingId}>
+      <header className="room-expanded-section__header room-operational-card__header">
+        <div>
+          <span className="room-expanded-section__eyebrow vc-section-eyebrow">Room Status</span>
+          <h3 className="room-expanded-section__title" id={headingId}>Room Status</h3>
+        </div>
       </header>
 
-      <dl className="room-operational-card__grid">
-        {items.map((item) => (
-          <RoomOperationalItem item={item} key={item.id} />
-        ))}
-      </dl>
+      <div className="room-expanded-section__content">
+        <dl className="room-status-grid vc-data-grid room-operational-card__grid">
+          {items.map((item) => (
+            <RoomOperationalItem item={item} key={item.id} />
+          ))}
+        </dl>
+      </div>
     </section>
   );
 }

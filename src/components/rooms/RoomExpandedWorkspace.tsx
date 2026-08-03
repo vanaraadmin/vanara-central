@@ -29,8 +29,8 @@ export default function RoomExpandedWorkspace({
   const turnover = getRoomsWorkspaceTurnover(room);
 
   return (
-    <div id={id} className="room-expanded" role="region" aria-label={`${room.roomName} workspace`}>
-      <div className="room-workspace-container">
+    <div id={id} className="room-row-expanded-content room-expanded" role="region" aria-label={`${room.roomName} workspace`}>
+      <section className="room-expanded-sheet vc-glass-sheet" aria-label={`${room.roomName} details`}>
         <RoomHero room={room} />
         {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
         <RoomOperationalSummaryCard summary={room.operational} />
@@ -51,7 +51,7 @@ export default function RoomExpandedWorkspace({
           roomName={room.roomName}
         />
         <MaintenanceCard maintenance={room.maintenance} roomId={room.unitId} roomName={room.roomName} />
-      </div>
+      </section>
     </div>
   );
 }

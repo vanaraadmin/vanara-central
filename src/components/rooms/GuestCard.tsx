@@ -23,8 +23,11 @@ function formatStay(value: number | null): string | null {
 
 function GuestIdentity({ headingId, stay }: { headingId: string; stay: RoomCurrentStaySummary }) {
   return (
-    <header className="guest-card__identity">
-      <h3 className="guest-card__name" id={headingId}>{stay.guestName}</h3>
+    <header className="room-expanded-section__header guest-card__identity">
+      <div>
+        <span className="room-expanded-section__eyebrow vc-section-eyebrow">Guest</span>
+        <h3 className="room-expanded-section__title guest-card__name" id={headingId}>{stay.guestName}</h3>
+      </div>
     </header>
   );
 }
@@ -53,20 +56,20 @@ function GuestStayFact({ label, value }: { label: string; value: string | null }
   if (!value) return null;
 
   return (
-    <div className="guest-card__stay-fact">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className="room-expanded-fact guest-card__stay-fact">
+      <span className="room-expanded-fact__label">{label}</span>
+      <strong className="room-expanded-fact__value">{value}</strong>
     </div>
   );
 }
 
 function GuestStaySummary({ stay }: { stay: RoomCurrentStaySummary }) {
   return (
-    <dl className="guest-card__stay">
+    <div className="room-expanded-facts room-expanded-facts--three guest-card__stay">
       <GuestStayFact label="Arrived" value={formatDate(stay.arrivalDate)} />
       <GuestStayFact label="Leaving" value={formatDate(stay.departureDate)} />
       <GuestStayFact label="Stay" value={formatStay(stay.stayNights)} />
-    </dl>
+    </div>
   );
 }
 
@@ -74,10 +77,12 @@ export default function GuestCard({ stay }: GuestCardProps) {
   const headingId = useId();
 
   return (
-    <section className="room-workspace-card guest-card" aria-labelledby={headingId}>
+    <section className="room-expanded-section vc-glass-region guest-card" aria-labelledby={headingId}>
       <GuestIdentity headingId={headingId} stay={stay} />
-      <GuestBookingSummary stay={stay} />
-      <GuestStaySummary stay={stay} />
+      <div className="room-expanded-section__content">
+        <GuestBookingSummary stay={stay} />
+        <GuestStaySummary stay={stay} />
+      </div>
     </section>
   );
 }

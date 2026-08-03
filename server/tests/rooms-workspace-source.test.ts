@@ -123,8 +123,8 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
   assert.match(roomCompactRow, /aria-expanded=\{expanded\}/);
   assert.match(roomCompactRow, /aria-controls=\{detailsId\}/);
   assert.match(roomCompactRow, /aria-label=\{presentation\.accessibleSummary\}/);
-  assert.doesNotMatch(roomsPage, /useNavigate|<Link/);
-  assert.doesNotMatch(roomCompactRow, /<Link|to=\{|<button[\s\S]*<button/);
+  assert.doesNotMatch(roomsPage, /<Link/);
+  assert.doesNotMatch(roomCompactRow, /useNavigate|<Link|to=\{|<button[\s\S]*<button/);
 });
 
 test("Compact row signals use one centralized presentation mapper", () => {
@@ -162,18 +162,20 @@ test("Compact row type mark uses local monochrome accommodation icons", () => {
 });
 
 test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
+  const roomRowCss = sourceBlockBetween(css, ".room-row {", ".rooms-home__item:last-child .room-row");
+
   assert.match(css, /\.room-row/);
   assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+auto\s+18px/);
-  assert.match(css, /min-height:\s*70px/);
-  assert.match(css, /padding:\s*13px 18px/);
-  assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1rem/);
+  assert.match(css, /min-height:\s*96px/);
+  assert.match(css, /padding:\s*17px 18px/);
+  assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1\.125rem/);
   assert.match(css, /\.room-row__name[\s\S]*font-weight:\s*650/);
   assert.match(css, /\.room-row__guest[\s\S]*font-size:\s*0\.78rem/);
   assert.match(css, /\.room-signals__primary/);
   assert.match(css, /\.room-signals__secondary/);
   assert.match(css, /white-space:\s*nowrap/);
   assert.match(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)/);
-  assert.doesNotMatch(css, /\.room-row[\s\S]{0,240}box-shadow:\s*(?!none)/);
+  assert.match(roomRowCss, /box-shadow:\s*none/);
   assert.doesNotMatch(css, /\.room-row__signals[\s\S]*flex-wrap:\s*wrap/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });
@@ -181,35 +183,44 @@ test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
 test("Expanded Rooms Workspace uses a read-only operational summary card", () => {
   assert.match(roomExpandedWorkspace, /RoomOperationalSummaryCard summary=\{room\.operational\}/);
   assert.match(roomOperationalSummaryCard, /Room Status/);
-  assert.match(roomOperationalSummaryCard, /<dl className="room-operational-card__grid">/);
+  assert.match(roomOperationalSummaryCard, /<dl className="room-status-grid vc-data-grid room-operational-card__grid">/);
+  assert.match(roomOperationalSummaryCard, /room-status-item vc-data-item/);
   for (const label of ["Operational", "Occupancy", "Cleaning", "Maintenance"]) {
     assert.match(presentation, new RegExp(label));
   }
   assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
 });
 
-test("Expanded Rooms Workspace uses one parent container and removes Notes and History", () => {
-  assert.match(roomExpandedWorkspace, /className="room-workspace-container"/);
+test("Expanded Rooms Workspace uses one lifted glass sheet and removes Notes and History", () => {
+  assert.match(roomExpandedWorkspace, /className="room-row-expanded-content room-expanded"/);
+  assert.match(roomExpandedWorkspace, /<section className="room-expanded-sheet vc-glass-sheet"/);
   assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /<ReceptionCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder|title="Notes"|title="History"|Notes|History/);
-  assert.match(css, /\.room-workspace-container/);
+  assert.match(css, /\.room-expanded-sheet/);
+  assert.match(css, /@keyframes room-sheet-lift-in/);
+  assert.doesNotMatch(css, /\.room-workspace-container/);
+  assert.doesNotMatch(css, /\.room-workspace-card/);
 });
 
 test("Expanded Room Workspace header uses accommodation icon instead of room photos", () => {
   assert.match(roomHero, /AccommodationTypeIcon/);
   assert.match(roomHero, /room\.currentStay/);
   assert.doesNotMatch(roomHero, /heroImage|<img|official room|image unavailable|RoomIcon/);
-  assert.match(css, /\.room-hero__icon/);
+  assert.match(css, /\.room-expanded-sheet__identity-icon/);
+  assert.doesNotMatch(roomHero, /room-hero/);
   assert.doesNotMatch(css, /\.room-hero img|object-fit:\s*cover/);
 });
 
-test("Expanded Room Workspace uses the cream operational layer", () => {
-  assert.match(css, /\.room-workspace-container[\s\S]*#f7f4ee/i);
-  assert.match(css, /\.room-workspace-container[\s\S]*color:\s*#0a271c/i);
-  assert.match(css, /\.room-workspace-container \.room-workspace-card/);
-  assert.match(css, /\.room-workspace-container \.room-domain-card__primary-action/);
+test("Expanded Room Workspace uses one forest glass sheet without large white cards", () => {
+  assert.match(css, /\.room-expanded-sheet[\s\S]*rgba\(10,\s*43,\s*32,\s*0\.24\)/);
+  assert.match(css, /\.room-expanded-section[\s\S]*rgba\(238,\s*244,\s*236,\s*0\.075\)/);
+  assert.match(css, /\.room-status-grid/);
+  assert.match(css, /\.room-status-item[\s\S]*border-right/);
+  assert.doesNotMatch(css, /background:\s*#fff/i);
+  assert.doesNotMatch(css, /background:\s*#f7f4ee/i);
+  assert.doesNotMatch(css, /\.room-operational-item[\s\S]{0,160}border-radius/);
 });
 
 test("Expanded Rooms Workspace renders GuestCard only for occupied current stays", () => {
