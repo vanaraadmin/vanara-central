@@ -120,7 +120,8 @@
 }
 
 .workspace-sticky-trigger {
-  height: 0;
+  height: 1px;
+  margin-top: -1px;
   pointer-events: none;
 }
 

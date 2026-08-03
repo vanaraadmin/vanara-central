@@ -8,7 +8,7 @@ interface StickyGlassHeaderProps {
   triggerRef: RefObject<HTMLElement | null>;
 }
 
-function scrollToWorkspaceTop() {
+function scrollToWorkspaceTop(): void {
   window.scrollTo({
     behavior: "smooth",
     top: 0,
@@ -26,7 +26,7 @@ export default function StickyGlassHeader({
   useEffect(() => {
     let frame = 0;
 
-    const updateVisibility = () => {
+    const updateVisibilityFallback = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const trigger = triggerRef.current;
@@ -39,14 +39,35 @@ export default function StickyGlassHeader({
       });
     };
 
-    updateVisibility();
-    window.addEventListener("scroll", updateVisibility, { passive: true });
-    window.addEventListener("resize", updateVisibility);
+    const trigger = triggerRef.current;
+
+    if (trigger && "IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          setVisible(Boolean(entry && !entry.isIntersecting));
+        },
+        {
+          root: null,
+          threshold: 0,
+        },
+      );
+
+      observer.observe(trigger);
+
+      return () => {
+        window.cancelAnimationFrame(frame);
+        observer.disconnect();
+      };
+    }
+
+    updateVisibilityFallback();
+    window.addEventListener("scroll", updateVisibilityFallback, { passive: true });
+    window.addEventListener("resize", updateVisibilityFallback);
 
     return () => {
       window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", updateVisibility);
-      window.removeEventListener("resize", updateVisibility);
+      window.removeEventListener("scroll", updateVisibilityFallback);
+      window.removeEventListener("resize", updateVisibilityFallback);
     };
   }, [triggerRef]);
 
