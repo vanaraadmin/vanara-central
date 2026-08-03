@@ -9,7 +9,6 @@
 .operations-language button.is-active { color:var(--vc-text-inverse); background:var(--vc-color-jungle-900); box-shadow:var(--vc-shadow-xs); }
 .today-refresh-button,.today-error button { min-height:var(--vc-touch-min); padding:0 14px; border:0; border-radius:var(--vc-radius-pill); display:inline-flex; align-items:center; justify-content:center; gap:7px; color:var(--vc-text-inverse); background:var(--vc-color-jungle-900); box-shadow:var(--vc-shadow-sm); font-weight:var(--vc-weight-bold); font-size:.78rem; transition:transform var(--vc-duration-normal) var(--vc-ease-standard),opacity var(--vc-duration-normal); }
 .today-refresh-button svg { width:17px; height:17px; }
-.today-refresh-button:active,.today-error button:active { transform:scale(.98); }
 .today-refresh-button:disabled { opacity:.62; }
 .is-spinning { animation:vc-spin 900ms linear infinite; } @keyframes vc-spin { to { transform:rotate(360deg); } }
 .today-warning { margin-bottom:16px; padding:13px 14px; border:1px solid rgba(154,96,55,.14); border-radius:var(--vc-radius-md); color:#74491f; background:#f6e8d4; font-size:.82rem; line-height:1.45; }

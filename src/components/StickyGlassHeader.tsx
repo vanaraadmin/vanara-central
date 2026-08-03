@@ -89,7 +89,7 @@ export default function StickyGlassHeader({
   const compactLogoRef = useRef<HTMLImageElement>(null);
   const p = clampProgress(progress);
   const translateY = Math.round((1 - p) * 24 * 100) / 100;
-  const scale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
+  const morphScale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
   const compactLogoVisible = p >= 0.995;
 
   useEffect(() => {
@@ -136,10 +136,10 @@ export default function StickyGlassHeader({
 
   useLayoutEffect(() => () => resetHeroLogo(heroLogoRef.current), [heroLogoRef]);
 
-  const surfaceStyle: CSSProperties = {
+  const positionerStyle: CSSProperties = {
     opacity: p,
     pointerEvents: p > 0.05 ? "auto" : "none",
-    transform: `translateY(${translateY}px) scale(${scale})`,
+    transform: `translateX(-50%) translateY(${translateY}px) scale(${morphScale})`,
   };
   const compactLogoStyle: CSSProperties = {
     opacity: compactLogoVisible ? 1 : 0,
@@ -149,12 +149,12 @@ export default function StickyGlassHeader({
     <div
       aria-hidden={p <= 0}
       className="sticky-glass-nav-positioner sticky-glass-header"
+      style={positionerStyle}
     >
       <button
         aria-label="Return to top"
-        className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface`}
+        className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface vc-interactive-surface`}
         onClick={scrollToPageTop}
-        style={surfaceStyle}
         tabIndex={p > 0.05 ? 0 : -1}
         type="button"
       >

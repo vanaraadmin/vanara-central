@@ -10,12 +10,15 @@ const vanaraComponents = [
   "src/components/vanara/VanaraDataGrid.tsx",
   "src/components/vanara/VanaraGlassRegion.tsx",
   "src/components/vanara/VanaraGlassSheet.tsx",
+  "src/components/vanara/VanaraInteractiveGlass.tsx",
   "src/components/vanara/VanaraSectionHeader.tsx",
   "src/components/vanara/VanaraSummaryGrid.tsx",
 ];
 
 const stickyGlassHeader = readSource("src/components/StickyGlassHeader.tsx");
 const appRoot = readSource("src/App.tsx");
+const glassPhysicsHook = readSource("src/hooks/useGlassPhysics.ts");
+const interactiveGlass = readSource("src/components/vanara/VanaraInteractiveGlass.tsx");
 const uiSoundService = readSource("src/services/uiSound.service.ts");
 const uiTapHook = readSource("src/hooks/useUiTapSound.ts");
 const tokens = readSource("src/theme/tokens.css");
@@ -73,6 +76,34 @@ test("Vanara material recipes are tokenized instead of duplicated in migrated wo
   assert.doesNotMatch(migratedWorkspaceCss, /outline:\s*2px solid rgba\(242,\s*235,\s*213/);
 });
 
+test("Vanara Glass Physics v1 centralizes press and release material behaviour", () => {
+  assert.match(tokens, /--vc-physics-press-scale:\s*0\.968/);
+  assert.match(tokens, /--vc-physics-press-translate-y:\s*2px/);
+  assert.match(tokens, /--vc-physics-hover-scale:\s*1\.006/);
+  assert.match(tokens, /--vc-physics-press-duration:\s*78ms/);
+  assert.match(tokens, /--vc-physics-release-duration:\s*230ms/);
+  assert.match(tokens, /--vc-physics-highlight-pressed:\s*0\.72/);
+  assert.match(tokens, /--vc-physics-border-pressed:\s*0\.78/);
+  assert.match(tokens, /--vc-physics-shadow-pressed:\s*0\.68/);
+  assert.match(tokens, /--vc-physics-inner-light-pressed:\s*0\.82/);
+  assert.match(vanaraUi, /translate3d\(0,\s*var\(--vc-physics-y\),\s*0\)/);
+  assert.match(vanaraUi, /scale\(var\(--vc-physics-scale\)\)/);
+  assert.match(vanaraUi, /\.vc-interactive-surface__material/);
+  assert.match(vanaraUi, /\.vc-interactive-surface__highlight/);
+  assert.match(vanaraUi, /\[data-pressed="true"\]/);
+  assert.match(glassPhysicsHook, /export function useGlassPhysics/);
+  assert.match(glassPhysicsHook, /export function useGlobalGlassPhysics/);
+  assert.match(glassPhysicsHook, /PRESS_CANCEL_DISTANCE_PX = 10/);
+  assert.match(glassPhysicsHook, /document\.addEventListener\("pointerdown", handlePointerDown, \{ capture: true \}\)/);
+  assert.match(glassPhysicsHook, /document\.addEventListener\("scroll", clearPointer, \{ capture: true \}\)/);
+  assert.match(interactiveGlass, /vc-interactive-surface__material/);
+  assert.match(interactiveGlass, /vc-interactive-surface__highlight/);
+  assert.match(appRoot, /useGlobalGlassPhysics\(\)/);
+  assert.match(migratedWorkspaceCss, /sticky-glass-nav-surface\[data-pressed="true"\]/);
+  assert.doesNotMatch(vanaraUi, /:active[\s\S]{0,120}scale/);
+  assert.doesNotMatch(migratedWorkspaceCss, /:active[\s\S]{0,120}transform/);
+});
+
 test("Rooms and Staff Home consume shared presentation instead of page glass copies", () => {
   assert.match(readSource("src/components/rooms/RoomExpandedWorkspace.tsx"), /VanaraGlassSheet/);
   assert.match(readSource("src/components/rooms/RoomExpandedWorkspace.tsx"), /variant="elevated"/);
@@ -81,13 +112,18 @@ test("Rooms and Staff Home consume shared presentation instead of page glass cop
   assert.match(readSource("src/pages/RoomsPage.tsx"), /vc-secondary-glass-action rooms-home-back-button/);
 });
 
-test("Vanara UI tap sound is centralized and graceful when the asset is absent", () => {
+test("Vanara UI tap sound is centralized and uses the approved bundled asset", () => {
   assert.equal(existsSync(new URL("../../src/utils/navigation-sound.ts", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../public/audio/ui-tap-soft.mp3", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../src/assets/sounds/click.mp3", import.meta.url)), true);
   assert.match(uiSoundService, /export const UI_TAP_VOLUME = 0\.2/);
-  assert.match(uiSoundService, /const UI_TAP_SOFT_SRC = "\/audio\/ui-tap-soft\.mp3"/);
-  assert.match(uiSoundService, /TODO: Add the official Vanara UI Tap asset at public\/audio\/ui-tap-soft\.mp3/);
+  assert.match(uiSoundService, /import uiTapSoftSrc from "\.\.\/assets\/sounds\/click\.mp3"/);
+  assert.match(uiSoundService, /const UI_TAP_SOFT_SRC = uiTapSoftSrc/);
   assert.match(uiSoundService, /export function playUiTap\(\): void/);
   assert.match(uiSoundService, /uiTapUnavailable = true/);
+  assert.match(uiSoundService, /warnUiSoundFailure/);
+  assert.doesNotMatch(uiSoundService, /\/audio\/ui-tap-soft\.mp3/);
+  assert.doesNotMatch(uiSoundService, /UI_TAP_ASSET_ENABLED/);
   assert.doesNotMatch(uiSoundService, /export function play(?:Success|Warning|Critical)/);
 
   assert.match(uiTapHook, /document\.addEventListener\("pointerdown", handlePointerDown, \{ capture: true \}\)/);

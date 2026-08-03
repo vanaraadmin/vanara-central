@@ -136,10 +136,6 @@
   text-decoration: none;
 }
 
-.movement-card:active {
-  transform: scale(0.985);
-}
-
 .movement-card__icon {
   width: 54px;
   height: 54px;

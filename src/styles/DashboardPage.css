@@ -179,12 +179,6 @@
   text-decoration: none;
 }
 
-.control-card:active,
-.quick-access-grid a:active,
-.control-alert:active {
-  transform: scale(0.985);
-}
-
 .control-card > span {
   width: 48px;
   height: 48px;

@@ -191,10 +191,6 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
-.reception-card:active {
-  transform: translateY(1px);
-}
-
 .reception-card--skeleton {
   min-height: 178px;
   justify-content: center;

@@ -36,10 +36,6 @@
     box-shadow 170ms ease;
 }
 
-.staff-chat__orb:active {
-  transform: scale(0.94);
-}
-
 .staff-chat__orb .staff-icon {
   width: 23px;
   height: 23px;

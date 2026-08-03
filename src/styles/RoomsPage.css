@@ -129,11 +129,6 @@
   outline-offset: -3px;
 }
 
-.room-row:active {
-  background: var(--vc-row-hover-background);
-  transform: translateY(1px);
-}
-
 .room-row--expanded {
   background: var(--vc-row-hover-background);
 }

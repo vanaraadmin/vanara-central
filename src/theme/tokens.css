@@ -189,6 +189,10 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -1px 0 rgba(255, 255, 255, 0.045),
     0 16px 42px rgba(0, 12, 9, 0.16);
+  --vc-navigation-glass-shadow-pressed:
+    inset 0 1px 0 rgba(255, 255, 255, 0.176),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 13px 34px rgba(0, 12, 9, 0.13);
   --vc-navigation-glass-filter: blur(14px) saturate(112%);
   --vc-navigation-glass-reflection: linear-gradient(
     112deg,
@@ -249,6 +253,18 @@
     rgba(15, 45, 35, 0.16) 100%
   );
   --vc-action-secondary-filter: blur(14px) saturate(112%);
+  --vc-action-primary-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 26px rgba(0, 18, 12, 0.16);
+  --vc-action-primary-shadow-pressed:
+    inset 0 1px 0 rgba(255, 255, 255, 0.105),
+    0 10px 21px rgba(0, 18, 12, 0.13);
+  --vc-action-secondary-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 10px 24px rgba(0, 14, 10, 0.12);
+  --vc-action-secondary-shadow-pressed:
+    inset 0 1px 0 rgba(255, 255, 255, 0.114),
+    0 8px 20px rgba(0, 14, 10, 0.1);
 
   --vc-compact-row-min-height: 6rem;
   --vc-sheet-identity-grid: 4.75rem minmax(0, 1fr);
@@ -271,6 +287,29 @@
   --vc-duration-slow: 320ms;
   --vc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --vc-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --vc-physics-press-scale: 0.968;
+  --vc-physics-press-translate-y: 2px;
+  --vc-physics-press-duration: 78ms;
+  --vc-physics-release-duration: 230ms;
+  --vc-physics-press-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --vc-physics-release-ease: cubic-bezier(0.16, 1, 0.30, 1);
+  --vc-physics-hover-scale: 1.006;
+  --vc-physics-highlight-rest: 1;
+  --vc-physics-highlight-pressed: 0.72;
+  --vc-physics-border-rest: 1;
+  --vc-physics-border-pressed: 0.78;
+  --vc-physics-shadow-rest: 1;
+  --vc-physics-shadow-pressed: 0.68;
+  --vc-physics-inner-light-rest: 1;
+  --vc-physics-inner-light-pressed: 0.82;
+  --vc-physics-highlight-y-pressed: 3px;
+  --vc-physics-highlight-scale-x-pressed: 0.94;
+  --vc-physics-shadow-y-rest: 14px;
+  --vc-physics-shadow-y-pressed: 5px;
+  --vc-physics-shadow-blur-rest: 34px;
+  --vc-physics-shadow-blur-pressed: 16px;
+  --vc-physics-shadow-alpha-rest: 0.2;
+  --vc-physics-shadow-alpha-pressed: 0.14;
 
   /* Layout */
   --vc-content-max: 820px;

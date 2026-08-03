@@ -279,6 +279,7 @@
   border: var(--vc-action-primary-border);
   color: var(--vc-text-cream-strong);
   background: var(--vc-action-primary-background);
+  box-shadow: var(--vc-action-primary-shadow);
 }
 
 .vc-secondary-action,
@@ -286,6 +287,7 @@
   border: var(--vc-action-secondary-border);
   color: rgba(247, 244, 238, 0.84);
   background: var(--vc-action-secondary-background);
+  box-shadow: var(--vc-action-secondary-shadow);
   backdrop-filter: var(--vc-action-secondary-filter);
   -webkit-backdrop-filter: var(--vc-action-secondary-filter);
 }
@@ -304,6 +306,225 @@
   outline-offset: 3px;
 }
 
+.vc-interactive-surface,
+body :is(
+  .vc-primary-action,
+  .vc-secondary-action,
+  .vc-secondary-glass-action,
+  .room-domain-card__primary-action,
+  .staff-workspace,
+  .room-row,
+  .maintenance-ticket-row,
+  .housekeeping-v2-task-row,
+  .reception-card,
+  .movement-card,
+  .control-card,
+  .control-alert,
+  .quick-access-grid a,
+  .maintenance-ticket-card,
+  .today-refresh-button,
+  .today-error button,
+  .availability-search__action,
+  .availability-card,
+  .procurement-row,
+  .procurement-card,
+  .vc-summary-item--interactive,
+  .sticky-glass-nav-surface,
+  .staff-chat__orb,
+  .icon-button,
+  .action-widget,
+  .alert-strip,
+  .primary-action,
+  .submit-button
+):not(:disabled):not([aria-disabled="true"]) {
+  --vc-physics-scale: 1;
+  --vc-physics-y: 0px;
+  --vc-physics-highlight-opacity: var(--vc-physics-highlight-rest);
+  --vc-physics-border-opacity: var(--vc-physics-border-rest);
+  --vc-physics-shadow-strength: var(--vc-physics-shadow-rest);
+  --vc-physics-inner-light-strength: var(--vc-physics-inner-light-rest);
+  --vc-physics-highlight-y: 0px;
+  --vc-physics-highlight-scale-x: 1;
+  --vc-physics-shadow-y: var(--vc-physics-shadow-y-rest);
+  --vc-physics-shadow-blur: var(--vc-physics-shadow-blur-rest);
+  --vc-physics-shadow-alpha: var(--vc-physics-shadow-alpha-rest);
+  position: relative;
+  isolation: isolate;
+  transform:
+    translate3d(0, var(--vc-physics-y), 0)
+    scale(var(--vc-physics-scale));
+  transform-origin: center;
+  transition:
+    transform var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    box-shadow var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    filter var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    background var(--vc-duration-fast) var(--vc-ease-standard),
+    border-color var(--vc-duration-fast) var(--vc-ease-standard),
+    color var(--vc-duration-fast) var(--vc-ease-standard);
+}
+
+.vc-interactive-surface__material,
+.vc-interactive-surface__highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.vc-interactive-surface__material {
+  z-index: 0;
+  border:
+    1px solid
+    rgba(237, 241, 232, calc(0.26 * var(--vc-physics-border-opacity)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(0.18 * var(--vc-physics-inner-light-strength))),
+    0 var(--vc-physics-shadow-y) var(--vc-physics-shadow-blur)
+      rgba(0, 12, 9, var(--vc-physics-shadow-alpha));
+  filter:
+    brightness(calc(0.96 + 0.04 * var(--vc-physics-inner-light-strength)))
+    saturate(calc(1.04 + 0.08 * var(--vc-physics-inner-light-strength)));
+  transition:
+    box-shadow var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    border-color var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    filter var(--vc-physics-release-duration) var(--vc-physics-release-ease);
+}
+
+.vc-interactive-surface__highlight {
+  z-index: 1;
+  left: 8%;
+  right: 8%;
+  top: 5%;
+  height: 42%;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.14),
+      rgba(255, 255, 255, 0.035) 55%,
+      transparent 100%
+    );
+  opacity: var(--vc-physics-highlight-opacity);
+  transform:
+    translateY(var(--vc-physics-highlight-y))
+    scaleX(var(--vc-physics-highlight-scale-x));
+  filter: blur(0.2px);
+  transition:
+    opacity var(--vc-physics-release-duration) var(--vc-physics-release-ease),
+    transform var(--vc-physics-release-duration) var(--vc-physics-release-ease);
+}
+
+.vc-interactive-surface__content {
+  position: relative;
+  z-index: 2;
+  display: contents;
+}
+
+.vc-interactive-surface[data-disabled="true"] {
+  pointer-events: none;
+}
+
+.vc-interactive-surface[data-pressed="true"],
+body :is(
+  .vc-primary-action,
+  .vc-secondary-action,
+  .vc-secondary-glass-action,
+  .room-domain-card__primary-action,
+  .staff-workspace,
+  .room-row,
+  .maintenance-ticket-row,
+  .housekeeping-v2-task-row,
+  .reception-card,
+  .movement-card,
+  .control-card,
+  .control-alert,
+  .quick-access-grid a,
+  .maintenance-ticket-card,
+  .today-refresh-button,
+  .today-error button,
+  .availability-search__action,
+  .availability-card,
+  .procurement-row,
+  .procurement-card,
+  .vc-summary-item--interactive,
+  .sticky-glass-nav-surface,
+  .staff-chat__orb,
+  .icon-button,
+  .action-widget,
+  .alert-strip,
+  .primary-action,
+  .submit-button
+)[data-pressed="true"]:not(:disabled):not([aria-disabled="true"]) {
+  --vc-physics-scale: var(--vc-physics-press-scale);
+  --vc-physics-y: var(--vc-physics-press-translate-y);
+  --vc-physics-highlight-opacity: var(--vc-physics-highlight-pressed);
+  --vc-physics-border-opacity: var(--vc-physics-border-pressed);
+  --vc-physics-shadow-strength: var(--vc-physics-shadow-pressed);
+  --vc-physics-inner-light-strength: var(--vc-physics-inner-light-pressed);
+  --vc-physics-highlight-y: var(--vc-physics-highlight-y-pressed);
+  --vc-physics-highlight-scale-x: var(--vc-physics-highlight-scale-x-pressed);
+  --vc-physics-shadow-y: var(--vc-physics-shadow-y-pressed);
+  --vc-physics-shadow-blur: var(--vc-physics-shadow-blur-pressed);
+  --vc-physics-shadow-alpha: var(--vc-physics-shadow-alpha-pressed);
+  transition-duration: var(--vc-physics-press-duration);
+  transition-timing-function: var(--vc-physics-press-ease);
+  will-change: transform;
+}
+
+.vc-interactive-surface[data-pressed="true"] .vc-interactive-surface__material {
+  transition-duration: var(--vc-physics-press-duration);
+  transition-timing-function: var(--vc-physics-press-ease);
+}
+
+.vc-interactive-surface[data-pressed="true"] .vc-interactive-surface__highlight {
+  transition-duration: var(--vc-physics-press-duration);
+  transition-timing-function: var(--vc-physics-press-ease);
+}
+
+body :is(.vc-primary-action, .room-domain-card__primary-action)[data-pressed="true"]:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: var(--vc-action-primary-shadow-pressed);
+}
+
+body :is(.vc-secondary-action, .vc-secondary-glass-action)[data-pressed="true"]:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: var(--vc-action-secondary-shadow-pressed);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vc-interactive-surface:not([data-pressed="true"]):not([data-disabled="true"]):hover,
+  body :is(
+    .vc-primary-action,
+    .vc-secondary-action,
+    .vc-secondary-glass-action,
+    .room-domain-card__primary-action,
+    .staff-workspace,
+    .room-row,
+    .maintenance-ticket-row,
+    .housekeeping-v2-task-row,
+    .reception-card,
+    .movement-card,
+    .control-card,
+    .control-alert,
+    .quick-access-grid a,
+    .maintenance-ticket-card,
+    .today-refresh-button,
+    .today-error button,
+    .availability-search__action,
+    .availability-card,
+    .procurement-row,
+    .procurement-card,
+    .vc-summary-item--interactive,
+    .sticky-glass-nav-surface,
+    .staff-chat__orb,
+    .icon-button,
+    .action-widget,
+    .alert-strip,
+    .primary-action,
+    .submit-button
+  ):not([data-pressed="true"]):not(:disabled):not([aria-disabled="true"]):hover {
+    transform:
+      translate3d(0, -1px, 0)
+      scale(var(--vc-physics-hover-scale));
+  }
+}
+
 .vc-summary-item {
   position: relative;
   z-index: 1;
@@ -317,9 +538,6 @@
 
 .vc-summary-item--interactive {
   border-radius: var(--vc-action-radius);
-  transition:
-    background var(--vc-duration-fast) var(--vc-ease-standard),
-    box-shadow var(--vc-duration-fast) var(--vc-ease-standard);
 }
 
 .vc-summary-item--interactive.is-active {
@@ -419,4 +637,74 @@
   font-size: var(--vc-type-body-sm);
   font-weight: var(--vc-weight-medium);
   line-height: 1.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-interactive-surface,
+  body :is(
+    .vc-primary-action,
+    .vc-secondary-action,
+    .vc-secondary-glass-action,
+    .room-domain-card__primary-action,
+    .staff-workspace,
+    .room-row,
+    .maintenance-ticket-row,
+    .housekeeping-v2-task-row,
+    .reception-card,
+    .movement-card,
+    .control-card,
+    .control-alert,
+    .quick-access-grid a,
+    .maintenance-ticket-card,
+    .today-refresh-button,
+    .today-error button,
+    .availability-search__action,
+    .availability-card,
+    .procurement-row,
+    .procurement-card,
+    .vc-summary-item--interactive,
+    .staff-chat__orb,
+    .sticky-glass-nav-surface,
+    .icon-button,
+    .action-widget,
+    .alert-strip,
+    .primary-action,
+    .submit-button
+  ):hover,
+  .vc-interactive-surface[data-pressed="true"],
+  body :is(
+    .vc-primary-action,
+    .vc-secondary-action,
+    .vc-secondary-glass-action,
+    .room-domain-card__primary-action,
+    .staff-workspace,
+    .room-row,
+    .maintenance-ticket-row,
+    .housekeeping-v2-task-row,
+    .reception-card,
+    .movement-card,
+    .control-card,
+    .control-alert,
+    .quick-access-grid a,
+    .maintenance-ticket-card,
+    .today-refresh-button,
+    .today-error button,
+    .availability-search__action,
+    .availability-card,
+    .procurement-row,
+    .procurement-card,
+    .vc-summary-item--interactive,
+    .staff-chat__orb,
+    .sticky-glass-nav-surface,
+    .icon-button,
+    .action-widget,
+    .alert-strip,
+    .primary-action,
+    .submit-button
+  )[data-pressed="true"] {
+    --vc-physics-scale: 1;
+    --vc-physics-y: 0px;
+    transform: none;
+    transition-duration: 1ms;
+  }
 }

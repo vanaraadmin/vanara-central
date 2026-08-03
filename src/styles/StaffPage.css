@@ -40,10 +40,6 @@
   outline-offset: 3px;
 }
 
-.staff-workspace:active {
-  transform: translateY(1px);
-}
-
 .staff-workspace__identity {
   display: grid;
   align-self: stretch;

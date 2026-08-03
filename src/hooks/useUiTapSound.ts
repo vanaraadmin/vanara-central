@@ -15,6 +15,10 @@ const INTENTIONAL_TAP_SELECTOR = [
   ".control-alert",
   ".movement-card",
   ".maintenance-ticket-card",
+  ".vc-summary-item--interactive",
+  ".availability-card",
+  ".procurement-row",
+  ".procurement-card",
 ].join(",");
 
 const PASSIVE_INPUT_SELECTOR = [
