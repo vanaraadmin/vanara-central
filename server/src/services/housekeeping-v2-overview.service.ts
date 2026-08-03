@@ -540,7 +540,7 @@ function visibleQueueForTask(task: HousekeepingTask, reasonCodes: HousekeepingV2
 
 function displayReasonFor(reasonCodes: HousekeepingV2ReasonCode[]): string | null {
   if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "Was due yesterday";
-  if (reasonCodes.includes("waiting_reception")) return "Waiting Reception";
+  if (reasonCodes.includes("waiting_reception")) return "Waiting for Check-out";
   if (reasonCodes.includes("maintenance_block")) return "Maintenance Block";
   if (reasonCodes.includes("cleaning_due_today")) return "Due today";
   if (reasonCodes.includes("on_demand_cleaning")) return "On-Demand";
@@ -645,7 +645,7 @@ function priorityRank(priority: HousekeepingTaskPriority): number {
 function blockReasonFor(context: OperationalContext, task: HousekeepingTask | null, waitingRelease: boolean, maintenanceBlocked: boolean): string | null {
   if (task?.blockingReason) return task.blockingReason;
   if (maintenanceBlocked) return maintenanceSummary(context.maintenance);
-  if (waitingRelease) return "Waiting for Reception room release";
+  if (waitingRelease) return "Waiting for Check-out";
   return null;
 }
 

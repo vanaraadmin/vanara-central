@@ -47,6 +47,7 @@ interface RoomWorkspaceRow {
   active_task_status: HousekeepingTaskStatus | null;
   active_task_type: HousekeepingTaskType | null;
   active_task_priority: HousekeepingTaskPriority | null;
+  active_task_assignee_id: string | null;
   active_task_assignee: string | null;
   active_ticket_count: number | null;
   blocking_ticket_count: number | null;
@@ -455,7 +456,7 @@ function compactAlertSummary(row: RoomWorkspaceRow, reception: RoomReceptionSumm
   };
 
   if (maintenanceState(row) === "BLOCKING") push("Maintenance blocking");
-  if (row.active_task_status === "WAITING_FOR_RECEPTION") push("Waiting for Reception");
+  if (row.active_task_status === "WAITING_FOR_RECEPTION") push("Waiting for Check-out");
 
   for (const alert of reception.alerts) {
     push(alertSummaryLabel(alert.label));
@@ -502,6 +503,10 @@ function canUseHousekeepingActions(user?: CurrentUser): boolean {
   return Boolean(user && hasModulePermission(user, "housekeeping", "edit"));
 }
 
+function canUseHousekeepingWorkflowActions(user?: CurrentUser): boolean {
+  return canUseHousekeepingActions(user);
+}
+
 function canCreateMaintenanceIssue(user?: CurrentUser): boolean {
   return Boolean(user && (
     hasModulePermission(user, "maintenance", "access")
@@ -524,7 +529,7 @@ function taskActionLabel(taskType: HousekeepingTaskType, mode: "start" | "comple
 }
 
 function housekeepingCompletionMode(taskType: HousekeepingTaskType): RoomHousekeepingCompletionMode {
-  if (taskType === "LINEN_CHANGE") return "FULL";
+  if (taskType === "LINEN_CHANGE" || taskType === "TURNOVER") return "FULL";
   if (taskType === "WATER_REFILL") return "WATER";
   return "STANDARD";
 }
@@ -542,13 +547,16 @@ function mapHousekeepingActiveTask(row: RoomWorkspaceRow): RoomHousekeepingActiv
 }
 
 function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupancyState, user?: CurrentUser): RoomHousekeepingPrimaryAction | null {
-  const canAct = canUseHousekeepingActions(user);
-  if (!canAct) return null;
   if (maintenanceState(row) === "BLOCKING") return null;
 
   if (row.active_task_id && row.active_task_type && row.active_task_status && row.active_task_version) {
+    if (!canUseHousekeepingWorkflowActions(user)) return null;
     const capabilities = housekeepingTaskCapabilities({ taskType: row.active_task_type, status: row.active_task_status });
-    if (capabilities.canStart) {
+    const isOwner = user?.role === "Owner" && user.views.includes("owner");
+    const assigneeId = row.active_task_assignee_id ?? null;
+    const isAssigned = assigneeId === user?.id;
+    const isUnassigned = assigneeId === null;
+    if (capabilities.canStart && (isUnassigned || isAssigned || isOwner)) {
       return {
         type: "START_HOUSEKEEPING_TASK",
         label: taskActionLabel(row.active_task_type, "start"),
@@ -558,7 +566,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
         target: null,
       };
     }
-    if (capabilities.canComplete) {
+    if (capabilities.canComplete && (isAssigned || isOwner || (row.active_task_type === "WATER_REFILL" && isUnassigned))) {
       return {
         type: "COMPLETE_HOUSEKEEPING_TASK",
         label: taskActionLabel(row.active_task_type, "complete"),
@@ -571,7 +579,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
     return null;
   }
 
-  if (occupancyState === "OCCUPIED") {
+  if (occupancyState === "OCCUPIED" && canUseHousekeepingActions(user)) {
     return {
       type: "CREATE_ON_DEMAND_CLEANING",
       label: "Start On-demand Cleaning",
@@ -605,9 +613,9 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
 
   if (row.active_task_status === "WAITING_FOR_RECEPTION") {
     return {
-      primaryStatus: "Waiting For Reception",
+      primaryStatus: "Waiting for Check-out",
       tone: "warning",
-      detail: "Reception has not released the room",
+      detail: "Guest still in room.",
       secondaryInfo: activeTaskLabel,
       activeTask,
       primaryAction: null,
@@ -902,6 +910,7 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
         status AS active_task_status,
         task_type AS active_task_type,
         priority AS active_task_priority,
+        assigned_user_id AS active_task_assignee_id,
         assigned_user_name AS active_task_assignee
       FROM (
         SELECT

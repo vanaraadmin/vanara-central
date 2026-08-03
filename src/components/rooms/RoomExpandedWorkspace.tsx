@@ -1,9 +1,10 @@
 import GuestCard from "./GuestCard";
 import HousekeepingCard from "./HousekeepingCard";
 import MaintenanceCard from "./MaintenanceCard";
-import ReceptionCard from "./ReceptionCard";
 import RoomHero from "./RoomHero";
 import RoomOperationalSummaryCard from "./RoomOperationalSummaryCard";
+import TurnoverCard from "./TurnoverCard";
+import { getRoomsWorkspaceTurnover } from "../../config/turnoverPresentation";
 import type { RoomHousekeepingCompletionMode, RoomsWorkspaceRoom } from "../../types/rooms-workspace";
 
 interface RoomExpandedWorkspaceProps {
@@ -23,14 +24,22 @@ export default function RoomExpandedWorkspace({
   onStartHousekeepingTask,
   room,
 }: RoomExpandedWorkspaceProps) {
+  const turnover = getRoomsWorkspaceTurnover(room);
+
   return (
     <div id={id} className="room-expanded" role="region" aria-label={`${room.roomName} workspace`}>
       <div className="room-workspace-container">
         <RoomHero room={room} />
-        <RoomOperationalSummaryCard summary={room.operational} />
-
         {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
-        <ReceptionCard roomId={room.unitId} roomName={room.roomName} reception={room.reception} />
+        <RoomOperationalSummaryCard summary={room.operational} />
+        <TurnoverCard
+          actionPending={actionPending}
+          onCompleteTask={onCompleteHousekeepingTask}
+          onStartTask={onStartHousekeepingTask}
+          roomId={room.unitId}
+          roomName={room.roomName}
+          turnover={turnover}
+        />
         <HousekeepingCard
           actionPending={actionPending}
           housekeeping={room.housekeeping}

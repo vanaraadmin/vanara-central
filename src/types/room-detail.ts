@@ -6,7 +6,7 @@ export type RoomReadyState = "READY" | "NOT_READY";
 export type OperationalAvailabilityStatus = "OPERATING" | "NOT_OPERATING";
 export type CheckoutCompletionSource = "reception" | "automatic-fallback" | "none";
 export type RoomTimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
-export type RoomOperationalStatus = "Clean" | "Dirty" | "Cleaning scheduled" | "Cleaning In Progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Water refill";
+export type RoomOperationalStatus = "Clean" | "Dirty" | "Cleaning scheduled" | "Cleaning In Progress" | "Full Cleaning" | "Priority" | "Waiting for Check-out" | "Maintenance Block" | "Water refill";
 
 export interface RoomCurrentStay {
   bookingId: number;

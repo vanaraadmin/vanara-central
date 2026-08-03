@@ -10,6 +10,8 @@ const accommodationTypeIcon = readFileSync(new URL("../../src/components/rooms/A
 const roomExpandedWorkspace = readFileSync(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
 const guestCard = readFileSync(new URL("../../src/components/rooms/GuestCard.tsx", import.meta.url), "utf8");
 const receptionCard = readFileSync(new URL("../../src/components/rooms/ReceptionCard.tsx", import.meta.url), "utf8");
+const turnoverCard = readFileSync(new URL("../../src/components/rooms/TurnoverCard.tsx", import.meta.url), "utf8");
+const turnoverPresentation = readFileSync(new URL("../../src/config/turnoverPresentation.ts", import.meta.url), "utf8");
 const housekeepingCard = readFileSync(new URL("../../src/components/rooms/HousekeepingCard.tsx", import.meta.url), "utf8");
 const maintenanceCard = readFileSync(new URL("../../src/components/rooms/MaintenanceCard.tsx", import.meta.url), "utf8");
 const roomDomainCard = readFileSync(new URL("../../src/components/rooms/RoomDomainCard.tsx", import.meta.url), "utf8");
@@ -175,7 +177,8 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
 test("Expanded Rooms Workspace uses one parent container and removes Notes and History", () => {
   assert.match(roomExpandedWorkspace, /className="room-workspace-container"/);
   assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
-  assert.match(roomExpandedWorkspace, /<ReceptionCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.match(roomExpandedWorkspace, /<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.doesNotMatch(roomExpandedWorkspace, /<ReceptionCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder|title="Notes"|title="History"|Notes|History/);
   assert.match(css, /\.room-workspace-container/);
 });
@@ -201,27 +204,23 @@ test("Expanded Rooms Workspace renders GuestCard only for occupied current stays
   assert.doesNotMatch(guestCard, /bookingId|Passport|Deposit|Email|Phone|payment|flag|countryCodeToFlag|UNKNOWN|N\/A/);
 });
 
-test("Expanded Rooms Workspace renders ReceptionCard only for relevant Reception state", () => {
-  assert.match(roomExpandedWorkspace, /ReceptionCard roomId=\{room\.unitId\} roomName=\{room\.roomName\} reception=\{room\.reception\}/);
+test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead of ReceptionCard", () => {
+  assert.match(roomExpandedWorkspace, /getRoomsWorkspaceTurnover\(room\)/);
+  assert.match(roomExpandedWorkspace, /TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Reception"/);
-  assert.match(receptionCard, /shouldRenderReceptionCard/);
-  assert.match(receptionCard, /reception\.phase !== "NONE" \|\| reception\.alerts\.length > 0 \|\| reception\.primaryAction !== null/);
-  assert.match(receptionCard, /Arrival Due/);
-  assert.match(receptionCard, /In House/);
-  assert.match(receptionCard, /Departure Due/);
-  assert.match(receptionCard, /Checked Out/);
-  assert.match(receptionCard, /Passport/);
-  assert.match(receptionCard, /Deposit/);
-  assert.match(receptionCard, /Check-in/);
-  assert.match(receptionCard, /Check-out/);
-  assert.match(receptionCard, /Open Reception/);
-  assert.match(serverService, /Collect Passport/);
-  assert.match(serverService, /Complete Check-in/);
-  assert.match(serverService, /Complete Check-out/);
+  assert.match(turnoverCard, /eyebrow="Turnover"/);
+  assert.match(turnoverPresentation, /label:\s*"Start Cleaning"/);
+  assert.match(turnoverPresentation, /label:\s*"Finish Cleaning"/);
+  assert.match(turnoverPresentation, /Guest In House[\s\S]*Nothing to do/);
+  assert.match(turnoverPresentation, /Waiting for Check-out[\s\S]*Guest still in room/);
+  assert.match(turnoverPresentation, /Check-out Completed[\s\S]*Ready to start cleaning/);
+  assert.match(turnoverPresentation, /Ready for Check-in[\s\S]*Waiting next arrival/);
+  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Turnover complete/);
+  assert.doesNotMatch(turnoverCard, /Passport|Deposit|Open Reception|Arrival Due|Reception/);
 });
 
 test("Housekeeping and Maintenance cards share the RoomDomainCard structure", () => {
-  for (const card of [receptionCard, housekeepingCard, maintenanceCard]) {
+  for (const card of [turnoverCard, housekeepingCard, maintenanceCard]) {
     assert.match(card, /RoomDomainCard/);
     assert.match(card, /OperationalStateBlock/);
     assert.match(card, /PrimaryActionRow/);
@@ -241,7 +240,7 @@ test("Housekeeping card presentation is operational work state only", () => {
   assert.match(serverService, /primaryStatus:\s*"CLEAN"/);
   assert.match(serverService, /"Cleaning Required"/);
   assert.match(serverService, /primaryStatus:\s*"Cleaning In Progress"/);
-  assert.match(serverService, /primaryStatus:\s*"Waiting For Reception"/);
+  assert.match(serverService, /primaryStatus:\s*"Waiting for Check-out"/);
   assert.match(serverService, /primaryStatus:\s*"Cleaning Blocked"/);
   assert.doesNotMatch(serverService, /primaryStatus:\s*"Not Ready"/);
   assert.doesNotMatch(serverService, /detail:\s*"No active Housekeeping task"/);
@@ -250,7 +249,7 @@ test("Housekeeping card presentation is operational work state only", () => {
 test("Room compact summary aggregates operational alerts without fake cleaning state", () => {
   assert.match(serverService, /alertSummary:\s*compactAlertSummary\(row, reception, date\)/);
   assert.match(serverService, /Maintenance blocking/);
-  assert.match(serverService, /Waiting for Reception/);
+  assert.match(serverService, /Waiting for Check-out/);
   assert.match(serverService, /Guest arriving today/);
   assert.match(serverService, /Late checkout/);
   assert.doesNotMatch(serverService, /alertSummary[\s\S]{0,120}ready_state/);

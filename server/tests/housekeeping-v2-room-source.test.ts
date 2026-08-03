@@ -9,6 +9,9 @@ const index = await readFile(new URL("../src/index.ts", import.meta.url), "utf8"
 const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
 const homePage = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
 const roomWorkspace = await readFile(new URL("../../src/pages/RoomDetailPage.tsx", import.meta.url), "utf8");
+const roomExpandedWorkspace = await readFile(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
+const turnoverCard = await readFile(new URL("../../src/components/rooms/TurnoverCard.tsx", import.meta.url), "utf8");
+const turnoverPresentation = await readFile(new URL("../../src/config/turnoverPresentation.ts", import.meta.url), "utf8");
 const client = await readFile(new URL("../../src/services/housekeeping-v2.service.ts", import.meta.url), "utf8");
 const roomClient = await readFile(new URL("../../src/services/room-detail.service.ts", import.meta.url), "utf8");
 
@@ -110,12 +113,28 @@ test("Housekeeping no longer owns a duplicate room detail surface", () => {
 test("Room Workspace owns active housekeeping task and room operations", () => {
   assert.match(roomWorkspace, /Active task/);
   assert.match(roomWorkspace, /room\.housekeeping\.tasks/);
-  assert.match(roomWorkspace, /room\.reception\.passportStatus/);
-  assert.match(roomWorkspace, /room\.reception\.depositStatus/);
+  assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>/);
+  assert.match(roomWorkspace, /getRoomDetailTurnover\(room\)/);
+  assert.doesNotMatch(roomWorkspace, /ReceptionPanel/);
   assert.match(roomWorkspace, /room\.procurement/);
   assert.doesNotMatch(homePage, /function Checklist/);
   assert.doesNotMatch(homePage, /AssignmentControl/);
   assert.doesNotMatch(homePage, /<select/);
+});
+
+test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {
+  assert.match(roomExpandedWorkspace, /<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>[\s\S]*<HousekeepingPanel/);
+  assert.match(turnoverCard, /eyebrow="Turnover"/);
+  assert.match(turnoverPresentation, /label:\s*"Start Cleaning"/);
+  assert.match(turnoverPresentation, /label:\s*"Finish Cleaning"/);
+  assert.match(turnoverPresentation, /Guest In House[\s\S]*Nothing to do/);
+  assert.match(turnoverPresentation, /Waiting for Check-out[\s\S]*Guest still in room/);
+  assert.match(turnoverPresentation, /Check-out Completed[\s\S]*Ready to start cleaning/);
+  assert.match(turnoverPresentation, /Cleaning In Progress[\s\S]*Assigned to \$\{task\.assignee\}/);
+  assert.match(turnoverPresentation, /Ready for Check-in[\s\S]*Waiting next arrival/);
+  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Turnover complete/);
+  assert.doesNotMatch(`${homePage}\n${turnoverCard}`, /Passport|Deposit|Open Reception|Arrival Due|Reception internal|room release|guest arrived/);
 });
 
 test("Room Workspace labels physical housekeeping condition as clean or dirty", () => {

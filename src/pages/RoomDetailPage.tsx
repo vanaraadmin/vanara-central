@@ -3,15 +3,18 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import warningIcon from "../assets/img/warning-circle-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
+import TurnoverCard from "../components/rooms/TurnoverCard";
 import WorkspaceShell from "../components/WorkspaceShell";
-import { AskIcon, CalendarIcon, CheckIcon, CheckInIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
+import { AskIcon, CheckIcon, HousekeepingIcon, MaintenanceIcon, PlusIcon, RefreshIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
+import { getRoomDetailTurnover } from "../config/turnoverPresentation";
 import {
   completeHousekeepingTask,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
-import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, resolveReceptionRoomAlert, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
+import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
 import type { MaintenancePriority } from "../types/maintenance";
 import type { OperationalAvailabilityStatus, RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
+import type { RoomHousekeepingCompletionMode } from "../types/rooms-workspace";
 import "../styles/RoomDetailPage.css";
 
 const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Normal", "High"];
@@ -32,17 +35,6 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function checkoutLabel(room: RoomDetail): string {
-  switch (room.checkoutCompletionSource) {
-    case "reception":
-      return "Checkout confirmed by Reception";
-    case "automatic-fallback":
-      return "Automatic checkout fallback";
-    case "none":
-      return "Checkout not completed";
-  }
 }
 
 function statusTone(value: string): string {
@@ -69,57 +61,14 @@ function CurrentStay({ stay }: { stay: RoomCurrentStay | null }) {
       <article className="stay-card">
         <strong>{stay.guestName}</strong>
         <dl>
-          <div><dt>Check-in</dt><dd>{formatDate(stay.arrival)}</dd></div>
-          <div><dt>Check-out</dt><dd>{formatDate(stay.departure)}</dd></div>
+          <div><dt>Arrival</dt><dd>{formatDate(stay.arrival)}</dd></div>
+          <div><dt>Departure</dt><dd>{formatDate(stay.departure)}</dd></div>
           <div><dt>Adults</dt><dd>{stay.adults}</dd></div>
           <div><dt>Children</dt><dd>{stay.children}</dd></div>
           <div><dt>Source</dt><dd>{stay.bookingSource}</dd></div>
           <div><dt>Reference</dt><dd>{stay.bookingReference ?? "Not available"}</dd></div>
         </dl>
       </article>
-    </section>
-  );
-}
-
-function ReceptionPanel({ room }: { room: RoomDetail }) {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: (alert: RoomDetail["reception"]["alerts"][number]) => resolveReceptionRoomAlert(alert),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["room-detail", String(room.unitId)] });
-    },
-  });
-
-  return (
-    <section className="room-section" aria-label="Reception summary">
-      <header><CheckInIcon /><h2>Reception</h2></header>
-      {room.reception.alerts.length > 0 && (
-        <div className="room-alert-list" aria-label="Reception alerts">
-          {room.reception.alerts.map((alert) => (
-            <button disabled={mutation.isPending} key={alert.id} onClick={() => mutation.mutate(alert)} type="button">
-              <img alt="" src={warningIcon} />
-              <span>{alert.title}</span>
-              <strong>{alert.actionLabel}</strong>
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="room-operation-card">
-        {room.reception.guestSummary ? <strong>{room.reception.guestSummary}</strong> : <strong>No active guest</strong>}
-        <dl>
-          <div><dt>Arrival</dt><dd>{room.reception.arrival ? formatDate(room.reception.arrival) : "Not available"}</dd></div>
-          <div><dt>Departure</dt><dd>{room.reception.departure ? formatDate(room.reception.departure) : "Not available"}</dd></div>
-          <div><dt>Check-in</dt><dd>{room.reception.checkInStatus}</dd></div>
-          <div><dt>Check-out</dt><dd>{room.reception.checkOutStatus}</dd></div>
-          <div><dt>Passport</dt><dd>{room.reception.passportStatus}</dd></div>
-          <div><dt>Deposit</dt><dd>{room.reception.depositStatus}</dd></div>
-        </dl>
-      </div>
-      <div className="room-reception-notes">
-        {room.reception.notes.length === 0 && <div className="room-empty-state">No reception notes</div>}
-        {room.reception.notes.map((note) => <p key={note}>{note}</p>)}
-      </div>
-      {mutation.isError && <p className="room-form-error">Reception alert could not be completed.</p>}
     </section>
   );
 }
@@ -139,13 +88,19 @@ function RoomHeader({ room }: { room: RoomDetail }) {
         <span><RoomIcon />{room.operationalAvailability.label}</span>
         <span><RoomIcon />{room.occupancyStatus}</span>
         <span><HousekeepingIcon />{room.housekeeping.primaryStatus}</span>
-        <span><CalendarIcon />{checkoutLabel(room)}</span>
       </section>
     </>
   );
 }
 
+function turnoverCompletionPayload(mode: RoomHousekeepingCompletionMode) {
+  if (mode === "FULL") return { standardCleaningCompleted: true, linenChangeCompleted: true };
+  if (mode === "WATER") return { waterRefillCompleted: true };
+  return { standardCleaningCompleted: true, linenChangeCompleted: false };
+}
+
 function roomTaskCompletePayload(task: RoomHousekeepingTask) {
+  if (task.taskType === "TURNOVER") return { standardCleaningCompleted: true, linenChangeCompleted: true };
   if (task.taskType === "LINEN_CHANGE") return { linenChangeCompleted: true };
   if (task.taskType === "WATER_REFILL") return { waterRefillCompleted: true };
   return { standardCleaningCompleted: true };
@@ -155,7 +110,7 @@ function taskStatusLabel(task: RoomHousekeepingTask): string {
   if (task.status === "AVAILABLE_FOR_CLAIM") return "Available";
   if (task.status === "CLAIMED") return task.assignee ? `Assigned to ${task.assignee.name}` : "Assigned";
   if (task.status === "IN_PROGRESS") return "In progress";
-  if (task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (task.status === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
   if (task.status === "READY") return "Clean";
   return task.status.replaceAll("_", " ");
 }
@@ -225,6 +180,22 @@ function useRoomTaskAction(roomId: string) {
       ]);
     },
   });
+}
+
+function TurnoverPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+  const turnover = getRoomDetailTurnover(room);
+  const action = useRoomTaskAction(roomId);
+
+  return (
+    <TurnoverCard
+      actionPending={action.isPending}
+      onCompleteTask={(taskId, version, completionMode) => action.mutate(completeHousekeepingTask(taskId, version, turnoverCompletionPayload(completionMode)))}
+      onStartTask={(taskId, version) => action.mutate(startHousekeepingTask(taskId, version))}
+      roomId={room.unitId}
+      roomName={room.roomName}
+      turnover={turnover}
+    />
+  );
 }
 
 function OperationalAvailabilityPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
@@ -613,9 +584,9 @@ export default function RoomDetailPage() {
       {room.data && (
         <>
           <RoomHeader room={room.data} />
-          <OperationalAvailabilityPanel room={room.data} roomId={roomId} />
           <CurrentStay stay={room.data.currentStay} />
-          <ReceptionPanel room={room.data} />
+          <OperationalAvailabilityPanel room={room.data} roomId={roomId} />
+          <TurnoverPanel room={room.data} roomId={roomId} />
           <HousekeepingPanel room={room.data} roomId={roomId} />
           <MaintenancePanel room={room.data} roomId={roomId} />
           <ProcurementPanel room={room.data} />

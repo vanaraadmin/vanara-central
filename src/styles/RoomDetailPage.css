@@ -15,7 +15,6 @@
 .room-actions,
 .room-task-card,
 .room-task-actions,
-.room-alert-list button,
 .room-section-summary,
 .stay-card,
 .maintenance-ticket-card,
@@ -338,10 +337,8 @@
 }
 
 .maintenance-ticket-list,
-.room-alert-list,
 .room-task-list,
 .room-note-list,
-.room-reception-notes,
 .room-timeline {
   display: grid;
   gap: var(--vc-space-2);
@@ -403,55 +400,6 @@
 .room-task-actions button:disabled {
   background: var(--vc-bg-subtle);
   color: var(--vc-text-muted);
-}
-
-.room-alert-list {
-  margin-bottom: var(--vc-space-3);
-}
-
-.room-alert-list button {
-  width: 100%;
-  min-height: 58px;
-  align-items: center;
-  gap: var(--vc-space-2);
-  border: 1px solid rgba(149, 64, 28, 0.18);
-  border-radius: var(--vc-radius-lg);
-  background: rgba(186, 84, 36, 0.1);
-  color: var(--vc-text-primary);
-  font: inherit;
-  padding: 0 var(--vc-space-3);
-  text-align: left;
-}
-
-.room-alert-list img {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
-  opacity: 0.72;
-}
-
-.room-alert-list span {
-  min-width: 0;
-  flex: 1 1 auto;
-  font-weight: var(--vc-weight-heavy);
-}
-
-.room-alert-list strong {
-  color: rgba(23, 59, 45, 0.62);
-  font-size: var(--vc-text-xs);
-  font-weight: var(--vc-weight-heavy);
-  text-transform: uppercase;
-}
-
-.room-reception-notes p {
-  margin: 0;
-  padding: var(--vc-space-2);
-  border-left: 3px solid rgba(178, 138, 70, 0.48);
-  border-radius: var(--vc-radius-md);
-  background: rgba(178, 138, 70, 0.08);
-  color: var(--vc-text-secondary);
-  font-size: var(--vc-text-sm);
-  font-weight: var(--vc-weight-bold);
 }
 
 .maintenance-ticket-card {
@@ -591,6 +539,127 @@
   margin: var(--vc-space-1) 0;
   color: var(--vc-text-primary);
   line-height: var(--vc-line-body);
+}
+
+.room-detail-page .turnover-card {
+  display: grid;
+  gap: var(--vc-space-3);
+  margin-bottom: var(--vc-space-3);
+  padding: var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-xl);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.room-detail-page .turnover-card .room-domain-card__header,
+.room-detail-page .turnover-card .room-domain-card__action-row,
+.room-detail-page .turnover-card .room-domain-card__fact {
+  display: flex;
+}
+
+.room-detail-page .turnover-card .room-domain-card__header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-2);
+}
+
+.room-detail-page .turnover-card .room-domain-card__heading {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.room-detail-page .turnover-card .room-domain-card__eyebrow,
+.room-detail-page .turnover-card .room-domain-card__fact dt,
+.room-detail-page .turnover-card .room-domain-state__label {
+  margin: 0;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.room-detail-page .turnover-card .room-domain-card__title {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+  line-height: var(--vc-line-title);
+}
+
+.room-detail-page .turnover-card .room-domain-card__status {
+  flex: 0 0 auto;
+}
+
+.room-detail-page .turnover-card .room-domain-state {
+  display: grid;
+  gap: 3px;
+  padding: var(--vc-space-3);
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-app-elevated);
+}
+
+.room-detail-page .turnover-card .room-domain-state__value {
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.room-detail-page .turnover-card .room-domain-state__detail,
+.room-detail-page .turnover-card .room-domain-state__meta {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.room-detail-page .turnover-card .room-domain-card__facts {
+  display: grid;
+  gap: var(--vc-space-2);
+  margin: 0;
+}
+
+.room-detail-page .turnover-card .room-domain-card__fact {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vc-space-2);
+}
+
+.room-detail-page .turnover-card .room-domain-card__fact dd {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-bold);
+  text-align: right;
+}
+
+.room-detail-page .turnover-card .room-domain-card__action-row {
+  gap: var(--vc-space-2);
+}
+
+.room-detail-page .turnover-card .room-domain-card__primary-action {
+  width: 100%;
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+  text-decoration: none;
+}
+
+.room-detail-page .turnover-card .room-domain-card__primary-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.room-detail-page .turnover-card .room-domain-card__primary-action:disabled,
+.room-detail-page .turnover-card .room-domain-card__primary-action--disabled {
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
 }
 
 .timeline-event {

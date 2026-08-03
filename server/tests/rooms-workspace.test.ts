@@ -102,6 +102,7 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     active_task_status: null,
     active_task_type: null,
     active_task_priority: null,
+    active_task_assignee_id: null,
     active_task_assignee: null,
     active_ticket_count: 0,
     blocking_ticket_count: 0,
@@ -205,6 +206,7 @@ function defaultRooms() {
       active_task_status: "IN_PROGRESS",
       active_task_type: "STANDARD_CLEANING",
       active_task_priority: "NORMAL",
+      active_task_assignee_id: "rooms-1",
       active_task_assignee: "Dao",
     }),
     roomRow({
@@ -439,7 +441,7 @@ test("Housekeeping card defaults to CLEAN when no active task exists even if phy
   });
 });
 
-test("Housekeeping card prioritizes waiting Reception before cleaning actions", async () => {
+test("Housekeeping card presents waiting turnover before cleaning actions", async () => {
   const rooms = [
     roomRow({
       unit_id: 14,
@@ -457,10 +459,10 @@ test("Housekeeping card prioritizes waiting Reception before cleaning actions", 
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
   const room = byName(overview.rooms, "Bungalow 14");
 
-  assert.equal(room.housekeeping.primaryStatus, "Waiting For Reception");
-  assert.equal(room.housekeeping.detail, "Reception has not released the room");
+  assert.equal(room.housekeeping.primaryStatus, "Waiting for Check-out");
+  assert.equal(room.housekeeping.detail, "Guest still in room.");
   assert.equal(room.housekeeping.primaryAction, null);
-  assert.equal(room.alertSummary, "Waiting for Reception");
+  assert.equal(room.alertSummary, "Waiting for Check-out");
 });
 
 test("Housekeeping card displays turnover work as Cleaning Required with Start Cleaning", async () => {

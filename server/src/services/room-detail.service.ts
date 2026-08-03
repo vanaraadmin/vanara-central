@@ -14,7 +14,7 @@ export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2
 }
 
 type TimelineType = "check-in" | "check-out" | "housekeeping" | "maintenance" | "note" | "procurement";
-type RoomOperationalStatus = "Clean" | "Dirty" | "Cleaning scheduled" | "Cleaning In Progress" | "Full Cleaning" | "Priority" | "Waiting Reception" | "Maintenance Block" | "Water refill";
+type RoomOperationalStatus = "Clean" | "Dirty" | "Cleaning scheduled" | "Cleaning In Progress" | "Full Cleaning" | "Priority" | "Waiting for Check-out" | "Maintenance Block" | "Water refill";
 
 interface UnitRow {
   unit_id: number;
@@ -273,7 +273,7 @@ function taskIsCarriedOver(task: HousekeepingTask, today: string): boolean {
 
 function taskReason(task: HousekeepingTask, today: string): string {
   if (task.blockingReason) return task.blockingReason;
-  if (task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
   if (taskIsCarriedOver(task, today)) return "Was scheduled previously. Please do this first today.";
   if (task.taskType === "STANDARD_CLEANING") return "Cleaning due";
   if (task.taskType === "LINEN_CHANGE") return "Full Cleaning required";
@@ -294,7 +294,7 @@ function taskRank(task: HousekeepingTask): number {
 function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenanceBlocked: boolean, readyState: RoomReadyState): { label: HousekeepingWorkflowStatus | RoomOperationalStatus; tone: string } {
   if (maintenanceBlocked) return { label: "Maintenance Block", tone: "maintenance-block" };
   if (!task) return readyState === "NOT_READY" ? { label: "Dirty", tone: "dirty" } : { label: "Clean", tone: "clean" };
-  if (task.status === "WAITING_FOR_RECEPTION") return { label: "Waiting Reception", tone: "waiting-reception" };
+  if (task.status === "WAITING_FOR_RECEPTION") return { label: "Waiting for Check-out", tone: "waiting-reception" };
   if (task.isCarriedOver) return { label: "Priority", tone: "priority" };
   if (task.status === "IN_PROGRESS" || task.status === "CLAIMED") return { label: "Cleaning In Progress", tone: "cleaning-in-progress" };
   if (task.status === "READY" || task.status === "READY_FOR_INSPECTION") return { label: "Clean", tone: "clean" };

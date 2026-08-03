@@ -40,7 +40,7 @@ function formatDate(value: string | null): string {
 }
 
 function taskLabel(card: HousekeepingV2TaskCard): string {
-  if (card.taskType === "TURNOVER") return card.reasonCodes.includes("waiting_reception") ? "Waiting for Reception" : "Turnover";
+  if (card.taskType === "TURNOVER") return "Turnover";
   if (card.taskType === "STANDARD_CLEANING") return "Cleaning";
   if (card.taskType === "LINEN_CHANGE") return "Full Cleaning";
   if (card.taskType === "ON_DEMAND_CLEANING") return "Cleaning request";
@@ -59,7 +59,7 @@ function reasonLabel(code: string): string {
   if (code === "on_demand_cleaning") return "On-demand";
   if (code === "linen_required") return "Linen";
   if (code === "linen_override") return "Override";
-  if (code === "waiting_reception") return "Waiting Reception";
+  if (code === "waiting_reception") return "Waiting for Check-out";
   if (code === "maintenance_block") return "Maintenance Block";
   return code;
 }
@@ -74,7 +74,7 @@ function statusLabel(card: HousekeepingV2TaskCard): string {
   if (card.taskStatus === "SKIPPED") return "Skipped";
   if (card.taskStatus === "CANCELLED") return "Cancelled";
   if (card.taskStatus === "BLOCKED") return "Blocked";
-  if (card.taskStatus === "WAITING_FOR_RECEPTION") return "Waiting Reception";
+  if (card.taskStatus === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
   return "Active";
 }
 
