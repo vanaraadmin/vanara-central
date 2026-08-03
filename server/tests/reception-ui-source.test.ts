@@ -38,8 +38,8 @@ test("check-in and check-out cards render nationality text without flags", async
   assert.doesNotMatch(receptionPage, /UNKNOWN|N\/A|Guest nationality/);
   assert.match(receptionCss, /\.reception-nationality \{/);
   assert.match(receptionCss, /text-transform:\s*uppercase/);
-  assert.match(receptionCss, /font-size:\s*0\.84rem/);
-  assert.match(receptionCss, /font-weight:\s*650/);
+  assert.match(receptionCss, /font-size:\s*var\(--vc-type-body-sm\)/);
+  assert.match(receptionCss, /font-weight:\s*var\(--vc-weight-semibold\)/);
   const nationalityCss = receptionCss.match(/\.reception-nationality\s*\{[\s\S]*?\}/)?.[0] ?? "";
   assert.doesNotMatch(nationalityCss, /border|border-radius|box-shadow/);
   assert.doesNotMatch(receptionCss, /\.reception-nationality-flag/);
@@ -232,8 +232,8 @@ test("passport review is a compact quick review with one sticky action bar", () 
   assert.match(reviewStep, /className="passport-workflow__actions passport-review-actions"/);
   assert.match(reviewCss, /\.passport-review-actions/);
   assert.match(reviewCss, /position:\s*sticky/);
-  assert.match(reviewCss, /height:\s*44px/);
-  assert.match(reviewCss, /env\(safe-area-inset-bottom\)/);
+  assert.match(reviewCss, /min-height:\s*44px/);
+  assert.match(reviewCss, /var\(--vc-safe-bottom\)/);
 });
 
 test("passport camera latches READY through tap micro-movement", () => {

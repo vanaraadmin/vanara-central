@@ -148,7 +148,8 @@ test("v2 page starts as summary cards and expands only Priority, Normal or Water
   assert.match(page, /Housekeeping operational summary/);
   assert.match(page, /const homeSections/);
   assert.match(page, /useState<HousekeepingV2SectionId \| null>\(null\)/);
-  assert.match(page, /aria-expanded=\{activeSection === item\.id\}/);
+  assert.match(page, /activeItemId=\{activeSection\}/);
+  assert.match(page, /onItemSelect=\{\(item\) =>/);
   assert.match(page, /expandedSection &&/);
   assert.match(page, /Housekeeping task queue/);
   assert.doesNotMatch(page, /housekeeping\.data\.sections\.map/);
@@ -162,8 +163,8 @@ test("expanded v2 rows link room names to Room Workspace and gate task actions b
   assert.match(page, /card\.capabilities\.canComplete/);
   assert.match(page, /startHousekeepingTask/);
   assert.match(page, /completeHousekeepingTask/);
-  assert.doesNotMatch(page, /claimHousekeepingTask|releaseHousekeepingClaim/);
-  assert.doesNotMatch(page, />Claim<|>Release</);
+  assert.match(page, /card\.capabilities\.canClaim/);
+  assert.match(page, /card\.capabilities\.canReleaseClaim/);
   assert.doesNotMatch(page, /\/housekeeping\/rooms\/\$\{card\.unitId}/);
   assert.match(page, /OwnerAssignmentControl/);
   assert.match(page, /card\.capabilities\.canReassign/);
@@ -180,14 +181,13 @@ test("v2 task cards avoid staff-facing technical wording and raw task state", ()
 });
 
 test("v2 task actions render the next server-authorized step only", () => {
-  assert.match(page, /if \(card\.taskType === "WATER_REFILL"\)/);
-  assert.match(page, /if \(card\.capabilities\.canStart\)/);
-  assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"\)/);
-  assert.match(page, /if \(card\.capabilities\.canComplete\)/);
+  assert.match(page, /card\.taskType === "WATER_REFILL" && card\.capabilities\.canComplete/);
+  assert.match(page, /card\.capabilities\.canStart \?/);
+  assert.match(page, /card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"/);
+  assert.match(page, /card\.capabilities\.canComplete && card\.taskType !== "STANDARD_CLEANING" && card\.taskType !== "WATER_REFILL"/);
   assert.match(page, /waterRefillCompleted: true/);
   assert.doesNotMatch(page, /card\.taskType === "ON_DEMAND_CLEANING"\)/);
   assert.match(page, /<span>Complete<\/span>/);
-  assert.doesNotMatch(page, /if \(card\.capabilities\.canClaim\)|if \(card\.capabilities\.canReleaseClaim\)/);
   assert.match(page, /onSettled: \(\) =>/);
   assert.doesNotMatch(page, /Release claim/);
 });
@@ -206,17 +206,18 @@ test("summary counters render room-count wording", () => {
   assert.match(page, /function formatRoomCount\(value: number\): string/);
   assert.match(page, /return `\$\{value}/);
   assert.match(page, /value === 1 \? "Room" : "Rooms"/);
-  assert.match(page, /formatRoomCount\(housekeeping\.data\.sections\.find\(\(section\) => section\.id === item\.id\)\?\.cards\.length \?\? 0\)/);
-  assert.match(page, /formatRoomCount\(section\.cards\.length\)/);
+  assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\]\): VanaraSummaryItem\[\]/);
+  assert.match(page, /value: formatRoomCount\(count\)/);
+  assert.match(page, /meta=\{formatRoomCount\(section\.cards\.length\)\}/);
   assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
   assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);
 });
 
 test("water cards stay one-tap and avoid workflow indicators", () => {
   assert.match(page, /if \(card\.taskType === "WATER_REFILL"\) return null/);
-  assert.match(page, /card\.taskType !== "WATER_REFILL" && \(/);
+  assert.match(page, /card\.taskType === "WATER_REFILL" && card\.capabilities\.canComplete/);
   assert.match(page, /const completeWater = \(\) => action\.mutate\(completeHousekeepingTask\(taskId, version, \{ waterRefillCompleted: true \}\)\)/);
-  assert.doesNotMatch(page, /Complete Water|Start Water|Claim/);
+  assert.doesNotMatch(page, /Complete Water|Start Water/);
 });
 
 test("read model includes generated Standard Cleaning work and excludes Room-owned cleaning from the queue", () => {
@@ -254,8 +255,8 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(service, /No normal cleaning work\./);
   assert.match(service, /No water refills\./);
   assert.match(css, /\.housekeeping-v2-summary/);
-  assert.match(css, /grid-template-columns: repeat\(auto-fit, minmax\(128px, 1fr\)\)/);
-  assert.match(css, /\.housekeeping-v2-summary__item\.is-active/);
+  assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(page, /VanaraSummaryGrid/);
   assert.match(css, /\.housekeeping-v2-card__actions/);
-  assert.match(css, /@media \(min-width: 760px\)/);
+  assert.match(css, /@media \(max-width: 420px\)/);
 });

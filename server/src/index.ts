@@ -8,6 +8,7 @@ import { syncProperties, type PropertySyncBindings } from "./services/property-s
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
 import { syncBookings, type BookingsSyncBindings } from "./services/bookings-sync.service.js";
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
+import { AvailabilityPricesError, getAvailabilityPrices } from "./services/availability-prices.service.js";
 import { getAvailability } from "./services/availability-read.service.js";
 import { getArrivalsDeparturesAgenda, type MovementsBindings } from "./services/arrivals-departures.service.js";
 import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normalizeCompleteReceptionCheckInInput, normalizeCompleteReceptionCheckOutInput, normalizeReceptionCheckInInput, normalizeReceptionCheckOutInput, normalizeReceptionNotesInput, receptionCompletionErrorStatus, resolveReceptionRoomAlert, updateReceptionAction, updateReceptionNotes, type ReceptionAlertType, type ReceptionBindings } from "./services/reception.service.js";
@@ -448,6 +449,24 @@ app.get("/api/availability", async (c) => {
     return c.json({ success: true, data: await getAvailability(c.env, { from, to }) });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/availability-prices", async (c) => {
+  try {
+    await authenticated(c, "rooms", "access");
+    c.header("Cache-Control", "no-store");
+    const arrival = c.req.query("arrival");
+    const departure = c.req.query("departure");
+    if (!arrival || !departure) throw new AvailabilityPricesError("availability_prices_missing_dates");
+    return c.json({ success: true, data: await getAvailabilityPrices(c.env.DB, { arrival, departure }) });
+  } catch (error) {
+    if (error instanceof AvailabilityPricesError) return c.json({ success: false, error: error.code }, 400);
+    if (error instanceof AuthenticationError || error instanceof ForbiddenError) {
+      return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+    }
+    console.error(JSON.stringify({ message: "Availability prices request failed", error: "availability_prices_unavailable", path: "/api/availability-prices" }));
+    return c.json({ success: false, error: "availability_prices_unavailable" }, 500);
   }
 });
 
