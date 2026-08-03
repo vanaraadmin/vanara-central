@@ -5,6 +5,7 @@ import test from "node:test";
 const roomService = await readFile(new URL("../src/services/housekeeping-v2-room.service.ts", import.meta.url), "utf8");
 const overviewService = await readFile(new URL("../src/services/housekeeping-v2-overview.service.ts", import.meta.url), "utf8");
 const roomDetailService = await readFile(new URL("../src/services/room-detail.service.ts", import.meta.url), "utf8");
+const roomsWorkspaceService = await readFile(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const index = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
 const homePage = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
@@ -53,11 +54,25 @@ test("task actions are additive v2 endpoints with expected version contracts", (
 
 test("server-derived capabilities enforce assignment, owner force release and maintenance blocking", () => {
   assert.match(roomService, /function taskCapabilitiesForUser/);
-  assert.match(roomService, /isAssigned \|\| isOwner/);
-  assert.match(roomService, /canStart: base\.canStart && released && !maintenanceBlocked && \(isUnassigned \|\| isAssigned \|\| isOwner\)/);
-  assert.match(roomService, /canComplete: base\.canComplete && released && !maintenanceBlocked && \(isAssigned \|\| isOwner \|\| \(task\.taskType === "WATER_REFILL" && isUnassigned\)\)/);
+  assert.match(roomService, /housekeepingOperationalTaskCapabilities\(task, user, \{ maintenanceBlocked \}\)/);
+  assert.match(roomService, /canStart: capabilities\.canStartCleaning/);
+  assert.match(roomService, /canComplete: capabilities\.canFinishCleaning \|\| \(task\.taskType === "WATER_REFILL" && capabilities\.canCompleteTask\)/);
+  assert.doesNotMatch(roomService, /canCompleteTurnoverFromCurrentState/);
   assert.match(roomService, /canForceRelease: task\.taskType === "TURNOVER" && task\.status === "WAITING_FOR_RECEPTION" && isOwner/);
   assert.match(roomService, /out_of_service = 1/);
+});
+
+test("all housekeeping read models consume the central task capability provider", () => {
+  for (const source of [roomService, overviewService, roomDetailService, roomsWorkspaceService]) {
+    assert.match(source, /housekeepingOperationalTaskCapabilities/);
+    assert.doesNotMatch(source, /task\.taskType === "TURNOVER" && task\.status === "IN_PROGRESS" &&/);
+  }
+  assert.match(overviewService, /canStart: capabilities\.canStartCleaning/);
+  assert.match(overviewService, /canComplete: capabilities\.canFinishCleaning \|\| \(task\.taskType === "WATER_REFILL" && capabilities\.canCompleteTask\)/);
+  assert.match(roomDetailService, /canStart: capabilities\.canStartCleaning/);
+  assert.match(roomDetailService, /canComplete: capabilities\.canFinishCleaning \|\| \(task\.taskType === "WATER_REFILL" && capabilities\.canCompleteTask\)/);
+  assert.match(roomsWorkspaceService, /capabilities\.canStartCleaning/);
+  assert.match(roomsWorkspaceService, /capabilities\.canFinishCleaning \|\| \(row\.active_task_type === "WATER_REFILL" && capabilities\.canCompleteTask\)/);
 });
 
 test("Owner Force Room Released updates Reception release and records audit without bulk action", () => {

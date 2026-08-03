@@ -70,18 +70,19 @@ class FakeHousekeepingV2DB {
   raceWaterInsertKey: string | null = null;
   operationalAvailability = new Map<number, "OPERATING" | "NOT_OPERATING">();
   maintenanceTickets: Array<{ room_id: number | null; title: string; priority: "Low" | "Medium" | "High" | "Critical"; out_of_service: number; status: string }> = [];
+  currentUser = userRow();
+  currentViews: Array<{ view_key: "owner" | "staff" }> = [{ view_key: "staff" }];
+  currentPermissions: Array<{ module_key: ModuleKey; can_access: number; can_edit: number }> = [
+    { module_key: "housekeeping", can_access: 1, can_edit: 1 },
+    { module_key: "rooms", can_access: 1, can_edit: 1 },
+  ];
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
   async all<T>(sql: string, params: unknown[] = []) {
-    if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
+    if (sql.includes("SELECT view_key FROM user_views")) return { results: this.currentViews as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) {
-      return {
-        results: [
-          { module_key: "housekeeping" as ModuleKey, can_access: 1, can_edit: 1 },
-          { module_key: "rooms" as ModuleKey, can_access: 1, can_edit: 1 },
-        ] as T[],
-      };
+      return { results: this.currentPermissions as T[] };
     }
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
     if (sql.includes("FROM units u")) {
@@ -154,7 +155,7 @@ class FakeHousekeepingV2DB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
-    if (sql.includes("SELECT s.session_id")) return userRow() as T;
+    if (sql.includes("SELECT s.session_id")) return this.currentUser as T;
     if (sql.includes("FROM units u")) {
       const units = [
         { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow" },
@@ -304,6 +305,11 @@ function userRow() {
     updated_at: "2026-08-01T00:00:00.000Z",
     last_login_at: null,
   };
+}
+
+function useSessionUser(db: FakeHousekeepingV2DB, overrides: Partial<ReturnType<typeof userRow>>, views: Array<"owner" | "staff"> = ["staff"]) {
+  db.currentUser = { ...userRow(), ...overrides };
+  db.currentViews = views.map((view_key) => ({ view_key }));
 }
 
 function booking(bookingId: number, beds24BookingId: number, unitId: number, guestName: string, adults: number, children: number) {
@@ -974,6 +980,52 @@ test("released turnover can start from Housekeeping Priority without opening roo
   });
   assert.equal(completed.status, 200, await completed.text());
   assert.equal(db.tasks.find((task) => task.task_id === turnover.taskId)?.status, "COMPLETED");
+});
+
+test("in-progress turnover finish capability is identical for Housekeeping queue and room task detail", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(402, 940402, 1, "Released Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", room_released: 1 },
+  ];
+  db.tasks.push(storedTask({
+    task_id: 94,
+    task_type: "TURNOVER",
+    unit_id: 1,
+    booking_id: 402,
+    stay_id: 940402,
+    operational_date: "2026-08-02",
+    due_cycle_date: "2026-08-02",
+    status: "IN_PROGRESS",
+    priority: "HIGH",
+    assigned_user_id: "housekeeping-user",
+    assigned_user_name: "Housekeeping User",
+    started_at: "2026-08-02T08:35:00.000Z",
+    version: 2,
+  }));
+
+  async function capabilitiesForCurrentUser() {
+    const overviewResponse = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+    const overview = await overviewResponse.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; capabilities: { canComplete: boolean } }> }> } };
+    assert.equal(overviewResponse.status, 200, JSON.stringify(overview));
+    const card = overview.data.sections.find((section) => section.id === "priority-turnover")?.cards.find((item) => item.taskId === 94);
+    assert.ok(card);
+
+    const roomResponse = await request("/api/housekeeping/v2/rooms/1?date=2026-08-02", db);
+    const room = await roomResponse.json() as { success: boolean; data: { housekeeping: { tasks: Array<{ id: number; capabilities: { canComplete: boolean } }> } } };
+    assert.equal(roomResponse.status, 200, JSON.stringify(room));
+    const task = room.data.housekeeping.tasks.find((item) => item.id === 94);
+    assert.ok(task);
+
+    return [card.capabilities.canComplete, task.capabilities.canComplete] as const;
+  }
+
+  assert.deepEqual(await capabilitiesForCurrentUser(), [true, true]);
+
+  useSessionUser(db, { user_id: "other-housekeeping", full_name: "Other Housekeeping", username: "other-housekeeping" });
+  assert.deepEqual(await capabilitiesForCurrentUser(), [false, false]);
+
+  useSessionUser(db, { user_id: "owner-user", full_name: "Owner User", username: "owner", role: "Owner" }, ["owner", "staff"]);
+  assert.deepEqual(await capabilitiesForCurrentUser(), [true, true]);
 });
 
 test("housekeeping v2 linen override creates a normal-cleaning linen task without automatic linen interval generation", async () => {

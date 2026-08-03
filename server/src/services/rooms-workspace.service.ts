@@ -1,5 +1,6 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import { housekeepingTaskCapabilities, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
+import { type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { hasActionPermission, hasModulePermission, type CurrentUser } from "./current-user.service.js";
 
@@ -597,13 +598,16 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
   if (maintenanceState(row) === "BLOCKING") return null;
 
   if (row.active_task_id && row.active_task_type && row.active_task_status && row.active_task_version) {
-    if (!canUseHousekeepingWorkflowActions(user)) return null;
-    const capabilities = housekeepingTaskCapabilities({ taskType: row.active_task_type, status: row.active_task_status });
-    const isOwner = user?.role === "Owner" && user.views.includes("owner");
-    const assigneeId = row.active_task_assignee_id ?? null;
-    const isAssigned = assigneeId === user?.id;
-    const isUnassigned = assigneeId === null;
-    if (capabilities.canStart && (isUnassigned || isAssigned || isOwner)) {
+    if (!user || !canUseHousekeepingWorkflowActions(user)) return null;
+    const capabilities = housekeepingOperationalTaskCapabilities({
+      taskType: row.active_task_type,
+      status: row.active_task_status,
+      assignedUserId: row.active_task_assignee_id ?? null,
+    }, user, {
+      maintenanceBlocked: false,
+      waitingForReception: row.active_task_type === "TURNOVER" && row.active_task_status === "WAITING_FOR_RECEPTION",
+    });
+    if (capabilities.canStartCleaning) {
       return {
         type: "START_HOUSEKEEPING_TASK",
         label: taskActionLabel(row.active_task_type, "start"),
@@ -613,7 +617,7 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
         target: null,
       };
     }
-    if (capabilities.canComplete && (isAssigned || isOwner || (row.active_task_type === "WATER_REFILL" && isUnassigned))) {
+    if (capabilities.canFinishCleaning || (row.active_task_type === "WATER_REFILL" && capabilities.canCompleteTask)) {
       return {
         type: "COMPLETE_HOUSEKEEPING_TASK",
         label: taskActionLabel(row.active_task_type, "complete"),

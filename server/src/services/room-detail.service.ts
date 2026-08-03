@@ -1,5 +1,6 @@
 import { getHousekeepingOverview, type CheckoutCompletionSource, type HousekeepingBindings, type HousekeepingRoom, type HousekeepingWorkflowStatus } from "./housekeeping-overview.service.js";
-import { createHousekeepingTask, getHousekeepingTask, housekeepingTaskCapabilities, ROOM_READY_OVERRIDE_SOURCE, transitionHousekeepingTask, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
+import { createHousekeepingTask, getHousekeepingTask, ROOM_READY_OVERRIDE_SOURCE, transitionHousekeepingTask, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, type HousekeepingV2Bindings } from "./housekeeping-v2-overview.service.js";
 import { createMaintenanceTicket, listOpenMaintenanceTicketDetailsForRoom, normalizeCreateMaintenanceTicketInput, type CreateMaintenanceTicketInput, type MaintenanceBindings, type MaintenanceTicketDetail } from "./maintenance.service.js";
 import { operationalBookingStatusSql } from "./booking-status.service.js";
@@ -561,20 +562,17 @@ function receptionCheckoutCompleted(reception: ReceptionStay | null, turnoverSta
 }
 
 function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): RoomHousekeepingTask["capabilities"] {
-  const base = housekeepingTaskCapabilities(task);
+  const capabilities = housekeepingOperationalTaskCapabilities(task, user, { maintenanceBlocked });
   const isOwner = user.role === "Owner" && user.views.includes("owner");
   const isManager = user.role === "Manager";
-  const isAssigned = task.assignedUserId === user.id;
-  const isUnassigned = task.assignedUserId === null;
   const active = !TERMINAL_TASK_STATUSES.has(task.status);
-  const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
 
   return {
-    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released && !maintenanceBlocked,
-    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager) && !maintenanceBlocked,
-    canStart: base.canStart && released && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
-    canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
-    canSkip: base.canSkip && (isAssigned || isOwner || isManager),
+    canClaim: capabilities.canClaim,
+    canReleaseClaim: capabilities.canReleaseClaim,
+    canStart: capabilities.canStartCleaning,
+    canComplete: capabilities.canFinishCleaning || (task.taskType === "WATER_REFILL" && capabilities.canCompleteTask),
+    canSkip: capabilities.canSkip,
     canCancel: active && Boolean(isOwner || isManager),
     canReopen: TERMINAL_TASK_STATUSES.has(task.status) && Boolean(isOwner || isManager),
   };

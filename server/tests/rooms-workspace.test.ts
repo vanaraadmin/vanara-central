@@ -414,6 +414,35 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   });
 });
 
+test("Rooms Workspace uses central finish capability for in-progress turnover ownership", async () => {
+  const rooms = [roomRow({
+    unit_id: 8,
+    unit_name: "Bungalow 8",
+    ready_state: "READY",
+    active_task_count: 1,
+    active_task_id: 8001,
+    active_task_version: 2,
+    active_task_status: "IN_PROGRESS",
+    active_task_type: "TURNOVER",
+    active_task_priority: "HIGH",
+    active_task_assignee_id: "rooms-1",
+    active_task_assignee: "Rooms Operator",
+  })];
+  const source = env([roomsAccess], { rooms });
+  const otherUser = { ...housekeepingCapableUser, id: "rooms-2", displayName: "Other Staff", fullName: "Other Staff", username: "other-staff" };
+  const ownerUser: CurrentUser = { ...housekeepingCapableUser, id: "owner-1", displayName: "Owner", fullName: "Owner", username: "owner", role: "Owner", views: ["owner", "staff"] };
+
+  const assigned = byName((await getRoomsWorkspaceOverview(source, "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 8");
+  const other = byName((await getRoomsWorkspaceOverview(source, "2026-08-02", otherUser)).rooms, "Bungalow 8");
+  const owner = byName((await getRoomsWorkspaceOverview(source, "2026-08-02", ownerUser)).rooms, "Bungalow 8");
+
+  assert.equal(assigned.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(assigned.housekeeping.primaryAction?.label, "Finish Cleaning");
+  assert.equal(other.housekeeping.primaryAction, null);
+  assert.equal(owner.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
+});
+
 test("Housekeeping card defaults to CLEAN when no active task exists even if physical condition is NOT_READY", async () => {
   const rooms = [
     roomRow({

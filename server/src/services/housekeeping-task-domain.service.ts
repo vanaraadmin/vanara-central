@@ -210,6 +210,11 @@ export function housekeepingTaskCapabilities(task: Pick<HousekeepingTask, "taskT
   };
 }
 
+export function housekeepingTaskCanFinishOperationally(task: Pick<HousekeepingTask, "taskType" | "status">): boolean {
+  if (task.taskType === "TURNOVER") return task.status === "IN_PROGRESS" || task.status === "CHECKLIST_COMPLETE" || task.status === "READY";
+  return canCompleteStatus(task.taskType, task.status);
+}
+
 export function initialHousekeepingTaskStatus(input: Pick<CreateHousekeepingTaskInput, "taskType" | "receptionReleased">): HousekeepingTaskStatus {
   if (!isHousekeepingTaskType(input.taskType)) {
     throw new HousekeepingTaskDomainError("housekeeping_invalid_task_type", "Housekeeping task type is invalid.");

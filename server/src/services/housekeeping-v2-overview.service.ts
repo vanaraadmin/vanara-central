@@ -1,5 +1,6 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
-import { createHousekeepingTask, housekeepingTaskCapabilities, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
+import { createHousekeepingTask, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
 
@@ -577,22 +578,17 @@ function taskMatchesBooking(task: HousekeepingTask, booking: BookingRow): boolea
 }
 
 function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isWaitingRelease: boolean, maintenanceBlocked: boolean) {
-  const base = housekeepingTaskCapabilities(task);
-  const isOwner = user.role === "Owner" && user.views.includes("owner");
-  const isManager = user.role === "Manager";
-  const isAssigned = task.assignedUserId === user.id;
-  const isUnassigned = task.assignedUserId === null;
-  const active = !["COMPLETED", "SKIPPED", "CANCELLED"].includes(task.status);
+  const capabilities = housekeepingOperationalTaskCapabilities(task, user, { maintenanceBlocked, waitingForReception: isWaitingRelease });
 
   return {
-    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && !isWaitingRelease && !maintenanceBlocked,
-    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: base.canStart && !isWaitingRelease && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
-    canComplete: base.canComplete && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
-    canSkip: base.canSkip && (isAssigned || isOwner || isManager),
-    canCancel: active && isOwner,
-    canReassign: active && isOwner && task.taskType !== "WATER_REFILL",
-    requiresReceptionRelease: base.requiresReceptionRelease || isWaitingRelease,
+    canClaim: capabilities.canClaim,
+    canReleaseClaim: capabilities.canReleaseClaim,
+    canStart: capabilities.canStartCleaning,
+    canComplete: capabilities.canFinishCleaning || (task.taskType === "WATER_REFILL" && capabilities.canCompleteTask),
+    canSkip: capabilities.canSkip,
+    canCancel: capabilities.canCancel,
+    canReassign: capabilities.canReassign,
+    requiresReceptionRelease: capabilities.requiresReceptionRelease,
   };
 }
 

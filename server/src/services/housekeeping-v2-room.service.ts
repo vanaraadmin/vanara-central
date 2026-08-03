@@ -1,9 +1,9 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
+import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import {
   createHousekeepingTask,
   HousekeepingTaskDomainError,
   getHousekeepingTask,
-  housekeepingTaskCapabilities,
   syncReleasedTurnoverTasks,
   transitionHousekeepingTask,
   type HousekeepingCompletionInput,
@@ -509,7 +509,7 @@ export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBin
     if (!permissions.canStart) throw new ForbiddenError();
     await transitionHousekeepingTask(env, taskId, transitionInput("start", task, user, input));
   } else if (action === "complete") {
-    if (!permissions.canComplete && !canCompleteTurnoverFromCurrentState(task, user, blocking)) throw new ForbiddenError();
+    if (!permissions.canComplete) throw new ForbiddenError();
     await completeHousekeepingTaskWithRules(env, task, user, input);
   } else if (action === "skip") {
     if (!permissions.canSkip) throw new ForbiddenError();
@@ -584,15 +584,6 @@ export async function assignHousekeepingV2Task(env: HousekeepingV2RoomBindings, 
   const detail = await getHousekeepingV2RoomDetail(env, user, task.unitId, task.operationalDate);
   if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);
   return detail;
-}
-
-function canCompleteTurnoverFromCurrentState(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): boolean {
-  if (task.taskType !== "TURNOVER" || maintenanceBlocked) return false;
-  const isOwner = user.role === "Owner" && user.views.includes("owner");
-  const isAssigned = task.assignedUserId === user.id;
-  if (!isAssigned && !isOwner) return false;
-  if (task.status === "READY" || task.status === "CHECKLIST_COMPLETE") return true;
-  return task.status === "IN_PROGRESS";
 }
 
 export async function forceHousekeepingV2RoomRelease(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, input: { bookingId: number; expectedVersion: number; reason: string }): Promise<HousekeepingV2RoomDetail> {
@@ -711,9 +702,6 @@ function normalizeCompletion(value: unknown): HousekeepingCompletionInput | unde
 async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): Promise<HousekeepingV2RoomTask> {
   const caps = taskCapabilitiesForUser(task, user, maintenanceBlocked);
   const booking = task.bookingId ? await env.DB.prepare("SELECT beds24_booking_id FROM bookings WHERE booking_id = ?").bind(task.bookingId).first<{ beds24_booking_id: number }>() : null;
-  if (task.taskType === "TURNOVER" && task.status === "IN_PROGRESS" && !maintenanceBlocked && (task.assignedUserId === user.id || (user.role === "Owner" && user.views.includes("owner")))) {
-    caps.canComplete = true;
-  }
   return {
     id: task.id,
     taskType: task.taskType,
@@ -746,22 +734,19 @@ async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTa
 }
 
 function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): HousekeepingV2TaskCapabilities {
-  const base = housekeepingTaskCapabilities(task);
+  const capabilities = housekeepingOperationalTaskCapabilities(task, user, { maintenanceBlocked });
   const isOwner = isOwnerUser(user);
   const isManager = user.role === "Manager";
-  const isAssigned = task.assignedUserId === user.id;
-  const isUnassigned = task.assignedUserId === null;
   const active = !TERMINAL_STATUSES.has(task.status);
-  const released = !(task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
   const canRoomCreate = isOwner || isManager || user.role === "Housekeeping" || user.role === "Operations";
 
   return {
-    canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && released && !maintenanceBlocked,
-    canReleaseClaim: task.status === "CLAIMED" && (isAssigned || isOwner || isManager),
-    canStart: base.canStart && released && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
+    canClaim: capabilities.canClaim,
+    canReleaseClaim: capabilities.canReleaseClaim,
+    canStart: capabilities.canStartCleaning,
     canEditChecklist: false,
-    canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
-    canSkip: base.canSkip && (isAssigned || isOwner || isManager),
+    canComplete: capabilities.canFinishCleaning || (task.taskType === "WATER_REFILL" && capabilities.canCompleteTask),
+    canSkip: capabilities.canSkip,
     canCancel: active && isOwner,
     canReopen: TERMINAL_STATUSES.has(task.status) && isOwner,
     canReassign: active && isOwner && task.taskType !== "WATER_REFILL",
