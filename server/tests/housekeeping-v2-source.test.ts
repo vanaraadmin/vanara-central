@@ -9,6 +9,7 @@ const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.m
 const page = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
 const client = await readFile(new URL("../../src/services/housekeeping-v2.service.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../../src/styles/HousekeepingV2Page.css", import.meta.url), "utf8");
+const waterFullStayMigration = await readFile(new URL("../migrations/0023_water_refill_full_stay_days.sql", import.meta.url), "utf8");
 
 test("housekeeping workspace routes to the task-oriented v2 workspace while preserving legacy APIs", () => {
   assert.match(index, /app\.get\("\/api\/housekeeping"/);
@@ -55,10 +56,22 @@ test("normal cleaning and water refill follow occupied arrived-stay rules", () =
   assert.match(service, /function isWaterRefillEligible\(booking: BookingRow, date: string\): boolean/);
   assert.match(service, /booking\.arrival_date < date/);
   assert.match(service, /booking\.departure_date > date/);
+  assert.match(service, /waterTaskBelongsToEligibleStay/);
+  assert.match(service, /isWaterRefillEligible\(context\.activeStay, task\.operationalDate\)/);
   assert.match(service, /DEFAULT_STANDARD_INTERVAL_DAYS = 3/);
   assert.match(service, /standardCleaningDueCycle/);
   assert.match(service, /completedWaterToday/);
   assert.doesNotMatch(service, /\badults\b|\bchildren\b|guest_count|guestCount/);
+});
+
+test("water refill cleanup cancels only active tasks outside full occupied stay days", () => {
+  assert.match(waterFullStayMigration, /task_type = 'WATER_REFILL'/);
+  assert.match(waterFullStayMigration, /status NOT IN \('COMPLETED', 'SKIPPED', 'CANCELLED'\)/);
+  assert.match(waterFullStayMigration, /ht\.operational_date <= b\.arrival_date/);
+  assert.match(waterFullStayMigration, /ht\.operational_date >= b\.departure_date/);
+  assert.match(waterFullStayMigration, /COALESCE\(rs\.guest_arrived, 0\) <> 1/);
+  assert.match(waterFullStayMigration, /SET status = 'CANCELLED'/);
+  assert.match(waterFullStayMigration, /Water Refill is generated only after arrival day and before departure day/);
 });
 
 test("water refill quantity is room-type based and never guest-count based", () => {

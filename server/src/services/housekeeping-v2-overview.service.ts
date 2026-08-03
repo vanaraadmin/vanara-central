@@ -359,7 +359,7 @@ function cardsForContext(context: OperationalContext, user: CurrentUser): Housek
     cards.push(cardFromContext(context, linen, maintenanceBlocked, user));
   }
 
-  const water = taskFor(stayTasks, "WATER_REFILL");
+  const water = taskFor(stayTasks.filter((task) => waterTaskBelongsToEligibleStay(context, task)), "WATER_REFILL");
   if (water) {
     cards.push(cardFromContext(context, water, maintenanceBlocked, user));
   }
@@ -561,6 +561,12 @@ function taskBelongsToActiveStay(context: OperationalContext, task: Housekeeping
   if (task.taskType === "TURNOVER") return taskBelongsToDeparture(context, task);
   if (!context.activeStay) return false;
   return taskMatchesBooking(task, context.activeStay);
+}
+
+function waterTaskBelongsToEligibleStay(context: OperationalContext, task: HousekeepingTask): boolean {
+  if (task.taskType !== "WATER_REFILL") return true;
+  if (!context.activeStay || !taskBelongsToActiveStay(context, task)) return false;
+  return isWaterRefillEligible(context.activeStay, task.operationalDate);
 }
 
 function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {

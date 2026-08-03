@@ -470,6 +470,45 @@ test("water refill is not generated on checkout day", async () => {
   assert.equal(body.data.summary.waterDue, 0);
 });
 
+test("arrival-day water task already stored is not published and the next full day generates water", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(203, 920203, 1, "Villa Arrival Guest", 2, 0), arrival_date: "2026-08-03", departure_date: "2026-08-05" },
+  ];
+  db.tasks.push(storedTask({
+    task_id: 31,
+    task_type: "WATER_REFILL",
+    unit_id: 1,
+    booking_id: 203,
+    stay_id: 920203,
+    operational_date: "2026-08-03",
+    due_cycle_date: "2026-08-03",
+  }));
+
+  const arrivalDay = await request("/api/housekeeping/v2/tasks?date=2026-08-03", db);
+  const arrivalBody = await arrivalDay.json() as { success: boolean; data: { summary: { waterDue: number }; tasks: Array<{ taskId: number; taskType: string; operationalDate: string }> } };
+
+  assert.equal(arrivalDay.status, 200, JSON.stringify(arrivalBody));
+  assert.equal(arrivalBody.data.tasks.some((card) => card.taskId === 31), false);
+  assert.equal(arrivalBody.data.tasks.some((card) => card.taskType === "WATER_REFILL"), false);
+  assert.equal(arrivalBody.data.summary.waterDue, 0);
+
+  const fullDay = await request("/api/housekeeping/v2/tasks?date=2026-08-04", db);
+  const fullBody = await fullDay.json() as { success: boolean; data: { summary: { waterDue: number }; tasks: Array<{ taskId: number; taskType: string; operationalDate: string }> } };
+
+  assert.equal(fullDay.status, 200, JSON.stringify(fullBody));
+  assert.equal(fullBody.data.tasks.some((card) => card.taskId === 31), false);
+  assert.equal(fullBody.data.tasks.some((card) => card.taskType === "WATER_REFILL" && card.operationalDate === "2026-08-04"), true);
+  assert.equal(fullBody.data.summary.waterDue, 1);
+
+  const departureDay = await request("/api/housekeeping/v2/tasks?date=2026-08-05", db);
+  const departureBody = await departureDay.json() as { success: boolean; data: { summary: { waterDue: number }; tasks: Array<{ taskType: string }> } };
+
+  assert.equal(departureDay.status, 200, JSON.stringify(departureBody));
+  assert.equal(departureBody.data.tasks.some((card) => card.taskType === "WATER_REFILL"), false);
+  assert.equal(departureBody.data.summary.waterDue, 0);
+});
+
 test("water refill completes from Available without Claim Start or In Progress", async () => {
   const db = new FakeHousekeepingV2DB();
 
