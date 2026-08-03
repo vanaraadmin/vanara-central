@@ -1,16 +1,14 @@
-import { Link } from "react-router-dom";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import logo from "../assets/img/logo.png";
 import shadowCanopy from "../assets/img/shadow-canopy.svg";
 import StickyGlassHeader from "./StickyGlassHeader";
+import WorkspaceHero from "./WorkspaceHero";
 import {
   preloadWorkspaceBackground,
   workspaceBackgroundStyle,
   type WorkspaceBackgroundKey,
 } from "../config/workspaceBackgrounds";
 import "../styles/WorkspaceShell.css";
-
-const WORKSPACE_HOME_ROUTE = "/staff";
 
 const workspaceNumbers = {
   rooms: "01",
@@ -48,6 +46,12 @@ function formatToday() {
   }).format(new Date());
 }
 
+function clampProgress(value: number): number {
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
+
 export default function WorkspaceShell({
   bodyClassName,
   children,
@@ -55,37 +59,61 @@ export default function WorkspaceShell({
   workspace,
 }: WorkspaceShellProps) {
   const backgroundKey = workspaceBackgroundKeys[workspace];
+  const heroLogoRef = useRef<HTMLImageElement>(null);
   const stickyTriggerRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(0);
+  const [progress, setProgress] = useState(0);
   const today = useMemo(() => formatToday(), []);
 
   useEffect(() => {
     preloadWorkspaceBackground(backgroundKey);
   }, [backgroundKey]);
 
+  useEffect(() => {
+    let frame = 0;
+
+    const updateProgress = () => {
+      frame = 0;
+      const trigger = stickyTriggerRef.current;
+      if (!trigger) return;
+
+      const next = clampProgress(Math.max(0, -trigger.getBoundingClientRect().top) / 96);
+      if (Math.abs(next - progressRef.current) < 0.005) return;
+
+      progressRef.current = next;
+      setProgress(next);
+    };
+
+    const requestProgress = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateProgress);
+    };
+
+    const observer = "IntersectionObserver" in window
+      ? new IntersectionObserver(requestProgress, { root: null, threshold: [0, 1] })
+      : null;
+
+    if (stickyTriggerRef.current) observer?.observe(stickyTriggerRef.current);
+    requestProgress();
+    window.addEventListener("scroll", requestProgress, { passive: true });
+    window.addEventListener("resize", requestProgress);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("scroll", requestProgress);
+      window.removeEventListener("resize", requestProgress);
+    };
+  }, []);
+
   return (
     <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
       <div className="workspace-page__veil" aria-hidden="true" />
 
       <section className="workspace-shell" aria-label={`${title} workspace`}>
-        <StickyGlassHeader date={today} logoSrc={logo} title={title} triggerRef={stickyTriggerRef} />
+        <StickyGlassHeader date={today} heroLogoRef={heroLogoRef} progress={progress} title={title} />
 
-        <header className="workspace-masthead">
-          <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
-            <img src={logo} alt="Vanara" className="workspace-masthead__logo" />
-
-            <div className="workspace-masthead__wordmark">
-              <span>Vanara</span>
-              <strong>Central</strong>
-            </div>
-          </Link>
-
-          <time className="workspace-masthead__date">{today}</time>
-        </header>
-
-        <section className="workspace-intro" aria-labelledby="workspace-title">
-          <p className="workspace-intro__eyebrow">Staff page</p>
-          <h1 id="workspace-title">{title}</h1>
-        </section>
+        <WorkspaceHero ref={heroLogoRef} date={today} logoSrc={logo} title={title} />
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 

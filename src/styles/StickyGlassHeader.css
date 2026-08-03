@@ -9,18 +9,6 @@
   justify-content: center;
   padding-left: max(22px, var(--vc-safe-left));
   padding-right: max(22px, var(--vc-safe-right));
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-10px);
-  transition:
-    opacity 160ms ease-out,
-    transform 160ms ease-out;
-}
-
-.sticky-glass-header.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
 }
 
 .sticky-glass-header__surface {
@@ -31,20 +19,15 @@
   align-items: center;
   gap: 10px;
   padding: 6px 12px 6px 7px;
-  border: 1px solid rgba(247, 244, 238, 0.3);
+  border: 1px solid rgba(247, 244, 238, 0.04);
   border-radius: 24px;
   color: var(--workspace-cream, var(--vc-color-sand-100));
   background:
     linear-gradient(135deg, rgba(247, 244, 238, 0.24), rgba(247, 244, 238, 0.08)),
     rgba(8, 28, 20, 0.82);
-  box-shadow:
-    0 18px 36px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(18px) saturate(114%);
-  -webkit-backdrop-filter: blur(18px) saturate(114%);
 }
 
-.sticky-glass-header__brand,
+.sticky-glass-header__logo-target,
 .sticky-glass-header__title {
   appearance: none;
   border: 0;
@@ -54,7 +37,7 @@
   cursor: pointer;
 }
 
-.sticky-glass-header__brand {
+.sticky-glass-header__logo-target {
   width: 44px;
   height: 44px;
   display: inline-flex;
@@ -62,12 +45,6 @@
   justify-content: center;
   padding: 0;
   border-radius: 50%;
-}
-
-.sticky-glass-header__brand img {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
 }
 
 .sticky-glass-header__title {
@@ -95,16 +72,10 @@
   letter-spacing: 0.1em;
 }
 
-.sticky-glass-header__brand:focus-visible,
+.sticky-glass-header__logo-target:focus-visible,
 .sticky-glass-header__title:focus-visible {
   outline: 2px solid rgba(247, 244, 238, 0.68);
   outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sticky-glass-header {
-    transition: none;
-  }
 }
 
 @media (max-width: 380px) {
@@ -121,14 +92,9 @@
     border-radius: 22px;
   }
 
-  .sticky-glass-header__brand {
+  .sticky-glass-header__logo-target {
     width: 40px;
     height: 40px;
-  }
-
-  .sticky-glass-header__brand img {
-    width: 29px;
-    height: 29px;
   }
 
   .sticky-glass-header__title {
