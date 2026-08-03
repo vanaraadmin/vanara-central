@@ -103,7 +103,7 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
   assert.match(roomsPage, /useOutsidePointerDown\(containerRef, collapse, activeExpandedRoomId !== null\)/);
   assert.match(roomsPage, /event\.key === "Escape"/);
   assert.match(roomCompactRow, /className=\{className\}/);
-  assert.match(roomCompactRow, /room-compact-row/);
+  assert.match(roomCompactRow, /room-row/);
   assert.match(roomCompactRow, /aria-expanded=\{expanded\}/);
   assert.match(roomCompactRow, /aria-controls=\{detailsId\}/);
   assert.match(roomCompactRow, /aria-label=\{presentation\.accessibleSummary\}/);
@@ -115,10 +115,12 @@ test("Compact row signals use one centralized presentation mapper", () => {
   assert.match(roomCompactRow, /getRoomCompactPresentation\(room\)/);
   assert.match(roomCompactRow, /RoomCompactSignals presentation=\{presentation\}/);
   assert.match(roomCompactRow, /RoomTerminalState presentation=\{presentation\}/);
-  assert.match(roomCompactRow, /AccommodationTypeIcon type=\{room\.accommodationType\}/);
+  assert.match(roomCompactRow, /AccommodationTypeIcon className="room-row__icon" type=\{room\.accommodationType\}/);
+  assert.match(roomCompactRow, /const guestName = presentation\.mode === "STANDARD" \? presentation\.primary\.detail : null/);
+  assert.doesNotMatch(roomCompactRow, /room-row__guest[\s\S]*room\.accommodationType|identityDetail|room-compact-row__detail/);
   assert.match(roomCompactSignals, /RoomInlineSignal/);
-  assert.match(roomCompactSignals, /room-compact-signals__primary/);
-  assert.match(roomCompactSignals, /room-compact-signals__secondary/);
+  assert.match(roomCompactSignals, /room-signals__primary/);
+  assert.match(roomCompactSignals, /room-signals__secondary/);
   assert.match(presentation, /export function getRoomCompactPresentation/);
   assert.match(presentation, /mode:\s*"MAINTENANCE_BLOCKED"/);
   assert.match(presentation, /mode:\s*"SEASON_CLOSED"/);
@@ -144,11 +146,18 @@ test("Compact row type mark uses local monochrome accommodation icons", () => {
 });
 
 test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
-  assert.match(css, /\.room-compact-row/);
-  assert.match(css, /\.room-compact-signals__primary/);
-  assert.match(css, /\.room-compact-signals__secondary/);
+  assert.match(css, /\.room-row/);
+  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+auto\s+18px/);
+  assert.match(css, /min-height:\s*70px/);
+  assert.match(css, /padding:\s*13px 18px/);
+  assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1rem/);
+  assert.match(css, /\.room-row__name[\s\S]*font-weight:\s*650/);
+  assert.match(css, /\.room-row__guest[\s\S]*font-size:\s*0\.78rem/);
+  assert.match(css, /\.room-signals__primary/);
+  assert.match(css, /\.room-signals__secondary/);
   assert.match(css, /white-space:\s*nowrap/);
-  assert.match(css, /\.room-compact-signals__secondary \.room-inline-signal:not\(:first-of-type\)/);
+  assert.match(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)/);
+  assert.doesNotMatch(css, /\.room-row[\s\S]{0,240}box-shadow:\s*(?!none)/);
   assert.doesNotMatch(css, /\.room-row__signals[\s\S]*flex-wrap:\s*wrap/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });

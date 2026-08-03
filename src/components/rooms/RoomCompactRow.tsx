@@ -15,11 +15,11 @@ export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompact
   const presentation = getRoomCompactPresentation(room);
   const modeClass = presentation.mode.toLowerCase();
   const className = [
-    "room-compact-row",
-    `room-compact-row--${modeClass}`,
-    expanded ? "room-compact-row--expanded" : null,
+    "room-row",
+    `room-row--${modeClass}`,
+    expanded ? "room-row--expanded" : null,
   ].filter(Boolean).join(" ");
-  const identityDetail = presentation.mode === "STANDARD" ? presentation.primary.detail : room.accommodationType;
+  const guestName = presentation.mode === "STANDARD" ? presentation.primary.detail : null;
 
   return (
     <article className={`room-list-item${expanded ? " room-list-item--expanded" : ""}`}>
@@ -31,24 +31,22 @@ export default function RoomCompactRow({ expanded, onToggle, room }: RoomCompact
         aria-label={presentation.accessibleSummary}
         onClick={onToggle}
       >
-        <span className="room-compact-row__type-mark" aria-hidden="true">
-          <AccommodationTypeIcon type={room.accommodationType} />
+        <span className="room-row__type-mark" aria-hidden="true">
+          <AccommodationTypeIcon className="room-row__icon" type={room.accommodationType} />
         </span>
 
-        <span className="room-compact-row__content">
-          <span className="room-compact-row__identity">
-            <span className="room-compact-row__name">{room.roomName}</span>
-            {identityDetail ? <span className="room-compact-row__detail">{identityDetail}</span> : null}
-          </span>
-
-          {presentation.mode === "STANDARD" ? (
-            <RoomCompactSignals presentation={presentation} />
-          ) : (
-            <RoomTerminalState presentation={presentation} />
-          )}
+        <span className="room-row__identity">
+          <span className="room-row__name">{room.roomName}</span>
+          {guestName ? <span className="room-row__guest">{guestName}</span> : null}
         </span>
 
-        <ChevronDownIcon className="room-compact-row__chevron" />
+        {presentation.mode === "STANDARD" ? (
+          <RoomCompactSignals presentation={presentation} />
+        ) : (
+          <RoomTerminalState presentation={presentation} />
+        )}
+
+        <ChevronDownIcon className="room-row__chevron" />
       </button>
     </article>
   );
