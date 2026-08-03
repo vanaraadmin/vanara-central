@@ -35,6 +35,7 @@ interface WorkspaceShellProps {
   title: string;
   workspace: WorkspaceKey;
   bodyClassName?: string;
+  heroAction?: React.ReactNode;
 }
 
 function formatToday() {
@@ -55,6 +56,7 @@ function clampProgress(value: number): number {
 export default function WorkspaceShell({
   bodyClassName,
   children,
+  heroAction,
   title,
   workspace,
 }: WorkspaceShellProps) {
@@ -113,7 +115,7 @@ export default function WorkspaceShell({
       <section className="workspace-shell" aria-label={`${title} workspace`}>
         <StickyGlassHeader date={today} heroLogoRef={heroLogoRef} progress={progress} title={title} />
 
-        <WorkspaceHero ref={heroLogoRef} date={today} logoSrc={logo} title={title} />
+        <WorkspaceHero ref={heroLogoRef} action={heroAction} date={today} logoSrc={logo} title={title} />
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 

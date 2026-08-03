@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RoomCompactRow from "../components/rooms/RoomCompactRow";
@@ -22,9 +23,20 @@ function roomActionKey(prefix: string, roomId: number): string {
   return `rooms:${prefix}:${roomId}:${nonce}`;
 }
 
+function HomeIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M4.75 11.1 12 5l7.25 6.1" />
+      <path d="M6.75 10.2v8.05h10.5V10.2" />
+      <path d="M10 18.25v-4.5h4v4.5" />
+    </svg>
+  );
+}
+
 export default function RoomsPage() {
   const [expandedRoomId, setExpandedRoomId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const rooms = useQuery({
     queryKey: ["rooms", "workspace"],
@@ -96,26 +108,43 @@ export default function RoomsPage() {
     };
   }, [activeExpandedRoomId]);
 
-  const summaryText = useMemo(() => {
-    if (!rooms.data) return null;
-    return `${rooms.data.summary.occupied} occupied`;
+  const summaryItems = useMemo(() => {
+    if (!rooms.data) return [];
+    return [
+      { label: "Occupied", value: rooms.data.summary.occupied },
+      { label: "Vacant", value: rooms.data.summary.vacant },
+      { label: "Maintenance", value: rooms.data.summary.maintenanceBlocked },
+      { label: "Closed", value: rooms.data.summary.seasonClosed },
+    ];
   }, [rooms.data]);
 
   return (
-    <WorkspaceShell title="Rooms" workspace="rooms" bodyClassName="rooms-page">
+    <WorkspaceShell
+      title="Rooms"
+      workspace="rooms"
+      bodyClassName="rooms-page"
+      heroAction={(
+        <button className="vc-secondary-glass-button" type="button" onClick={() => navigate("/staff")}>
+          <HomeIcon />
+          <span>Staff Home</span>
+        </button>
+      )}
+    >
       {rooms.isLoading ? <PageLoading /> : null}
       {rooms.isError ? <PageError onRetry={() => void rooms.refetch()} /> : null}
 
       {rooms.data ? (
         <section className="rooms-home" aria-label="Rooms Home">
-          <header className="rooms-home__summary">
-            <span>{summaryText}</span>
-            <span>{rooms.data.summary.vacant} vacant</span>
-            <span>{rooms.data.summary.maintenanceBlocked} maintenance blocked</span>
-            <span>{rooms.data.summary.seasonClosed} season closed</span>
+          <header className="rooms-home__summary vc-glass-surface" aria-label="Rooms operational summary">
+            {summaryItems.map((item) => (
+              <span className="rooms-summary-item" key={item.label}>
+                <strong>{item.value}</strong>
+                <small>{item.label}</small>
+              </span>
+            ))}
           </header>
 
-          <div ref={containerRef} className="rooms-home__list">
+          <div ref={containerRef} className="rooms-home__list vc-glass-surface">
             {roomList.map((room) => {
               const expanded = activeExpandedRoomId === room.unitId;
               const detailsId = `room-workspace-${room.unitId}`;

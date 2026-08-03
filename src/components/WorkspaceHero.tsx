@@ -1,16 +1,17 @@
-import { forwardRef } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 const WORKSPACE_HOME_ROUTE = "/staff";
 
 interface WorkspaceHeroProps {
+  action?: ReactNode;
   date: string;
   logoSrc: string;
   title: string;
 }
 
 const WorkspaceHero = forwardRef<HTMLImageElement, WorkspaceHeroProps>(function WorkspaceHero(
-  { date, logoSrc, title },
+  { action, date, logoSrc, title },
   heroLogoRef,
 ) {
   return (
@@ -32,7 +33,10 @@ const WorkspaceHero = forwardRef<HTMLImageElement, WorkspaceHeroProps>(function 
 
       <section className="workspace-intro" aria-labelledby="workspace-title">
         <p className="workspace-intro__eyebrow">Staff page</p>
-        <h1 id="workspace-title">{title}</h1>
+        <div className="workspace-intro__title-row">
+          <h1 id="workspace-title">{title}</h1>
+          {action ? <div className="workspace-intro__action">{action}</div> : null}
+        </div>
       </section>
     </>
   );
