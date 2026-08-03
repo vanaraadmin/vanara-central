@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 export type VanaraDataGridItem = {
   label: string;
+  tone?: "clean" | "progress" | "warning" | "critical" | "maintenance" | "neutral" | "closed";
   value: ReactNode;
 };
 
@@ -23,7 +24,7 @@ export default function VanaraDataGrid({
       {items.map((item) => (
         <div className="vc-data-item" key={item.label}>
           <dt>{item.label}</dt>
-          <dd>{item.value}</dd>
+          <dd className={item.tone ? `vc-state-${item.tone}` : undefined}>{item.value}</dd>
         </div>
       ))}
     </dl>

@@ -30,7 +30,10 @@ test("maintenance home is an expandable operational queue", () => {
   assert.match(maintenancePage, /useOutsidePointerDown/);
   assert.match(maintenancePage, /activeExpandedTicketId/);
   assert.match(maintenancePage, /aria-expanded=\{expanded\}/);
-  assert.match(maintenancePage, /maintenance-ticket__details/);
+  assert.match(maintenancePage, /VanaraSummaryGrid/);
+  assert.match(maintenancePage, /vc-glass-list/);
+  assert.match(maintenancePage, /maintenance-ticket-row/);
+  assert.match(maintenancePage, /VanaraGlassSheet/);
   assert.match(maintenancePage, /Open issue/);
   assert.doesNotMatch(maintenancePage, /<Link\s+className=\{`maintenance-ticket/);
 });

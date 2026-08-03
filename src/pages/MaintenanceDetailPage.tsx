@@ -3,6 +3,11 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import { MaintenancePhotoGallery } from "../components/MaintenancePhotoGallery";
+import { AlertIcon, MaintenanceIcon } from "../components/OperationsIcons";
+import VanaraDataGrid from "../components/vanara/VanaraDataGrid";
+import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
+import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
+import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { assignMaintenanceTicket, loadMaintenanceAssignableUsers, loadMaintenanceTicket, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket } from "../services/maintenance.service";
 import type { MaintenancePriority, MaintenanceStatus, MaintenanceTicketDetail } from "../types/maintenance";
@@ -45,6 +50,20 @@ function assignmentLabel(ticket: MaintenanceTicketDetail) {
   return "Unassigned";
 }
 
+function statusTone(status: MaintenanceStatus, outOfService = false): "clean" | "progress" | "warning" | "critical" | "closed" {
+  if (outOfService) return "critical";
+  if (status === "Completed") return "closed";
+  if (status === "In Progress") return "progress";
+  if (status === "Waiting Parts") return "warning";
+  return "warning";
+}
+
+function priorityStateTone(priority: MaintenancePriority, outOfService = false): "clean" | "warning" | "critical" | "neutral" {
+  if (outOfService || priority === "High") return "critical";
+  if (priority === "Normal") return "warning";
+  return "neutral";
+}
+
 function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   const [reason, setReason] = useState(ticket.waitingReason ?? "");
   const queryClient = useQueryClient();
@@ -60,19 +79,24 @@ function StatusPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   });
 
   return (
-    <section className="maintenance-panel">
-      <h2>Status</h2>
+    <VanaraGlassRegion ariaLabelledBy="maintenance-status-title" className="maintenance-region">
+      <VanaraSectionHeader eyebrow="State" headingId="maintenance-status-title" title="Status" />
+      <div className="vc-operational-state">
+        <span className="vc-operational-state__label">Current state</span>
+        <strong className={`vc-operational-state__value vc-state-${statusTone(ticket.status, ticket.outOfService)}`}>{displayStatus(ticket.status)}</strong>
+        {ticket.waitingReason ? <p className="vc-operational-state__description">{ticket.waitingReason}</p> : null}
+      </div>
       <label className="maintenance-waiting-reason">
-        Waiting reason
+        <span>Waiting reason</span>
         <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for Waiting Parts" rows={2} />
       </label>
       <div className="maintenance-status-actions">
         {visibleStatuses.map((status) => (
-          <button key={status} className={status === ticket.status ? "is-active" : ""} type="button" onClick={() => mutation.mutate(status)} disabled={mutation.isPending || status === ticket.status}>{displayStatus(status)}</button>
+          <button key={status} className={status === ticket.status ? "vc-primary-action is-active" : "vc-secondary-action"} type="button" onClick={() => mutation.mutate(status)} disabled={mutation.isPending || status === ticket.status}>{displayStatus(status)}</button>
         ))}
       </div>
       {mutation.isError && <p className="maintenance-form-error">Status could not be changed.</p>}
-    </section>
+    </VanaraGlassRegion>
   );
 }
 
@@ -92,8 +116,8 @@ function AssignmentPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   const users = assignable.data?.users ?? [];
 
   return (
-    <section className="maintenance-panel">
-      <h2>Assigned To</h2>
+    <VanaraGlassRegion ariaLabelledBy="maintenance-assignment-title" className="maintenance-region">
+      <VanaraSectionHeader eyebrow="Assignment" headingId="maintenance-assignment-title" title="Assigned To" />
       <p className="maintenance-muted">{assignmentLabel(ticket)}</p>
       {users.length > 0 ? (
         <div className="maintenance-inline-form maintenance-inline-form--stacked">
@@ -104,13 +128,13 @@ function AssignmentPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
               {users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}
             </select>
           </label>
-          <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Save</button>
+          <button className="vc-primary-action" type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Save</button>
         </div>
       ) : (
         <p className="maintenance-muted">No active Maintenance user available.</p>
       )}
       {mutation.isError && <p className="maintenance-form-error">Assignment not saved.</p>}
-    </section>
+    </VanaraGlassRegion>
   );
 }
 
@@ -124,15 +148,15 @@ function PriorityPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   });
 
   return (
-    <section className="maintenance-panel">
-      <h2>Priority</h2>
+    <VanaraGlassRegion ariaLabelledBy="maintenance-priority-title" className="maintenance-region">
+      <VanaraSectionHeader eyebrow="Issue" headingId="maintenance-priority-title" title="Priority" />
       <div className="maintenance-status-actions">
         {priorities.map((priority) => (
-          <button key={priority} className={priority === ticket.priority ? "is-active" : ""} type="button" onClick={() => mutation.mutate(priority)} disabled={mutation.isPending || priority === ticket.priority}>{displayPriority(priority)}</button>
+          <button key={priority} className={priority === ticket.priority ? "vc-primary-action is-active" : "vc-secondary-action"} type="button" onClick={() => mutation.mutate(priority)} disabled={mutation.isPending || priority === ticket.priority}>{displayPriority(priority)}</button>
         ))}
       </div>
       {mutation.isError && <p className="maintenance-form-error">Priority not saved.</p>}
-    </section>
+    </VanaraGlassRegion>
   );
 }
 
@@ -148,23 +172,23 @@ function OutOfServicePanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
     },
   });
   return (
-    <section className="maintenance-panel">
-      <h2>Blocking</h2>
+    <VanaraGlassRegion ariaLabelledBy="maintenance-blocking-title" className="maintenance-region">
+      <VanaraSectionHeader eyebrow="Room Impact" headingId="maintenance-blocking-title" title="Blocking" />
       <p className="maintenance-muted">{ticket.roomId ? ticket.outOfService ? "Room is Out of Service." : "Ticket does not block the room." : ticket.outOfService ? "Blocking is Maintenance-only for this area." : "Ticket does not block room operations."}</p>
-      <button type="button" className={ticket.outOfService ? "is-active" : ""} disabled={mutation.isPending} onClick={() => mutation.mutate(!ticket.outOfService)}>
+      <button type="button" className={ticket.outOfService ? "vc-primary-action is-active" : "vc-secondary-action"} disabled={mutation.isPending} onClick={() => mutation.mutate(!ticket.outOfService)}>
         {ticket.outOfService ? "Remove Blocking" : "Mark Blocking"}
       </button>
       {mutation.isError && <p className="maintenance-form-error">Blocking state not changed.</p>}
-    </section>
+    </VanaraGlassRegion>
   );
 }
 
 function PhotosPanel({ ticket }: { ticket: MaintenanceTicketDetail }) {
   return (
-    <section className="maintenance-panel">
-      <h2>Photos</h2>
+    <VanaraGlassRegion ariaLabelledBy="maintenance-photos-title" className="maintenance-region">
+      <VanaraSectionHeader eyebrow="Evidence" headingId="maintenance-photos-title" title="Photos" />
       <MaintenancePhotoGallery photos={ticket.photos} />
-    </section>
+    </VanaraGlassRegion>
   );
 }
 
@@ -183,42 +207,62 @@ export default function MaintenanceDetailPage() {
 
   return (
     <WorkspaceShell title="Maintenance" workspace="maintenance" bodyClassName="maintenance-page maintenance-detail-page">
-      <section className={`maintenance-detail-hero priority-${ticket.priority.toLowerCase()}`}>
-        <Link to="/maintenance">Back</Link>
-        <p>{displayStatus(ticket.status)}</p>
-        <h1>{ticket.title}</h1>
-        <div>
-          <span>{displayPriority(ticket.priority)}</span>
-          <span>{locationLabel(ticket)}</span>
-          <span>{assignmentLabel(ticket)}</span>
-          {ticket.outOfService && <span>Blocking</span>}
-        </div>
-      </section>
+      <div className="workspace-body-actions">
+        <span>{displayStatus(ticket.status)}</span>
+        <Link className="vc-secondary-action" to="/maintenance">Back</Link>
+      </div>
 
-      <section className="maintenance-panel">
-        <h2>Description</h2>
-        <p>{ticket.description}</p>
-        {ticket.waitingReason && <p className="maintenance-muted">Waiting Parts: {ticket.waitingReason}</p>}
-      </section>
+      <VanaraGlassSheet ariaLabel={`${ticket.title} maintenance ticket`} className={`maintenance-detail-sheet priority-${ticket.priority.toLowerCase()}`}>
+        <header className="maintenance-sheet-identity">
+          <div className="maintenance-sheet-identity__icon" aria-hidden="true">
+            {ticket.outOfService ? <AlertIcon /> : <MaintenanceIcon />}
+          </div>
+          <div className="maintenance-sheet-identity__content">
+            <span>{ticket.category}</span>
+            <h1>{ticket.title}</h1>
+            <p>{locationLabel(ticket)}</p>
+            <small>{assignmentLabel(ticket)} - {formatDate(ticket.createdAt)}</small>
+          </div>
+        </header>
 
-      <StatusPanel ticket={ticket} />
-      <PriorityPanel ticket={ticket} />
-      <AssignmentPanel ticket={ticket} />
-      <OutOfServicePanel ticket={ticket} />
-      <PhotosPanel ticket={ticket} />
+        <VanaraGlassRegion ariaLabelledBy="maintenance-description-title" className="maintenance-region">
+          <VanaraSectionHeader eyebrow="Issue" headingId="maintenance-description-title" title="Description" />
+          <p>{ticket.description}</p>
+          {ticket.waitingReason && <p className="maintenance-muted">Waiting Parts: {ticket.waitingReason}</p>}
+          <VanaraDataGrid
+            ariaLabel="Maintenance issue facts"
+            items={[
+              { label: "Category", value: ticket.category },
+              { label: "Priority", tone: priorityStateTone(ticket.priority, ticket.outOfService), value: displayPriority(ticket.priority) },
+              { label: "Status", tone: statusTone(ticket.status, ticket.outOfService), value: displayStatus(ticket.status) },
+              { label: "Assigned To", value: assignmentLabel(ticket) },
+              { label: "Target", value: locationLabel(ticket) },
+              { label: "Blocking", tone: ticket.outOfService ? "critical" : "neutral", value: ticket.outOfService ? "Yes" : "No" },
+            ]}
+          />
+        </VanaraGlassRegion>
 
-      <section className="maintenance-panel">
-        <h2>Timeline</h2>
-        <div className="maintenance-timeline-list">
-          {ticket.timeline.length ? ticket.timeline.map((event) => (
-            <article key={event.id}>
-              <strong>{event.eventType.replaceAll("_", " ")}</strong>
-              <span>{formatDate(event.createdAt)}</span>
-              {(event.fromValue || event.toValue) && <p>{event.fromValue ?? "-"} {"->"} {event.toValue ?? "-"}</p>}
-            </article>
-          )) : <p className="maintenance-muted">No timeline events yet.</p>}
-        </div>
-      </section>
+        <StatusPanel ticket={ticket} />
+        <PriorityPanel ticket={ticket} />
+        <AssignmentPanel ticket={ticket} />
+        <OutOfServicePanel ticket={ticket} />
+        <PhotosPanel ticket={ticket} />
+
+        <VanaraGlassRegion ariaLabelledBy="maintenance-timeline-title" className="maintenance-region">
+          <VanaraSectionHeader eyebrow="History" headingId="maintenance-timeline-title" title="Timeline" />
+          <div className="maintenance-timeline-list">
+            {ticket.timeline.length ? ticket.timeline.map((event) => (
+              <article className="maintenance-event-row" key={event.id}>
+                <div>
+                  <strong>{event.eventType.replaceAll("_", " ")}</strong>
+                  {(event.fromValue || event.toValue) && <p>{event.fromValue ?? "-"} {"->"} {event.toValue ?? "-"}</p>}
+                </div>
+                <span>{formatDate(event.createdAt)}</span>
+              </article>
+            )) : <p className="maintenance-muted">No timeline events yet.</p>}
+          </div>
+        </VanaraGlassRegion>
+      </VanaraGlassSheet>
     </WorkspaceShell>
   );
 }
