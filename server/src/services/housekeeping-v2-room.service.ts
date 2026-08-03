@@ -241,6 +241,20 @@ interface LinenRequiredInput {
   idempotencyKey: string | null;
 }
 
+export interface AssignHousekeepingV2TaskInput {
+  expectedVersion: number;
+  assignedUserId: string;
+  reason: string | null;
+  idempotencyKey: string | null;
+}
+
+interface AssignableHousekeepingUserRow {
+  user_id: string;
+  full_name: string;
+  status: string;
+  can_access: number | null;
+}
+
 const TERMINAL_STATUSES = new Set<HousekeepingTaskStatus>(["COMPLETED", "SKIPPED", "CANCELLED"]);
 
 export class HousekeepingV2RoomError extends Error {
@@ -263,6 +277,18 @@ export function normalizeTaskActionInput(payload: unknown, options: { reasonRequ
   const completion = normalizeCompletion(data.completion);
   if (options.reasonRequired && !reason) throw new HousekeepingV2RoomError("Reason is required.");
   return { expectedVersion, reason, idempotencyKey, completion };
+}
+
+export function normalizeTaskAssignmentInput(payload: unknown): AssignHousekeepingV2TaskInput {
+  if (!payload || typeof payload !== "object") throw new HousekeepingV2RoomError("Task assignment payload is required.");
+  const data = payload as Record<string, unknown>;
+  const expectedVersion = Number(data.expectedVersion);
+  const assignedUserId = typeof data.assignedUserId === "string" ? data.assignedUserId.trim() : "";
+  const reason = typeof data.reason === "string" && data.reason.trim() ? data.reason.trim().slice(0, 500) : null;
+  const idempotencyKey = typeof data.idempotencyKey === "string" && data.idempotencyKey.trim() ? data.idempotencyKey.trim() : null;
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw new HousekeepingV2RoomError("expectedVersion is required.");
+  if (!assignedUserId) throw new HousekeepingV2RoomError("assignedUserId is required.");
+  return { expectedVersion, assignedUserId, reason, idempotencyKey };
 }
 
 export function normalizeForceReleaseInput(payload: unknown): { bookingId: number; expectedVersion: number; reason: string } {
@@ -502,6 +528,64 @@ export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBin
   return detail;
 }
 
+export async function assignHousekeepingV2Task(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, input: AssignHousekeepingV2TaskInput): Promise<HousekeepingV2RoomDetail> {
+  if (!isOwnerUser(user)) throw new ForbiddenError("Owner access is required.");
+  const task = await getRequiredTask(env, taskId);
+  if (task.version !== input.expectedVersion) throw new HousekeepingTaskDomainError("housekeeping_task_stale_version", "Housekeeping task has changed. Refresh and try again.");
+  if (TERMINAL_STATUSES.has(task.status)) throw new HousekeepingV2RoomError("Only active Housekeeping tasks can be assigned.", 409);
+  if (task.taskType === "WATER_REFILL") throw new HousekeepingV2RoomError("Only cleaning tasks can be assigned.", 409);
+
+  const assignee = ensureAssignableHousekeepingUser(await loadAssignableHousekeepingUser(env, input.assignedUserId));
+  const now = new Date().toISOString();
+  const nextStatus: HousekeepingTaskStatus = task.status === "AVAILABLE_FOR_CLAIM" ? "CLAIMED" : task.status;
+  const result = await env.DB.prepare(`
+    UPDATE housekeeping_tasks
+    SET status = ?,
+        assigned_user_id = ?,
+        assigned_user_name = ?,
+        claimed_at = COALESCE(claimed_at, ?),
+        version = version + 1,
+        updated_by = ?,
+        updated_by_name = ?,
+        updated_at = ?
+    WHERE task_id = ?
+      AND version = ?
+  `).bind(
+    nextStatus,
+    assignee.user_id,
+    assignee.full_name,
+    now,
+    user.id,
+    user.displayName,
+    now,
+    taskId,
+    input.expectedVersion,
+  ).run();
+  if ((result.meta.changes ?? 0) !== 1) throw new HousekeepingTaskDomainError("housekeeping_task_stale_version", "Housekeeping task has changed. Refresh and try again.");
+
+  await insertTaskEvent(
+    env,
+    task.id,
+    "assigned",
+    task.status,
+    nextStatus,
+    user,
+    input.reason,
+    {
+      assignedUserId: assignee.user_id,
+      assignedUserName: assignee.full_name,
+      previousAssignedUserId: task.assignedUserId,
+      previousAssignedUserName: task.assignedUserName,
+    },
+    input.idempotencyKey ?? `assign:${task.id}:${task.version}:${assignee.user_id}`,
+    now,
+  );
+
+  const detail = await getHousekeepingV2RoomDetail(env, user, task.unitId, task.operationalDate);
+  if (!detail) throw new HousekeepingV2RoomError("Room not found.", 404);
+  return detail;
+}
+
 function canCompleteTurnoverFromCurrentState(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): boolean {
   if (task.taskType !== "TURNOVER" || maintenanceBlocked) return false;
   const isOwner = user.role === "Owner" && user.views.includes("owner");
@@ -663,7 +747,7 @@ async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTa
 
 function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): HousekeepingV2TaskCapabilities {
   const base = housekeepingTaskCapabilities(task);
-  const isOwner = user.role === "Owner" && user.views.includes("owner");
+  const isOwner = isOwnerUser(user);
   const isManager = user.role === "Manager";
   const isAssigned = task.assignedUserId === user.id;
   const isUnassigned = task.assignedUserId === null;
@@ -678,9 +762,9 @@ function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, main
     canEditChecklist: false,
     canComplete: base.canComplete && released && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
-    canCancel: active && Boolean(isOwner || isManager),
-    canReopen: TERMINAL_STATUSES.has(task.status) && Boolean(isOwner || isManager),
-    canReassign: active && Boolean(isOwner || isManager),
+    canCancel: active && isOwner,
+    canReopen: TERMINAL_STATUSES.has(task.status) && isOwner,
+    canReassign: active && isOwner && task.taskType !== "WATER_REFILL",
     canForceRelease: task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION" && isOwner,
     canCreateMaintenanceIssue: true,
     canCreateProcurementRequest: true,
@@ -690,7 +774,7 @@ function taskCapabilitiesForUser(task: HousekeepingTask, user: CurrentUser, main
 }
 
 function emptyCapabilities(user: CurrentUser): HousekeepingV2TaskCapabilities {
-  const isOwner = user.role === "Owner" && user.views.includes("owner");
+  const isOwner = isOwnerUser(user);
   const canRoomCreate = isOwner || user.role === "Housekeeping" || user.role === "Manager" || user.role === "Operations";
   return {
     canClaim: false,
@@ -708,6 +792,29 @@ function emptyCapabilities(user: CurrentUser): HousekeepingV2TaskCapabilities {
     canCreateOnDemandCleaning: canRoomCreate,
     canMarkLinenRequired: canRoomCreate,
   };
+}
+
+function isOwnerUser(user: CurrentUser): boolean {
+  return user.role === "Owner" && user.views.includes("owner");
+}
+
+async function loadAssignableHousekeepingUser(env: HousekeepingV2RoomBindings, userId: string): Promise<AssignableHousekeepingUserRow | null> {
+  return env.DB.prepare(`
+    SELECT u.user_id, u.full_name, u.status, p.can_access
+    FROM users u
+    LEFT JOIN user_module_permissions p
+      ON p.user_id = u.user_id
+     AND p.module_key = 'housekeeping'
+    WHERE u.user_id = ?
+    LIMIT 1
+  `).bind(userId).first<AssignableHousekeepingUserRow>();
+}
+
+function ensureAssignableHousekeepingUser(row: AssignableHousekeepingUserRow | null): AssignableHousekeepingUserRow {
+  if (!row) throw new HousekeepingV2RoomError("Assignable user not found.", 404);
+  if (row.status !== "active") throw new HousekeepingV2RoomError("Assignable user is not active.", 409);
+  if (row.can_access !== 1) throw new HousekeepingV2RoomError("Assignable user cannot access Housekeeping.", 409);
+  return row;
 }
 
 async function getRequiredTask(env: HousekeepingV2RoomBindings, taskId: number): Promise<HousekeepingTask> {

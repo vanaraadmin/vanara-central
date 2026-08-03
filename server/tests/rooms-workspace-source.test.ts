@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
+const procurementPage = readFileSync(new URL("../../src/pages/ProcurementPage.tsx", import.meta.url), "utf8");
+const housekeepingV2Page = readFileSync(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
 const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8");
 const roomCompactRow = readFileSync(new URL("../../src/components/rooms/RoomCompactRow.tsx", import.meta.url), "utf8");
 const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/RoomCompactSignals.tsx", import.meta.url), "utf8");
@@ -41,14 +43,26 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Check-In, Housekeeping, and Maintenance", () => {
+test("Staff Home hierarchy keeps Booking Pulse then Rooms, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('<section className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"reception",\s*"housekeeping",\s*"maintenance",/);
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"chat",/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
   assert.ok(recentBookingsIndex < workspacesIndex);
   assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);
+});
+
+test("Staff Owner UI model keeps one visual component tree and gates only capabilities", () => {
+  assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY/);
+  assert.match(staffPage, /chatIcon/);
+  assert.match(staffService, /id:\s*"chat"/);
+  assert.doesNotMatch(staffService, /id:\s*"availability"/);
+  assert.match(procurementPage, /<WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">[\s\S]*<SupplyRequestPage embedded \/>[\s\S]*<ProcurementOwnerPage embedded \/>/);
+  assert.doesNotMatch(procurementPage, /return user\.data\.isOwner \?/);
+  assert.match(housekeepingV2Page, /card\.capabilities\.canReassign/);
+  assert.match(housekeepingV2Page, /Assign Cleaning/);
+  assert.match(housekeepingV2Page, /Assign Task/);
 });
 
 test("Rooms Workspace consumes one dedicated read model and cards do not load services", () => {
@@ -68,7 +82,7 @@ test("Rooms Workspace consumes one dedicated read model and cards do not load se
 });
 
 test("Rooms summaries expose reconciled operational counters from the shared read model", () => {
-  const staffRoomsCard = sourceBlockBetween(staffService, 'id: "rooms"', 'id: "availability"');
+  const staffRoomsCard = sourceBlockBetween(staffService, 'id: "rooms"', 'id: "housekeeping"');
 
   for (const field of ["occupied", "vacant", "maintenanceBlocked", "seasonClosed"]) {
     assert.match(serverService, new RegExp(`${field}:`));

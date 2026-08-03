@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "availability" | "maintenance" | "procurement";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "chat";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -48,7 +48,7 @@ function canAccess(user: CurrentUser, module: ModuleKey): boolean {
 }
 
 function canViewBookingValue(user: CurrentUser): boolean {
-  return (user.role === "Owner" || user.role === "Manager") && canAccess(user, "owner-dashboard");
+  return user.role === "Owner" && user.views.includes("owner") && canAccess(user, "owner-dashboard");
 }
 
 function formatMetric(metric: StaffOverviewMetric | undefined): string | undefined {
@@ -114,15 +114,6 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       summaryLine1: `${overview.summary.occupied} Occupied / ${overview.summary.vacant} Vacant`,
       summaryLine2: `${overview.summary.maintenanceBlocked} Maintenance Blocked / ${overview.summary.seasonClosed} Season Closed`,
     }));
-    cards.push(withSummaryLines({
-      id: "availability",
-      module: "rooms",
-      title: "Availability",
-      description: "Open local availability view.",
-      href: "/availability",
-      cta: "Open Availability",
-      metrics: [],
-    }));
   }
 
   if (canAccess(user, "housekeeping")) {
@@ -169,6 +160,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       href: "/procurement",
       cta: "Open Procurement",
       metrics: [],
+    }));
+  }
+
+  if (canAccess(user, "chat")) {
+    cards.push(withSummaryLines({
+      id: "chat",
+      module: "chat",
+      title: "Chat",
+      description: "Open team communication.",
+      href: "/chat",
+      cta: "Open Chat",
+      metrics: [],
+      summaryLine1: "Team communication",
+      summaryLine2: "Operational conversations",
     }));
   }
 

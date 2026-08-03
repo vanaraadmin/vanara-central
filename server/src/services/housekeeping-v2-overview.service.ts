@@ -30,6 +30,7 @@ export interface HousekeepingV2TaskCard {
   currentQueue: HousekeepingV2SectionId;
   displayReason: string | null;
   assignee: string | null;
+  assigneeId: string | null;
   isBlocked: boolean;
   blockReason: string | null;
   waterQuantity: number | null;
@@ -42,6 +43,7 @@ export interface HousekeepingV2TaskCard {
     canComplete: boolean;
     canSkip: boolean;
     canCancel: boolean;
+    canReassign: boolean;
     requiresReceptionRelease: boolean;
   };
 }
@@ -387,6 +389,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
     currentQueue,
     displayReason: displayReasonFor(reasonCodes),
     assignee: task.assignedUserName ?? null,
+    assigneeId: task.assignedUserId ?? null,
     isBlocked: isWaitingRelease || maintenanceBlocked || task.status === "BLOCKED",
     blockReason: blockReasonFor(context, task, isWaitingRelease, maintenanceBlocked),
     waterQuantity: taskType === "WATER_REFILL" ? context.waterQuantity : null,
@@ -399,6 +402,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
       canComplete: capabilities.canComplete,
       canSkip: capabilities.canSkip,
       canCancel: capabilities.canCancel,
+      canReassign: capabilities.canReassign,
       requiresReceptionRelease: capabilities.requiresReceptionRelease || isWaitingRelease,
     },
   };
@@ -586,7 +590,8 @@ function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isW
     canStart: base.canStart && !isWaitingRelease && !maintenanceBlocked && (isUnassigned || isAssigned || isOwner),
     canComplete: base.canComplete && !isWaitingRelease && !maintenanceBlocked && (isAssigned || isOwner || (task.taskType === "WATER_REFILL" && isUnassigned)),
     canSkip: base.canSkip && (isAssigned || isOwner || isManager),
-    canCancel: active && Boolean(isOwner || isManager),
+    canCancel: active && isOwner,
+    canReassign: active && isOwner && task.taskType !== "WATER_REFILL",
     requiresReceptionRelease: base.requiresReceptionRelease || isWaitingRelease,
   };
 }

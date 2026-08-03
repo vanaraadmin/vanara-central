@@ -14,7 +14,7 @@ import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normali
 import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
 import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
-import { createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
+import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
@@ -1218,6 +1218,18 @@ app.post("/api/housekeeping/v2/tasks/:taskId/claim", async (c) => {
   }
 });
 
+app.patch("/api/housekeeping/v2/tasks/:taskId/assignment", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "edit");
+    requireOwner(user);
+    const taskId = positiveIntegerParam(c.req.param("taskId"), "task id");
+    const payload = await c.req.json().catch(() => null);
+    return c.json({ success: true, data: await assignHousekeepingV2Task(c.env, user, taskId, normalizeTaskAssignmentInput(payload)) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
 app.post("/api/housekeeping/v2/tasks/:taskId/release-claim", async (c) => {
   try {
     const user = await authenticated(c, "housekeeping", "edit");
@@ -1362,7 +1374,7 @@ app.post("/api/procurement/requests", async (c) => {
   try {
     const payload = await c.req.json().catch(() => null);
     const input = normalizeCreateProcurementRequestInput(payload);
-    const user = await authenticated(c, "procurement", "edit");
+    const user = await authenticated(c, "procurement", "access");
     const request = await createProcurementRequest(c.env, input, user);
     return c.json({ success: true, data: request }, 201);
   } catch (error) {

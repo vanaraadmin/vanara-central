@@ -56,6 +56,7 @@ const RECENT_BOOKING_EVENT_AT = new Date(Date.now() - 60_000).toISOString();
 function currentUser(
   permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>,
   role: CurrentUser["role"] = "Operations",
+  views: CurrentUser["views"] = ["staff"],
 ): CurrentUser {
   return {
     id: USER_ROW.user_id,
@@ -67,7 +68,7 @@ function currentUser(
     username: USER_ROW.username,
     email: null,
     status: "active",
-    views: ["staff"],
+    views,
     permissions,
     actionPermissions: [],
     lastLoginAt: null,
@@ -420,11 +421,11 @@ const maintenanceAccess: Permission = { module_key: "maintenance", can_access: 1
 const procurementAccess: Permission = { module_key: "procurement", can_access: 1, can_edit: 0 };
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
-test("staff overview filters cards using effective module permissions", async () => {
-  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]), "2026-08-03");
-  assert.deepEqual(overview.cards.map((card) => card.id), ["housekeeping"]);
-  assert.equal(overview.cards[0]?.href, "/housekeeping");
-  assert.equal(overview.cards[0]?.metrics.some((metric) => metric.value === 0), true);
+test("staff overview returns the complete operational workspace set for the Staff visual experience", async () => {
+  const overview = await getStaffOverview(env([]), currentUser([]), "2026-08-03");
+  assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement", "chat"]);
+  assert.deepEqual(overview.cards.map((card) => card.href), ["/reception", "/rooms", "/housekeeping", "/maintenance", "/procurement", "/chat"]);
+  assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
 });
 
 test("staff overview housekeeping summary derives from the Housekeeping V2 task engine", async () => {
@@ -468,14 +469,14 @@ test("staff overview supports users with multiple permissions without owner data
     { module: "maintenance", canAccess: true, canEdit: false },
     { module: "procurement", canAccess: true, canEdit: false },
   ]));
-  assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "availability", "maintenance", "procurement"]);
+  assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement", "chat"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
   assert.equal(JSON.stringify(overview).includes("Dashboard Owner"), false);
 });
 
-test("staff overview can return an empty operational home for active users without module access", async () => {
+test("staff overview does not return an empty operational home for active Staff users without explicit module grants", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]));
-  assert.deepEqual(overview.cards, []);
+  assert.equal(overview.cards.length, 6);
 });
 
 test("staff overview includes the persisted recent booking event feed", async () => {
@@ -512,11 +513,17 @@ test("staff overview exposes booking value only through the server-side financia
     env([ownerDashboardAccess]),
     currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Manager"),
   );
+  const ownerOverview = await getStaffOverview(
+    env([ownerDashboardAccess]),
+    currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Owner", ["staff", "owner"]),
+  );
 
   assert.equal(operationsOverview.bookingPulseCapabilities.canViewBookingValue, false);
   assert.equal(operationsOverview.bookingEvents[0]?.totalPrice, null);
-  assert.equal(managerOverview.bookingPulseCapabilities.canViewBookingValue, true);
-  assert.equal(managerOverview.bookingEvents[0]?.totalPrice, 12000);
+  assert.equal(managerOverview.bookingPulseCapabilities.canViewBookingValue, false);
+  assert.equal(managerOverview.bookingEvents[0]?.totalPrice, null);
+  assert.equal(ownerOverview.bookingPulseCapabilities.canViewBookingValue, true);
+  assert.equal(ownerOverview.bookingEvents[0]?.totalPrice, 12000);
 });
 
 test("staff overview API enforces authentication and staff view", async () => {
@@ -533,10 +540,12 @@ test("staff overview API enforces authentication and staff view", async () => {
   assert.equal(data.bookingEvents[0]?.eventType, "NEW");
   assert.equal(data.bookingEvents[0]?.guestName, "Mali Guest");
   assert.equal(data.bookingEvents[0]?.unitName, "Villa 10");
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0]?.id, "housekeeping");
-  assert.equal(cards[0]?.href, "/housekeeping");
-  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "To Clean")?.value, 0);
-  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "Cleaning In Progress")?.value, 1);
-  assert.equal(cards[0]?.metrics.find((metric) => metric.label === "Water Due")?.value, 1);
+  assert.equal(cards.length, 6);
+  assert.deepEqual(cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement", "chat"]);
+  const housekeeping = cards.find((card) => card.id === "housekeeping");
+  assert.ok(housekeeping);
+  assert.equal(housekeeping.href, "/housekeeping");
+  assert.equal(housekeeping.metrics.find((metric) => metric.label === "To Clean")?.value, 0);
+  assert.equal(housekeeping.metrics.find((metric) => metric.label === "Cleaning In Progress")?.value, 1);
+  assert.equal(housekeeping.metrics.find((metric) => metric.label === "Water Due")?.value, 1);
 });

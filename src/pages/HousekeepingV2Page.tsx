@@ -5,7 +5,9 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import { AlertIcon, CheckIcon, HousekeepingIcon, RefreshIcon } from "../components/OperationsIcons";
 import WorkspaceShell from "../components/WorkspaceShell";
 import {
+  assignHousekeepingTask,
   completeHousekeepingTask,
+  loadHousekeepingAssignableUsers,
   loadHousekeepingV2Overview,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
@@ -178,6 +180,54 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
   return null;
 }
 
+function OwnerAssignmentControl({ card }: { card: HousekeepingV2TaskCard }) {
+  const queryClient = useQueryClient();
+  const [assignedUserId, setAssignedUserId] = useState(card.assigneeId ?? "");
+  const users = useQuery({
+    queryKey: ["housekeeping", "assignable-users"],
+    queryFn: ({ signal }) => loadHousekeepingAssignableUsers(signal),
+    enabled: card.capabilities.canReassign,
+  });
+  const mutation = useMutation({
+    mutationFn: () => assignHousekeepingTask(card.taskId, card.taskVersion, assignedUserId),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] });
+    },
+  });
+
+  if (!card.capabilities.canReassign) return null;
+
+  const options = users.data ?? [];
+  return (
+    <form
+      className="housekeeping-v2-assignment"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!assignedUserId || mutation.isPending) return;
+        mutation.mutate();
+      }}
+    >
+      <label>
+        <span>Assign Cleaning</span>
+        <select
+          disabled={users.isLoading || mutation.isPending}
+          onChange={(event) => setAssignedUserId(event.target.value)}
+          value={assignedUserId}
+        >
+          <option value="">Select user</option>
+          {options.map((user) => (
+            <option key={user.id} value={user.id}>{user.displayName}</option>
+          ))}
+        </select>
+      </label>
+      <button disabled={!assignedUserId || users.isLoading || mutation.isPending} type="submit">
+        Assign Task
+      </button>
+      {(users.isError || mutation.isError) && <p>Assignment not saved.</p>}
+    </form>
+  );
+}
+
 function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard; onInterventionInfo: (type: InterventionType) => void }) {
   const intervention = interventionForCard(card);
   const canReportMaintenance = Boolean(intervention && card.unitId > 0);
@@ -209,6 +259,7 @@ function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typ
       {canReportMaintenance && (
         <Link className="housekeeping-v2-report-issue" to={`/maintenance/new?roomId=${card.unitId}&source=housekeeping`}>Report Issue</Link>
       )}
+      <OwnerAssignmentControl card={card} key={`${card.taskId}:${card.taskVersion}:${card.assigneeId ?? ""}`} />
       <TaskActions action={action} card={card} />
     </article>
   );

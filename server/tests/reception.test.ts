@@ -483,9 +483,9 @@ test("reception DTO normalizers accept only server-owned workflow fields", () =>
   assert.throws(() => normalizeCompleteReceptionCheckOutInput({ roomInspected: true, keysReturned: true, actor: "fake" }), /unsupported field/);
 });
 
-test("reception endpoints enforce authentication and movements permissions directly", async () => {
+test("reception endpoints enforce authentication while Staff can open the operational workspace", async () => {
   assert.equal((await request("/api/reception", { method: "GET" }, env([], false))).status, 401);
-  assert.equal((await request("/api/reception", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 403);
+  assert.equal((await request("/api/reception", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 200);
 
   const overview = await request("/api/reception", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([movementsAccess]));
   assert.equal(overview.status, 200);

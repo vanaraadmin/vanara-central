@@ -270,7 +270,7 @@ test("expired sessions are rejected and removed", async () => {
   assert.equal(data.DB.sessions.size, 0);
 });
 
-test("direct endpoint authorization enforces owner, view, canAccess and canEdit", async () => {
+test("direct endpoint authorization enforces owner actions while Staff can open operational modules", async () => {
   const data = await bootstrap();
   const ownerCookie = await loginOwner(data);
   const created = await request("/api/users", {
@@ -302,8 +302,8 @@ test("direct endpoint authorization enforces owner, view, canAccess and canEdit"
   const staffCookie = staffLogin.headers.get("set-cookie")!.split(";", 1)[0]!;
 
   assert.equal((await request("/api/users", { headers: { cookie: staffCookie } }, data)).status, 403);
-  assert.equal((await request("/api/procurement/requests", { method: "POST", headers: { cookie: staffCookie, "content-type": "application/json" }, body: JSON.stringify({ itemIds: [1] }) }, data)).status, 403);
-  assert.equal((await request("/api/rooms/1", { headers: { cookie: staffCookie } }, data)).status, 403);
+  assert.equal((await request("/api/procurement/items", { headers: { cookie: staffCookie } }, data)).status, 200);
+  assert.notEqual((await request("/api/rooms/1", { headers: { cookie: staffCookie } }, data)).status, 403);
 });
 
 test("same password creates unique salted hashes and APIs never return password hashes", async () => {

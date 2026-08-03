@@ -652,7 +652,7 @@ test("room workspace notes must be real operational text", () => {
 
 test("room housekeeping endpoint supports owner manager ready override only", async () => {
   assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH" }, env([], { authenticated: false }))).status, 401);
-  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x" } }, env([housekeepingEdit]))).status, 403);
+  assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x" } }, env([housekeepingEdit]))).status, 400);
   assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "NOT_READY" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Housekeeping" } }))).status, 403);
   assert.equal((await request("/api/rooms/1/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "Inspected" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 400);
   assert.equal((await request("/api/rooms/999/housekeeping", { method: "PATCH", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ status: "READY" }) }, env([roomsAccess], { user: { ...ACTIVE_USER, role: "Owner" } }))).status, 404);
@@ -988,9 +988,9 @@ test("room notes endpoint enforces direct API authorization and persists server-
   assert.equal((body.data as { body: string; authorName: string }).authorName, ACTIVE_USER.full_name);
 });
 
-test("room maintenance endpoint requires room access and creates a ticket through maintenance persistence", async () => {
+test("room maintenance endpoint uses Staff operational access and creates a ticket through maintenance persistence", async () => {
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST" }, env([], { authenticated: false }))).status, 401);
-  assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([maintenanceEdit]))).status, 403);
+  assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", category: "Water", priority: "High" }) }, env([maintenanceEdit]))).status, 201);
   assert.equal((await request("/api/rooms/1/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "Critical" }) }, env([roomsAccess]))).status, 400);
   assert.equal((await request("/api/rooms/999/maintenance/tickets", { method: "POST", headers: { cookie: "vanara_session=x", "content-type": "application/json" }, body: JSON.stringify({ title: "Leak", description: "Sink", priority: "High" }) }, env([roomsAccess]))).status, 404);
   const data = env([roomsAccess]);
@@ -1041,7 +1041,7 @@ test("maintenance target model enforces Room or Other and Other never affects Ro
 
 test("maintenance home exposes active rooms for the required Room target dropdown", async () => {
   assert.equal((await request("/api/maintenance/rooms", { method: "GET" }, env([], { authenticated: false }))).status, 401);
-  assert.equal((await request("/api/maintenance/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 403);
+  assert.equal((await request("/api/maintenance/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 200);
 
   const response = await request("/api/maintenance/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([maintenanceEdit]));
   const body = await json(response);

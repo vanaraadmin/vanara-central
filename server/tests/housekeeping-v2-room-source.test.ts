@@ -118,8 +118,8 @@ test("Room Workspace owns active housekeeping task and room operations", () => {
   assert.doesNotMatch(roomWorkspace, /ReceptionPanel/);
   assert.match(roomWorkspace, /room\.procurement/);
   assert.doesNotMatch(homePage, /function Checklist/);
-  assert.doesNotMatch(homePage, /AssignmentControl/);
-  assert.doesNotMatch(homePage, /<select/);
+  assert.match(homePage, /OwnerAssignmentControl/);
+  assert.match(homePage, /card\.capabilities\.canReassign/);
 });
 
 test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {

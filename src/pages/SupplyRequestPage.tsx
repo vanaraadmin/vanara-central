@@ -82,7 +82,7 @@ export default function SupplyRequestPage({ embedded = false }: { embedded?: boo
   );
 
   if (embedded) {
-    return <div className="procurement-page">{content}</div>;
+    return <section className="supply-request-panel">{content}</section>;
   }
 
   return (

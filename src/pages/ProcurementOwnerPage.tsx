@@ -19,16 +19,19 @@ function itemLine(request: ProcurementRequest): string {
   return names.join(", ");
 }
 
-export default function ProcurementOwnerPage() {
+export default function ProcurementOwnerPage({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState<ProcurementStatus | "all">("all");
   const query = useQuery({ queryKey: ["procurement", "requests", status], queryFn: ({ signal }) => loadProcurementRequests(status, signal) });
   const requests = useMemo(() => query.data ?? [], [query.data]);
 
-  if (query.isLoading) return <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
-  if (query.isError) return <WorkspaceShell title="Procurement" workspace="procurement"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
+  if (query.isLoading) return embedded ? <PageLoading /> : <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
+  if (query.isError) {
+    const errorState = <PageError onRetry={() => void query.refetch()} />;
+    return embedded ? errorState : <WorkspaceShell title="Procurement" workspace="procurement">{errorState}</WorkspaceShell>;
+  }
 
-  return (
-    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+  const content = (
+    <>
       <div className="workspace-body-actions">
         <span>{requests.length} visible request{requests.length === 1 ? "" : "s"}</span>
         <Link to="/procurement/new">Request supplies</Link>
@@ -50,6 +53,16 @@ export default function ProcurementOwnerPage() {
           <div className="supply-success supply-success--empty"><span aria-hidden="true">🌿</span><h2>No requests</h2><p>No supply requests match this status.</p></div>
         )}
       </section>
+    </>
+  );
+
+  if (embedded) {
+    return <section className="procurement-owner-panel">{content}</section>;
+  }
+
+  return (
+    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+      {content}
     </WorkspaceShell>
   );
 }

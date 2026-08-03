@@ -24,6 +24,7 @@ export interface HousekeepingV2TaskCard {
   currentQueue: HousekeepingV2SectionId;
   displayReason: string | null;
   assignee: string | null;
+  assigneeId: string | null;
   isBlocked: boolean;
   blockReason: string | null;
   waterQuantity: number | null;
@@ -36,6 +37,7 @@ export interface HousekeepingV2TaskCard {
     canComplete: boolean;
     canSkip: boolean;
     canCancel: boolean;
+    canReassign: boolean;
     requiresReceptionRelease: boolean;
   };
 }

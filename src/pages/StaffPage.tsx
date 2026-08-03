@@ -8,6 +8,7 @@ import shadowCanopy from "../assets/img/shadow-canopy.svg";
 import shoppingCartIcon from "../assets/img/shopping-cart-light.svg";
 import sprayBottleIcon from "../assets/img/spray-bottle-light.svg";
 import wrenchIcon from "../assets/img/wrench-light.svg";
+import chatIcon from "../assets/img/wechat-logo-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RecentBookings from "../components/RecentBookings";
 import { RoomIcon } from "../components/OperationsIcons";
@@ -25,27 +26,25 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "housekeeping",
   "maintenance",
   "procurement",
-  "availability",
+  "chat",
 ];
-
-const HIDDEN_UNTIL_PAGE_READY = new Set<StaffCardId>(["availability"]);
 
 const workspaceIcons: Record<StaffCardId, string> = {
   rooms: bedIcon,
   reception: airplaneLandingIcon,
-  availability: bedIcon,
   housekeeping: sprayBottleIcon,
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
+  chat: chatIcon,
 };
 
 const workspaceTone: Record<StaffCardId, string> = {
   rooms: "moss",
   reception: "water",
-  availability: "fern",
   housekeeping: "sun",
   maintenance: "earth",
   procurement: "ash",
+  chat: "water",
 };
 
 function formatToday() {
@@ -152,11 +151,7 @@ export default function StaffPage() {
     refetchInterval: 60_000,
   });
 
-  const workspaces = staff.data
-    ? sortWorkspaces(staff.data.cards).filter(
-        (workspace) => !HIDDEN_UNTIL_PAGE_READY.has(workspace.id),
-      )
-    : [];
+  const workspaces = staff.data ? sortWorkspaces(staff.data.cards) : [];
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;

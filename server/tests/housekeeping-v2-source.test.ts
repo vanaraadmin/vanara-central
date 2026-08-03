@@ -149,8 +149,9 @@ test("expanded v2 rows link room names to Room Workspace and gate task actions b
   assert.doesNotMatch(page, /claimHousekeepingTask|releaseHousekeepingClaim/);
   assert.doesNotMatch(page, />Claim<|>Release</);
   assert.doesNotMatch(page, /\/housekeeping\/rooms\/\$\{card\.unitId}/);
-  assert.doesNotMatch(page, /AssignmentControl/);
-  assert.doesNotMatch(page, /<select/);
+  assert.match(page, /OwnerAssignmentControl/);
+  assert.match(page, /card\.capabilities\.canReassign/);
+  assert.match(page, /loadHousekeepingAssignableUsers/);
   assert.doesNotMatch(page, /createOnDemandCleaning|on-demand-cleaning|Checklist/);
 });
 

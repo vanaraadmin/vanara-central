@@ -485,7 +485,19 @@ export function isOwner(user: CurrentUser): boolean {
   return user.role === "Owner" && user.views.includes("owner");
 }
 
+const staffOperationalModules = new Set<ModuleKey>([
+  "rooms",
+  "housekeeping",
+  "movements",
+  "maintenance",
+  "procurement",
+  "chat",
+]);
+
 export function hasModulePermission(user: CurrentUser, module: ModuleKey, action: "access" | "edit" = "access"): boolean {
+  if (action === "access" && user.views.includes("staff") && staffOperationalModules.has(module)) {
+    return true;
+  }
   const permission = user.permissions.find((item) => item.module === module);
   if (!permission) return false;
   return action === "edit" ? permission.canAccess && permission.canEdit : permission.canAccess;

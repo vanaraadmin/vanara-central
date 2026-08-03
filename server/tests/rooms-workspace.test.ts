@@ -847,9 +847,9 @@ test("Rooms executive summary categories are mutually exclusive and reconcile to
   assert.equal(categorizedTotal, overview.summary.total);
 });
 
-test("rooms workspace endpoint requires Rooms access and returns the read model", async () => {
+test("rooms workspace endpoint requires authentication and returns the Staff read model", async () => {
   assert.equal((await request("/api/rooms", { method: "GET" }, env([roomsAccess], { authenticated: false }))).status, 401);
-  assert.equal((await request("/api/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 403);
+  assert.equal((await request("/api/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([]))).status, 200);
 
   const response = await request("/api/rooms", { method: "GET", headers: { cookie: "vanara_session=x" } }, env([roomsAccess]));
   const body = await json(response);

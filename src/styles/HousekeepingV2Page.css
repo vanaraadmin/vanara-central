@@ -10,6 +10,7 @@
 .housekeeping-v2-card__state,
 .housekeeping-v2-card__meta,
 .housekeeping-v2-card__actions,
+.housekeeping-v2-assignment,
 .housekeeping-v2-empty {
   display: flex;
 }
@@ -236,6 +237,7 @@
 }
 
 .housekeeping-v2-card__actions button,
+.housekeeping-v2-assignment button,
 .housekeeping-v2-secondary-action,
 .housekeeping-v2-report-issue {
   min-height: 38px;
@@ -251,6 +253,45 @@
   font-weight: var(--vc-weight-bold);
   text-decoration: none;
   gap: 6px;
+}
+
+.housekeeping-v2-assignment {
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.housekeeping-v2-assignment label {
+  display: grid;
+  min-width: min(220px, 100%);
+  gap: 4px;
+}
+
+.housekeeping-v2-assignment label span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  text-transform: uppercase;
+}
+
+.housekeeping-v2-assignment select {
+  min-height: 38px;
+  padding: 0 36px 0 12px;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-sm);
+  background: var(--vc-bg-surface);
+  color: var(--vc-text-primary);
+  font: inherit;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.housekeeping-v2-assignment p {
+  width: 100%;
+  margin: 0;
+  color: var(--vc-color-danger);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
 }
 
 .housekeeping-v2-report-issue {
