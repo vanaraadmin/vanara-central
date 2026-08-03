@@ -52,6 +52,7 @@ export interface RoomHousekeepingTask {
   assignee: { id: string; name: string } | null;
   operationalDate: string;
   dueCycleDate: string | null;
+  startedAt: string | null;
   updatedAt: string;
   capabilities: {
     canClaim: boolean;

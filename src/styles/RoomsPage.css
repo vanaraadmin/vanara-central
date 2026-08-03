@@ -353,62 +353,63 @@
 }
 
 .room-hero {
-  position: relative;
-  height: 200px;
-  margin: 0;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--vc-space-3);
+  min-height: 112px;
+  padding: var(--vc-space-4);
   border-radius: var(--vc-radius-lg);
-  background: rgba(9, 31, 22, 0.52);
+  background: rgba(10, 39, 28, 0.045);
 }
 
-.room-hero img,
-.room-hero__placeholder {
-  width: 100%;
-  height: 100%;
-}
-
-.room-hero img {
-  object-fit: cover;
-  object-position: center;
-}
-
-.room-hero__placeholder {
+.room-hero__icon {
+  width: 64px;
+  height: 64px;
   display: grid;
   place-items: center;
-  color: rgba(244, 237, 223, 0.48);
-  background:
-    linear-gradient(140deg, rgba(244, 237, 223, 0.09), rgba(9, 31, 22, 0.36));
+  border: 1px solid rgba(10, 39, 28, 0.1);
+  border-radius: var(--vc-radius-lg);
+  color: rgba(10, 39, 28, 0.78);
+  background: rgba(255, 255, 255, 0.58);
 }
 
-.room-hero__placeholder svg {
-  width: 44px;
-  height: 44px;
+.room-hero__icon svg {
+  width: 34px;
+  height: 34px;
 }
 
-.room-hero figcaption {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+.room-hero__copy {
   display: grid;
-  gap: 2px;
-  padding: 48px var(--vc-space-4) var(--vc-space-4);
-  color: var(--workspace-cream);
-  background: linear-gradient(180deg, transparent, rgba(4, 17, 12, 0.7));
+  min-width: 0;
+  gap: 3px;
 }
 
-.room-hero figcaption strong {
+.room-hero__copy strong {
+  overflow-wrap: anywhere;
+  color: rgba(10, 39, 28, 0.94);
   font-size: var(--vc-text-xl);
   font-weight: var(--vc-weight-semibold);
   line-height: var(--vc-line-title);
 }
 
-.room-hero figcaption span {
-  color: rgba(244, 237, 223, 0.68);
+.room-hero__copy span,
+.room-hero__copy small {
+  color: rgba(10, 39, 28, 0.58);
   font-family: var(--vc-font-sans);
   font-size: var(--vc-text-xs);
-  font-weight: var(--vc-weight-bold);
+  font-weight: var(--vc-weight-heavy);
   text-transform: uppercase;
+}
+
+.room-hero__copy p {
+  margin: var(--vc-space-1) 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(10, 39, 28, 0.76);
+  font-family: var(--vc-font-sans);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-semibold);
+  line-height: 1.25;
 }
 
 .room-workspace-card {

@@ -97,8 +97,9 @@
 }
 
 .room-hero-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--vc-space-3);
   margin-bottom: var(--vc-space-3);
   padding: var(--vc-space-4);
@@ -111,12 +112,21 @@
 .room-hero-card div {
   display: grid;
   gap: var(--vc-space-1);
+  min-width: 0;
 }
 
 .room-hero-card strong {
+  overflow-wrap: anywhere;
   color: var(--vc-text-primary);
   font-size: var(--vc-text-xl);
   line-height: var(--vc-line-title);
+}
+
+.room-hero-card > div > span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  text-transform: uppercase;
 }
 
 .room-hero-card small {
@@ -124,10 +134,30 @@
   font-weight: var(--vc-weight-bold);
 }
 
-.room-hero-card > svg {
-  width: 42px;
-  height: 42px;
+.room-hero-card__icon {
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-app-elevated);
   color: var(--vc-color-gold-600);
+}
+
+.room-hero-card__icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.room-hero-card__status {
+  justify-items: end;
+  text-align: right;
+}
+
+.room-hero-card__status > span:last-child {
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
 }
 
 .room-badges {
@@ -284,6 +314,7 @@
 
 .room-status-badge.is-cleaning,
 .room-status-badge.is-cleaning-in-progress,
+.room-status-badge.is-water-in-progress,
 .room-status-badge.is-medium {
   background: rgba(189, 137, 39, 0.15);
   color: #88611b;
@@ -299,6 +330,223 @@
 .room-status-badge.is-occupied {
   background: rgba(27, 72, 66, 0.11);
   color: var(--vc-color-jungle-900);
+}
+
+.room-status-badge.is-water-due {
+  background: rgba(44, 102, 126, 0.12);
+  color: rgba(25, 80, 103, 0.96);
+}
+
+.task-execution-page {
+  width: min(100%, 620px);
+  padding-bottom: calc(112px + var(--vc-safe-bottom));
+}
+
+.task-execution-layout {
+  display: grid;
+  gap: var(--vc-space-3);
+}
+
+.task-execution-header,
+.task-execution-empty,
+.task-execution-status,
+.task-execution-checklist,
+.task-execution-maintenance {
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-xl);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.task-execution-header,
+.task-execution-empty {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-4);
+}
+
+.task-execution-header__icon,
+.task-execution-empty > svg {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  color: var(--vc-color-gold-600);
+  background: var(--vc-bg-app-elevated);
+}
+
+.task-execution-header__icon svg,
+.task-execution-empty > svg {
+  width: 34px;
+  height: 34px;
+}
+
+.task-execution-header > div:last-child,
+.task-execution-empty div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.task-execution-header span {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  text-transform: uppercase;
+}
+
+.task-execution-header strong,
+.task-execution-empty strong {
+  overflow-wrap: anywhere;
+  color: var(--vc-text-primary);
+  font-family: var(--vc-font-display);
+  font-size: clamp(2.1rem, 11vw, 3.1rem);
+  line-height: 0.95;
+}
+
+.task-execution-header p,
+.task-execution-empty span {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.task-execution-status {
+  display: grid;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-3);
+}
+
+.task-execution-status dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-2);
+  margin: 0;
+}
+
+.task-execution-status div {
+  display: grid;
+  gap: 3px;
+  padding: var(--vc-space-2);
+  border-radius: var(--vc-radius-md);
+  background: var(--vc-bg-app-elevated);
+}
+
+.task-execution-status dt {
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+  text-transform: uppercase;
+}
+
+.task-execution-status dd {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-md);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.task-execution-checklist {
+  display: grid;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-3);
+}
+
+.task-execution-checklist h2 {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+}
+
+.task-execution-checklist > div {
+  display: grid;
+  gap: var(--vc-space-2);
+}
+
+.task-execution-checklist label {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--vc-space-3);
+  padding: 0 var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-bg-app-elevated);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-md);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.task-execution-checklist input {
+  width: 24px;
+  min-height: 24px;
+  margin: 0;
+  accent-color: var(--vc-color-jungle-900);
+}
+
+.task-execution-maintenance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-3);
+}
+
+.task-execution-maintenance div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.task-execution-maintenance strong {
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.task-execution-maintenance span {
+  overflow-wrap: anywhere;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.task-execution-maintenance a {
+  flex: 0 0 auto;
+  color: var(--vc-color-jungle-900);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-heavy);
+  text-decoration: none;
+}
+
+.task-execution-primary-action {
+  position: sticky;
+  bottom: var(--vc-space-3);
+  z-index: 5;
+  padding-top: var(--vc-space-1);
+}
+
+.task-execution-primary-action button {
+  width: 100%;
+  min-height: 56px;
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  background: var(--vc-color-jungle-900);
+  color: white;
+  font-size: var(--vc-text-md);
+  font-weight: var(--vc-weight-heavy);
+  box-shadow: var(--vc-shadow-md);
+}
+
+.task-execution-primary-action button:disabled {
+  background: var(--vc-bg-subtle);
+  color: var(--vc-text-muted);
+  box-shadow: none;
 }
 
 .room-actions {

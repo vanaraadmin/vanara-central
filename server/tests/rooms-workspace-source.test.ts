@@ -197,6 +197,14 @@ test("Expanded Rooms Workspace uses one parent container and removes Notes and H
   assert.match(css, /\.room-workspace-container/);
 });
 
+test("Expanded Room Workspace header uses accommodation icon instead of room photos", () => {
+  assert.match(roomHero, /AccommodationTypeIcon/);
+  assert.match(roomHero, /room\.currentStay/);
+  assert.doesNotMatch(roomHero, /heroImage|<img|official room|image unavailable|RoomIcon/);
+  assert.match(css, /\.room-hero__icon/);
+  assert.doesNotMatch(css, /\.room-hero img|object-fit:\s*cover/);
+});
+
 test("Expanded Room Workspace uses the cream operational layer", () => {
   assert.match(css, /\.room-workspace-container[\s\S]*#f7f4ee/i);
   assert.match(css, /\.room-workspace-container[\s\S]*color:\s*#0a271c/i);

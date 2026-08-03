@@ -107,6 +107,7 @@ export interface RoomHousekeepingTask {
   assignee: { id: string; name: string } | null;
   operationalDate: string;
   dueCycleDate: string | null;
+  startedAt: string | null;
   updatedAt: string;
   capabilities: {
     canClaim: boolean;
@@ -592,6 +593,7 @@ function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, toda
     assignee: task.assignedUserId && task.assignedUserName ? { id: task.assignedUserId, name: task.assignedUserName } : null,
     operationalDate: task.operationalDate,
     dueCycleDate: task.dueCycleDate,
+    startedAt: task.startedAt,
     updatedAt: task.updatedAt,
     capabilities: roomTaskCapabilities(task, user, maintenanceBlocked),
   };

@@ -21,7 +21,7 @@ test("housekeeping task navigation reuses the Room Workspace", () => {
   assert.match(router, /path="housekeeping\/rooms\/:unitId" element=\{<HousekeepingRoomRedirect \/>}/);
   assert.match(router, /path="housekeeping\/checklist\/:roomId" element=\{<HousekeepingRoomRedirect \/>}/);
   assert.match(router, /path="rooms\/:roomId" element=\{<RoomDetailPage \/>}/);
-  assert.match(homePage, /className="housekeeping-v2-room-link" to=\{`\/rooms\/\$\{card\.unitId}`\}/);
+  assert.match(homePage, /className="housekeeping-v2-room-link" to=\{`\/rooms\/\$\{card\.unitId}\?taskId=\$\{card\.taskId}`\}/);
   assert.doesNotMatch(homePage, /housekeeping-v2-task-link|Open room/);
   assert.doesNotMatch(router, /import HousekeepingRoomPage/);
   assert.doesNotMatch(router, /readyChecklist|checklistPlaceholder/);
@@ -113,6 +113,8 @@ test("Housekeeping no longer owns a duplicate room detail surface", () => {
 test("Room Workspace owns active housekeeping task and room operations", () => {
   assert.match(roomWorkspace, /Task Status/);
   assert.match(roomWorkspace, /room\.housekeeping\.tasks/);
+  assert.match(roomWorkspace, /isTaskExecution \? \(/);
+  assert.match(roomWorkspace, /<TaskExecutionPage room=\{room\.data\} roomId=\{roomId\} task=\{executionTask\} \/>/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>/);
   assert.match(roomWorkspace, /getRoomDetailTurnover\(room\)/);
   assert.match(roomDetailService, /function roomOccupancyLabel/);
@@ -122,6 +124,27 @@ test("Room Workspace owns active housekeeping task and room operations", () => {
   assert.doesNotMatch(homePage, /function Checklist/);
   assert.match(homePage, /OwnerAssignmentControl/);
   assert.match(homePage, /card\.capabilities\.canReassign/);
+});
+
+test("Housekeeping task execution page contains only execution UI", () => {
+  const taskExecutionPage = roomWorkspace.slice(
+    roomWorkspace.indexOf("function TaskExecutionPage"),
+    roomWorkspace.indexOf("function RoomTaskActions"),
+  );
+
+  assert.match(roomWorkspace, /function TaskExecutionPage/);
+  assert.match(taskExecutionPage, /taskDetailLabel\(task\)/);
+  assert.match(taskExecutionPage, /taskExecutionStatus\(task\)/);
+  assert.match(taskExecutionPage, /<TaskExecutionChecklist task=\{task\} \/>/);
+  assert.match(taskExecutionPage, /<TaskExecutionPrimaryAction action=\{action\} task=\{task\} \/>/);
+  assert.match(roomWorkspace, /function TaskExecutionMaintenance/);
+  assert.match(roomWorkspace, /No issue/);
+  assert.match(roomWorkspace, /Report Issue/);
+  assert.doesNotMatch(taskExecutionPage, /Create On-Demand Cleaning/);
+  assert.doesNotMatch(taskExecutionPage, /<TurnoverPanel/);
+  assert.doesNotMatch(taskExecutionPage, /<ProcurementPanel/);
+  assert.doesNotMatch(taskExecutionPage, /<TimelinePanel/);
+  assert.doesNotMatch(taskExecutionPage, /<ChatContextPanel/);
 });
 
 test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {

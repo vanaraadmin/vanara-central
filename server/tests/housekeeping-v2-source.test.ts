@@ -141,7 +141,7 @@ test("v2 page starts as summary cards and expands only Priority, Normal or Water
 });
 
 test("expanded v2 rows link room names to Room Workspace and gate task actions by server capabilities", () => {
-  assert.match(page, /to=\{`\/rooms\/\$\{card\.unitId}`\}/);
+  assert.match(page, /to=\{`\/rooms\/\$\{card\.unitId}\?taskId=\$\{card\.taskId}`\}/);
   assert.match(page, /card\.capabilities\.canStart/);
   assert.match(page, /card\.capabilities\.canComplete/);
   assert.match(page, /startHousekeepingTask/);

@@ -236,7 +236,7 @@ function TaskCard({ action, card, onInterventionInfo }: { action: ReturnType<typ
       <div className="housekeeping-v2-card__top">
         <div>
           {card.capabilities.canOpenRoom && card.unitId > 0 ? (
-            <h3><Link className="housekeeping-v2-room-link" to={`/rooms/${card.unitId}`}>{card.unitName}</Link></h3>
+            <h3><Link className="housekeeping-v2-room-link" to={`/rooms/${card.unitId}?taskId=${card.taskId}`}>{card.unitName}</Link></h3>
           ) : (
             <h3>{card.unitName}</h3>
           )}

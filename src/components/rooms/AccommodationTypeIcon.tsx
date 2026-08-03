@@ -1,8 +1,6 @@
 import type { SVGProps } from "react";
-import type { RoomsWorkspaceRoom } from "../../types/rooms-workspace";
-
 type AccommodationTypeIconProps = {
-  type: RoomsWorkspaceRoom["accommodationType"];
+  type: string;
   className?: string;
 };
 

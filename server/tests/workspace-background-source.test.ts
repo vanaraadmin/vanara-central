@@ -88,7 +88,7 @@ test("implemented workspaces map to the correct shared shell background keys", (
   assert.match(readFileSync(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8"), /workspace="reception"/);
   assert.match(readFileSync(new URL("../../src/pages/MovementsPage.tsx", import.meta.url), "utf8"), /workspace="reception"/);
   assert.match(readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8"), /workspace="rooms"/);
-  assert.match(readFileSync(new URL("../../src/pages/RoomDetailPage.tsx", import.meta.url), "utf8"), /workspace="rooms"/);
+  assert.match(readFileSync(new URL("../../src/pages/RoomDetailPage.tsx", import.meta.url), "utf8"), /workspace=\{isTaskExecution \? "housekeeping" : "rooms"\}/);
   assert.match(readFileSync(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8"), /workspace="housekeeping"/);
   assert.match(readFileSync(new URL("../../src/pages/MaintenancePage.tsx", import.meta.url), "utf8"), /workspace="maintenance"/);
   assert.match(readFileSync(new URL("../../src/pages/MaintenanceDetailPage.tsx", import.meta.url), "utf8"), /workspace="maintenance"/);
