@@ -222,6 +222,10 @@ export interface UpdateRoomHousekeepingInput {
   idempotencyKey: string | null;
 }
 
+export interface StartRoomStandardCleaningInput {
+  idempotencyKey: string | null;
+}
+
 export interface CreateRoomNoteInput {
   body: string;
 }
@@ -730,6 +734,16 @@ export function normalizeRoomHousekeepingInput(payload: unknown): UpdateRoomHous
   return { status: rawStatus, reason, idempotencyKey };
 }
 
+export function normalizeStartRoomStandardCleaningInput(payload: unknown): StartRoomStandardCleaningInput {
+  if (payload !== null && payload !== undefined && typeof payload !== "object") throw new Error("Cleaning payload is invalid.");
+  const data = (payload ?? {}) as Record<string, unknown>;
+  const allowed = ["idempotencyKey"];
+  const unknown = Object.keys(data).find((key) => !allowed.includes(key));
+  if (unknown) throw new Error(`Cleaning payload contains unsupported field: ${unknown}.`);
+  const idempotencyKey = typeof data.idempotencyKey === "string" && data.idempotencyKey.trim() ? data.idempotencyKey.trim().slice(0, 200) : null;
+  return { idempotencyKey };
+}
+
 export function normalizeRoomNoteInput(payload: unknown): CreateRoomNoteInput {
   if (!payload || typeof payload !== "object") throw new Error("Note payload is required.");
   const body = "body" in payload && typeof payload.body === "string" ? payload.body.trim() : "";
@@ -872,6 +886,60 @@ async function insertRoomReadyAuditEvent(env: RoomDetailBindings, task: Housekee
 function roomReadyIdempotency(input: UpdateRoomHousekeepingInput, unitId: number, status: RoomReadyState, now: string): string {
   if (input.idempotencyKey) return input.idempotencyKey;
   return `room-ready:${status.toLowerCase()}:${unitId}:${now}:${crypto.randomUUID()}`;
+}
+
+export async function startRoomStandardCleaning(env: RoomDetailBindings, id: number, input: StartRoomStandardCleaningInput, user: CurrentUser): Promise<RoomDetail | null> {
+  if (!canCreateRoomHousekeepingTask(user)) throw new ForbiddenError("Housekeeping access is required.");
+  const unit = await resolveUnit(env, id);
+  if (!unit) return null;
+
+  const today = getBangkokDate();
+  const [currentStay, storedState, activeTasks, activeOverrides, tickets] = await Promise.all([
+    loadCurrentStay(env, unit.unit_id, today),
+    loadRoomHousekeepingStateForUnit(env, unit.unit_id),
+    loadActiveHousekeepingTasks(env, unit.unit_id, today),
+    loadActiveRoomReadyOverrideTasks(env, unit.unit_id),
+    listOpenMaintenanceTicketDetailsForRoom(env, unit.unit_id),
+  ]);
+
+  if (currentStay) throw new Error("Standard Cleaning from Rooms requires a vacant room.");
+  if (tickets.some((ticket) => ticket.outOfService)) throw new Error("Cleaning is blocked by Maintenance.");
+  if (storedState.readyState !== "NOT_READY") throw new Error("Room must be dirty before starting cleaning.");
+
+  const manualTaskIds = new Set(activeOverrides.map((task) => task.id));
+  const conflictingTask = activeTasks.find((task) => !manualTaskIds.has(task.id));
+  if (conflictingTask) throw new Error("An active Housekeeping task already exists for this room.");
+
+  const existing = activeOverrides[0] ?? null;
+  if (existing?.status === "IN_PROGRESS") return getRoomDetail(env, unit.unit_id, user);
+  if (existing && existing.status !== "AVAILABLE_FOR_CLAIM" && existing.status !== "CLAIMED") {
+    throw new Error("Existing cleaning task cannot be started.");
+  }
+
+  const idempotencyKey = input.idempotencyKey ?? `room-workspace:standard-cleaning:${unit.unit_id}:${today}:${crypto.randomUUID()}`;
+  const task = existing ?? await createHousekeepingTask(env, {
+    taskType: "STANDARD_CLEANING",
+    unitId: unit.unit_id,
+    bookingId: null,
+    stayId: null,
+    operationalDate: today,
+    dueCycleDate: today,
+    priority: "NORMAL",
+    source: "manual",
+    onDemandSource: ROOM_READY_OVERRIDE_SOURCE,
+    idempotencyKey,
+    creationMetadata: { source: "room_workspace", reasonCode: "vacant_dirty_standard_cleaning" },
+  }, user);
+
+  await transitionHousekeepingTask(env, task.id, {
+    action: "start",
+    expectedVersion: task.version,
+    actor: user,
+    idempotencyKey: `${idempotencyKey}:start`,
+    metadata: { source: "room_workspace", reasonCode: "vacant_dirty_standard_cleaning" },
+  });
+
+  return getRoomDetail(env, unit.unit_id, user);
 }
 
 export async function updateRoomHousekeepingStatus(env: RoomDetailBindings, id: number, input: UpdateRoomHousekeepingInput, user: CurrentUser): Promise<RoomDetail | null> {

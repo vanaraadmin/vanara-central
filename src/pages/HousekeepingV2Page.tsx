@@ -27,7 +27,7 @@ function interventionLabel(type: InterventionType): string {
 }
 
 function interventionForCard(card: HousekeepingV2TaskCard): InterventionType | null {
-  if (card.taskType === "STANDARD_CLEANING" || card.taskType === "ON_DEMAND_CLEANING") return "cleaning";
+  if (card.taskType === "STANDARD_CLEANING") return "cleaning";
   if (card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER") return "full-cleaning";
   return null;
 }
@@ -45,7 +45,6 @@ function taskLabel(card: HousekeepingV2TaskCard): string {
   if (card.taskType === "TURNOVER") return "Turnover";
   if (card.taskType === "STANDARD_CLEANING") return "Cleaning";
   if (card.taskType === "LINEN_CHANGE") return "Full Cleaning";
-  if (card.taskType === "ON_DEMAND_CLEANING") return "Cleaning request";
   if (card.taskType === "WATER_REFILL") return card.waterQuantity ? `${card.waterQuantity} bottles` : "Water refill";
   return "Operational task";
 }
@@ -56,9 +55,7 @@ function formatRoomCount(value: number): string {
 
 function reasonLabel(code: string): string {
   if (code === "standard_cleaning_previous_day") return "Was due yesterday";
-  if (code === "on_demand_previous_day") return "Was due yesterday";
   if (code === "cleaning_due_today") return "Due today";
-  if (code === "on_demand_cleaning") return "On-demand";
   if (code === "linen_required") return "Linen";
   if (code === "linen_override") return "Override";
   if (code === "waiting_reception") return "Waiting for Check-out";
@@ -147,15 +144,6 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
     return (
       <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
         <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(taskId, version))} type="button">Start</button>
-      </div>
-    );
-  }
-
-  if (card.capabilities.canComplete && card.taskType === "ON_DEMAND_CLEANING") {
-    return (
-      <div className="housekeeping-v2-card__actions" aria-label={`Actions for ${card.unitName}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Finish Cleaning</button>
-        <button disabled={action.isPending} onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Finish Full Cleaning</button>
       </div>
     );
   }

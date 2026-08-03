@@ -77,6 +77,13 @@ export async function createRoomOnDemandCleaning(roomId: string, payload: Create
   if (!response.success) throw new Error(response.error ?? "On-demand cleaning could not be created");
 }
 
+export async function startRoomStandardCleaning(roomId: string, idempotencyKey?: string | null, signal?: AbortSignal): Promise<void> {
+  const response = await sendJson<RoomDetailResponse>(`/api/rooms/${encodeURIComponent(roomId)}/standard-cleaning/start`, "POST", {
+    idempotencyKey: idempotencyKey ?? null,
+  }, signal);
+  if (!response.success) throw new Error(response.error ?? "Cleaning could not be started");
+}
+
 export async function resolveReceptionRoomAlert(alert: ReceptionRoomAlert, signal?: AbortSignal): Promise<void> {
   const response = await sendJson<ReceptionStayResponse>(`/api/reception/stays/${alert.bookingId}/alerts/${alert.type}/resolve`, "POST", {}, signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "Reception alert could not be completed");

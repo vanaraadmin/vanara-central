@@ -49,7 +49,7 @@ export interface HousekeepingV2TaskCard {
   };
 }
 
-export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "on_demand_previous_day" | "cleaning_due_today" | "on_demand_cleaning" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
+export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "cleaning_due_today" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Section {
   id: HousekeepingV2SectionId;
@@ -180,8 +180,8 @@ interface OperationalContext {
 
 const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
 const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
-const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING", "LINEN_CHANGE"]);
-const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING"]);
+const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
+const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING"]);
 const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STANDARD_INTERVAL_DAYS = 3;
@@ -337,24 +337,19 @@ function cardsForContext(context: OperationalContext, user: CurrentUser): Housek
   if (maintenanceBlocked) return [];
 
   const cards: HousekeepingV2TaskCard[] = [];
+  const queueTasks = context.tasks.filter((task) => taskBelongsToHousekeepingQueue(task));
   const turnover = taskFor(context.tasks.filter((task) => taskBelongsToDeparture(context, task)), "TURNOVER");
   if (turnover) {
     cards.push(cardFromContext(context, turnover, maintenanceBlocked, user));
   }
 
   const stayTasks = [
-    ...context.tasks.filter((task) => taskBelongsToActiveStay(context, task)),
-    ...context.tasks.filter((task) => taskBelongsToRoomReadyOverride(task)),
+    ...queueTasks.filter((task) => taskBelongsToActiveStay(context, task)),
   ];
 
   const standard = taskFor(stayTasks, "STANDARD_CLEANING");
   if (standard) {
     cards.push(cardFromContext(context, standard, maintenanceBlocked, user));
-  }
-
-  const onDemand = taskFor(stayTasks, "ON_DEMAND_CLEANING");
-  if (onDemand) {
-    cards.push(cardFromContext(context, onDemand, maintenanceBlocked, user));
   }
 
   const linen = taskFor(stayTasks, "LINEN_CHANGE");
@@ -368,6 +363,16 @@ function cardsForContext(context: OperationalContext, user: CurrentUser): Housek
   }
 
   return cards;
+}
+
+function taskBelongsToHousekeepingQueue(task: HousekeepingTask): boolean {
+  if (taskBelongsToRoomReadyOverride(task)) return false;
+  return task.taskType !== "ON_DEMAND_CLEANING";
+}
+
+function taskBelongsToRoomReadyOverride(task: HousekeepingTask): boolean {
+  if (task.idempotencyKey?.startsWith("room-ready-baseline:not-ready:")) return false;
+  return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
 function cardFromContext(context: OperationalContext, task: HousekeepingTask, maintenanceBlocked: boolean, user: CurrentUser): HousekeepingV2TaskCard {
@@ -515,9 +520,6 @@ function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, tas
     if (task.operationalDate < context.date) codes.push("standard_cleaning_previous_day");
     else if (task.dueCycleDate === context.date || task.operationalDate === context.date) codes.push("cleaning_due_today");
   }
-  if (taskType === "ON_DEMAND_CLEANING") {
-    codes.push(task.operationalDate < context.date ? "on_demand_previous_day" : "on_demand_cleaning");
-  }
   if (taskType === "LINEN_CHANGE" || context.counter?.linen_required_override === 1) {
     codes.push("linen_required");
     if (context.counter?.linen_required_override === 1) codes.push("linen_override");
@@ -537,18 +539,17 @@ function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
 function visibleQueueForTask(task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
   if (task.taskType === "TURNOVER") return "priority-turnover";
   if (task.taskType === "WATER_REFILL") return "water-refill";
-  if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "priority-turnover";
+  if (reasonCodes.includes("standard_cleaning_previous_day")) return "priority-turnover";
   void maintenanceBlocked;
   if (task.priority === "URGENT" || waitingRelease || task.status === "BLOCKED") return "priority-turnover";
   return "normal-cleaning";
 }
 
 function displayReasonFor(reasonCodes: HousekeepingV2ReasonCode[]): string | null {
-  if (reasonCodes.includes("standard_cleaning_previous_day") || reasonCodes.includes("on_demand_previous_day")) return "Was due yesterday";
+  if (reasonCodes.includes("standard_cleaning_previous_day")) return "Was due yesterday";
   if (reasonCodes.includes("waiting_reception")) return "Waiting for Check-out";
   if (reasonCodes.includes("maintenance_block")) return "Maintenance Block";
   if (reasonCodes.includes("cleaning_due_today")) return "Due today";
-  if (reasonCodes.includes("on_demand_cleaning")) return "On-Demand";
   if (reasonCodes.includes("linen_override")) return "Full Cleaning requested";
   if (reasonCodes.includes("linen_required")) return "Full Cleaning";
   return null;
@@ -558,11 +559,6 @@ function taskBelongsToActiveStay(context: OperationalContext, task: Housekeeping
   if (task.taskType === "TURNOVER") return taskBelongsToDeparture(context, task);
   if (!context.activeStay) return false;
   return taskMatchesBooking(task, context.activeStay);
-}
-
-function taskBelongsToRoomReadyOverride(task: HousekeepingTask): boolean {
-  if (task.idempotencyKey?.startsWith("room-ready-baseline:not-ready:")) return false;
-  return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
 function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {
@@ -614,17 +610,15 @@ function sortCards(left: HousekeepingV2TaskCard, right: HousekeepingV2TaskCard):
 
 function normalCleaningRank(card: HousekeepingV2TaskCard): number {
   if (card.reasonCodes.includes("standard_cleaning_previous_day")) return 1;
-  if (card.reasonCodes.includes("on_demand_cleaning")) return 2;
-  if (card.reasonCodes.includes("cleaning_due_today") || card.reasonCodes.includes("linen_required")) return 3;
-  if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 4;
-  return 5;
+  if (card.reasonCodes.includes("cleaning_due_today") || card.reasonCodes.includes("linen_required")) return 2;
+  if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 3;
+  return 4;
 }
 
 function priorityQueueRank(card: HousekeepingV2TaskCard): number {
   if (card.taskType === "TURNOVER" && !card.reasonCodes.includes("waiting_reception") && !card.assignee) return 1;
   if (card.taskType === "TURNOVER") return 2;
   if (card.reasonCodes.includes("standard_cleaning_previous_day")) return 3;
-  if (card.reasonCodes.includes("on_demand_previous_day")) return 4;
   if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 5;
   if (card.isBlocked) return 6;
   return 7;

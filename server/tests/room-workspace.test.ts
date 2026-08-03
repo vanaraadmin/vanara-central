@@ -4,7 +4,7 @@ import test from "node:test";
 import worker from "../src/index.ts";
 import { normalizeHousekeepingChecklistInput } from "../src/services/housekeeping-overview.service.ts";
 import { normalizeRoomOperationalAvailabilityInput } from "../src/services/room-operational-state.service.ts";
-import { normalizeRoomHousekeepingInput, normalizeRoomNoteInput } from "../src/services/room-detail.service.ts";
+import { normalizeRoomHousekeepingInput, normalizeRoomNoteInput, normalizeStartRoomStandardCleaningInput } from "../src/services/room-detail.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
@@ -308,12 +308,21 @@ class FakeRoomDB {
       task.updated_at = params[1];
       task.updated_by = params[2];
       task.updated_by_name = params[3];
+      let cursor = 4;
+      if (sql.includes("assigned_user_id = ?")) {
+        task.assigned_user_id = params[cursor++];
+        task.assigned_user_name = params[cursor++];
+        task.claimed_at = params[cursor++];
+      }
+      if (sql.includes("started_at = ?")) {
+        task.started_at = params[cursor++];
+      }
       if (sql.includes("cancelled_at = ?")) {
-        task.cancelled_at = params[4];
-        task.cancellation_reason = params[5];
+        task.cancelled_at = params[cursor++];
+        task.cancellation_reason = params[cursor++];
       }
       if (sql.includes("completed_at = ?")) {
-        task.completed_at = params[4];
+        task.completed_at = params[cursor];
       }
       return { meta: { changes: 1, last_row_id: task.task_id } };
     }
@@ -648,6 +657,10 @@ test("room workspace notes must be real operational text", () => {
     body: "Guest requested extra towels.",
   });
   assert.throws(() => normalizeRoomNoteInput({ body: " " }), /Note is required/);
+  assert.deepEqual(normalizeStartRoomStandardCleaningInput({ idempotencyKey: " start-cleaning-1 " }), {
+    idempotencyKey: "start-cleaning-1",
+  });
+  assert.throws(() => normalizeStartRoomStandardCleaningInput({ note: "nope" }), /unsupported field/);
 });
 
 test("room housekeeping endpoint supports owner manager ready override only", async () => {
@@ -704,6 +717,38 @@ test("operational availability endpoint is owner manager only and independent fr
   assert.equal((operatingBody.data as { operationalAvailability: { status: string }; housekeeping: { readyState: string } }).operationalAvailability.status, "OPERATING");
   assert.equal((operatingBody.data as { operationalAvailability: { status: string }; housekeeping: { readyState: string } }).housekeeping.readyState, "NOT_READY");
   assert.equal(data.DB.tasks.length, 1);
+});
+
+test("room workspace Standard Cleaning start creates and starts a room-owned manual task", async () => {
+  const data = env([roomsAccess, housekeepingEdit], { user: { ...ACTIVE_USER, role: "Housekeeping" } });
+  data.DB.housekeepingState.push({
+    unit_id: UNIT.unit_id,
+    ready_state: "NOT_READY",
+    reason: "Room is dirty.",
+    source: "room_workspace_manual_cleaning_request",
+    updated_at: "2026-08-02T08:15:05.000Z",
+  });
+
+  const started = await request("/api/rooms/1/standard-cleaning/start", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ idempotencyKey: "room-standard-start-1" }),
+  }, data);
+  const body = await json(started);
+
+  assert.equal(started.status, 200, JSON.stringify(body));
+  assert.equal(data.DB.tasks.length, 1);
+  assert.equal(data.DB.tasks[0].task_type, "STANDARD_CLEANING");
+  assert.equal(data.DB.tasks[0].source, "manual");
+  assert.equal(data.DB.tasks[0].on_demand_source, "ROOM_READY_OVERRIDE");
+  assert.equal(data.DB.tasks[0].status, "IN_PROGRESS");
+  assert.equal(data.DB.tasks[0].assigned_user_id, ACTIVE_USER.user_id);
+  assert.equal(data.DB.housekeepingState.at(-1)?.ready_state, "NOT_READY");
+  assert.equal(data.DB.taskEvents.some((event) => event.event_type === "created"), true);
+  assert.equal(data.DB.taskEvents.some((event) => event.event_type === "start"), true);
+  assert.equal(data.DB.housekeepingStateEvents.some((event) => event.source === "housekeeping_task_started"), true);
+  assert.equal((body.data as { housekeeping: { primaryStatus: string; tasks: Array<{ taskType: string; status: string }> } }).housekeeping.primaryStatus, "Cleaning In Progress");
+  assert.equal((body.data as { housekeeping: { tasks: Array<{ taskType: string; status: string }> } }).housekeeping.tasks.some((task) => task.taskType === "STANDARD_CLEANING" && task.status === "IN_PROGRESS"), true);
 });
 
 test("room workspace ignores legacy housekeeping rows for readiness", async () => {

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import worker from "../src/index.ts";
 import { getRoomsWorkspaceOverview } from "../src/services/rooms-workspace.service.ts";
+import { getRoomCompactPresentation } from "../../src/config/roomOperationalPresentation.ts";
+import { getRoomsWorkspaceTurnover } from "../../src/config/turnoverPresentation.ts";
 import type { CurrentUser, ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
@@ -443,17 +445,12 @@ test("Rooms Workspace uses central finish capability for in-progress turnover ow
   assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
 });
 
-test("Housekeeping card defaults to CLEAN when no active task exists even if physical condition is NOT_READY", async () => {
+test("Housekeeping card exposes DIRTY when no active task exists and physical condition is NOT_READY", async () => {
   const rooms = [
     roomRow({
       unit_id: 12,
       unit_name: "Bungalow 12",
       ready_state: "NOT_READY",
-      booking_id: 1201,
-      beds24_booking_id: 91201,
-      guest_name: "Ready Guest",
-      arrival_date: "2026-08-01",
-      departure_date: "2026-08-05",
     }),
   ];
 
@@ -463,11 +460,11 @@ test("Housekeeping card defaults to CLEAN when no active task exists even if phy
 
   assert.equal(byName(overview.rooms, "Bungalow 7").operational.housekeeping.condition, "NOT_READY");
   assert.equal(room.operational.housekeeping.condition, "NOT_READY");
-  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
-  assert.equal(room.housekeeping.detail, "No work required");
+  assert.equal(room.housekeeping.primaryStatus, "DIRTY");
+  assert.equal(room.housekeeping.detail, "Cleaning required");
   assert.deepEqual(room.housekeeping.primaryAction, {
-    type: "CREATE_ON_DEMAND_CLEANING",
-    label: "Start On-demand Cleaning",
+    type: "CREATE_STANDARD_CLEANING",
+    label: "Start Cleaning",
     taskId: null,
     version: null,
     completionMode: null,
@@ -527,6 +524,198 @@ test("Housekeeping card displays turnover work as Cleaning Required with Start C
     completionMode: null,
     target: null,
   });
+});
+
+test("turnover scenario 1: vacant dirty room has no Turnover card and starts manual Cleaning from Rooms", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 31,
+      unit_name: "Bungalow 31",
+      ready_state: "NOT_READY",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Bungalow 31");
+
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02"), null);
+  assert.equal(room.housekeeping.primaryStatus, "DIRTY");
+  assert.equal(room.housekeeping.detail, "Cleaning required");
+  assert.deepEqual(room.housekeeping.primaryAction, {
+    type: "CREATE_STANDARD_CLEANING",
+    label: "Start Cleaning",
+    taskId: null,
+    version: null,
+    completionMode: null,
+    target: null,
+  });
+});
+
+test("turnover scenario 2: occupied clean room has no Turnover card and keeps On-Demand in Rooms", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 32,
+      unit_name: "Bungalow 32",
+      ready_state: "READY",
+      booking_id: 3201,
+      beds24_booking_id: 93201,
+      guest_name: "In House Guest",
+      arrival_date: "2026-08-01",
+      departure_date: "2026-08-05",
+      api_source: "Direct",
+      reception_booking_id: 3201,
+      reception_beds24_booking_id: 93201,
+      reception_guest_name: "In House Guest",
+      reception_arrival_date: "2026-08-01",
+      reception_departure_date: "2026-08-05",
+      reception_guest_arrived: 1,
+      reception_passport_collected: 1,
+      reception_deposit_collected: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Bungalow 32");
+
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02"), null);
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
+  assert.equal(room.housekeeping.primaryAction?.type, "CREATE_ON_DEMAND_CLEANING");
+  assert.equal(room.housekeeping.primaryAction?.label, "Start On-demand Cleaning");
+});
+
+test("turnover scenario 3: today's checkout moves from waiting to released turnover work", async () => {
+  const pendingCheckout = roomRow({
+    unit_id: 33,
+    unit_name: "Bungalow 33",
+    ready_state: "READY",
+    reception_booking_id: 3301,
+    reception_beds24_booking_id: 93301,
+    reception_arrival_date: "2026-08-01",
+    reception_departure_date: "2026-08-02",
+    reception_departure_today_count: 1,
+    reception_guest_arrived: 1,
+    active_task_count: 1,
+    active_task_id: 33001,
+    active_task_version: 1,
+    active_task_status: "WAITING_FOR_RECEPTION",
+    active_task_type: "TURNOVER",
+    active_task_priority: "HIGH",
+  });
+  const checkoutCompleted = {
+    ...pendingCheckout,
+    reception_guest_left: 1,
+    reception_room_released: 1,
+    active_task_status: "AVAILABLE_FOR_CLAIM",
+    active_task_priority: "URGENT",
+  };
+
+  const waiting = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms: [pendingCheckout] }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 33");
+  const released = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms: [checkoutCompleted] }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 33");
+
+  assert.equal(getRoomsWorkspaceTurnover(waiting, "2026-08-02")?.label, "Waiting for Today's Check-out");
+  assert.equal(waiting.housekeeping.primaryStatus, "Waiting for Check-out");
+  assert.equal(waiting.housekeeping.primaryAction, null);
+  assert.equal(getRoomsWorkspaceTurnover(released, "2026-08-02")?.label, "Today's Check-out Completed");
+  assert.equal(released.housekeeping.primaryStatus, "Cleaning Required");
+  assert.equal(released.housekeeping.primaryAction?.type, "START_HOUSEKEEPING_TASK");
+});
+
+test("turnover scenario 4: check-in during turnover cleaning derives Guest Waiting without changing housekeeping action", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 34,
+      unit_name: "Villa 34",
+      unit_type: "villa",
+      room_type_name: "Garden Villa",
+      ready_state: "NOT_READY",
+      reception_booking_id: 3401,
+      reception_beds24_booking_id: 93401,
+      reception_guest_name: "Waiting Guest",
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-06",
+      reception_arrival_today_count: 1,
+      reception_guest_arrived: 1,
+      reception_passport_collected: 1,
+      reception_deposit_collected: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+      active_task_count: 1,
+      active_task_id: 34001,
+      active_task_version: 2,
+      active_task_status: "IN_PROGRESS",
+      active_task_type: "TURNOVER",
+      active_task_priority: "URGENT",
+      active_task_assignee_id: "rooms-1",
+      active_task_assignee: "Nun",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
+  const room = byName(overview.rooms, "Villa 34");
+  const compact = getRoomCompactPresentation(room);
+
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02")?.label, "Guest Waiting For Room");
+  assert.equal(room.housekeeping.primaryStatus, "Cleaning In Progress");
+  assert.equal(room.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(room.housekeeping.primaryAction?.label, "Finish Cleaning");
+  assert.equal(compact.housekeeping?.label, "CLEANING IN PROGRESS");
+  assert.equal(compact.secondarySignals[0]?.label, "GUEST WAITING");
+});
+
+test("turnover scenario 5: cleaning completed before check-in shows Ready for Today's Check-in", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 35,
+      unit_name: "Bungalow 35",
+      ready_state: "READY",
+      reception_booking_id: 3501,
+      reception_beds24_booking_id: 93501,
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-06",
+      reception_arrival_today_count: 1,
+    }),
+  ];
+
+  const room = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 35");
+
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02")?.label, "Ready for Today's Check-in");
+  assert.notEqual(getRoomsWorkspaceTurnover(room, "2026-08-02")?.label, "Guest Waiting For Room");
+});
+
+test("turnover scenario 6: cleaning completed after check-in removes Turnover card", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 36,
+      unit_name: "Bungalow 36",
+      ready_state: "READY",
+      booking_id: 3601,
+      beds24_booking_id: 93601,
+      guest_name: "Checked-in Guest",
+      arrival_date: "2026-08-02",
+      departure_date: "2026-08-06",
+      api_source: "Direct",
+      reception_booking_id: 3601,
+      reception_beds24_booking_id: 93601,
+      reception_guest_name: "Checked-in Guest",
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-06",
+      reception_arrival_today_count: 1,
+      reception_guest_arrived: 1,
+      reception_passport_collected: 1,
+      reception_deposit_collected: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const room = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 36");
+
+  assert.equal(room.operational.occupancy.state, "OCCUPIED");
+  assert.equal(room.housekeeping.primaryStatus, "CLEAN");
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02"), null);
 });
 
 test("maintenance states distinguish blocking active and clear", async () => {

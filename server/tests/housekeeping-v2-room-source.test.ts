@@ -163,16 +163,17 @@ test("Housekeeping task execution page contains only execution UI", () => {
 });
 
 test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {
-  assert.match(roomExpandedWorkspace, /<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>[\s\S]*<HousekeepingPanel/);
   assert.match(turnoverCard, /eyebrow="Turnover"/);
   assert.match(turnoverCard, /title="Current State"/);
-  assert.match(turnoverPresentation, /Guest In House[\s\S]*Guest is still in the room/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);
-  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Today's check-in is complete/);
-  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|HousekeepingTask|activeTask|Task #/);
+  assert.match(turnoverPresentation, /Guest Waiting For Room[\s\S]*Guest has checked in\. Room is not ready yet/);
+  assert.match(turnoverPresentation, /Ready for Today's Check-in[\s\S]*Room is ready for today's check-in/);
+  assert.match(turnoverPresentation, /return null/);
+  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|Task #/);
   assert.doesNotMatch(`${homePage}\n${turnoverCard}`, /Passport|Deposit|Open Reception|Arrival Due|Reception internal|room release|guest arrived/);
 });
 

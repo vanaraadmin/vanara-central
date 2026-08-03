@@ -166,10 +166,10 @@ test("v2 task cards avoid staff-facing technical wording and raw task state", ()
 test("v2 task actions render the next server-authorized step only", () => {
   assert.match(page, /if \(card\.taskType === "WATER_REFILL"\)/);
   assert.match(page, /if \(card\.capabilities\.canStart\)/);
-  assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "ON_DEMAND_CLEANING"\)/);
   assert.match(page, /if \(card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"\)/);
   assert.match(page, /if \(card\.capabilities\.canComplete\)/);
   assert.match(page, /waterRefillCompleted: true/);
+  assert.doesNotMatch(page, /card\.taskType === "ON_DEMAND_CLEANING"\)/);
   assert.match(page, /<span>Complete<\/span>/);
   assert.doesNotMatch(page, /if \(card\.capabilities\.canClaim\)|if \(card\.capabilities\.canReleaseClaim\)/);
   assert.match(page, /onSettled: \(\) =>/);
@@ -203,13 +203,18 @@ test("water cards stay one-tap and avoid workflow indicators", () => {
   assert.doesNotMatch(page, /Complete Water|Start Water|Claim/);
 });
 
-test("read model contains only actionable housekeeping work, with existing on-demand tasks in Normal", () => {
+test("read model includes generated Standard Cleaning work and excludes Room-owned cleaning from the queue", () => {
   assert.doesNotMatch(service, /function readyCard/);
   assert.doesNotMatch(service, /No ready rooms to list/);
-  assert.match(service, /taskFor\(stayTasks, "ON_DEMAND_CLEANING"\)/);
+  assert.match(service, /taskFor\(stayTasks, "STANDARD_CLEANING"\)/);
+  assert.match(service, /taskBelongsToRoomReadyOverride/);
+  assert.match(service, /if \(taskBelongsToRoomReadyOverride\(task\)\) return false/);
+  assert.match(service, /return task\.taskType !== "ON_DEMAND_CLEANING"/);
+  assert.doesNotMatch(service, /\.\.\.queueTasks\.filter\(\(task\) => taskBelongsToRoomReadyOverride\(task\)\)/);
+  assert.doesNotMatch(service, /taskFor\(stayTasks, "ON_DEMAND_CLEANING"\)/);
   assert.match(service, /function visibleQueueForTask/);
   assert.match(service, /standard_cleaning_previous_day/);
-  assert.match(service, /on_demand_previous_day/);
+  assert.doesNotMatch(service, /on_demand_previous_day/);
   assert.doesNotMatch(service, /taskType: "ON_DEMAND_CLEANING"/);
 });
 

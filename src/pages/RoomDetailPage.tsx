@@ -340,6 +340,7 @@ function useRoomTaskAction(roomId: string) {
 function TurnoverPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   const turnover = getRoomDetailTurnover(room);
   void roomId;
+  if (!turnover) return null;
 
   return (
     <TurnoverCard

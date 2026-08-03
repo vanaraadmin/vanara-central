@@ -191,7 +191,7 @@ test("Expanded Rooms Workspace uses a read-only operational summary card", () =>
 test("Expanded Rooms Workspace uses one parent container and removes Notes and History", () => {
   assert.match(roomExpandedWorkspace, /className="room-workspace-container"/);
   assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
-  assert.match(roomExpandedWorkspace, /<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
+  assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /<ReceptionCard/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder|title="Notes"|title="History"|Notes|History/);
   assert.match(css, /\.room-workspace-container/);
@@ -228,16 +228,17 @@ test("Expanded Rooms Workspace renders GuestCard only for occupied current stays
 
 test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead of ReceptionCard", () => {
   assert.match(roomExpandedWorkspace, /getRoomsWorkspaceTurnover\(room\)/);
-  assert.match(roomExpandedWorkspace, /TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
+  assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Reception"/);
   assert.match(turnoverCard, /eyebrow="Turnover"/);
   assert.match(turnoverCard, /title="Current State"/);
-  assert.match(turnoverPresentation, /Guest In House[\s\S]*Guest is still in the room/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);
-  assert.match(turnoverPresentation, /Guest Checked-in[\s\S]*Today's check-in is complete/);
-  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|HousekeepingTask|activeTask|Task #/);
+  assert.match(turnoverPresentation, /Guest Waiting For Room[\s\S]*Guest has checked in\. Room is not ready yet/);
+  assert.match(turnoverPresentation, /Ready for Today's Check-in[\s\S]*Room is ready for today's check-in/);
+  assert.match(turnoverPresentation, /return null/);
+  assert.doesNotMatch(turnoverPresentation, /Start Cleaning|Finish Cleaning|Cleaning In Progress|Ready to start cleaning|Task #/);
   assert.doesNotMatch(turnoverCard, /Passport|Deposit|Open Reception|Arrival Due|Reception/);
 });
 
@@ -251,6 +252,8 @@ test("Housekeeping and Maintenance cards share the RoomDomainCard structure", ()
     assert.match(card, /PrimaryActionRow/);
   }
   assert.match(housekeepingCard, /Start On-demand Cleaning|action\.label/);
+  assert.match(housekeepingCard, /CREATE_STANDARD_CLEANING/);
+  assert.match(housekeepingCard, /onCreateStandardCleaning/);
   assert.match(housekeepingCard, /onCreateOnDemandCleaning/);
   assert.match(housekeepingCard, /onStartTask/);
   assert.match(housekeepingCard, /onCompleteTask/);

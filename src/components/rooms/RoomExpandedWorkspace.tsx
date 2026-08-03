@@ -11,6 +11,7 @@ interface RoomExpandedWorkspaceProps {
   id: string;
   room: RoomsWorkspaceRoom;
   actionPending: boolean;
+  onCreateStandardCleaning: (roomId: number) => void;
   onCreateOnDemandCleaning: (roomId: number) => void;
   onStartHousekeepingTask: (taskId: number, version: number) => void;
   onCompleteHousekeepingTask: (taskId: number, version: number, completionMode: RoomHousekeepingCompletionMode) => void;
@@ -20,6 +21,7 @@ export default function RoomExpandedWorkspace({
   actionPending,
   id,
   onCompleteHousekeepingTask,
+  onCreateStandardCleaning,
   onCreateOnDemandCleaning,
   onStartHousekeepingTask,
   room,
@@ -32,14 +34,17 @@ export default function RoomExpandedWorkspace({
         <RoomHero room={room} />
         {room.currentStay ? <GuestCard stay={room.currentStay} /> : null}
         <RoomOperationalSummaryCard summary={room.operational} />
-        <TurnoverCard
-          roomId={room.unitId}
-          turnover={turnover}
-        />
+        {turnover ? (
+          <TurnoverCard
+            roomId={room.unitId}
+            turnover={turnover}
+          />
+        ) : null}
         <HousekeepingCard
           actionPending={actionPending}
           housekeeping={room.housekeeping}
           onCompleteTask={onCompleteHousekeepingTask}
+          onCreateStandardCleaning={onCreateStandardCleaning}
           onCreateOnDemandCleaning={onCreateOnDemandCleaning}
           onStartTask={onStartHousekeepingTask}
           roomId={room.unitId}

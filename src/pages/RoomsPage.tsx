@@ -6,7 +6,7 @@ import RoomExpandedWorkspace from "../components/rooms/RoomExpandedWorkspace";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 import { completeHousekeepingTask, startHousekeepingTask, type HousekeepingTaskCompletionPayload } from "../services/housekeeping-v2.service";
-import { createRoomOnDemandCleaning } from "../services/room-detail.service";
+import { createRoomOnDemandCleaning, startRoomStandardCleaning } from "../services/room-detail.service";
 import { loadRoomsWorkspace } from "../services/rooms-workspace.service";
 import "../styles/RoomsPage.css";
 import type { RoomHousekeepingCompletionMode } from "../types/rooms-workspace";
@@ -55,6 +55,10 @@ export default function RoomsPage() {
       idempotencyKey: roomActionKey("on-demand-cleaning", roomId),
       priority: "normal",
     }));
+  }, [runRoomAction]);
+
+  const createStandardCleaning = useCallback((roomId: number) => {
+    runRoomAction(() => startRoomStandardCleaning(String(roomId), roomActionKey("standard-cleaning", roomId)));
   }, [runRoomAction]);
 
   const startTask = useCallback((taskId: number, version: number) => {
@@ -128,6 +132,7 @@ export default function RoomsPage() {
                       actionPending={roomActionPending}
                       id={detailsId}
                       onCompleteHousekeepingTask={completeTask}
+                      onCreateStandardCleaning={createStandardCleaning}
                       onCreateOnDemandCleaning={createOnDemandCleaning}
                       onStartHousekeepingTask={startTask}
                       room={room}

@@ -72,6 +72,14 @@ function mapCompactTurnover(room: RoomsWorkspaceRoom): RoomCompactSignal | null 
   return null;
 }
 
+function mapCompactGuestWaiting(room: RoomsWorkspaceRoom): RoomCompactSignal | null {
+  const task = room.housekeeping.activeTask;
+  if (task?.taskType === "Turnover" && task.status === "IN_PROGRESS" && room.reception.checkIn.state === "COMPLETE") {
+    return compactSignal("guest-waiting", "GUEST WAITING", "critical");
+  }
+  return null;
+}
+
 function mapCompactReceptionAlert(room: RoomsWorkspaceRoom): RoomCompactSignal | null {
   const passportMissing = room.reception.alerts.some((alert) => alert.type === "passport_missing");
   const depositPending = room.reception.alerts.some((alert) => alert.type === "deposit_pending");
@@ -139,6 +147,7 @@ export function getRoomCompactPresentation(room: RoomsWorkspaceRoom): RoomCompac
   const occupancy = mapCompactOccupancy(room.operational);
   const housekeeping = mapCompactHousekeeping(room.operational);
   const secondarySignals = [
+    mapCompactGuestWaiting(room),
     mapCompactMaintenance(room.operational),
     mapCompactTurnover(room),
     mapCompactReceptionAlert(room),

@@ -683,6 +683,7 @@ function completionForTask(task: HousekeepingTask, input: ActionInput): Housekee
     throw new HousekeepingV2RoomError("On-demand completion requires Cleaning or Full Cleaning selection.", 400);
   }
   return {
+    ...completion,
     standardCleaningCompleted: true,
     linenChangeCompleted: completion.linenChangeCompleted,
   };

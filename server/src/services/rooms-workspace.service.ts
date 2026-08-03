@@ -17,7 +17,7 @@ export type ReceptionStepState = "NOT_REQUIRED" | "PENDING" | "COMPLETE" | "BLOC
 export type ReceptionStayPhase = "NONE" | "ARRIVAL_DUE" | "IN_HOUSE" | "DEPARTURE_DUE" | "CHECKED_OUT";
 export type ReceptionPrimaryActionType = "COLLECT_PASSPORT" | "COMPLETE_CHECK_IN" | "COMPLETE_CHECK_OUT";
 export type RoomDomainTone = "success" | "warning" | "danger" | "info" | "neutral";
-export type RoomHousekeepingActionType = "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK" | "OPEN_MAINTENANCE";
+export type RoomHousekeepingActionType = "CREATE_STANDARD_CLEANING" | "CREATE_ON_DEMAND_CLEANING" | "START_HOUSEKEEPING_TASK" | "COMPLETE_HOUSEKEEPING_TASK" | "OPEN_MAINTENANCE";
 export type RoomMaintenanceActionType = "REPORT_ISSUE" | "OPEN_TICKET" | "CONTINUE_WORK";
 export type RoomHousekeepingCompletionMode = "STANDARD" | "FULL" | "WATER";
 
@@ -630,7 +630,18 @@ function mapHousekeepingAction(row: RoomWorkspaceRow, occupancyState: RoomOccupa
     return null;
   }
 
-  if (occupancyState === "OCCUPIED" && canUseHousekeepingActions(user)) {
+  if (occupancyState === "VACANT" && row.ready_state === "NOT_READY" && canUseHousekeepingActions(user)) {
+    return {
+      type: "CREATE_STANDARD_CLEANING",
+      label: "Start Cleaning",
+      taskId: null,
+      version: null,
+      completionMode: null,
+      target: null,
+    };
+  }
+
+  if (occupancyState === "OCCUPIED" && row.ready_state !== "NOT_READY" && canUseHousekeepingActions(user)) {
     return {
       type: "CREATE_ON_DEMAND_CLEANING",
       label: "Start On-demand Cleaning",
@@ -698,6 +709,17 @@ function mapHousekeepingSummary(row: RoomWorkspaceRow, occupancyState: RoomOccup
       detail: row.active_task_assignee
         ? `Assigned: ${row.active_task_assignee}`
         : row.active_task_type === "WATER_REFILL" ? "Deliver water." : "Start cleaning.",
+      secondaryInfo: null,
+      activeTask,
+      primaryAction: action,
+    };
+  }
+
+  if (row.ready_state === "NOT_READY") {
+    return {
+      primaryStatus: "DIRTY",
+      tone: "warning",
+      detail: "Cleaning required",
       secondaryInfo: null,
       activeTask,
       primaryAction: action,

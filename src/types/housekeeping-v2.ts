@@ -3,7 +3,7 @@ import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTask
 export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
-export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "on_demand_previous_day" | "cleaning_due_today" | "on_demand_cleaning" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
+export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "cleaning_due_today" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Summary {
   toClean: number;

@@ -7,6 +7,7 @@ type HousekeepingCardProps = {
   roomName: string;
   housekeeping: RoomHousekeepingDomainSummary;
   actionPending: boolean;
+  onCreateStandardCleaning: (roomId: number) => void;
   onCreateOnDemandCleaning: (roomId: number) => void;
   onStartTask: (taskId: number, version: number) => void;
   onCompleteTask: (taskId: number, version: number, completionMode: RoomHousekeepingCompletionMode) => void;
@@ -16,6 +17,7 @@ export default function HousekeepingCard({
   actionPending,
   housekeeping,
   onCompleteTask,
+  onCreateStandardCleaning,
   onCreateOnDemandCleaning,
   onStartTask,
   roomId,
@@ -25,6 +27,10 @@ export default function HousekeepingCard({
   const runAction = () => {
     if (!action) return;
     if (action.type === "OPEN_MAINTENANCE") return;
+    if (action.type === "CREATE_STANDARD_CLEANING") {
+      onCreateStandardCleaning(roomId);
+      return;
+    }
     if (action.type === "CREATE_ON_DEMAND_CLEANING") {
       onCreateOnDemandCleaning(roomId);
       return;

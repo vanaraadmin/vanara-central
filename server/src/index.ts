@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { getDashboard, getDashboardOverview } from "./services/dashboard.service.js";
 import { getStaffOverview, type StaffOverviewBindings } from "./services/staff-overview.service.js";
-import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
+import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, normalizeStartRoomStandardCleaningInput, startRoomStandardCleaning, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./services/rooms-workspace.service.js";
 import { getTodayDashboard } from "./services/today.service.js";
 import { syncProperties, type PropertySyncBindings } from "./services/property-sync.service.js";
@@ -594,6 +594,21 @@ app.post("/api/rooms/:id/on-demand-cleaning", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, housekeepingV2RoomErrorStatus(error));
+  }
+});
+
+app.post("/api/rooms/:id/standard-cleaning/start", async (c) => {
+  try {
+    const user = await authenticated(c, "rooms", "access");
+    requireModulePermission(user, "housekeeping", "edit");
+    const roomId = positiveIntegerParam(c.req.param("id"), "room id");
+    const payload = await c.req.json().catch(() => ({}));
+    const room = await startRoomStandardCleaning(c.env, roomId, normalizeStartRoomStandardCleaningInput(payload), user);
+    if (!room) return c.json({ success: false, error: "Room not found" }, 404);
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: room });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
   }
 });
 
