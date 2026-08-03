@@ -1,24 +1,21 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties, useMemo } from "react";
 import airplaneLandingIcon from "../assets/img/airplane-landing-light.svg";
 import bedIcon from "../assets/img/bed-light.svg";
-import logo from "../assets/img/logo.png";
-import shadowCanopy from "../assets/img/shadow-canopy.svg";
 import shoppingCartIcon from "../assets/img/shopping-cart-light.svg";
 import sprayBottleIcon from "../assets/img/spray-bottle-light.svg";
 import wrenchIcon from "../assets/img/wrench-light.svg";
 import chatIcon from "../assets/img/wechat-logo-light.svg";
 import { PageError, PageLoading } from "../components/AsyncState";
+import { ArrowRightIcon } from "../components/OperationsIcons";
 import RecentBookings from "../components/RecentBookings";
-import { RoomIcon } from "../components/OperationsIcons";
-import StickyGlassHeader from "../components/StickyGlassHeader";
-import {
-  preloadWorkspaceBackground,
-  workspaceBackgroundStyle,
-} from "../config/workspaceBackgrounds";
+import WorkspaceShell from "../components/WorkspaceShell";
+import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
+import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
+import VanaraSummaryGrid, { type VanaraSummaryItem } from "../components/vanara/VanaraSummaryGrid";
 import { loadStaffOverview } from "../services/staff.service";
-import type { StaffCardId, StaffOverviewCard } from "../types/staff";
+import type { StaffCardId, StaffOverviewCard, StaffOverviewMetric } from "../types/staff";
 import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
@@ -39,29 +36,12 @@ const workspaceIcons: Record<StaffCardId, string> = {
   chat: chatIcon,
 };
 
-const workspaceTone: Record<StaffCardId, string> = {
-  rooms: "moss",
-  reception: "water",
-  housekeeping: "sun",
-  maintenance: "earth",
-  procurement: "ash",
-  chat: "water",
+const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {
+  attention: "warning",
+  good: "clean",
+  neutral: "neutral",
+  urgent: "critical",
 };
-
-function formatToday() {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok",
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  }).format(new Date());
-}
-
-function clampProgress(value: number): number {
-  if (value <= 0) return 0;
-  if (value >= 1) return 1;
-  return value;
-}
 
 function firstName(displayName: string) {
   const cleaned = displayName.trim();
@@ -84,6 +64,14 @@ function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
 }
 
+function summaryItems(metrics: StaffOverviewMetric[]): VanaraSummaryItem[] {
+  return metrics.map((metric) => ({
+    label: metric.label,
+    tone: metricTone[metric.tone],
+    value: metric.value,
+  }));
+}
+
 function WorkspaceCard({
   index,
   workspace,
@@ -93,20 +81,13 @@ function WorkspaceCard({
 }) {
   const iconUrl = workspaceIcons[workspace.id];
   const title = workspace.id === "reception" ? "Check-In / Out" : workspace.title;
+  const metrics = summaryItems(workspace.metrics);
 
   return (
     <Link
-      className={[
-        "staff-workspace",
-        `staff-workspace--${workspaceTone[workspace.id]}`,
-        index === 0 ? "staff-workspace--priority" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className="staff-workspace vc-glass-region"
       to={workspace.href}
     >
-      <span className="staff-workspace__wash" aria-hidden="true" />
-
       <span className="staff-workspace__identity">
         <span className="staff-workspace__index" aria-hidden="true">
           {String(index + 1).padStart(2, "0")}
@@ -117,84 +98,46 @@ function WorkspaceCard({
           style={iconStyle(iconUrl)}
           aria-hidden="true"
         >
-          <span className="staff-icon" />
+          <span className="staff-workspace__glyph" />
         </span>
       </span>
 
       <span className="staff-workspace__content">
         <span className="staff-workspace__title">{title}</span>
+        <span className="staff-workspace__description">{workspace.description}</span>
 
-        <span
-          className="staff-workspace__summary"
-          data-dynamic-field={`${workspace.id}.summaryLine1`}
-          aria-label="Dynamic operational summary"
-        >
-          {workspace.summaryLine1 ?? "—"}
-        </span>
-        <span
-          className="staff-workspace__secondary"
-          data-dynamic-field={`${workspace.id}.summaryLine2`}
-          aria-label="Dynamic operational detail"
-        >
-          {workspace.summaryLine2 ?? "—"}
-        </span>
+        {metrics.length > 0 ? (
+          <VanaraSummaryGrid
+            ariaLabel={`${title} operational counters`}
+            className="staff-workspace__summary-grid"
+            items={metrics}
+          />
+        ) : (
+          <span className="staff-workspace__summary-lines">
+            <span
+              data-dynamic-field={`${workspace.id}.summaryLine1`}
+              aria-label="Dynamic operational summary"
+            >
+              {workspace.summaryLine1 ?? "-"}
+            </span>
+            <span
+              data-dynamic-field={`${workspace.id}.summaryLine2`}
+              aria-label="Dynamic operational detail"
+            >
+              {workspace.summaryLine2 ?? "-"}
+            </span>
+          </span>
+        )}
       </span>
 
       <span className="staff-workspace__arrow" aria-hidden="true">
-        ↗
+        <ArrowRightIcon />
       </span>
     </Link>
   );
 }
 
 export default function StaffPage() {
-  const heroLogoRef = useRef<HTMLImageElement>(null);
-  const stickyTriggerRef = useRef<HTMLDivElement>(null);
-  const progressRef = useRef(0);
-  const [progress, setProgress] = useState(0);
-  const today = useMemo(() => formatToday(), []);
-
-  useEffect(() => {
-    preloadWorkspaceBackground("staffHome");
-  }, []);
-
-  useEffect(() => {
-    let frame = 0;
-
-    const updateProgress = () => {
-      frame = 0;
-      const trigger = stickyTriggerRef.current;
-      if (!trigger) return;
-
-      const next = clampProgress(Math.max(0, -trigger.getBoundingClientRect().top) / 96);
-      if (Math.abs(next - progressRef.current) < 0.005) return;
-
-      progressRef.current = next;
-      setProgress(next);
-    };
-
-    const requestProgress = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(updateProgress);
-    };
-
-    const observer = "IntersectionObserver" in window
-      ? new IntersectionObserver(requestProgress, { root: null, threshold: [0, 1] })
-      : null;
-
-    if (stickyTriggerRef.current) observer?.observe(stickyTriggerRef.current);
-    requestProgress();
-    window.addEventListener("scroll", requestProgress, { passive: true });
-    window.addEventListener("resize", requestProgress);
-
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("scroll", requestProgress);
-      window.removeEventListener("resize", requestProgress);
-    };
-  }, []);
-
   const staff = useQuery({
     queryKey: ["staff", "overview"],
     queryFn: ({ signal }) => loadStaffOverview(signal),
@@ -205,53 +148,27 @@ export default function StaffPage() {
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
+  const title = useMemo(() => (name ? `Sawasdee, ${name}` : "Sawasdee"), [name]);
   const showWorkspaceSection = Boolean(workspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (
-    <main className="staff-page" style={workspaceBackgroundStyle("staffHome")}>
-      <div className="staff-page__veil" aria-hidden="true" />
+    <WorkspaceShell title={title} workspace="staffHome" bodyClassName="staff-page">
+      <RecentBookings
+        canViewBookingValue={canViewBookingValue}
+        events={bookingEvents}
+        error={staff.isError}
+        loading={staff.isLoading}
+        onRetry={() => void staff.refetch()}
+      />
 
-      <section className="staff-shell" aria-label="Vanara Central home">
-        <StickyGlassHeader date={today} heroLogoRef={heroLogoRef} progress={progress} title="Home" />
-
-        <header className="staff-masthead">
-          <div className="staff-masthead__brand">
-            <span className="staff-masthead__logo-slot" aria-hidden="true">
-              <img ref={heroLogoRef} src={logo} alt="Vanara" className="staff-masthead__logo" />
-            </span>
-
-            <div className="staff-masthead__wordmark">
-              <span>Vanara</span>
-              <strong>Central</strong>
-            </div>
-          </div>
-
-          <time className="staff-masthead__date">{today}</time>
-        </header>
-
-        <section className="staff-intro" aria-labelledby="staff-intro-title">
-          <p className="staff-intro__eyebrow">Staff page</p>
-          <h1 id="staff-intro-title">
-            {name ? `Sawasdee, ${name}` : "Sawasdee"}
-          </h1>
-        </section>
-
-        <div ref={stickyTriggerRef} className="staff-sticky-trigger" aria-hidden="true" />
-
-        <RecentBookings
-          canViewBookingValue={canViewBookingValue}
-          events={bookingEvents}
-          error={staff.isError}
-          loading={staff.isLoading}
-          onRetry={() => void staff.refetch()}
-        />
-
-        {showWorkspaceSection ? (
-        <section className="staff-workspaces" aria-label="Available workspaces">
-          <div className="staff-workspaces__heading">
-            <span>Workspaces</span>
-            <span>{String(workspaces.length).padStart(2, "0")}</span>
-          </div>
+      {showWorkspaceSection ? (
+        <VanaraGlassRegion className="staff-workspaces" ariaLabelledBy="staff-workspaces-title">
+          <VanaraSectionHeader
+            eyebrow="Operational"
+            headingId="staff-workspaces-title"
+            meta={String(workspaces.length).padStart(2, "0")}
+            title="Workspaces"
+          />
 
           {staff.isLoading && (
             <div className="staff-state">
@@ -266,8 +183,8 @@ export default function StaffPage() {
           )}
 
           {staff.data && workspaces.length === 0 && (
-            <section className="staff-empty" aria-label="No work available">
-              <RoomIcon />
+            <section className="staff-empty vc-glass-region" aria-label="No work available">
+              <span className="staff-empty__mark" aria-hidden="true" />
               <h2>Nothing assigned</h2>
               <p>Your work areas will appear here when access is enabled.</p>
             </section>
@@ -284,18 +201,8 @@ export default function StaffPage() {
               ))}
             </div>
           )}
-        </section>
-        ) : null}
-
-        <footer className="staff-canopy" aria-label="Vanara Central">
-          <img src={shadowCanopy} alt="" aria-hidden="true" />
-          <div className="staff-canopy__signature">
-            <span>Vanara Central</span>
-            <small>Koh Chang · Thailand</small>
-          </div>
-        </footer>
-      </section>
-
-    </main>
+        </VanaraGlassRegion>
+      ) : null}
+    </WorkspaceShell>
   );
 }

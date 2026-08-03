@@ -51,6 +51,8 @@
   --vc-font-display: "Marcellus", "Noto Serif Thai", Georgia, serif;
   --vc-font-body: "Lato", "Noto Sans Thai", -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
+  --vc-font-sans: var(--vc-font-body);
+  --vc-font-ui: var(--vc-font-body);
   --vc-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
   --vc-text-xs: 0.75rem;
@@ -60,6 +62,14 @@
   --vc-text-xl: 1.375rem;
   --vc-text-2xl: 1.75rem;
   --vc-text-3xl: clamp(2.25rem, 8vw, 3.75rem);
+
+  --vc-type-page-title: clamp(1.62rem, 7vw, 2.3rem);
+  --vc-type-section-title: 1.5rem;
+  --vc-type-card-title: clamp(1.34rem, 5.6vw, 1.76rem);
+  --vc-type-value: 1.5rem;
+  --vc-type-body: 0.875rem;
+  --vc-type-utility-sm: 0.75rem;
+  --vc-type-utility-xs: 0.6875rem;
 
   --vc-line-tight: 1.08;
   --vc-line-title: 1.2;

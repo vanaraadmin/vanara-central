@@ -11,6 +11,7 @@ import {
 import "../styles/WorkspaceShell.css";
 
 const workspaceNumbers = {
+  staffHome: "00",
   rooms: "01",
   reception: "02",
   housekeeping: "03",
@@ -22,6 +23,7 @@ const workspaceNumbers = {
 type WorkspaceKey = keyof typeof workspaceNumbers;
 
 const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
+  staffHome: "staffHome",
   reception: "reception",
   housekeeping: "housekeeping",
   maintenance: "maintenance",

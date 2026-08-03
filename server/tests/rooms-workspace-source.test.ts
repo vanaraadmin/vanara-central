@@ -44,7 +44,7 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
 
 test("Staff Home hierarchy keeps Booking Pulse then Rooms, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
-  const workspacesIndex = staffPage.indexOf('<section className="staff-workspaces"');
+  const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
   assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"chat",/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);

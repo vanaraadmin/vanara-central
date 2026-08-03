@@ -70,9 +70,9 @@ test("typed workspace background configuration imports canonical source image as
 });
 
 test("Staff Home and WorkspaceShell consume backgrounds through the shared config", () => {
-  assert.match(staffPage, /workspaceBackgroundStyle\("staffHome"\)/);
-  assert.match(staffPage, /preloadWorkspaceBackground\("staffHome"\)/);
+  assert.match(staffPage, /<WorkspaceShell title=\{title\} workspace="staffHome" bodyClassName="staff-page">/);
   assert.match(workspaceShell, /workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey>/);
+  assert.match(workspaceShell, /staffHome: "staffHome"/);
   assert.match(workspaceShell, /reception: "reception"/);
   assert.match(workspaceShell, /rooms: "rooms"/);
   assert.match(workspaceShell, /housekeeping: "housekeeping"/);
@@ -84,7 +84,7 @@ test("Staff Home and WorkspaceShell consume backgrounds through the shared confi
 });
 
 test("implemented workspaces map to the correct shared shell background keys", () => {
-  assert.match(staffPage, /workspaceBackgroundStyle\("staffHome"\)/);
+  assert.match(staffPage, /workspace="staffHome"/);
   assert.match(readFileSync(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8"), /workspace="reception"/);
   assert.match(readFileSync(new URL("../../src/pages/MovementsPage.tsx", import.meta.url), "utf8"), /workspace="reception"/);
   assert.match(readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8"), /workspace="rooms"/);
@@ -99,7 +99,9 @@ test("implemented workspaces map to the correct shared shell background keys", (
 });
 
 test("workspace background CSS uses the variable, cover rules and dark fallback", () => {
-  for (const css of [staffCss, workspaceCss]) {
+  assert.doesNotMatch(staffCss, /background-image:\s*var\(--workspace-background, none\)/);
+
+  for (const css of [workspaceCss]) {
     assert.match(css, /--workspace-background-fallback:\s*#0c241a/);
     assert.match(css, /background-color:\s*var\(--workspace-background-fallback, #031c15\)/);
     assert.match(css, /background-image:\s*var\(--workspace-background, none\)/);
