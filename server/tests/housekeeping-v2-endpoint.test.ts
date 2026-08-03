@@ -538,7 +538,7 @@ test("standard cleaning can be completed as Full Cleaning and updates cleaning p
   assert.equal(db.events.some((event) => event.task_id === standard.taskId && event.event_type === "start"), true);
   const completed = await post(`/api/housekeeping/v2/tasks/${standard.taskId}/complete`, db, {
     expectedVersion: 2,
-    completion: { standardCleaningCompleted: true, linenChangeCompleted: true },
+    completion: { standardCleaningCompleted: true, linenChangeCompleted: true, completedAt: "2026-08-02T09:00:00.000Z" },
   });
   assert.equal(completed.status, 200, await completed.text());
 

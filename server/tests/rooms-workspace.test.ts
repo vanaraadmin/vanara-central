@@ -111,6 +111,8 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     reception_beds24_booking_id: null,
     reception_arrival_date: null,
     reception_departure_date: null,
+    reception_arrival_today_count: 0,
+    reception_departure_today_count: 0,
     reception_guest_arrived: 0,
     reception_passport_collected: 0,
     reception_deposit_collected: 0,
@@ -636,6 +638,7 @@ test("arrival due rooms expose pending Reception steps and capability-gated acti
       reception_beds24_booking_id: 9801,
       reception_arrival_date: "2026-08-02",
       reception_departure_date: "2026-08-05",
+      reception_arrival_today_count: 1,
     }),
   ];
 
@@ -643,6 +646,7 @@ test("arrival due rooms expose pending Reception steps and capability-gated acti
   const actionable = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
 
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.phase, "ARRIVAL_DUE");
+  assert.deepEqual(byName(readOnly.rooms, "Bungalow 8").reception.today, { checkIn: true, checkOut: false });
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.passport.state, "PENDING");
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.deposit.state, "PENDING");
   assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkIn.state, "PENDING");
@@ -665,6 +669,7 @@ test("departure due rooms prioritize checkout action over missing passport", asy
       reception_beds24_booking_id: 9901,
       reception_arrival_date: "2026-08-01",
       reception_departure_date: "2026-08-02",
+      reception_departure_today_count: 1,
       reception_guest_arrived: 1,
       reception_welcome_completed: 1,
       reception_keys_delivered: 1,
@@ -675,6 +680,7 @@ test("departure due rooms prioritize checkout action over missing passport", asy
   const room = byName(overview.rooms, "Bungalow 9");
 
   assert.equal(room.reception.phase, "DEPARTURE_DUE");
+  assert.deepEqual(room.reception.today, { checkIn: false, checkOut: true });
   assert.equal(room.reception.passport.state, "PENDING");
   assert.equal(room.reception.checkIn.state, "PENDING");
   assert.equal(room.reception.checkOut.state, "PENDING");
@@ -684,6 +690,23 @@ test("departure due rooms prioritize checkout action over missing passport", asy
     label: "Complete Check-out",
     target: "/reception",
   });
+});
+
+test("same-day arrival and departure are exposed as room reception today signals", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 17,
+      unit_name: "Bungalow 17",
+      reception_arrival_today_count: 1,
+      reception_departure_today_count: 1,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 17");
+
+  assert.equal(room.reception.phase, "NONE");
+  assert.deepEqual(room.reception.today, { checkIn: true, checkOut: true });
 });
 
 test("completed checkout phase comes from Reception checkout state", async () => {

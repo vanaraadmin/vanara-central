@@ -56,6 +56,8 @@ interface RoomWorkspaceRow {
   reception_beds24_booking_id: number | null;
   reception_arrival_date: string | null;
   reception_departure_date: string | null;
+  reception_arrival_today_count: number | null;
+  reception_departure_today_count: number | null;
   reception_guest_arrived: number | null;
   reception_passport_collected: number | null;
   reception_deposit_collected: number | null;
@@ -150,8 +152,14 @@ export interface RoomReceptionPrimaryAction {
   target: string;
 }
 
+export interface RoomReceptionTodaySummary {
+  checkIn: boolean;
+  checkOut: boolean;
+}
+
 export interface RoomReceptionSummary {
   phase: ReceptionStayPhase;
+  today: RoomReceptionTodaySummary;
   passport: RoomReceptionStepSummary;
   deposit: RoomReceptionStepSummary;
   checkIn: RoomReceptionStepSummary;
@@ -321,9 +329,10 @@ function emptyReceptionStep(): RoomReceptionStepSummary {
   return { state: "NOT_REQUIRED", completedAt: null };
 }
 
-function emptyReceptionSummary(alerts: RoomReceptionAlertSummary[] = []): RoomReceptionSummary {
+function emptyReceptionSummary(alerts: RoomReceptionAlertSummary[] = [], today: RoomReceptionTodaySummary = { checkIn: false, checkOut: false }): RoomReceptionSummary {
   return {
     phase: "NONE",
+    today,
     passport: emptyReceptionStep(),
     deposit: emptyReceptionStep(),
     checkIn: emptyReceptionStep(),
@@ -384,7 +393,11 @@ function receptionPrimaryAction(summary: Omit<RoomReceptionSummary, "primaryActi
 
 function mapReceptionSummary(row: RoomWorkspaceRow, alerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomReceptionSummary {
   const phase = receptionPhase(row, date);
-  if (phase === "NONE" && alerts.length === 0) return emptyReceptionSummary();
+  const today = {
+    checkIn: (row.reception_arrival_today_count ?? 0) > 0,
+    checkOut: (row.reception_departure_today_count ?? 0) > 0,
+  };
+  if (phase === "NONE" && alerts.length === 0 && !today.checkIn && !today.checkOut) return emptyReceptionSummary();
 
   const passportRequired = phase === "ARRIVAL_DUE" || phase === "IN_HOUSE" || phase === "DEPARTURE_DUE";
   const depositRequired = passportRequired;
@@ -397,6 +410,7 @@ function mapReceptionSummary(row: RoomWorkspaceRow, alerts: RoomReceptionAlertSu
 
   const summary: Omit<RoomReceptionSummary, "primaryAction"> = {
     phase,
+    today,
     passport: {
       state: stepState(passportRequired, passportComplete),
       completedAt: passportComplete ? row.passport_completed_at ?? row.reception_updated_at : null,
@@ -772,6 +786,20 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       rb.beds24_booking_id AS reception_beds24_booking_id,
       rb.arrival_date AS reception_arrival_date,
       rb.departure_date AS reception_departure_date,
+      (
+        SELECT COUNT(*)
+        FROM bookings b_arrival
+        WHERE b_arrival.unit_id = u.unit_id
+          AND b_arrival.arrival_date = ?1
+          AND ${operationalBookingStatusSql("b_arrival.status")}
+      ) AS reception_arrival_today_count,
+      (
+        SELECT COUNT(*)
+        FROM bookings b_departure
+        WHERE b_departure.unit_id = u.unit_id
+          AND b_departure.departure_date = ?1
+          AND ${operationalBookingStatusSql("b_departure.status")}
+      ) AS reception_departure_today_count,
       COALESCE(rrs.guest_arrived, 0) AS reception_guest_arrived,
       COALESCE(rrs.passport_collected, 0) AS reception_passport_collected,
       COALESCE(rrs.deposit_collected, 0) AS reception_deposit_collected,

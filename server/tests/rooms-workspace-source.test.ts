@@ -6,6 +6,7 @@ const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.m
 const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8");
 const roomCompactRow = readFileSync(new URL("../../src/components/rooms/RoomCompactRow.tsx", import.meta.url), "utf8");
 const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/RoomCompactSignals.tsx", import.meta.url), "utf8");
+const accommodationTypeIcon = readFileSync(new URL("../../src/components/rooms/AccommodationTypeIcon.tsx", import.meta.url), "utf8");
 const roomExpandedWorkspace = readFileSync(new URL("../../src/components/rooms/RoomExpandedWorkspace.tsx", import.meta.url), "utf8");
 const guestCard = readFileSync(new URL("../../src/components/rooms/GuestCard.tsx", import.meta.url), "utf8");
 const receptionCard = readFileSync(new URL("../../src/components/rooms/ReceptionCard.tsx", import.meta.url), "utf8");
@@ -101,26 +102,55 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
   assert.match(roomsPage, /current === roomId \? null : roomId/);
   assert.match(roomsPage, /useOutsidePointerDown\(containerRef, collapse, activeExpandedRoomId !== null\)/);
   assert.match(roomsPage, /event\.key === "Escape"/);
-  assert.match(roomCompactRow, /className="room-row"/);
+  assert.match(roomCompactRow, /className=\{className\}/);
+  assert.match(roomCompactRow, /room-compact-row/);
   assert.match(roomCompactRow, /aria-expanded=\{expanded\}/);
   assert.match(roomCompactRow, /aria-controls=\{detailsId\}/);
+  assert.match(roomCompactRow, /aria-label=\{presentation\.accessibleSummary\}/);
   assert.doesNotMatch(roomsPage, /useNavigate|<Link/);
   assert.doesNotMatch(roomCompactRow, /<Link|to=\{|<button[\s\S]*<button/);
 });
 
-test("Compact row signals are centrally mapped and prioritize operational blockers", () => {
-  assert.match(roomCompactRow, /RoomCompactSignals summary=\{room\.operational\}/);
-  assert.match(roomCompactRow, /room\.alertSummary \?\? guestName/);
-  assert.match(roomCompactSignals, /getRoomOperationalSignals\(summary\)/);
-  assert.match(presentation, /signal\("OUT OF SERVICE", "danger", 1/);
-  assert.match(presentation, /signal\("NOT OPERATING", "warning", 2/);
-  assert.match(presentation, /signal\("CLEANING IN PROGRESS", "info", 3/);
-  assert.match(presentation, /signal\("DIRTY", "warning", 5/);
-  assert.match(presentation, /signal\("CLEAN", "success", 7/);
-  assert.match(presentation, /OCCUPIED/);
-  assert.match(presentation, /VACANT/);
-  assert.match(roomCompactRow, /room\.operational\.occupancy\.state === "OCCUPIED"/);
-  assert.doesNotMatch(roomCompactRow, /AVAILABLE_FOR_CLAIM|STANDARD_CLEANING|out_of_service|NOT_OPERATING/);
+test("Compact row signals use one centralized presentation mapper", () => {
+  assert.match(roomCompactRow, /getRoomCompactPresentation\(room\)/);
+  assert.match(roomCompactRow, /RoomCompactSignals presentation=\{presentation\}/);
+  assert.match(roomCompactRow, /RoomTerminalState presentation=\{presentation\}/);
+  assert.match(roomCompactRow, /AccommodationTypeIcon type=\{room\.accommodationType\}/);
+  assert.match(roomCompactSignals, /RoomInlineSignal/);
+  assert.match(roomCompactSignals, /room-compact-signals__primary/);
+  assert.match(roomCompactSignals, /room-compact-signals__secondary/);
+  assert.match(presentation, /export function getRoomCompactPresentation/);
+  assert.match(presentation, /mode:\s*"MAINTENANCE_BLOCKED"/);
+  assert.match(presentation, /mode:\s*"SEASON_CLOSED"/);
+  assert.match(presentation, /secondarySignals[\s\S]*slice\(0, 2\)/);
+  assert.match(presentation, /"OUT OF SERVICE"/);
+  assert.match(presentation, /"SEASON CLOSED"/);
+  assert.match(presentation, /"CLEANING IN PROGRESS"/);
+  assert.match(presentation, /"DIRTY"/);
+  assert.match(presentation, /"CLEAN"/);
+  assert.match(presentation, /"OCCUPIED"/);
+  assert.match(presentation, /"VACANT"/);
+  assert.doesNotMatch(roomCompactSignals, /OperationalStatusPill/);
+  assert.doesNotMatch(roomCompactRow, /RoomHero|heroImage|<img|room\.alertSummary|AVAILABLE_FOR_CLAIM|STANDARD_CLEANING|out_of_service/);
+  assert.doesNotMatch(presentation, /getRoomOperationalSignals/);
+});
+
+test("Compact row type mark uses local monochrome accommodation icons", () => {
+  assert.match(accommodationTypeIcon, /function BungalowIcon/);
+  assert.match(accommodationTypeIcon, /function VillaIcon/);
+  assert.match(accommodationTypeIcon, /function TentIcon/);
+  assert.match(accommodationTypeIcon, /stroke:\s*"currentColor"/);
+  assert.doesNotMatch(accommodationTypeIcon, /emoji|img|png|jpg|lucide|SF Symbol/i);
+});
+
+test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
+  assert.match(css, /\.room-compact-row/);
+  assert.match(css, /\.room-compact-signals__primary/);
+  assert.match(css, /\.room-compact-signals__secondary/);
+  assert.match(css, /white-space:\s*nowrap/);
+  assert.match(css, /\.room-compact-signals__secondary \.room-inline-signal:not\(:first-of-type\)/);
+  assert.doesNotMatch(css, /\.room-row__signals[\s\S]*flex-wrap:\s*wrap/);
+  assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });
 
 test("Expanded Rooms Workspace uses a read-only operational summary card", () => {

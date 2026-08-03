@@ -67,8 +67,14 @@ export interface RoomReceptionPrimaryAction {
   target: string;
 }
 
+export interface RoomReceptionTodaySummary {
+  checkIn: boolean;
+  checkOut: boolean;
+}
+
 export interface RoomReceptionSummary {
   phase: ReceptionStayPhase;
+  today: RoomReceptionTodaySummary;
   passport: RoomReceptionStepSummary;
   deposit: RoomReceptionStepSummary;
   checkIn: RoomReceptionStepSummary;

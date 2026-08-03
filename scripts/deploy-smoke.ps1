@@ -285,6 +285,22 @@ function Get-StaffCard {
   return @($Overview.data.cards | Where-Object { $_.id -eq $Id }) | Select-Object -First 1
 }
 
+function Get-RoomByName {
+  param(
+    [object]$Overview,
+    [string]$Name
+  )
+  return @($Overview.data.rooms | Where-Object { $_.roomName -eq $Name }) | Select-Object -First 1
+}
+
+function Get-FirstRoom {
+  param(
+    [object]$Overview,
+    [scriptblock]$Predicate
+  )
+  return @($Overview.data.rooms | Where-Object $Predicate) | Select-Object -First 1
+}
+
 if ($UseTemporarySmokeSession -and $Cookie) {
   Write-Host "Smoke authentication: explicit temporary session flag provided; VANARA_SMOKE_COOKIE will be ignored."
 }
@@ -342,6 +358,65 @@ try {
   if ($metricValues["Completed Cleaning Today"] -ne [int]$summary.data.completedCleaningToday) { throw "Staff Home Completed Cleaning Today does not match Housekeeping summary" }
   if ($metricValues["Water Due"] -ne [int]$summary.data.waterDue) { throw "Staff Home Water Due does not match Housekeeping summary" }
   Write-Host "[OK] Staff Home Housekeeping summary uses approved cleaning and water counters"
+
+  $roomsOverview = Invoke-SmokeGet "/api/rooms"
+  Assert-JsonSuccess $roomsOverview "Rooms workspace"
+  if (@($roomsOverview.data.rooms).Count -ne 19) { throw "Rooms workspace must return 19 rooms" }
+  $roomsTotal = [int]$roomsOverview.data.summary.occupied + [int]$roomsOverview.data.summary.vacant + [int]$roomsOverview.data.summary.maintenanceBlocked + [int]$roomsOverview.data.summary.seasonClosed
+  if ($roomsTotal -ne [int]$roomsOverview.data.summary.total) { throw "Rooms summary categories do not reconcile to total" }
+  Write-Host ("[OK] GET /api/rooms: 19 rooms, summary reconciles to {0}" -f $roomsOverview.data.summary.total)
+
+  $bungalow7 = Get-RoomByName $roomsOverview "Bungalow 7"
+  if (-not $bungalow7) { throw "Bungalow 7 missing from Rooms workspace" }
+  if ($bungalow7.operational.maintenance.state -ne "BLOCKING") { throw "Bungalow 7 must be Maintenance blocked" }
+  if (-not $bungalow7.operational.maintenance.primaryTitle) { throw "Bungalow 7 must expose the primary Maintenance ticket title" }
+  Write-Host ("[OK] Bungalow 7 terminal source: Out of Service / {0}" -f $bungalow7.operational.maintenance.primaryTitle)
+
+  $villa13 = Get-RoomByName $roomsOverview "Villa 13"
+  if (-not $villa13) { throw "Villa 13 missing from Rooms workspace" }
+  if ($villa13.operational.availability.state -ne "NOT_OPERATING") { throw "Villa 13 must be Season Closed / Not Operating" }
+  $villa13Detail = if ($villa13.operational.availability.endDate) { $villa13.operational.availability.endDate } else { $villa13.operational.availability.reason }
+  Write-Host ("[OK] Villa 13 terminal source: Season Closed / {0}" -f $villa13Detail)
+
+  $seasonalTent = Get-FirstRoom $roomsOverview { $_.accommodationType -eq "Tent" -and $_.operational.availability.state -eq "NOT_OPERATING" }
+  if (-not $seasonalTent) { throw "At least one seasonal Tent must be present" }
+  Write-Host ("[OK] Seasonal tent terminal source: {0}" -f $seasonalTent.roomName)
+
+  $occupiedClean = Get-FirstRoom $roomsOverview { $_.operational.availability.state -eq "OPERATING" -and $_.operational.maintenance.state -ne "BLOCKING" -and $_.operational.occupancy.state -eq "OCCUPIED" -and $_.operational.housekeeping.condition -eq "READY" }
+  if (-not $occupiedClean) { throw "No operating occupied clean room found for production Rooms validation" }
+  Write-Host ("[OK] Occupied clean source order candidate: {0}" -f $occupiedClean.roomName)
+
+  $vacantRoom = Get-FirstRoom $roomsOverview { $_.operational.availability.state -eq "OPERATING" -and $_.operational.maintenance.state -ne "BLOCKING" -and $_.operational.occupancy.state -eq "VACANT" }
+  if (-not $vacantRoom) { throw "No operating vacant room found for production Rooms validation" }
+  Write-Host ("[OK] Vacant room source order candidate: {0}" -f $vacantRoom.roomName)
+
+  $villa10 = Get-RoomByName $roomsOverview "Villa 10"
+  if ($villa10 -and $villa10.operational.housekeeping.workState -eq "IN_PROGRESS") {
+    Write-Host "[OK] Villa 10 active task source: Cleaning In Progress"
+  } else {
+    Write-Host "[OK] Villa 10 Cleaning In Progress case not active in production; covered by regression tests."
+  }
+
+  $nonBlockingMaintenance = Get-FirstRoom $roomsOverview { $_.operational.maintenance.state -eq "ACTIVE" }
+  if ($nonBlockingMaintenance) {
+    Write-Host ("[OK] Non-blocking Maintenance source: {0}" -f $nonBlockingMaintenance.roomName)
+  } else {
+    Write-Host "[OK] Non-blocking Maintenance case unavailable in production; covered by regression tests."
+  }
+
+  $turnoverToday = Get-FirstRoom $roomsOverview { $_.reception.today.checkIn -or $_.reception.today.checkOut }
+  if ($turnoverToday) {
+    Write-Host ("[OK] Same-day Reception source available: {0}" -f $turnoverToday.roomName)
+  } else {
+    Write-Host "[OK] Turnover today case unavailable in production; covered by regression tests."
+  }
+
+  $receptionAttention = Get-FirstRoom $roomsOverview { @($_.reception.alerts).Count -gt 0 }
+  if ($receptionAttention) {
+    Write-Host ("[OK] Reception alert source available: {0}" -f $receptionAttention.roomName)
+  } else {
+    Write-Host "[OK] Passport/Deposit alert case unavailable in production; covered by regression tests."
+  }
 
   $tasks = Invoke-SmokeGet "/api/housekeeping/v2/tasks"
   Assert-JsonSuccess $tasks "Housekeeping tasks"
