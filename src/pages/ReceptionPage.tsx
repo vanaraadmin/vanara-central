@@ -13,7 +13,12 @@ import whatsappIcon from "../assets/img/whatsapp-logo-light.svg";
 import { PageError } from "../components/AsyncState";
 import { PassportWorkflow } from "../components/passport/PassportWorkflow";
 import WorkspaceShell from "../components/WorkspaceShell";
-import { CalendarIcon, RoomIcon, UserIcon } from "../components/OperationsIcons";
+import { RoomIcon, UserIcon } from "../components/OperationsIcons";
+import VanaraDataGrid from "../components/vanara/VanaraDataGrid";
+import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
+import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
+import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
+import VanaraSummaryGrid from "../components/vanara/VanaraSummaryGrid";
 import { loadCurrentUser } from "../services/auth.service";
 import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
 import type { BookingPassport, PassportData, ReceptionOverview, ReceptionStay } from "../types/reception";
@@ -266,7 +271,7 @@ function InternalNotesField({ queryKey, stay }: { queryKey: readonly ["reception
           />
         </label>
         <div className="reception-note-form__actions">
-          <button disabled={mutation.isPending} type="submit">{mutation.isPending ? "Saving…" : "Save"}</button>
+          <button className="vc-secondary-action" disabled={mutation.isPending} type="submit">{mutation.isPending ? "Saving…" : "Save"}</button>
           {mutation.isSuccess && <span>Saved</span>}
           {mutation.isError && <span className="is-error">Note could not be saved.</span>}
         </div>
@@ -302,7 +307,7 @@ function CompletionAction({
 
   if (completed) {
     return (
-      <div className="reception-completion reception-completion--locked">
+      <div className="reception-completion reception-completion--locked vc-secondary-action">
         <span aria-hidden="true" className="reception-completion__status">✓</span>
         <span>{completedLabel}</span>
       </div>
@@ -313,7 +318,7 @@ function CompletionAction({
 
   return (
     <button
-      className="reception-completion"
+      className="reception-completion vc-primary-action"
       onClick={(event) => {
         event.stopPropagation();
         onRequest(stay, type);
@@ -348,7 +353,7 @@ function StayCard({
   const nationality = formatNationalityText(stay.nationality);
 
   return (
-    <article className={`reception-card reception-card--${type}`} onClick={() => onDetailsRequest(stay)}>
+    <article className={`reception-card reception-card--${type} reception-booking-row`} onClick={() => onDetailsRequest(stay)}>
       <div className="reception-card__top">
         <div className="reception-room-chip">
           <RoomIcon />
@@ -357,7 +362,7 @@ function StayCard({
         <div className="reception-card__quick-actions">
           {stay.roomId && (
             <Link
-              className="reception-report-issue"
+              className="reception-report-issue vc-secondary-action"
               onClick={(event) => event.stopPropagation()}
               to={`${stay.links.maintenance}&source=reception`}
             >
@@ -390,16 +395,14 @@ function StayCard({
       </div>
 
       {type === "arrival" && (
-        <dl className="reception-stay-facts" aria-label="Stay information">
-          <div>
-            <dt>Check-out</dt>
-            <dd>{formatFullDate(stay.departure)}</dd>
-          </div>
-          <div>
-            <dt>Stay</dt>
-            <dd>{stayDuration(stay.arrival, stay.departure)}</dd>
-          </div>
-        </dl>
+        <VanaraDataGrid
+          ariaLabel="Stay information"
+          className="reception-stay-facts"
+          items={[
+            { label: "Check-out", value: formatFullDate(stay.departure) },
+            { label: "Stay", value: stayDuration(stay.arrival, stay.departure) },
+          ]}
+        />
       )}
 
       <CompletionAction canComplete={canComplete} isToday={isToday} onRequest={onCompletionRequest} stay={stay} type={type} />
@@ -425,7 +428,7 @@ function ReceptionDatePicker({
     <div className="reception-date-picker">
       <button
         aria-expanded={open}
-        className="reception-date-picker__trigger"
+        className="reception-date-picker__trigger vc-secondary-action"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
@@ -498,13 +501,11 @@ function ReceptionSection({
 }) {
   return (
     <section className={`reception-section reception-section--${type}`}>
-      <header>
-        <div>
-          <CalendarIcon />
-          <h2>{title}</h2>
-        </div>
-      </header>
-      <div className="reception-list">
+      <VanaraSectionHeader
+        eyebrow={type === "arrival" ? "Arrivals" : "Departures"}
+        title={title}
+      />
+      <div className="reception-list vc-glass-surface">
         {showSkeleton && items.length === 0 && <ReceptionSkeletonCards />}
         {!showSkeleton && items.length === 0 && <div className="reception-empty">{empty}</div>}
         {items.map((stay) => (
@@ -626,7 +627,7 @@ function CompletionModal({
         type="button"
       />
 
-      <div className="reception-sheet__panel">
+      <VanaraGlassSheet className="reception-sheet__panel">
         <div className="reception-sheet__handle" />
 
         <header className="reception-sheet__header">
@@ -648,7 +649,7 @@ function CompletionModal({
             state={passportReview}
           />
         ) : passportManagerOpen ? (
-            <PassportManagementPanel
+          <PassportManagementPanel
             isPending={passportWorkflowOpen}
             onAddAnother={openNewPassportCapture}
             onBack={() => setPassportManagerOpen(false)}
@@ -660,76 +661,86 @@ function CompletionModal({
           />
         ) : (
           <>
-            <div className="reception-sheet__checks">
-              {isArrival ? (
-                <>
-              <PassportStatusRow
-                count={passportCount}
-                disabled={passports.isLoading}
-                isPending={passportWorkflowOpen}
-                label="Passport registration completed"
-                missingText="Capture passport image"
-                onClick={openPassportFlow}
+            <VanaraGlassRegion
+              ariaLabelledBy="reception-completion-workflow-title"
+              className="reception-workflow-region"
+            >
+              <VanaraSectionHeader
+                eyebrow="Reception"
+                headingId="reception-completion-workflow-title"
+                title={isArrival ? "Check-in" : "Check-out"}
               />
-              <ChecklistRow
-                checked={draft.depositCollected}
-                icon={depositIcon}
-                label="Deposit collected"
-                onChange={(checked) => onDraftChange({
-                  ...draft,
-                  depositCollected: checked,
-                  depositReturned: checked ? draft.depositReturned : false,
-                })}
-              />
-                </>
-              ) : (
-                <>
-              <ChecklistRow
-                checked={draft.roomInspected}
-                icon={roomInspectedIcon}
-                label="Room inspected"
-                onChange={(checked) => onDraftChange({
-                  ...draft,
-                  roomInspected: checked,
-                })}
-              />
-
-              <ChecklistRow
-                checked={draft.keysReturned}
-                icon={keysIcon}
-                label="Keys returned"
-                onChange={(checked) => onDraftChange({
-                  ...draft,
-                  keysReturned: checked,
-                })}
-              />
-
-              <section className="reception-sheet__deposit" aria-label="Deposit status">
-                <span>Deposit</span>
-
-                {hasDeposit ? (
-                  <ChecklistRow
-                    checked={draft.depositReturned}
-                    icon={depositIcon}
-                    label="Deposit returned"
-                    onChange={(checked) => onDraftChange({
-                      ...draft,
-                      depositReturned: checked,
-                    })}
-                  />
+              <div className="reception-sheet__checks">
+                {isArrival ? (
+                  <>
+                    <PassportStatusRow
+                      count={passportCount}
+                      disabled={passports.isLoading}
+                      isPending={passportWorkflowOpen}
+                      label="Passport registration completed"
+                      missingText="Capture passport image"
+                      onClick={openPassportFlow}
+                    />
+                    <ChecklistRow
+                      checked={draft.depositCollected}
+                      icon={depositIcon}
+                      label="Deposit collected"
+                      onChange={(checked) => onDraftChange({
+                        ...draft,
+                        depositCollected: checked,
+                        depositReturned: checked ? draft.depositReturned : false,
+                      })}
+                    />
+                  </>
                 ) : (
-                  <div className="reception-sheet__deposit-empty">
-                    <span aria-hidden="true" className="reception-sheet__deposit-empty-icon">✓</span>
-                    <p>
-                      <strong>No deposit collected</strong>
-                      <span>No refund is required for this booking.</span>
-                    </p>
-                  </div>
+                  <>
+                    <ChecklistRow
+                      checked={draft.roomInspected}
+                      icon={roomInspectedIcon}
+                      label="Room inspected"
+                      onChange={(checked) => onDraftChange({
+                        ...draft,
+                        roomInspected: checked,
+                      })}
+                    />
+
+                    <ChecklistRow
+                      checked={draft.keysReturned}
+                      icon={keysIcon}
+                      label="Keys returned"
+                      onChange={(checked) => onDraftChange({
+                        ...draft,
+                        keysReturned: checked,
+                      })}
+                    />
+
+                    <section className="reception-sheet__deposit" aria-label="Deposit status">
+                      <span>Deposit</span>
+
+                      {hasDeposit ? (
+                        <ChecklistRow
+                          checked={draft.depositReturned}
+                          icon={depositIcon}
+                          label="Deposit returned"
+                          onChange={(checked) => onDraftChange({
+                            ...draft,
+                            depositReturned: checked,
+                          })}
+                        />
+                      ) : (
+                        <div className="reception-sheet__deposit-empty">
+                          <span aria-hidden="true" className="reception-sheet__deposit-empty-icon">✓</span>
+                          <p>
+                            <strong>No deposit collected</strong>
+                            <span>No refund is required for this booking.</span>
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  </>
                 )}
-              </section>
-                </>
-              )}
-            </div>
+              </div>
+            </VanaraGlassRegion>
 
             {error && (
               <p className="reception-modal__error" role="alert">
@@ -737,16 +748,16 @@ function CompletionModal({
               </p>
             )}
             <div className="reception-sheet__actions">
-              <button disabled={isPending} onClick={onCancel} type="button">
+              <button className="vc-secondary-action" disabled={isPending} onClick={onCancel} type="button">
                 Cancel
               </button>
-              <button disabled={isPending || !canComplete} onClick={onConfirm} type="button">
+              <button className="vc-primary-action" disabled={isPending || !canComplete} onClick={onConfirm} type="button">
                 {isPending ? "Saving..." : title}
               </button>
             </div>
           </>
         )}
-      </div>
+      </VanaraGlassSheet>
       {isArrival && (
         <PassportWorkflow
           bookingId={request.stay.bookingId}
@@ -817,7 +828,7 @@ function ContactSheet({
         type="button"
       />
 
-      <div className="reception-sheet__panel reception-contact-sheet__panel">
+      <VanaraGlassSheet className="reception-sheet__panel reception-contact-sheet__panel">
         <div className="reception-sheet__handle" />
 
         <header className="reception-contact-header">
@@ -885,20 +896,11 @@ function ContactSheet({
         )}
 
         <div className="reception-sheet__actions reception-sheet__actions--single">
-          <button onClick={onCancel} type="button">
+          <button className="vc-secondary-action" onClick={onCancel} type="button">
             Cancel
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function BookingFact({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+      </VanaraGlassSheet>
     </div>
   );
 }
@@ -1017,7 +1019,7 @@ function PassportManagementPanel({
                   <dd>{formatPassportTimestamp(passport.createdAt)}</dd>
                 </div>
               </dl>
-              <button onClick={() => onOpenPassport(passport)} type="button">
+              <button className="vc-secondary-action" onClick={() => onOpenPassport(passport)} type="button">
                 Open review
               </button>
             </article>
@@ -1026,8 +1028,8 @@ function PassportManagementPanel({
       </div>
 
       <div className="reception-sheet__actions">
-        <button disabled={isPending} onClick={onBack} type="button">Back</button>
-        <button disabled={isPending} onClick={onAddAnother} type="button">Add another passport</button>
+        <button className="vc-secondary-action" disabled={isPending} onClick={onBack} type="button">Back</button>
+        <button className="vc-primary-action" disabled={isPending} onClick={onAddAnother} type="button">Add another passport</button>
       </div>
     </section>
   );
@@ -1080,7 +1082,7 @@ function PassportReviewPanel({
       {error && <p className="reception-modal__error" role="alert">{error}</p>}
 
       <div className="reception-sheet__actions">
-        <button disabled={isPending} onClick={onCancel} type="button">
+        <button className="vc-secondary-action" disabled={isPending} onClick={onCancel} type="button">
           Back
         </button>
       </div>
@@ -1196,6 +1198,7 @@ function BookingDetailsSheet({
 
   const showCheckInChecklist = stay.arrival === today;
   const passportCount = passports.data?.length ?? 0;
+  const nationality = formatNationalityText(stay.nationality);
 
   function openPassportFlow() {
     if (passportCount > 0) {
@@ -1236,7 +1239,7 @@ function BookingDetailsSheet({
         type="button"
       />
 
-      <div className="reception-sheet__panel reception-details-sheet__panel">
+      <VanaraGlassSheet className="reception-sheet__panel reception-details-sheet__panel">
         <div className="reception-sheet__handle" />
 
         <header className="reception-sheet__header">
@@ -1249,18 +1252,60 @@ function BookingDetailsSheet({
           </p>
         </header>
 
-        <dl className="reception-stay-facts reception-details-facts" aria-label="Booking information">
-          <BookingFact label="Check-in" value={formatFullDate(stay.arrival)} />
-          <BookingFact label="Check-out" value={formatFullDate(stay.departure)} />
-          <BookingFact label="Stay" value={stayDuration(stay.arrival, stay.departure)} />
-          <BookingFact label="Guests" value={`${stay.adults} adults · ${stay.children} children`} />
-          <BookingFact label="Reference" value={stay.bookingReference ?? "Not available"} />
-          <BookingFact label="Status" value={stay.bookingStatus} />
-        </dl>
+        <VanaraGlassRegion
+          ariaLabelledBy="reception-details-guest-title"
+          className="reception-details-region"
+        >
+          <VanaraSectionHeader
+            eyebrow="Guest"
+            headingId="reception-details-guest-title"
+            title="Guest"
+          />
+          <VanaraDataGrid
+            ariaLabel="Guest information"
+            className="reception-details-facts"
+            items={[
+              { label: "Nationality", value: nationality ?? "Not available" },
+              { label: "Guests", value: `${stay.adults} adults \u00b7 ${stay.children} children` },
+              { label: "Phone", value: stay.phone ?? "Not available" },
+              { label: "Email", value: stay.email ?? "Not available" },
+            ]}
+          />
+        </VanaraGlassRegion>
+
+        <VanaraGlassRegion
+          ariaLabelledBy="reception-details-booking-title"
+          className="reception-details-region"
+        >
+          <VanaraSectionHeader
+            eyebrow="Booking"
+            headingId="reception-details-booking-title"
+            title="Booking"
+          />
+          <VanaraDataGrid
+            ariaLabel="Booking information"
+            className="reception-details-facts"
+            items={[
+              { label: "Check-in", value: formatFullDate(stay.arrival) },
+              { label: "Check-out", value: formatFullDate(stay.departure) },
+              { label: "Stay", value: stayDuration(stay.arrival, stay.departure) },
+              { label: "Source", value: bookingSourceLabel(stay) },
+              { label: "Reference", value: stay.bookingReference ?? "Not available" },
+              { label: "Status", value: stay.bookingStatus },
+            ]}
+          />
+        </VanaraGlassRegion>
 
         {showCheckInChecklist && (
-          <section className="reception-details-checklist" aria-label="Check-in checklist">
-            <span>Check-in Checklist</span>
+          <VanaraGlassRegion
+            ariaLabelledBy="reception-details-checkin-title"
+            className="reception-details-region reception-details-checklist"
+          >
+            <VanaraSectionHeader
+              eyebrow="Reception"
+              headingId="reception-details-checkin-title"
+              title="Check-in"
+            />
             {passportReview ? (
               <PassportReviewPanel
                 error={null}
@@ -1299,17 +1344,27 @@ function BookingDetailsSheet({
                 {depositError && <p className="reception-modal__error" role="alert">{depositError}</p>}
               </>
             )}
-          </section>
+          </VanaraGlassRegion>
         )}
 
-        <InternalNotesField queryKey={queryKey} stay={stay} />
+        <VanaraGlassRegion
+          ariaLabelledBy="reception-details-notes-title"
+          className="reception-details-region"
+        >
+          <VanaraSectionHeader
+            eyebrow="Alerts"
+            headingId="reception-details-notes-title"
+            title="Internal Notes"
+          />
+          <InternalNotesField queryKey={queryKey} stay={stay} />
+        </VanaraGlassRegion>
 
         <div className="reception-sheet__actions reception-sheet__actions--single">
-          <button onClick={onCancel} type="button">
+          <button className="vc-secondary-action" onClick={onCancel} type="button">
             Close
           </button>
         </div>
-      </div>
+      </VanaraGlassSheet>
       {showCheckInChecklist && (
         <PassportWorkflow
           bookingId={stay.bookingId}
@@ -1376,14 +1431,18 @@ export default function ReceptionPage() {
     <WorkspaceShell title="Check-In / Out" workspace="reception" bodyClassName="reception-page">
       <div className="workspace-body-actions reception-date-actions">
         <span>{reception.data ? formatDate(reception.data.date) : formatDate(selectedDate)}</span>
-        <button className="reception-today-chip" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">Today</button>
+        <button className="reception-today-chip vc-secondary-action" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">Today</button>
         <ReceptionDatePicker onChange={setSelectedDate} selectedDate={selectedDate} today={today} />
       </div>
 
-      <section className="reception-summary" aria-label="Reception Summary">
-        <div><span>{arrivalTitle}</span><strong>{summary.arrivals}</strong></div>
-        <div><span>{departureTitle}</span><strong>{summary.departures}</strong></div>
-      </section>
+      <VanaraSummaryGrid
+        ariaLabel="Reception Summary"
+        className="reception-summary"
+        items={[
+          { label: arrivalTitle, tone: summary.arrivals > 0 ? "warning" : "clean", value: summary.arrivals },
+          { label: departureTitle, tone: summary.departures > 0 ? "warning" : "clean", value: summary.departures },
+        ]}
+      />
 
       {reception.isError && !reception.data && <PageError onRetry={() => void reception.refetch()} />}
 

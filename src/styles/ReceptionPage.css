@@ -1,45 +1,20 @@
 .reception-page {
+  display: grid;
+  gap: var(--vc-space-6);
   width: 100%;
 }
 
-.reception-date-picker,
-.reception-date-picker__trigger,
-.reception-today-chip,
-.reception-date-picker__panel .rdp-root,
-.reception-summary,
-.reception-section > header,
-.reception-section > header div,
-.reception-card__top,
-.reception-room-chip,
-.reception-guest,
-.reception-contact-trigger,
-.checkin-card__housekeeping,
-.reception-stay-facts,
-.reception-completion,
-.reception-modal__actions,
-.reception-sheet__actions,
-.reception-note-form__actions {
-  display: flex;
-}
-
 .reception-date-actions {
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: var(--vc-space-2);
 }
 
-.reception-today-chip {
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(247, 244, 238, 0.22);
-  border-radius: 999px;
-  background: rgba(247, 244, 238, 0.12);
-  color: #f7f4ee;
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  padding: 0 16px;
+.reception-today-chip,
+.reception-date-picker__trigger {
+  min-height: var(--vc-touch-min);
+  padding-inline: var(--vc-space-4);
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .reception-today-chip:disabled {
@@ -48,56 +23,51 @@
 
 .reception-date-picker {
   position: relative;
-  align-items: center;
 }
 
 .reception-date-picker__trigger {
-  min-height: 52px;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  border: 1px solid rgba(247, 244, 238, 0.22);
-  border-radius: 22px;
-  background: linear-gradient(145deg, rgba(247, 244, 238, 0.18), rgba(247, 244, 238, 0.08));
-  color: #f7f4ee;
-  font: inherit;
-  padding: 8px 14px;
-  box-shadow: 0 14px 30px rgba(5, 20, 13, 0.16);
+  gap: var(--vc-space-3);
+  border-radius: var(--vc-radius-pill);
 }
 
 .reception-date-picker__trigger span {
-  color: rgba(247, 244, 238, 0.72);
-  font-size: 0.64rem;
-  font-weight: 850;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  color: rgba(247, 244, 238, 0.68);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
 }
 
 .reception-date-picker__trigger strong {
-  font-size: 1rem;
-  letter-spacing: -0.02em;
+  color: rgba(250, 247, 238, 0.96);
+  font-size: var(--vc-type-body);
   white-space: nowrap;
 }
 
 .reception-date-picker__panel {
   position: absolute;
-  z-index: 20;
-  top: calc(100% + 10px);
+  z-index: var(--vc-z-overlay);
+  top: calc(100% + var(--vc-space-2));
   right: 0;
   width: min(92vw, 420px);
+  padding: var(--vc-space-4);
   border: 1px solid rgba(247, 244, 238, 0.24);
   border-radius: 30px;
-  background: linear-gradient(145deg, rgba(247, 244, 238, 0.94), rgba(232, 221, 204, 0.9));
+  color: var(--vc-color-jungle-900);
+  background:
+    linear-gradient(145deg, rgba(247, 244, 238, 0.94), rgba(232, 221, 204, 0.9));
   box-shadow: 0 28px 80px rgba(3, 14, 10, 0.38);
-  padding: 16px;
   backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
 }
 
 .reception-date-picker__panel .rdp-root {
   width: 100%;
+  display: flex;
   flex-direction: column;
-  gap: 14px;
-  color: #173b2d;
-  --rdp-accent-color: #173b2d;
+  gap: var(--vc-space-4);
+  --rdp-accent-color: var(--vc-color-jungle-900);
   --rdp-day_button-width: 44px;
   --rdp-day_button-height: 44px;
   --rdp-day-width: 46px;
@@ -112,49 +82,38 @@
   width: 100%;
 }
 
+.reception-date-picker__panel .rdp-caption,
+.reception-date-picker__panel .rdp-dropdowns,
+.reception-date-picker__panel .rdp-nav {
+  display: flex;
+  gap: var(--vc-space-2);
+}
+
 .reception-date-picker__panel .rdp-caption {
   align-items: center;
   justify-content: space-between;
 }
 
-.reception-date-picker__panel .rdp-dropdowns {
-  display: flex;
-  gap: 8px;
-}
-
-.reception-date-picker__panel .rdp-dropdown {
-  min-height: 44px;
-  border: 1px solid rgba(23, 59, 45, 0.14);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.54);
-  color: #173b2d;
-  font: inherit;
-  font-weight: 800;
-  padding: 0 10px;
-}
-
-.reception-date-picker__panel .rdp-dropdown_root .rdp-caption_label {
-  display: none;
-}
-
-.reception-date-picker__panel .rdp-dropdown_root .rdp-chevron {
-  display: none;
-}
-
 .reception-date-picker__panel .rdp-nav {
-  display: flex;
   justify-content: flex-end;
-  gap: 8px;
+}
+
+.reception-date-picker__panel .rdp-dropdown,
+.reception-date-picker__panel .rdp-button_previous,
+.reception-date-picker__panel .rdp-button_next {
+  min-height: var(--vc-touch-min);
+  border: 1px solid rgba(23, 59, 45, 0.14);
+  border-radius: var(--vc-radius-lg);
+  color: var(--vc-color-jungle-900);
+  background: rgba(255, 255, 255, 0.54);
+  font: inherit;
+  font-weight: var(--vc-weight-bold);
 }
 
 .reception-date-picker__panel .rdp-button_previous,
 .reception-date-picker__panel .rdp-button_next {
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(23, 59, 45, 0.12);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.56);
-  color: #173b2d;
+  width: var(--vc-touch-min);
+  border-radius: var(--vc-radius-pill);
 }
 
 .reception-date-picker__panel table {
@@ -164,137 +123,93 @@
 
 .reception-date-picker__panel .rdp-weekday {
   color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .reception-date-picker__panel .rdp-day_button {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--vc-radius-pill);
+  color: var(--vc-color-jungle-900);
   background: transparent;
-  color: #173b2d;
   font: inherit;
-  font-size: 1.05rem;
-  font-weight: 850;
-}
-
-.reception-date-picker__panel .rdp-day_button:hover {
-  background: rgba(23, 59, 45, 0.08);
 }
 
 .reception-date-picker__panel .rdp-selected .rdp-day_button {
-  background: #173b2d;
-  color: #f7f4ee;
+  color: var(--vc-color-sand-100);
+  background: var(--vc-color-jungle-900);
 }
 
 .reception-date-picker__panel .rdp-disabled .rdp-day_button {
   color: rgba(23, 59, 45, 0.22);
 }
 
-.reception-date-picker__panel .rdp-outside {
-  opacity: 0.35;
-}
-
 .reception-summary {
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.reception-summary div {
-  min-width: 0;
-  flex: 1 1 0;
-  display: grid;
-  gap: 6px;
-  padding: 18px;
-  border: 1px solid rgba(247, 244, 238, 0.16);
-  border-radius: 24px;
-  background: rgba(247, 244, 238, 0.1);
-  box-shadow: 0 18px 36px rgba(5, 20, 13, 0.18);
-}
-
-.reception-summary span {
-  color: rgba(247, 244, 238, 0.78);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.reception-summary strong {
-  color: #f7f4ee;
-  font-size: clamp(2.4rem, 15vw, 4.2rem);
-  line-height: 0.9;
+  margin: 0;
 }
 
 .reception-agenda,
-.reception-section,
-.reception-list,
-.reception-card,
-.reception-note-form,
-.reception-note-form label {
-  display: grid;
-}
-
-.reception-agenda {
-  gap: 24px;
-}
-
 .reception-section {
-  gap: 12px;
-}
-
-.reception-section > header {
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2px;
-}
-
-.reception-section > header div {
-  align-items: center;
-  gap: 10px;
-}
-
-.reception-section svg {
-  width: 21px;
-  height: 21px;
-  color: rgba(247, 244, 238, 0.72);
-}
-
-.reception-section h2 {
-  margin: 0;
-  color: #f7f4ee;
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  display: grid;
+  gap: var(--vc-space-4);
 }
 
 .reception-list {
-  gap: 12px;
+  display: grid;
+  gap: 0;
+  padding: var(--vc-space-4) 0;
 }
 
 .reception-card,
 .reception-empty {
-  border: 1px solid rgba(247, 244, 238, 0.14);
-  border-radius: 24px;
-  box-shadow: 0 20px 44px rgba(7, 30, 20, 0.18);
+  position: relative;
+  z-index: 1;
 }
 
 .reception-card {
-  background: #f6f2ea;
-  gap: 18px;
-  padding: 20px;
+  display: grid;
+  gap: var(--vc-space-4);
+  min-width: 0;
+  padding: var(--vc-space-4) var(--vc-space-4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--workspace-cream);
+  background: transparent;
   cursor: pointer;
+  transition:
+    background var(--vc-duration-fast) var(--vc-ease-standard),
+    transform var(--vc-duration-fast) var(--vc-ease-standard);
 }
 
-.reception-empty {
-  background: rgba(247, 244, 238, 0.92);
+.reception-card:last-child {
+  border-bottom: 0;
+}
+
+.reception-card:hover,
+.reception-card:focus-within {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.reception-card:active {
+  transform: translateY(1px);
 }
 
 .reception-card--skeleton {
   min-height: 178px;
   justify-content: center;
+}
+
+.reception-card__top,
+.reception-room-chip,
+.reception-card__quick-actions,
+.reception-guest,
+.checkin-card__housekeeping,
+.reception-completion,
+.reception-modal__actions,
+.reception-sheet__actions,
+.reception-note-form__actions {
+  display: flex;
 }
 
 .reception-card__top,
@@ -306,18 +221,21 @@
 
 .reception-card__top {
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--vc-space-3);
 }
 
 .reception-room-chip {
   min-width: 0;
-  gap: 8px;
-  color: #173b2d;
-  font-size: 1rem;
-  font-weight: 850;
+  gap: var(--vc-space-2);
+  color: rgba(250, 247, 238, 0.96);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body);
+  font-weight: var(--vc-weight-semibold);
 }
 
-.reception-room-chip span {
+.reception-room-chip span,
+.reception-booking-source,
+.reception-nationality {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -327,79 +245,43 @@
   width: 20px;
   height: 20px;
   flex: 0 0 auto;
-  color: #173b2d;
 }
 
 .reception-card__quick-actions {
-  display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: var(--vc-space-2);
 }
 
 .reception-report-issue {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border: 1px solid rgba(23, 59, 45, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.4);
-  color: rgba(23, 59, 45, 0.72);
-  font-size: 0.76rem;
-  font-weight: 850;
-  text-decoration: none;
+  min-height: var(--vc-touch-min);
+  padding-inline: var(--vc-space-3);
+  border-radius: var(--vc-radius-pill);
+  font-size: var(--vc-type-utility-xs);
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .reception-contact-trigger {
-  width: 44px;
-  height: 44px;
+  width: var(--vc-touch-min);
+  height: var(--vc-touch-min);
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(23, 59, 45, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.4);
   padding: 0;
-  opacity: 0.72;
-  box-shadow: 0 8px 18px rgba(23, 59, 45, 0.05);
-  cursor: pointer;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease,
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+  border: 1px solid rgba(237, 241, 232, 0.22);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(247, 244, 238, 0.84);
+  background: rgba(247, 244, 238, 0.1);
 }
 
 .reception-contact-trigger img {
   width: 20px;
   height: 20px;
-  display: block;
   opacity: 0.82;
 }
 
-.reception-contact-trigger:hover {
-  border-color: rgba(23, 59, 45, 0.14);
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 10px 22px rgba(23, 59, 45, 0.09);
-  opacity: 1;
-  transform: translateY(-1px) scale(1.02);
-}
-
-.reception-contact-trigger:active {
-  box-shadow: 0 4px 10px rgba(23, 59, 45, 0.06);
-  transform: scale(0.96);
-}
-
-.reception-contact-trigger:focus-visible {
-  outline: 3px solid rgba(178, 138, 70, 0.28);
-  outline-offset: 2px;
-}
-
 .reception-guest {
-  gap: 14px;
+  gap: var(--vc-space-3);
 }
 
 .reception-guest > svg {
@@ -407,9 +289,10 @@
   height: 44px;
   flex: 0 0 auto;
   padding: 10px;
-  border-radius: 999px;
-  background: #f7f4ee;
-  color: #173b2d;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: var(--vc-radius-pill);
+  color: var(--workspace-ink);
+  background: var(--vc-color-sand-100);
 }
 
 .reception-guest h3,
@@ -418,184 +301,99 @@
 }
 
 .reception-guest h3 {
-  color: #173b2d;
-  font-size: 1.32rem;
-  font-weight: 850;
-  letter-spacing: -0.03em;
+  color: rgba(250, 247, 238, 0.97);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-card-title);
+  font-weight: var(--vc-weight-regular);
+  line-height: 1.02;
 }
 
 .reception-guest p {
-  margin-top: 3px;
-  color: rgba(23, 59, 45, 0.62);
-  font-size: 0.92rem;
-  font-weight: 700;
+  margin-top: var(--vc-space-1);
+  color: rgba(244, 237, 223, 0.62);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body-sm);
+  font-weight: var(--vc-weight-medium);
 }
 
 .reception-nationality {
-  color: rgba(23, 59, 45, 0.54) !important;
-  font-size: 0.84rem !important;
-  font-weight: 650 !important;
+  color: rgba(244, 237, 223, 0.64) !important;
+  font-size: var(--vc-type-body-sm) !important;
+  font-weight: var(--vc-weight-semibold) !important;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .reception-booking-source {
-  color: rgba(23, 59, 45, 0.48) !important;
-  font-size: 0.78rem !important;
-  font-weight: 750 !important;
-}
-
-.checkin-card__housekeeping {
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  font-size: 0.92rem;
-  font-weight: 600;
-  white-space: nowrap;
+  color: rgba(244, 237, 223, 0.46) !important;
+  font-size: var(--vc-type-utility-sm) !important;
+  font-weight: var(--vc-weight-semibold) !important;
 }
 
 .reception-maintenance-badge {
   width: fit-content;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-2);
   padding: 7px 10px;
-  border-radius: 999px;
-  background: rgba(178, 138, 70, 0.14);
-  color: #725325;
-  font-size: 0.76rem;
-  font-weight: 850;
+  border: 1px solid rgba(208, 166, 99, 0.34);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(255, 239, 211, 0.98);
+  background: rgba(208, 166, 99, 0.16);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
   text-transform: uppercase;
 }
 
 .reception-maintenance-badge.is-blocking {
-  background: rgba(163, 63, 54, 0.14);
-  color: #9d352d;
+  border-color: rgba(210, 139, 126, 0.36);
+  color: rgba(255, 236, 232, 0.98);
+  background: rgba(210, 139, 126, 0.17);
 }
 
-.reception-maintenance-badge strong {
-  font-size: 0.72rem;
+.checkin-card__housekeeping {
+  align-items: center;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-2);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body-sm);
+  font-weight: var(--vc-weight-semibold);
+  white-space: nowrap;
 }
 
 .checkin-card__housekeeping--clean {
-  color: #42c46b;
+  color: rgba(232, 255, 236, 0.98);
 }
 
 .checkin-card__housekeeping--in_progress {
-  color: #f28c28;
+  color: rgba(232, 247, 255, 0.98);
 }
 
 .checkin-card__housekeeping--dirty {
-  color: #df4b4b;
+  color: rgba(255, 239, 211, 0.98);
 }
 
 .checkin-card__housekeeping-icon {
   width: 18px;
   height: 18px;
-  box-sizing: border-box;
-  flex: none;
+  flex: 0 0 auto;
   background: currentColor;
   mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
-  overflow: hidden;
-  padding-left: 18px;
   -webkit-mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
 }
 
-.checkin-card__housekeeping-icon--clean {
-  color: currentColor;
-}
-
-.checkin-card__housekeeping-icon--in_progress {
-  color: currentColor;
-}
-
-.checkin-card__housekeeping-icon--dirty {
-  color: currentColor;
-}
-
-.checkin-card__housekeeping-label {
-  color: inherit;
-}
-
 .reception-stay-facts {
-  gap: 10px;
-  margin: 0;
-}
-
-.reception-stay-facts div {
-  min-width: 0;
-  flex: 1 1 0;
-  display: grid;
-  gap: 4px;
-  border: 1px solid rgba(23, 59, 45, 0.1);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.46);
-  padding: 12px;
-}
-
-.reception-stay-facts dt,
-.reception-stay-facts dd {
-  margin: 0;
-}
-
-.reception-stay-facts dt {
-  color: rgba(23, 59, 45, 0.52);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.reception-stay-facts dd {
-  color: #173b2d;
-  font-size: 1rem;
-  font-weight: 850;
 }
 
 .reception-completion {
-  min-height: 56px;
   width: 100%;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid rgba(23, 59, 45, 0.14);
-  border-radius: 18px;
-  background: rgba(23, 59, 45, 0.08);
-  color: #173b2d;
-  font: inherit;
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-}
-
-button.reception-completion {
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease,
-    box-shadow 160ms ease;
-}
-
-button.reception-completion:hover {
-  border-color: rgba(23, 59, 45, 0.2);
-  background: rgba(23, 59, 45, 0.12);
-  box-shadow: 0 10px 22px rgba(23, 59, 45, 0.07);
-}
-
-button.reception-completion:active {
-  transform: scale(0.985);
-}
-
-button.reception-completion:focus-visible {
-  outline: 3px solid rgba(178, 138, 70, 0.28);
-  outline-offset: 2px;
 }
 
 .reception-completion--locked {
-  background: rgba(23, 59, 45, 0.055);
-  color: rgba(23, 59, 45, 0.5);
+  opacity: 0.76;
 }
 
 .reception-completion__status {
@@ -604,31 +402,31 @@ button.reception-completion:focus-visible {
   display: inline-grid;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
-  background: #173b2d;
-  color: #f7f4ee;
-  font-size: 0.78rem;
-  font-weight: 950;
+  border-radius: var(--vc-radius-pill);
+  background: rgba(247, 244, 238, 0.18);
+  color: rgba(250, 247, 238, 0.96);
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
 }
 
 .reception-completion__status--open {
-  border: 2px solid rgba(23, 59, 45, 0.42);
+  border: 2px solid rgba(247, 244, 238, 0.42);
   background: transparent;
 }
 
 .reception-note-details {
-  border-top: 1px solid rgba(23, 59, 45, 0.1);
-  padding-top: 4px;
+  border-top: 1px solid rgba(235, 241, 233, 0.1);
+  padding-top: var(--vc-space-1);
 }
 
 .reception-note-details summary {
   min-height: 40px;
   display: flex;
   align-items: center;
-  color: rgba(23, 59, 45, 0.58);
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 900;
+  color: rgba(244, 237, 223, 0.58);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
   letter-spacing: 0.08em;
   list-style: none;
   text-transform: uppercase;
@@ -639,58 +437,42 @@ button.reception-completion:focus-visible {
 }
 
 .reception-note-details summary::before {
-  content: "▸";
-  margin-right: 8px;
-  transition: transform 160ms ease;
+  content: ">";
+  margin-right: var(--vc-space-2);
+  transition: transform var(--vc-duration-fast) var(--vc-ease-standard);
 }
 
 .reception-note-details[open] summary::before {
   transform: rotate(90deg);
 }
 
-.reception-note-form {
-  gap: 8px;
-  padding-top: 4px;
-}
-
+.reception-note-form,
 .reception-note-form label {
-  gap: 7px;
-  color: rgba(23, 59, 45, 0.72);
-  font-size: 0.72rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: grid;
+  gap: var(--vc-space-2);
 }
 
 .reception-note-form textarea {
   width: 100%;
-  border: 1px solid rgba(23, 59, 45, 0.14);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.76);
-  color: #173b2d;
+  min-height: 76px;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(235, 241, 233, 0.16);
+  border-radius: var(--vc-radius-lg);
+  color: rgba(250, 247, 238, 0.92);
+  background: rgba(255, 255, 255, 0.055);
   font: inherit;
-  font-size: 0.95rem;
-  font-weight: 650;
-  letter-spacing: 0;
-  line-height: 1.45;
-  padding: 11px;
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body);
   resize: vertical;
-  text-transform: none;
 }
 
 .reception-note-form__actions {
   align-items: center;
-  gap: 10px;
+  gap: var(--vc-space-2);
 }
 
 .reception-note-form button {
-  min-height: 40px;
-  border: 0;
-  border-radius: 999px;
-  background: #173b2d;
-  color: #f7f4ee;
-  font-weight: 850;
-  padding: 0 16px;
+  padding-inline: var(--vc-space-4);
 }
 
 .reception-note-form button:disabled {
@@ -698,27 +480,35 @@ button.reception-completion:focus-visible {
 }
 
 .reception-note-form__actions span {
-  color: rgba(23, 59, 45, 0.62);
-  font-size: 0.84rem;
-  font-weight: 800;
+  color: rgba(244, 237, 223, 0.62);
+  font-size: var(--vc-type-body-sm);
 }
 
-.reception-note-form__actions .is-error {
-  color: #9f3b2f;
+.reception-note-form__actions .is-error,
+.reception-modal__error {
+  color: rgba(255, 236, 232, 0.98) !important;
 }
 
 .reception-empty {
-  min-height: 64px;
+  min-height: 80px;
   display: grid;
   place-items: center;
-  padding: 18px;
-  color: rgba(23, 59, 45, 0.62);
-  font-weight: 850;
+  padding: var(--vc-space-5);
+  color: rgba(244, 237, 223, 0.62);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body);
+  font-weight: var(--vc-weight-semibold);
 }
 
 .reception-skeleton {
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(23, 59, 45, 0.08), rgba(23, 59, 45, 0.15), rgba(23, 59, 45, 0.08));
+  border-radius: var(--vc-radius-pill);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(244, 237, 223, 0.07),
+      rgba(244, 237, 223, 0.16),
+      rgba(244, 237, 223, 0.07)
+    );
   background-size: 220% 100%;
   animation: reception-skeleton 1.2s ease-in-out infinite;
 }
@@ -736,7 +526,7 @@ button.reception-completion:focus-visible {
 .reception-skeleton--action {
   width: 100%;
   height: 54px;
-  border-radius: 18px;
+  border-radius: var(--vc-radius-lg);
 }
 
 @keyframes reception-skeleton {
@@ -749,32 +539,29 @@ button.reception-completion:focus-visible {
   }
 }
 
-.reception-modal {
+.reception-modal,
+.reception-sheet {
   position: fixed;
-  z-index: 80;
+  z-index: var(--vc-z-overlay);
   inset: 0;
+}
+
+.reception-modal {
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--vc-space-6);
   background: rgba(6, 24, 17, 0.34);
   backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .reception-modal__panel {
   width: min(100%, 440px);
   display: grid;
   justify-items: center;
-  gap: 10px;
-  border: 1px solid rgba(247, 244, 238, 0.28);
-  border-radius: 34px;
-  background: linear-gradient(145deg, rgba(247, 244, 238, 0.94), rgba(232, 221, 204, 0.9));
-  box-shadow: 0 32px 100px rgba(3, 14, 10, 0.46);
-  padding: 30px 22px 22px;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-6) var(--vc-space-5) var(--vc-space-5);
   text-align: center;
-}
-
-.reception-modal__icon {
-  font-size: 2.6rem;
 }
 
 .reception-modal h2,
@@ -783,74 +570,28 @@ button.reception-completion:focus-visible {
 }
 
 .reception-modal h2 {
-  color: #173b2d;
-  font-size: 1.8rem;
-  font-weight: 900;
-  letter-spacing: -0.05em;
-}
-
-.reception-modal strong {
-  color: rgba(23, 59, 45, 0.82);
-  font-size: 1.18rem;
-  font-weight: 900;
+  color: rgba(250, 247, 238, 0.97);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-section-title);
+  font-weight: var(--vc-weight-regular);
 }
 
 .reception-modal p {
-  max-width: 320px;
-  color: rgba(23, 59, 45, 0.68);
-  font-size: 1.02rem;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-.reception-modal__guest {
-  color: #173b2d !important;
-  font-size: 1.16rem !important;
-  font-weight: 900 !important;
-}
-
-.reception-modal__warning {
-  color: #8a4a28 !important;
-}
-
-.reception-modal__error {
-  color: #9f3b2f !important;
+  color: rgba(244, 237, 223, 0.68);
+  font-size: var(--vc-type-body);
 }
 
 .reception-modal__actions {
   width: 100%;
-  gap: 10px;
-  margin-top: 10px;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-2);
 }
 
 .reception-modal__actions button {
-  min-height: 56px;
   flex: 1 1 0;
-  border: 0;
-  border-radius: 999px;
-  font: inherit;
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.reception-modal__actions button:first-child {
-  background: rgba(23, 59, 45, 0.08);
-  color: rgba(23, 59, 45, 0.72);
-}
-
-.reception-modal__actions button:last-child {
-  background: #173b2d;
-  color: #f7f4ee;
-}
-
-.reception-modal__actions button:disabled {
-  opacity: 0.62;
 }
 
 .reception-sheet {
-  position: fixed;
-  z-index: 80;
-  inset: 0;
   display: grid;
   align-items: end;
 }
@@ -861,184 +602,180 @@ button.reception-completion:focus-visible {
   border: 0;
   background: rgba(6, 24, 17, 0.42);
   backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .reception-sheet__panel {
-  position: relative;
   width: min(100%, 540px);
   max-height: min(88dvh, 760px);
   justify-self: center;
   display: grid;
-  gap: 20px;
+  gap: var(--vc-space-5);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid rgba(247, 244, 238, 0.36);
   border-radius: 30px 30px 0 0;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(249, 246, 240, 0.99),
-      rgba(234, 225, 210, 0.97)
-    );
-  box-shadow: 0 -26px 90px rgba(3, 14, 10, 0.42);
-  padding: 14px 20px calc(20px + var(--vc-safe-bottom));
-  animation: reception-sheet-in 180ms ease-out;
-}
-
-.reception-sheet__panel--passport-capture {
-  height: 100dvh;
-  max-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-  padding-top: max(12px, env(safe-area-inset-top));
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  padding: 14px var(--vc-space-5) calc(var(--vc-space-5) + var(--vc-safe-bottom));
+  color: var(--workspace-cream);
+  animation: reception-sheet-in var(--vc-duration-normal) var(--vc-ease-emphasized);
 }
 
 .reception-sheet__handle {
   width: 46px;
   height: 5px;
   justify-self: center;
-  border-radius: 999px;
-  background: rgba(23, 59, 45, 0.24);
+  border-radius: var(--vc-radius-pill);
+  background: rgba(244, 237, 223, 0.26);
 }
 
-.reception-sheet header {
+.reception-sheet__header {
+  min-height: 104px;
   display: grid;
-  gap: 4px;
+  align-content: center;
+  gap: var(--vc-space-1);
+  padding-bottom: var(--vc-space-2);
 }
 
-.reception-sheet header span {
-  color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
+.reception-sheet__header span,
+.reception-contact-header > div > span,
+.passport-management header span,
+.passport-review header span,
+.reception-sheet__deposit > span {
+  color: rgba(247, 244, 238, 0.62);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
+  letter-spacing: 0.11em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
 .reception-sheet h2,
-.reception-sheet p {
+.reception-contact-header h2,
+.passport-management header h3,
+.passport-review header h3 {
   margin: 0;
+  color: rgba(250, 247, 238, 0.97);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-room-title);
+  font-weight: var(--vc-weight-regular);
+  line-height: 1.05;
 }
 
-.reception-sheet h2 {
-  color: #173b2d;
-  font-size: 1.55rem;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-}
-
-.reception-sheet header p {
-  color: rgba(23, 59, 45, 0.68);
-  font-weight: 800;
-}
-
-.reception-sheet__header p,
+.reception-sheet p,
 .reception-contact-header p {
-  color: rgba(23, 59, 45, 0.62);
-  font-size: 0.94rem;
-  line-height: 1.45;
+  margin: 0;
+  color: rgba(244, 237, 223, 0.64);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body);
+  line-height: 1.4;
 }
 
-.reception-sheet__header p strong,
+.reception-sheet p strong,
 .reception-contact-header p strong {
-  color: #173b2d;
-  font-weight: 900;
+  color: rgba(250, 247, 238, 0.94);
+  font-weight: var(--vc-weight-semibold);
 }
 
-.reception-sheet__checks {
+.reception-sheet__checks,
+.reception-details-checklist,
+.reception-contact-actions,
+.passport-management,
+.passport-review,
+.passport-management__list,
+.passport-review__fields {
   display: grid;
-  gap: 12px;
+  gap: var(--vc-space-3);
 }
 
-.reception-sheet-icon {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  opacity: 0.68;
+.reception-workflow-region,
+.reception-details-region {
+  display: grid;
+  gap: var(--vc-space-4);
+  padding: var(--vc-space-4);
 }
 
-.reception-check-row {
-  position: relative;
+.reception-check-row,
+.reception-contact-action,
+.passport-management-card {
   min-height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  overflow: hidden;
-  border: 1px solid rgba(23, 59, 45, 0.1);
+  gap: var(--vc-space-4);
+  padding: var(--vc-space-3) var(--vc-space-4);
+  border: 1px solid rgba(235, 241, 233, 0.12);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.52);
-  color: #173b2d;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
-.reception-check-row:hover {
-  border-color: rgba(23, 59, 45, 0.16);
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.reception-check-row:active {
-  transform: scale(0.992);
-}
-
-.reception-check-row.is-checked {
-  border-color: rgba(23, 59, 45, 0.2);
-  background: rgba(23, 59, 45, 0.075);
-  box-shadow: inset 0 0 0 1px rgba(23, 59, 45, 0.035);
-}
-
-.reception-check-row:focus-within {
-  outline: 3px solid rgba(178, 138, 70, 0.25);
-  outline-offset: 2px;
+  color: var(--workspace-cream);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .reception-check-row__input {
   position: absolute;
   width: 1px;
   height: 1px;
-  overflow: hidden;
   opacity: 0;
   pointer-events: none;
 }
 
-.reception-check-row__content {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-
-.reception-check-row__icon {
-  width: 42px;
-  height: 42px;
+.reception-check-row__content,
+.reception-contact-action__copy {
   display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(23, 59, 45, 0.07);
-}
-
-.reception-check-row__icon .reception-sheet-icon {
-  width: 23px;
-  height: 23px;
-  opacity: 0.72;
-}
-
-.reception-check-row__label {
   min-width: 0;
-  color: #173b2d;
-  font-size: 0.98rem;
-  font-weight: 850;
-  line-height: 1.25;
+  gap: var(--vc-space-1);
+}
+
+.reception-check-row__content {
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--vc-space-3);
+}
+
+.reception-check-row__icon,
+.reception-contact-action__icon,
+.reception-contact-header__icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.reception-check-row__icon,
+.reception-contact-action__icon {
+  width: 44px;
+  height: 44px;
+}
+
+.reception-contact-header__icon {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+}
+
+.reception-sheet-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.76;
+}
+
+.reception-check-row__label,
+.reception-contact-action__copy strong,
+.passport-management-card strong {
+  color: rgba(250, 247, 238, 0.94);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-body);
+  font-weight: var(--vc-weight-regular);
+}
+
+.reception-check-row__label small,
+.reception-contact-action__copy small,
+.passport-management-card span,
+.passport-management-card dd {
+  display: block;
+  color: rgba(244, 237, 223, 0.58);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body-sm);
 }
 
 .reception-check-row__control {
@@ -1047,63 +784,54 @@ button.reception-completion:focus-visible {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border: 2px solid rgba(23, 59, 45, 0.24);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.66);
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
+  border: 2px solid rgba(244, 237, 223, 0.28);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(250, 247, 238, 0.96);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .reception-check-row__control svg {
   width: 17px;
   height: 17px;
   fill: none;
-  stroke: #f7f4ee;
+  stroke: currentColor;
   stroke-width: 2.8;
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0;
-  transform: scale(0.65);
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
 }
 
 .reception-check-row.is-checked .reception-check-row__control {
-  border-color: #173b2d;
-  background: #173b2d;
-  transform: scale(1.02);
+  border-color: rgba(139, 196, 147, 0.34);
+  color: rgba(232, 255, 236, 0.98);
+  background: rgba(139, 196, 147, 0.15);
 }
 
 .reception-check-row.is-checked .reception-check-row__control svg {
   opacity: 1;
-  transform: scale(1);
+}
+
+.reception-check-row__control--warning {
+  border-color: rgba(208, 166, 99, 0.34);
+  color: rgba(255, 239, 211, 0.98);
+  background: rgba(208, 166, 99, 0.16);
+  font-weight: var(--vc-weight-bold);
 }
 
 .reception-sheet__deposit {
   display: grid;
-  gap: 8px;
-}
-
-.reception-sheet__deposit > span {
-  color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  gap: var(--vc-space-2);
 }
 
 .reception-sheet__deposit-empty {
-  min-height: 72px;
   display: flex;
   align-items: center;
-  gap: 13px;
-  border: 1px solid rgba(23, 59, 45, 0.08);
+  gap: var(--vc-space-3);
+  min-height: 72px;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(235, 241, 233, 0.12);
   border-radius: 20px;
-  background: rgba(23, 59, 45, 0.055);
-  padding: 13px 15px;
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .reception-sheet__deposit-empty-icon {
@@ -1112,210 +840,46 @@ button.reception-completion:focus-visible {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
-  background: rgba(23, 59, 45, 0.11);
-  color: #173b2d;
-  font-size: 0.85rem;
-  font-weight: 950;
-}
-
-.reception-sheet__deposit-empty p {
-  display: grid;
-  gap: 3px;
-  color: #173b2d;
-  line-height: 1.35;
-}
-
-.reception-sheet__deposit-empty strong {
-  font-size: 0.96rem;
-  font-weight: 900;
-}
-
-.reception-sheet__deposit-empty p span {
-  color: rgba(23, 59, 45, 0.62);
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.reception-contact-sheet__panel {
-  gap: 18px;
+  border-radius: var(--vc-radius-pill);
+  color: rgba(232, 255, 236, 0.98);
+  background: rgba(139, 196, 147, 0.15);
 }
 
 .reception-contact-header {
   display: flex !important;
   align-items: center;
-  gap: 15px;
-}
-
-.reception-contact-header__icon {
-  width: 54px;
-  height: 54px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid rgba(23, 59, 45, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
-  box-shadow: 0 10px 24px rgba(23, 59, 45, 0.06);
-}
-
-.reception-contact-header__icon img {
-  width: 25px;
-  height: 25px;
-  opacity: 0.78;
+  gap: var(--vc-space-4);
 }
 
 .reception-contact-header > div {
+  display: grid;
   min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.reception-contact-header > div > span {
-  color: rgba(23, 59, 45, 0.5);
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.reception-contact-header h2 {
-  margin: 0;
-}
-
-.reception-contact-actions {
-  display: grid;
-  gap: 11px;
+  gap: var(--vc-space-1);
 }
 
 .reception-contact-action {
-  min-height: 72px;
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  border: 1px solid rgba(23, 59, 45, 0.1);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.55);
-  color: #173b2d;
-  font: inherit;
-  padding: 10px 14px;
   text-align: left;
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.reception-contact-action--primary {
-  border-color: rgba(23, 59, 45, 0.16);
-  background: rgba(23, 59, 45, 0.075);
-}
-
-.reception-contact-action:hover {
-  border-color: rgba(23, 59, 45, 0.18);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 10px 24px rgba(23, 59, 45, 0.07);
-  transform: translateY(-1px);
-}
-
-.reception-contact-action--primary:hover {
-  background: rgba(23, 59, 45, 0.105);
-}
-
-.reception-contact-action:active {
-  box-shadow: none;
-  transform: scale(0.99);
-}
-
-.reception-contact-action:focus-visible {
-  outline: 3px solid rgba(178, 138, 70, 0.28);
-  outline-offset: 2px;
-}
-
-.reception-contact-action__icon {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(23, 59, 45, 0.07);
-}
-
-.reception-contact-action__icon .reception-sheet-icon {
-  width: 24px;
-  height: 24px;
-  opacity: 0.78;
-}
-
-.reception-contact-action__copy {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: grid;
-  gap: 3px;
-}
-
-.reception-contact-action__copy strong {
-  color: #173b2d;
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.reception-contact-action__copy small {
-  overflow: hidden;
-  color: rgba(23, 59, 45, 0.58);
-  font-size: 0.8rem;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .reception-contact-action__arrow {
   flex: 0 0 auto;
-  color: rgba(23, 59, 45, 0.38);
-  font-size: 1.7rem;
-  font-weight: 400;
+  color: rgba(244, 237, 223, 0.38);
+  font-size: var(--vc-type-section-title);
   line-height: 1;
 }
 
 .reception-contact-feedback {
-  margin: -2px 0 0;
-  border: 1px solid rgba(159, 59, 47, 0.1);
-  border-radius: 16px;
-  background: rgba(159, 59, 47, 0.07);
-  color: #9f3b2f !important;
-  font-size: 0.9rem;
-  font-weight: 820 !important;
-  padding: 11px 13px;
-}
-
-.reception-details-sheet__panel {
-  gap: 18px;
+  margin: 0;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(210, 139, 126, 0.26);
+  border-radius: var(--vc-radius-lg);
+  color: rgba(255, 236, 232, 0.98) !important;
+  background: rgba(210, 139, 126, 0.12);
 }
 
 .reception-details-facts {
-  flex-wrap: wrap;
-}
-
-.reception-details-facts div {
-  flex-basis: calc(50% - 5px);
-}
-
-.reception-details-checklist {
-  display: grid;
-  gap: 10px;
-}
-
-.reception-details-checklist > span {
-  color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reception-detail-action {
@@ -1325,165 +889,197 @@ button.reception-completion:focus-visible {
 }
 
 .reception-detail-action:disabled {
-  cursor: wait;
   opacity: 0.72;
-}
-
-.reception-check-row__label small {
-  display: block;
-  margin-top: 3px;
-  color: rgba(23, 59, 45, 0.56);
-  font-size: 0.78rem;
-  font-weight: 750;
-}
-
-.reception-check-row__control--warning {
-  border-color: rgba(159, 59, 47, 0.18);
-  background: rgba(159, 59, 47, 0.09);
-  color: #9f3b2f;
-  font-size: 0.9rem;
-  font-weight: 950;
 }
 
 .reception-passport-input {
   display: none;
 }
 
+.passport-management__list {
+  max-height: min(48vh, 420px);
+  overflow-y: auto;
+}
+
+.passport-management-card {
+  display: grid;
+  align-items: stretch;
+}
+
+.passport-management-card > div:first-child,
+.passport-management-card dl {
+  display: grid;
+  gap: var(--vc-space-2);
+}
+
+.passport-management-card dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.passport-management-card dt,
+.passport-management-card dd {
+  margin: 0;
+}
+
+.passport-management-card dt {
+  color: rgba(247, 244, 238, 0.56);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.passport-management-card button {
+  justify-self: start;
+  padding-inline: var(--vc-space-4);
+}
+
+.passport-management-card__status--ready {
+  color: rgba(232, 255, 236, 0.98) !important;
+}
+
+.passport-management-card__status--warning {
+  color: rgba(255, 239, 211, 0.98) !important;
+}
+
+.passport-management-card__status--muted {
+  color: rgba(255, 250, 240, 0.82) !important;
+}
+
+.passport-review__fields label {
+  display: grid;
+  gap: var(--vc-space-1);
+  color: rgba(247, 244, 238, 0.56);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.passport-review__fields input {
+  min-height: 40px;
+  padding-inline: var(--vc-space-3);
+  border: 1px solid rgba(235, 241, 233, 0.14);
+  border-radius: var(--vc-radius-md);
+  color: rgba(250, 247, 238, 0.92);
+  background: rgba(255, 255, 255, 0.055);
+  font: inherit;
+  font-size: var(--vc-type-body);
+}
+
+.passport-review__verification {
+  display: grid;
+  gap: var(--vc-space-2);
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(208, 166, 99, 0.34);
+  border-radius: var(--vc-radius-md);
+  color: rgba(255, 239, 211, 0.98);
+  background: rgba(208, 166, 99, 0.12);
+}
+
+.reception-sheet__actions {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  gap: var(--vc-space-2);
+  padding-bottom: max(0px, var(--vc-safe-bottom));
+}
+
+.reception-sheet__actions button {
+  flex: 1 1 0;
+}
+
+.reception-sheet__actions--single button {
+  max-width: none;
+}
+
+@keyframes reception-sheet-in {
+  from {
+    opacity: 0.8;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .passport-workflow {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--vc-z-modal);
   inset: 0;
   display: flex;
   height: 100dvh;
   flex-direction: column;
   overflow: hidden;
   padding:
-    max(14px, env(safe-area-inset-top))
-    max(16px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
-  background: #f7f4ee;
-  color: #173b2d;
+    max(14px, var(--vc-safe-top))
+    max(16px, var(--vc-safe-right))
+    max(12px, var(--vc-safe-bottom))
+    max(16px, var(--vc-safe-left));
+  color: var(--vc-color-jungle-900);
+  background: var(--vc-color-sand-100);
+}
+
+.passport-workflow__header,
+.passport-wizard-step,
+.passport-capture header {
+  display: grid;
+  gap: var(--vc-space-1);
 }
 
 .passport-workflow__header {
-  display: grid;
   flex: 0 0 auto;
-  gap: 2px;
-  padding-bottom: 8px;
+  padding-bottom: var(--vc-space-2);
 }
 
-.passport-workflow__header span {
-  display: block;
+.passport-workflow__header span,
+.passport-capture header span {
   color: rgba(23, 59, 45, 0.58);
-  font-size: 0.72rem;
-  font-weight: 900;
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.passport-workflow__header h2 {
-  margin: 2px 0 0;
-  font-size: clamp(1.25rem, 4vw, 1.9rem);
-  line-height: 1;
-}
-
-.passport-workflow__content {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-.passport-wizard-step {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.passport-wizard-step h3 {
+.passport-workflow__header h2,
+.passport-wizard-step h3,
+.passport-capture header h3 {
   margin: 0;
-  font-size: 1.3rem;
-  line-height: 1.1;
+  color: var(--vc-color-jungle-900);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-section-title);
+  font-weight: var(--vc-weight-regular);
+  line-height: 1.08;
 }
 
-.passport-workflow__actions {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  flex: 0 0 auto;
-  gap: 10px;
-  padding: 10px 0 max(0px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(247, 244, 238, 0), rgba(247, 244, 238, 0.96) 28%);
-  z-index: 80;
-}
-
-.passport-workflow__actions button {
-  min-height: 48px;
-  flex: 1 1 0;
-  border: 0;
-  border-radius: 16px;
-  background: rgba(23, 59, 45, 0.1);
-  color: rgba(23, 59, 45, 0.78);
-  font: inherit;
-  font-weight: 820;
-  padding: 0 18px;
-}
-
-.passport-workflow__actions button:last-child {
-  background: #173b2d;
-  color: #f7f4ee;
-}
-
-.passport-workflow__actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
-.passport-workflow__actions--single button {
-  max-width: 420px;
-  margin-inline: auto;
-}
-
+.passport-workflow__content,
+.passport-wizard-step,
 .passport-capture {
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.passport-workflow__content,
+.passport-wizard-step,
+.passport-capture {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-}
-
-.passport-capture header {
-  flex: 0 0 auto;
-  display: grid;
-  gap: 2px;
-}
-
-.passport-capture header span {
-  color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.passport-capture header h3 {
-  margin: 0;
-  color: #173b2d;
-  font-family: var(--vc-font-heading, inherit);
-  font-size: clamp(1.08rem, 3vw, 1.32rem);
+  gap: var(--vc-space-3);
 }
 
 .passport-capture__placeholder,
-.passport-capture__preview {
+.passport-capture__preview,
+.passport-camera {
   width: 100%;
   aspect-ratio: 1.42;
   min-height: 0;
   border: 1px solid rgba(23, 59, 45, 0.13);
-  border-radius: 18px;
+  border-radius: var(--vc-radius-lg);
   background: rgba(23, 59, 45, 0.05);
 }
 
@@ -1493,35 +1089,22 @@ button.reception-completion:focus-visible {
   color: rgba(23, 59, 45, 0.46);
 }
 
-.passport-capture__placeholder .reception-sheet-icon {
-  width: 42px;
-  height: 42px;
-}
-
 .passport-capture__preview {
   max-height: 42dvh;
   object-fit: contain;
-  padding: 8px;
+  padding: var(--vc-space-2);
 }
 
 .passport-camera {
-  flex: 0 1 auto;
   position: relative;
   overflow: hidden;
-  width: 100%;
-  aspect-ratio: 1.42;
   max-height: 45dvh;
-  min-height: 0;
-  border: 1px solid rgba(23, 59, 45, 0.18);
-  border-radius: 18px;
   background: #07130f;
 }
 
 .passport-camera__video {
-  display: block;
   width: 100%;
   height: 100%;
-  min-height: 0;
   object-fit: cover;
 }
 
@@ -1535,10 +1118,10 @@ button.reception-completion:focus-visible {
   left: 50%;
   width: min(86%, 520px);
   aspect-ratio: 1.42;
-  transform: translate(-50%, -50%);
   border: 2px solid rgba(255, 255, 255, 0.88);
-  border-radius: 16px;
+  border-radius: var(--vc-radius-lg);
   box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.34);
+  transform: translate(-50%, -50%);
 }
 
 .passport-camera--ready .passport-camera__frame {
@@ -1558,395 +1141,117 @@ button.reception-completion:focus-visible {
 
 .passport-camera__guidance {
   position: absolute;
-  right: 16px;
-  bottom: 14px;
-  left: 16px;
+  right: var(--vc-space-4);
+  bottom: var(--vc-space-3);
+  left: var(--vc-space-4);
   margin: 0;
-  border-radius: 999px;
-  background: rgba(4, 13, 10, 0.74);
+  padding: 10px var(--vc-space-3);
+  border-radius: var(--vc-radius-pill);
   color: #fffaf1;
-  font-size: 0.86rem;
-  font-weight: 850;
-  letter-spacing: 0;
-  padding: 10px 14px;
+  background: rgba(4, 13, 10, 0.74);
+  font-size: var(--vc-type-body-sm);
+  font-weight: var(--vc-weight-bold);
   text-align: center;
 }
 
 .passport-capture__hint,
-.passport-capture__issues {
-  flex: 0 0 auto;
+.passport-capture__issues,
+.passport-capture__decision,
+.passport-capture__progress {
   margin: 0;
   color: rgba(23, 59, 45, 0.7);
-  font-size: 0.84rem;
-  font-weight: 720;
+  font-size: var(--vc-type-body-sm);
+  font-weight: var(--vc-weight-semibold);
 }
 
-.passport-capture__issues {
+.passport-capture__issues,
+.passport-capture__progress {
   display: grid;
-  gap: 4px;
-  padding-left: 18px;
+  gap: var(--vc-space-1);
+  padding-left: var(--vc-space-5);
 }
 
 .passport-capture__decision {
-  flex: 0 0 auto;
-  margin: 0;
-  color: #be6b28;
-  font-size: 0.92rem;
-  font-weight: 820;
-  line-height: 1.35;
+  color: var(--vc-color-warning);
 }
 
 .passport-capture__decision--ready {
-  color: #287f49;
+  color: var(--vc-color-success);
 }
 
-.passport-capture__diagnostics {
+.passport-capture__diagnostics,
+.passport-review__candidates {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 10px;
+  gap: var(--vc-space-2);
   margin: 0;
+  padding: var(--vc-space-3);
   border: 1px dashed rgba(23, 59, 45, 0.18);
-  border-radius: 12px;
+  border-radius: var(--vc-radius-md);
   background: rgba(23, 59, 45, 0.05);
-  padding: 10px;
 }
 
-.passport-capture__diagnostics div {
+.passport-capture__diagnostics div,
+.passport-review__candidates div {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--vc-space-2);
 }
 
 .passport-capture__diagnostics dt,
-.passport-capture__diagnostics dd {
+.passport-capture__diagnostics dd,
+.passport-review__candidates dt,
+.passport-review__candidates dd {
   margin: 0;
   color: rgba(23, 59, 45, 0.68);
-  font-size: 0.72rem;
-  font-weight: 780;
-}
-
-.passport-capture__progress {
-  flex: 0 0 auto;
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 20px;
-  color: rgba(23, 59, 45, 0.72);
-  font-size: 0.86rem;
-  font-weight: 760;
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
 }
 
 .passport-review {
-  flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.passport-review__fields {
-  display: grid;
-  gap: 8px;
-}
-
-.passport-review__fields label {
-  display: grid;
-  gap: 4px;
-  color: rgba(23, 59, 45, 0.62);
-  font-size: 0.68rem;
-  font-weight: 850;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.passport-review__fields input {
-  min-height: 38px;
-  border: 1px solid rgba(23, 59, 45, 0.13);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.62);
-  color: #173b2d;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 720;
-  letter-spacing: 0;
-  padding: 0 11px;
-}
-
-.passport-review__fields input:read-only {
-  background: rgba(23, 59, 45, 0.05);
-  color: rgba(23, 59, 45, 0.72);
-}
-
-.passport-review__verification {
-  display: grid;
-  gap: 6px;
-  border: 1px solid rgba(223, 75, 75, 0.22);
-  border-radius: 12px;
-  background: rgba(223, 75, 75, 0.07);
-  color: #173b2d;
-  padding: 10px 12px;
-}
-
-.passport-review__verification strong {
-  font-size: 0.84rem;
-  font-weight: 900;
-}
-
-.passport-review__verification ul {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding-left: 18px;
-  color: rgba(23, 59, 45, 0.72);
-  font-size: 0.76rem;
-  font-weight: 720;
-}
-
-.passport-review__candidates {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-}
-
-.passport-review__candidates div {
+.passport-review-actions,
+.passport-workflow__actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.passport-review__candidates dt {
-  color: rgba(23, 59, 45, 0.58);
-  font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.passport-review__candidates dd {
-  margin: 0;
-  color: #173b2d;
-  font-weight: 900;
-}
-
-.passport-review__technical {
-  color: rgba(23, 59, 45, 0.56);
-  font-size: 0.76rem;
-}
-
-.passport-review__technical summary {
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.passport-review__save-reason {
-  margin: 0;
-  border: 1px solid rgba(242, 140, 40, 0.25);
-  border-radius: 12px;
-  background: rgba(242, 140, 40, 0.1);
-  color: #173b2d;
-  font-size: 0.8rem;
-  font-weight: 820;
-  padding: 8px 10px;
-}
-
-.passport-review-actions {
-  position: sticky;
-  bottom: 0;
-  gap: 12px;
-  margin-top: auto;
-  padding: 14px 18px max(14px, calc(14px + env(safe-area-inset-bottom)));
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  background:
-    linear-gradient(
-      to top,
-      rgba(247, 244, 238, 0.98),
-      rgba(247, 244, 238, 0.9)
-    );
-  backdrop-filter: blur(18px);
-}
-
-.passport-review-actions button {
-  height: 44px;
-  min-height: 44px;
-  min-width: 0;
-  padding: 0 18px;
-  font-size: 0.94rem;
-  font-weight: 760;
-  line-height: 1.05;
-  white-space: normal;
-}
-
-.passport-management {
-  display: grid;
-  gap: 18px;
-}
-
-.passport-management header {
-  display: grid;
-  gap: 4px;
-}
-
-.passport-management header span {
-  color: rgba(23, 59, 45, 0.54);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.passport-management header h3 {
-  margin: 0;
-  color: #173b2d;
-  font-family: var(--vc-font-heading, inherit);
-  font-size: clamp(1.2rem, 3vw, 1.55rem);
-}
-
-.passport-management__list {
-  max-height: min(48vh, 420px);
-  display: grid;
-  gap: 10px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.passport-management-card {
-  display: grid;
-  gap: 12px;
-  border: 1px solid rgba(23, 59, 45, 0.12);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.55);
-  padding: 14px;
-}
-
-.passport-management-card > div:first-child {
-  display: grid;
-  gap: 3px;
-}
-
-.passport-management-card strong {
-  color: #173b2d;
-  font-size: 1.02rem;
-  font-weight: 920;
-  letter-spacing: 0;
-}
-
-.passport-management-card span,
-.passport-management-card dd {
-  color: rgba(23, 59, 45, 0.7);
-  font-size: 0.9rem;
-  font-weight: 760;
-}
-
-.passport-management-card dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.passport-management-card dt,
-.passport-management-card dd {
-  margin: 0;
-}
-
-.passport-management-card dt {
-  color: rgba(23, 59, 45, 0.5);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.passport-management-card__status--ready {
-  color: #197b45 !important;
-}
-
-.passport-management-card__status--warning {
-  color: #9a5a16 !important;
-}
-
-.passport-management-card__status--muted {
-  color: rgba(23, 59, 45, 0.62) !important;
-}
-
-.passport-management-card button {
-  justify-self: start;
-  min-height: 38px;
-  border: 1px solid rgba(23, 59, 45, 0.12);
-  border-radius: 999px;
-  background: rgba(247, 244, 238, 0.78);
-  color: #173b2d;
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 860;
-  padding: 0 14px;
-}
-
-.reception-sheet__actions--single button {
-  max-width: none;
-}
-
-.reception-sheet__actions {
-  position: sticky;
-  bottom: 0;
   flex: 0 0 auto;
-  gap: 10px;
-  padding-bottom: max(0px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(247, 244, 238, 0), rgba(247, 244, 238, 0.96) 24%);
+  gap: var(--vc-space-2);
+  padding: var(--vc-space-3) 0 max(0px, var(--vc-safe-bottom));
+  background: linear-gradient(180deg, rgba(247, 244, 238, 0), rgba(247, 244, 238, 0.96) 28%);
+  z-index: var(--vc-z-overlay);
 }
 
-.reception-sheet__actions button {
-  min-height: 54px;
+.passport-review-actions button,
+.passport-workflow__actions button {
+  min-height: 44px;
   flex: 1 1 0;
+  padding-inline: var(--vc-space-4);
   border: 0;
-  border-radius: 18px;
+  border-radius: var(--vc-radius-lg);
+  color: rgba(23, 59, 45, 0.78);
+  background: rgba(23, 59, 45, 0.1);
   font: inherit;
-  font-weight: 900;
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    transform 160ms ease,
-    opacity 160ms ease;
+  font-size: var(--vc-type-body-sm);
+  font-weight: var(--vc-weight-semibold);
 }
 
-.reception-sheet__actions button:first-child {
-  background: rgba(23, 59, 45, 0.08);
-  color: rgba(23, 59, 45, 0.72);
+.passport-review-actions button:last-child,
+.passport-workflow__actions button:last-child {
+  color: var(--vc-color-sand-100);
+  background: var(--vc-color-jungle-900);
 }
 
-.reception-sheet__actions button:last-child {
-  background: #173b2d;
-  color: #f7f4ee;
-}
-
-.reception-sheet__actions button:disabled {
-  cursor: not-allowed;
+.passport-review-actions button:disabled,
+.passport-workflow__actions button:disabled {
   opacity: 0.48;
 }
 
-.reception-sheet__actions button:not(:disabled):active {
-  transform: scale(0.985);
-}
-
-.reception-sheet__actions button:focus-visible {
-  outline: 3px solid rgba(178, 138, 70, 0.28);
-  outline-offset: 2px;
-}
-
-@keyframes reception-sheet-in {
-  from {
-    transform: translateY(16px);
-    opacity: 0.8;
-  }
-
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-@media (max-width: 380px) {
+@media (max-width: 420px) {
   .reception-date-actions {
     align-items: flex-start;
   }
@@ -1966,68 +1271,28 @@ button.reception-completion:focus-visible {
     width: calc(100vw - 36px);
   }
 
-  .reception-summary {
-    gap: 10px;
-  }
-
-  .reception-summary div,
   .reception-card {
-    border-radius: 20px;
-    padding: 15px;
+    padding: var(--vc-space-3);
   }
 
-  .reception-sheet__panel {
-    gap: 16px;
-    padding-right: 15px;
-    padding-left: 15px;
+  .reception-card__top {
+    align-items: flex-start;
   }
 
-  .reception-check-row {
-    min-height: 64px;
-    padding-right: 12px;
-    padding-left: 12px;
+  .reception-report-issue {
+    display: none;
   }
 
-  .reception-check-row__icon,
-  .reception-contact-action__icon {
-    width: 40px;
-    height: 40px;
-  }
-
-  .reception-contact-header__icon {
-    width: 50px;
-    height: 50px;
-  }
-
-  .passport-management-card dl {
+  .reception-details-facts,
+  .passport-management-card dl,
+  .passport-capture__diagnostics,
+  .passport-review__candidates {
     grid-template-columns: 1fr;
   }
 
-  .passport-review-actions {
-    gap: 8px;
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-
-  .passport-review-actions button {
-    padding: 0 10px;
-    font-size: 0.84rem;
-  }
-}
-
-@media (min-width: 840px) {
-  .reception-summary {
-    max-width: 620px;
-  }
-}
-
-@media (hover: none) {
-  .reception-contact-trigger:hover,
-  .reception-check-row:hover,
-  .reception-contact-action:hover,
-  button.reception-completion:hover {
-    transform: none;
-    box-shadow: none;
+  .reception-sheet__panel {
+    padding-right: var(--vc-space-4);
+    padding-left: var(--vc-space-4);
   }
 }
 
@@ -2037,13 +1302,8 @@ button.reception-completion:focus-visible {
     animation: none;
   }
 
-  .reception-contact-trigger,
-  .reception-check-row,
-  .reception-check-row__control,
-  .reception-check-row__control svg,
-  .reception-contact-action,
-  .reception-completion,
-  .reception-sheet__actions button {
+  .reception-card,
+  .reception-note-details summary::before {
     transition: none;
   }
 }

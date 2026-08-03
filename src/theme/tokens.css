@@ -64,10 +64,12 @@
   --vc-text-3xl: clamp(2.25rem, 8vw, 3.75rem);
 
   --vc-type-page-title: clamp(1.62rem, 7vw, 2.3rem);
+  --vc-type-room-title: clamp(1.875rem, 7vw, 2.375rem);
   --vc-type-section-title: 1.5rem;
   --vc-type-card-title: clamp(1.34rem, 5.6vw, 1.76rem);
   --vc-type-value: 1.5rem;
   --vc-type-body: 0.875rem;
+  --vc-type-body-sm: 0.8125rem;
   --vc-type-utility-sm: 0.75rem;
   --vc-type-utility-xs: 0.6875rem;
 
