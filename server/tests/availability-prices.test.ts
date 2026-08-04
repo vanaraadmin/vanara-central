@@ -140,13 +140,9 @@ class FakeAvailabilityDB {
       return [{ module_key: "rooms", can_access: 1, can_edit: 0 }];
     }
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return [];
-    if (this.failService && sql.includes("FROM units u")) throw new Error("raw d1 failure with private detail");
-    if (sql.includes("FROM units u") && sql.includes("room_operational_availability")) return this.unitRows();
+    if (this.failService && sql.includes("FROM unit_availability_cache")) throw new Error("raw d1 failure with private detail");
     if (sql.includes("FROM unit_availability_cache")) {
-      const dates = new Set(params.filter((item): item is string => typeof item === "string"));
-      return this.availability
-        .filter((row) => dates.has(row.stay_date))
-        .map((row) => ({ ...row, closed: row.closed ?? 0 }));
+      return this.availabilityUnitRows(params);
     }
     if (sql.includes("FROM bookings")) {
       const requestedDeparture = String(params[0]);
@@ -183,18 +179,26 @@ class FakeAvailabilityDB {
     throw new Error(`Unhandled first SQL: ${sql}`);
   }
 
-  private unitRows() {
-    return this.units
-      .filter((unit) => (unit.active ?? 1) === 1 && (unit.room_type_active ?? 1) === 1 && (unit.property_active ?? 1) === 1)
-      .map((unit) => ({
-        ...unit,
-        operational_status: this.operationalAvailability.get(unit.unit_id) ?? "OPERATING",
-        blocking_ticket_count: this.maintenanceTickets.filter((ticket) =>
-          ticket.room_id === unit.unit_id
-          && !["Resolved", "Closed"].includes(ticket.status)
-          && (ticket.out_of_service === 1 || ticket.metadata_json === '{"outOfService":true}')
-        ).length,
-      }));
+  private availabilityUnitRows(params: unknown[]) {
+    const dates = new Set(params.filter((item): item is string => typeof item === "string"));
+    const activeUnits = new Map(
+      this.units
+        .filter((unit) => (unit.active ?? 1) === 1 && (unit.room_type_active ?? 1) === 1 && (unit.property_active ?? 1) === 1)
+        .map((unit) => [unit.unit_id, unit]),
+    );
+
+    return this.availability
+      .filter((row) => dates.has(row.stay_date))
+      .flatMap((row) => {
+        const unit = activeUnits.get(row.unit_id);
+        if (!unit) return [];
+        return [{
+          ...unit,
+          stay_date: row.stay_date,
+          availability: row.availability,
+          closed: row.closed ?? 0,
+        }];
+      });
   }
 }
 
@@ -245,38 +249,24 @@ test("availability folds every requested night and distinguishes unavailable fro
   assert.equal(unknownNight.availabilityStatus, "UNKNOWN");
 });
 
-test("booking overlap uses departure-exclusive semantics and ignores cancelled or provider-deleted rows", async () => {
+test("commercial availability is not changed by local booking overlap state", async () => {
   const availability = [available(1, "2026-08-03")];
 
-  const checkoutReuse = (await availabilityGroups(db({
-    availability,
-    bookings: [{ unit_id: 1, arrival_date: "2026-08-01", departure_date: "2026-08-03", status: "confirmed" }],
-  })))[0]!;
-  assert.equal(checkoutReuse.availableCount, 1);
-
-  const arrivalOnDeparture = (await availabilityGroups(db({
-    availability,
-    bookings: [{ unit_id: 1, arrival_date: "2026-08-04", departure_date: "2026-08-06", status: "confirmed" }],
-  })))[0]!;
-  assert.equal(arrivalOnDeparture.availableCount, 1);
-
-  const activeOverlap = (await availabilityGroups(db({
+  const localOverlap = (await availabilityGroups(db({
     availability,
     bookings: [{ unit_id: 1, arrival_date: "2026-08-02", departure_date: "2026-08-04", status: "confirmed" }],
   })))[0]!;
-  assert.equal(activeOverlap.availabilityStatus, "UNAVAILABLE");
+  assert.equal(localOverlap.availableCount, 1);
+  assert.equal(localOverlap.availabilityStatus, "AVAILABLE");
 
-  const cancelled = (await availabilityGroups(db({
+  const providerDeleted = (await availabilityGroups(db({
     availability,
-    bookings: [
-      { unit_id: 1, arrival_date: "2026-08-02", departure_date: "2026-08-04", status: "cancelled" },
-      { unit_id: 1, arrival_date: "2026-08-02", departure_date: "2026-08-04", status: "confirmed", sub_status: "provider_deleted" },
-    ],
+    bookings: [{ unit_id: 1, arrival_date: "2026-08-02", departure_date: "2026-08-04", status: "confirmed", sub_status: "provider_deleted" }],
   })))[0]!;
-  assert.equal(cancelled.availableCount, 1);
+  assert.equal(providerDeleted.availableCount, 1);
 });
 
-test("group bookings block every mapped physical unit", async () => {
+test("group bookings do not create a second availability engine outside Beds24 cache", async () => {
   const database = db({
     units: [
       ...DEFAULT_UNITS,
@@ -291,24 +281,24 @@ test("group bookings block every mapped physical unit", async () => {
 
   const group = (await availabilityGroups(database))[0]!;
   assert.equal(group.totalUnits, 2);
-  assert.equal(group.availableCount, 0);
-  assert.equal(group.availabilityStatus, "UNAVAILABLE");
+  assert.equal(group.availableCount, 2);
+  assert.equal(group.availabilityStatus, "AVAILABLE");
 });
 
-test("operational exclusions remove not-operating and active out-of-service units without reading housekeeping state", async () => {
+test("operational room and maintenance state do not alter commercial availability", async () => {
   const notOperatingDb = db({
     availability: [available(1, "2026-08-03")],
     operationalAvailability: new Map([[1, "NOT_OPERATING"]]),
   });
   const notOperating = (await availabilityGroups(notOperatingDb))[0]!;
-  assert.equal(notOperating.availableCount, 0);
-  assert.equal(notOperating.availabilityStatus, "UNAVAILABLE");
+  assert.equal(notOperating.availableCount, 1);
+  assert.equal(notOperating.availabilityStatus, "AVAILABLE");
 
   const maintenanceBlocked = (await availabilityGroups(db({
     availability: [available(1, "2026-08-03")],
     maintenanceTickets: [{ room_id: 1, status: "Open", out_of_service: 1 }],
   })))[0]!;
-  assert.equal(maintenanceBlocked.availableCount, 0);
+  assert.equal(maintenanceBlocked.availableCount, 1);
 
   const resolvedMaintenance = (await availabilityGroups(db({
     availability: [available(1, "2026-08-03")],
@@ -450,13 +440,31 @@ test("endpoint validates auth, dates, sanitized failures, and performs no writes
 test("source guardrails prevent live provider calls, price1, reservation writes, housekeeping exclusion, and frontend coupling", () => {
   const service = readFileSync(new URL("../src/services/availability-prices.service.ts", import.meta.url), "utf8");
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../../src/pages/AvailabilityPage.tsx", import.meta.url), "utf8");
+  const frontendService = readFileSync(new URL("../../src/services/availability-prices.service.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/styles/AvailabilityPage.css", import.meta.url), "utf8");
 
   assert.doesNotMatch(service, /beds24Get|BEDS24_BASE_URL|BEDS24_LONG_LIFE_TOKEN|fetch\s*\(|\/inventory\/rooms/i);
   assert.doesNotMatch(service, /room_calendar|price1/i);
   assert.doesNotMatch(service, /\b(INSERT|UPDATE|DELETE|UPSERT|REPLACE)\b/i);
+  assert.doesNotMatch(service, /FROM\s+bookings|operationalBookingStatusSql|room_operational_availability|maintenance_tickets/i);
   assert.doesNotMatch(service, /room_housekeeping_state|ready_state|DIRTY|NOT_READY|housekeeping_tasks/i);
   assert.doesNotMatch(service, /from\s+["']\.\.\/\.\.\/src\/|react|tsx/i);
+  assert.match(service, /FROM unit_availability_cache uac/);
+  assert.match(service, /FROM offer_prices/);
   assert.match(index, /app\.get\("\/api\/availability-prices"/);
   assert.match(index, /authenticated\(c,\s*"rooms",\s*"access"\)/);
   assert.doesNotMatch(index, /app\.(post|patch|delete)\("\/api\/availability-prices"/i);
+  assert.match(frontendService, /\/api\/availability-prices\?\$\{query\.toString\(\)\}/);
+  assert.doesNotMatch(frontendService, /\b(method|POST|PATCH|DELETE)\b|fetch\(/);
+  assert.match(page, /useQuery/);
+  assert.match(page, /loadAvailabilityPrices/);
+  assert.match(page, /WorkspaceShell/);
+  assert.match(page, /stickyNavigationTitle="Availability"/);
+  assert.match(page, /Search Availability/);
+  assert.match(page, /Available rooms/);
+  assert.doesNotMatch(page, /room_operational_availability|maintenance_tickets|housekeeping_tasks|room_housekeeping_state|bookings/i);
+  assert.match(css, /\.availability-field input\s*\{[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(css, /\.availability-search__controls\s*\{[\s\S]*min-width:\s*0;/);
+  assert.match(css, /\.availability-card__summary/);
 });

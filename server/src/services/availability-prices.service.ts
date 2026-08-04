@@ -1,5 +1,3 @@
-import { operationalBookingStatusSql } from "./booking-status.service.js";
-
 export type AvailabilityPricesQuery = {
   arrival: string;
   departure: string;
@@ -70,19 +68,9 @@ interface UnitSourceRow {
   room_type_name: string;
   room_name: string | null;
   beds24_room_id: number | null;
-  operational_status: "OPERATING" | "NOT_OPERATING" | string | null;
-  blocking_ticket_count: number | null;
-}
-
-interface AvailabilityCacheRow {
-  unit_id: number;
   stay_date: string;
   availability: number | null;
   closed: number | null;
-}
-
-interface BookingOverlapRow {
-  unit_id: number;
 }
 
 interface OfferPriceRow {
@@ -196,7 +184,8 @@ function offerCandidateKey(row: OfferPriceRow): string {
   return `${row.offer_id ?? "none"}:${row.beds24_offer_id}`;
 }
 
-async function loadUnits(db: D1Database): Promise<UnitSourceRow[]> {
+async function loadAvailabilityUnitRows(db: D1Database, stayDates: string[]): Promise<UnitSourceRow[]> {
+  if (stayDates.length === 0) return [];
   const rows = await db.prepare(`
     SELECT
       u.unit_id,
@@ -208,61 +197,30 @@ async function loadUnits(db: D1Database): Promise<UnitSourceRow[]> {
       COALESCE(rt.room_type_name, rt.room_name, 'Accommodation') AS room_type_name,
       rt.room_name,
       rt.beds24_room_id,
-      COALESCE(roa.status, 'OPERATING') AS operational_status,
-      COALESCE(mt.blocking_ticket_count, 0) AS blocking_ticket_count
-    FROM units u
+      uac.stay_date,
+      uac.availability,
+      uac.closed
+    FROM unit_availability_cache uac
+    INNER JOIN units u
+      ON u.unit_id = uac.unit_id
     INNER JOIN room_types rt
       ON rt.room_type_id = u.room_type_id
     INNER JOIN properties p
       ON p.property_id = rt.property_id
-    LEFT JOIN room_operational_availability roa
-      ON roa.unit_id = u.unit_id
-    LEFT JOIN (
-      SELECT
-        room_id,
-        COUNT(*) AS blocking_ticket_count
-      FROM maintenance_tickets
-      WHERE room_id IS NOT NULL
-        AND status NOT IN ('Resolved', 'Closed')
-        AND (out_of_service = 1 OR json_extract(metadata_json, '$.outOfService') = 1)
-      GROUP BY room_id
-    ) mt ON mt.room_id = u.unit_id
-    WHERE u.active = 1
+    WHERE uac.stay_date IN (${placeholders(stayDates)})
+      AND u.active = 1
       AND rt.active = 1
       AND p.active = 1
     ORDER BY
       rt.room_type_name,
       rt.room_type_id,
+      uac.stay_date,
       u.position,
       u.unit_name,
       u.unit_id
-  `).all<UnitSourceRow>();
+  `).bind(...stayDates).all<UnitSourceRow>();
 
   return rows.results ?? [];
-}
-
-async function loadAvailabilityRows(db: D1Database, stayDates: string[]): Promise<Map<string, AvailabilityCacheRow>> {
-  const rows = await db.prepare(`
-    SELECT unit_id, stay_date, availability, closed
-    FROM unit_availability_cache
-    WHERE stay_date IN (${placeholders(stayDates)})
-  `).bind(...stayDates).all<AvailabilityCacheRow>();
-
-  return new Map((rows.results ?? []).map((row) => [cacheKey(row.unit_id, row.stay_date), row]));
-}
-
-async function loadOverlappingBookedUnits(db: D1Database, range: ValidatedStayRange): Promise<Set<number>> {
-  const rows = await db.prepare(`
-    SELECT DISTINCT unit_id
-    FROM bookings
-    WHERE unit_id IS NOT NULL
-      AND arrival_date < ?
-      AND departure_date > ?
-      AND ${operationalBookingStatusSql("status")}
-      AND lower(trim(COALESCE(sub_status, ''))) <> 'provider_deleted'
-  `).bind(range.departureDate, range.arrivalDate).all<BookingOverlapRow>();
-
-  return new Set((rows.results ?? []).map((row) => row.unit_id));
 }
 
 async function loadOfferPriceRows(db: D1Database, roomTypeIds: number[], stayDates: string[]): Promise<OfferPriceRow[]> {
@@ -360,7 +318,7 @@ function selectPricingForRoomType(rows: OfferPriceRow[], stayDates: string[], ni
   };
 }
 
-function unitCacheIsAvailable(unit: UnitSourceRow, range: ValidatedStayRange, availabilityByUnitDate: Map<string, AvailabilityCacheRow>): { available: boolean; unknown: boolean } {
+function unitCacheIsAvailable(unit: UnitSourceRow, range: ValidatedStayRange, availabilityByUnitDate: Map<string, UnitSourceRow>): { available: boolean; unknown: boolean } {
   let unknown = false;
 
   for (const stayDate of range.stayDates) {
@@ -377,7 +335,12 @@ function unitCacheIsAvailable(unit: UnitSourceRow, range: ValidatedStayRange, av
 
 function groupRoomTypeRows(rows: UnitSourceRow[]): Map<number, UnitSourceRow[]> {
   const grouped = new Map<number, UnitSourceRow[]>();
-  for (const row of rows) grouped.set(row.room_type_id, [...(grouped.get(row.room_type_id) ?? []), row]);
+  const seenUnits = new Set<number>();
+  for (const row of rows) {
+    if (seenUnits.has(row.unit_id)) continue;
+    seenUnits.add(row.unit_id);
+    grouped.set(row.room_type_id, [...(grouped.get(row.room_type_id) ?? []), row]);
+  }
   return grouped;
 }
 
@@ -388,11 +351,8 @@ export async function getAvailabilityPrices(
   if (!query.arrival || !query.departure) throw new AvailabilityPricesError("availability_prices_missing_dates");
 
   const range = validateStayRange(query.arrival, query.departure);
-  const units = await loadUnits(db);
-  const [availabilityByUnitDate, bookedUnitIds] = await Promise.all([
-    loadAvailabilityRows(db, range.stayDates),
-    loadOverlappingBookedUnits(db, range),
-  ]);
+  const units = await loadAvailabilityUnitRows(db, range.stayDates);
+  const availabilityByUnitDate = new Map(units.map((row) => [cacheKey(row.unit_id, row.stay_date), row]));
 
   const roomTypeIds = [...new Set(units.map((unit) => unit.room_type_id))];
   const offerRows = await loadOfferPriceRows(db, roomTypeIds, range.stayDates);
@@ -410,11 +370,6 @@ export async function getAvailabilityPrices(
     let missingRelevantCacheRows = false;
 
     for (const unit of orderedUnits) {
-      const locallyOfferable = unit.operational_status === "OPERATING"
-        && (unit.blocking_ticket_count ?? 0) === 0
-        && !bookedUnitIds.has(unit.unit_id);
-      if (!locallyOfferable) continue;
-
       const folded = unitCacheIsAvailable(unit, range, availabilityByUnitDate);
       if (folded.unknown) missingRelevantCacheRows = true;
       if (!folded.available) continue;
