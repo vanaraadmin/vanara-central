@@ -41,6 +41,7 @@ const stickyGlassHeader = readSource("src/components/StickyGlassHeader.tsx");
 const appRoot = readSource("src/App.tsx");
 const glassPhysicsHook = readSource("src/hooks/useGlassPhysics.ts");
 const interactiveGlass = readSource("src/components/vanara/VanaraInteractiveGlass.tsx");
+const workspaceShellCss = readSource("src/styles/WorkspaceShell.css");
 const tokens = readSource("src/theme/tokens.css");
 const vanaraUi = readSource("src/theme/vanara-ui.css");
 const appSources = readSourcesUnder("src/");
@@ -120,9 +121,29 @@ test("Vanara Glass Physics v1 centralizes press and release material behaviour",
   assert.match(interactiveGlass, /vc-interactive-surface__material/);
   assert.match(interactiveGlass, /vc-interactive-surface__highlight/);
   assert.match(appRoot, /useGlobalGlassPhysics\(\)/);
-  assert.match(migratedWorkspaceCss, /sticky-glass-nav-surface\[data-pressed="true"\]/);
+  assert.match(migratedWorkspaceCss, /sticky-glass-nav-return\[data-pressed="true"\]/);
+  assert.match(migratedWorkspaceCss, /sticky-glass-nav-home\[data-pressed="true"\]/);
   assert.doesNotMatch(vanaraUi, /:active[\s\S]{0,120}scale/);
   assert.doesNotMatch(migratedWorkspaceCss, /:active[\s\S]{0,120}transform/);
+});
+
+test("Floating navigation appears calmly without hero logo morphing", () => {
+  const stickyGlassCss = readSource("src/styles/StickyGlassHeader.css");
+  const workspaceShell = readSource("src/components/WorkspaceShell.tsx");
+  const workspaceHero = readSource("src/components/WorkspaceHero.tsx");
+
+  assert.doesNotMatch(stickyGlassHeader, /getBoundingClientRect|useLayoutEffect|heroLogoRef|resetHeroLogo|compactLogoVisible|morphScale/);
+  assert.doesNotMatch(workspaceShell, /heroLogoRef|<StickyGlassHeader[^>]*heroLogoRef|<WorkspaceHero ref=/);
+  assert.doesNotMatch(workspaceHero, /forwardRef|ref=\{heroLogoRef\}/);
+  assert.match(stickyGlassHeader, /translateX\(-50%\) translateY\(\$\{translateY\}px\)/);
+  assert.doesNotMatch(stickyGlassHeader, /scale\(/);
+  assert.match(stickyGlassCss, /opacity 200ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(stickyGlassCss, /transform 200ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+  assert.match(stickyGlassCss, /\.sticky-glass-nav-home/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*radial-gradient/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*opacity:\s*0\.12/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*filter:\s*blur\(24px\)/);
+  assert.doesNotMatch(workspaceShellCss, /green glow|neon|pulse|animation:\s*.*logo/i);
 });
 
 test("Rooms and Staff Home consume shared presentation instead of page glass copies", () => {

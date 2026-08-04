@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 const WORKSPACE_HOME_ROUTE = "/staff";
@@ -10,16 +10,18 @@ interface WorkspaceHeroProps {
   title: string;
 }
 
-const WorkspaceHero = forwardRef<HTMLImageElement, WorkspaceHeroProps>(function WorkspaceHero(
-  { action, date, logoSrc, title },
-  heroLogoRef,
-) {
+export default function WorkspaceHero({
+  action,
+  date,
+  logoSrc,
+  title,
+}: WorkspaceHeroProps) {
   return (
     <>
       <header className="workspace-masthead">
         <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
           <span className="workspace-masthead__logo-slot" aria-hidden="true">
-            <img ref={heroLogoRef} src={logoSrc} alt="Vanara" className="workspace-masthead__logo" />
+            <img src={logoSrc} alt="Vanara" className="workspace-masthead__logo" />
           </span>
 
           <div className="workspace-masthead__wordmark">
@@ -40,6 +42,4 @@ const WorkspaceHero = forwardRef<HTMLImageElement, WorkspaceHeroProps>(function 
       </section>
     </>
   );
-});
-
-export default WorkspaceHero;
+}

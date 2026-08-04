@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type RefObject } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import logoSrc from "../assets/img/logo.png";
 import "../styles/StickyGlassHeader.css";
 
 export type StickyGlassHeaderVariant = "default";
 
 export type StickyGlassHeaderProps = {
-  heroLogoRef: RefObject<HTMLImageElement | null>;
   progress: number;
   title: string;
   variant?: StickyGlassHeaderVariant;
@@ -27,6 +27,12 @@ function resolveActualScrollContainer(): ScrollContainer {
   return window;
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && "matchMedia" in window
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 function scrollToPageTop(): void {
   const scrollContainer = resolveActualScrollContainer();
 
@@ -44,20 +50,6 @@ function scrollToPageTop(): void {
   });
 }
 
-function resetHeroLogo(logo: HTMLImageElement | null): void {
-  if (!logo) return;
-  logo.style.removeProperty("position");
-  logo.style.removeProperty("top");
-  logo.style.removeProperty("left");
-  logo.style.removeProperty("width");
-  logo.style.removeProperty("height");
-  logo.style.removeProperty("z-index");
-  logo.style.removeProperty("transform");
-  logo.style.removeProperty("transform-origin");
-  logo.style.removeProperty("will-change");
-  logo.style.removeProperty("pointer-events");
-}
-
 function clampProgress(value: number): number {
   if (value <= 0) return 0;
   if (value >= 1) return 1;
@@ -65,7 +57,8 @@ function clampProgress(value: number): number {
 }
 
 /**
- * Purpose: morphs the workspace hero logo into the shared bottom glass navigation.
+ * Purpose: presents the shared floating glass navigation after the workspace hero
+ * has left view.
  *
  * When to use: full workspace pages that already have a large hero and need
  * persistent identity while the operator scrolls.
@@ -76,100 +69,87 @@ function clampProgress(value: number): number {
  * props.
  *
  * Accessibility notes: the button is keyboard reachable only while visible and
- * keeps a single accessible "Return to top" action.
+ * keeps a dedicated "Return to top" action. The Home link remains a separate
+ * semantic navigation target.
  */
 export default function StickyGlassHeader({
-  heroLogoRef,
   progress,
   title,
   variant = "default",
 }: StickyGlassHeaderProps) {
-  const compactLogoRef = useRef<HTMLImageElement>(null);
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const p = clampProgress(progress);
-  const translateY = Math.round((1 - p) * 24 * 100) / 100;
-  const morphScale = Math.round((0.985 + 0.015 * p) * 1000) / 1000;
-  const compactLogoVisible = p >= 0.995;
+  const visible = p > 0.05;
+  const animationProgress = reducedMotion ? (visible ? 1 : 0) : p;
+  const translateY = Math.round((1 - animationProgress) * 12 * 100) / 100;
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("vc-sticky-glass-visible", p > 0.05);
+    root.classList.toggle("vc-sticky-glass-visible", visible);
 
     return () => {
       root.classList.remove("vc-sticky-glass-visible");
     };
-  }, [p]);
+  }, [visible]);
 
-  useLayoutEffect(() => {
-    const heroLogo = heroLogoRef.current;
-    const compactLogo = compactLogoRef.current;
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncReducedMotion = () => setReducedMotion(media.matches);
 
-    if (!heroLogo || !compactLogo || p <= 0 || compactLogoVisible) {
-      resetHeroLogo(heroLogo);
-      return;
-    }
-
-    const first = heroLogo.parentElement?.getBoundingClientRect();
-    const last = compactLogo.getBoundingClientRect();
-    if (!first || first.width <= 0 || first.height <= 0 || last.width <= 0 || last.height <= 0) {
-      resetHeroLogo(heroLogo);
-      return;
-    }
-
-    const lastSize = Math.min(last.width, last.height);
-    const scale = 1 + (lastSize / first.width - 1) * p;
-    const x = (last.left - first.left) * p;
-    const y = (last.top - first.top) * p;
-
-    heroLogo.style.position = "fixed";
-    heroLogo.style.left = `${first.left}px`;
-    heroLogo.style.top = `${first.top}px`;
-    heroLogo.style.width = `${first.width}px`;
-    heroLogo.style.height = `${first.height}px`;
-    heroLogo.style.zIndex = "90";
-    heroLogo.style.transformOrigin = "top left";
-    heroLogo.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-    heroLogo.style.willChange = "transform";
-    heroLogo.style.pointerEvents = "none";
-  }, [compactLogoVisible, heroLogoRef, p]);
-
-  useLayoutEffect(() => () => resetHeroLogo(heroLogoRef.current), [heroLogoRef]);
+    syncReducedMotion();
+    media.addEventListener("change", syncReducedMotion);
+    return () => media.removeEventListener("change", syncReducedMotion);
+  }, []);
 
   const positionerStyle: CSSProperties = {
-    opacity: p,
-    pointerEvents: p > 0.05 ? "auto" : "none",
-    transform: `translateX(-50%) translateY(${translateY}px) scale(${morphScale})`,
-  };
-  const compactLogoStyle: CSSProperties = {
-    opacity: compactLogoVisible ? 1 : 0,
+    opacity: animationProgress,
+    pointerEvents: visible ? "auto" : "none",
+    transform: `translateX(-50%) translateY(${translateY}px)`,
   };
 
   return (
     <div
-      aria-hidden={p <= 0}
+      aria-hidden={!visible}
       className="sticky-glass-nav-positioner sticky-glass-header"
       style={positionerStyle}
     >
-      <button
-        aria-label="Return to top"
-        className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface vc-interactive-surface`}
-        onClick={scrollToPageTop}
-        tabIndex={p > 0.05 ? 0 : -1}
-        type="button"
+      <nav
+        aria-label={`${title} navigation`}
+        className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface`}
       >
-        <span className="sticky-glass-nav-logo-slot sticky-glass-header__logo-target">
-          <img
-            ref={compactLogoRef}
-            alt=""
-            className="sticky-glass-nav-logo"
-            src={logoSrc}
-            style={compactLogoStyle}
-          />
-        </span>
+        <button
+          aria-label={`Return to top of ${title}`}
+          className="sticky-glass-nav-return vc-interactive-surface"
+          onClick={scrollToPageTop}
+          tabIndex={visible ? 0 : -1}
+          type="button"
+        >
+          <span className="sticky-glass-nav-logo-slot sticky-glass-header__logo-target">
+            <img
+              alt=""
+              className="sticky-glass-nav-logo"
+              src={logoSrc}
+            />
+          </span>
 
-        <span className="sticky-glass-nav-title sticky-glass-header__title">
-          {title}
-        </span>
-      </button>
+          <span className="sticky-glass-nav-title sticky-glass-header__title">
+            {title}
+          </span>
+        </button>
+
+        <Link
+          aria-label="Staff Home"
+          className="sticky-glass-nav-home vc-interactive-surface"
+          tabIndex={visible ? 0 : -1}
+          to="/staff"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+            <path d="M4.75 11.1 12 5l7.25 6.1" />
+            <path d="M6.75 10.2v8.05h10.5V10.2" />
+            <path d="M10 18.25v-4.5h4v4.5" />
+          </svg>
+        </Link>
+      </nav>
     </div>
   );
 }

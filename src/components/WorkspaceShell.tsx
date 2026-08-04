@@ -68,7 +68,6 @@ export default function WorkspaceShell({
   workspace,
 }: WorkspaceShellProps) {
   const backgroundKey = workspaceBackgroundKeys[workspace];
-  const heroLogoRef = useRef<HTMLImageElement>(null);
   const stickyTriggerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const [progress, setProgress] = useState(0);
@@ -123,10 +122,10 @@ export default function WorkspaceShell({
 
       <section className="workspace-shell" aria-label={`${title} workspace`}>
         {!suppressStickyNavigation ? (
-          <StickyGlassHeader heroLogoRef={heroLogoRef} progress={progress} title={navigationTitle} />
+          <StickyGlassHeader progress={progress} title={navigationTitle} />
         ) : null}
 
-        <WorkspaceHero ref={heroLogoRef} action={heroActionNode} date={today} logoSrc={logo} title={title} />
+        <WorkspaceHero action={heroActionNode} date={today} logoSrc={logo} title={title} />
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 
