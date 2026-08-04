@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PageError, PageLoading } from "../components/AsyncState";
+import { PageError } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
@@ -40,8 +40,27 @@ function formatTime(value: string | null): string {
   }).format(date);
 }
 
+function formatDay(value: string | null): string {
+  if (!value) return "Conversation";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Conversation";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
 function groupLabel(group: GuestMessageInboxGroup): string {
   return GROUPS.find((item) => item.id === group)?.label ?? "Messages";
+}
+
+function emptyGroupMessage(group: GuestMessageInboxGroup, searching: boolean): string {
+  if (searching) return "No search results.";
+  if (group === "needsReply") return "No drafts waiting.";
+  if (group === "waitingGuest") return "No reply required.";
+  return "No closed conversations.";
 }
 
 function providerInitial(label: string): string {
@@ -63,6 +82,8 @@ function ConversationRow({
       type="button"
       className={`messages-inbox-row ${active ? "is-active" : ""}`}
       onClick={() => onSelect(conversation.conversationId)}
+      aria-current={active ? "true" : undefined}
+      aria-label={`${conversation.guestName}, ${conversation.room}, ${conversation.otaLabel}`}
     >
       <span className="messages-inbox-row__provider" aria-label={conversation.otaLabel}>
         {providerInitial(conversation.otaLabel)}
@@ -114,6 +135,7 @@ function InboxColumn({
           value={search}
           onChange={(event) => onSearch(event.target.value)}
           placeholder="Search guest, room, booking, provider"
+          aria-label="Search guest, room, booking, provider"
         />
       </label>
 
@@ -138,7 +160,7 @@ function InboxColumn({
                   ))}
                 </div>
               ) : (
-                <p className="messages-inbox-group__empty">No conversations.</p>
+                <p className="messages-inbox-group__empty">{emptyGroupMessage(group.id, Boolean(search.trim()))}</p>
               )}
             </section>
           );
@@ -154,6 +176,16 @@ interface DraftActionHandlers {
   onApproveEdited: (draftId: string, draftText: string) => Promise<void>;
   onReject: (draftId: string) => Promise<void>;
   onSave: (draftId: string, draftText: string) => Promise<void>;
+}
+
+function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="messages-skeleton" aria-label="Loading conversations" aria-busy="true">
+      {Array.from({ length: rows }).map((_, index) => (
+        <span className="messages-skeleton__line" key={index} />
+      ))}
+    </div>
+  );
 }
 
 function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
@@ -288,7 +320,11 @@ function ConversationColumn({
   if (loading) {
     return (
       <VanaraGlassSheet className="messages-conversation" ariaLabel="Conversation">
-        <PageLoading />
+        <div className="messages-conversation__header">
+          <span>Conversation</span>
+          <strong>Loading</strong>
+        </div>
+        <MessagesSkeleton rows={5} />
       </VanaraGlassSheet>
     );
   }
@@ -314,9 +350,16 @@ function ConversationColumn({
         <strong>{hasReadyDraft ? "Draft Ready" : "Read Only"}</strong>
       </div>
       <div className="messages-timeline">
-        {conversation.map((item) => (
-          <TimelineBubble actions={actions} item={item} key={item.id} />
-        ))}
+        {conversation.map((item, index) => {
+          const previous = conversation[index - 1];
+          const showDay = index === 0 || formatDay(previous?.timestamp ?? null) !== formatDay(item.timestamp);
+          return (
+            <div className="messages-timeline__entry" key={item.id}>
+              {showDay ? <time className="messages-day-separator">{formatDay(item.timestamp)}</time> : null}
+              <TimelineBubble actions={actions} item={item} />
+            </div>
+          );
+        })}
       </div>
     </VanaraGlassSheet>
   );

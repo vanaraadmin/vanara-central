@@ -410,3 +410,19 @@ test("guest messages UI uses only the human review draft endpoints and no AI or 
   assert.doesNotMatch(page + service, /generateWarapornDraft|sync\/messages|OpenAI|Responses|BEDS24_LONG_LIFE_TOKEN|beds24\.com|api\.beds24/i);
   assert.match(service, /\/api\/messages\/conversations/);
 });
+
+test("guest messages workspace keeps production UX polish guardrails", () => {
+  const page = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/styles/messages.css", import.meta.url), "utf8");
+
+  assert.match(page, /MessagesSkeleton/);
+  assert.match(page, /messages-day-separator/);
+  assert.match(page, /aria-current/);
+  assert.match(page, /No search results\./);
+  assert.match(page, /No drafts waiting\./);
+  assert.match(page, /No reply required\./);
+  assert.match(css, /\.messages-inbox-row:focus-visible/);
+  assert.match(css, /\.messages-skeleton__line/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /scrollbar-width:\s*thin/);
+});
