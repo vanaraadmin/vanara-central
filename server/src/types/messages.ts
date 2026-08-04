@@ -55,6 +55,20 @@ export type DeliveryState = "NOT_READY" | "READY" | "SENDING" | "SENT" | "FAILED
 
 export type MessagePromptKey = "waraporn-general-requests-v4-rc3";
 
+export type AccommodationType = "Bungalow" | "Villa" | "Tent" | "Other";
+
+export type TravelPhase =
+  | "prospective guest"
+  | "booked guest"
+  | "pre-arrival"
+  | "arriving soon"
+  | "in-house"
+  | "checking out"
+  | "post-stay"
+  | "unknown";
+
+export type AvailabilityPricesContextStatus = "USED" | "NOT_APPLICABLE" | "UNAVAILABLE";
+
 export interface Conversation {
   conversationId: string;
   provider: Provider;
@@ -113,6 +127,8 @@ export interface Draft {
   promptChecksum: string;
   state: DraftState;
   body: string | null;
+  retrievalFilenames: string[];
+  retrievalResultCount: number;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -147,9 +163,19 @@ export interface VerifiedMessageContext {
   guestFirstName: string | null;
   arrivalDate: string | null;
   departureDate: string | null;
+  bookingStatus: string | null;
+  bookingSource: string | null;
+  accommodationType: AccommodationType | null;
+  physicalUnit: string | null;
   roomSummary: string | null;
   language: string | null;
+  provider: Provider;
   channel: Channel;
+  currentBangkokDate: string;
+  currentBangkokTime: string;
+  travelPhase: TravelPhase;
+  availabilityPricesStatus: AvailabilityPricesContextStatus;
+  availabilityPricesContext: string;
   conversationContext: string;
   currentGuestMessage: string;
   verifiedAt: string;

@@ -32,13 +32,23 @@ function promptFor(key: MessagePromptKey): PromptMetadata {
   return PROMPT_REGISTRY[key];
 }
 
-function isNodeRuntime(): boolean {
-  const maybeProcess = (globalThis as unknown as { process?: { versions?: { node?: string } } }).process;
-  return typeof maybeProcess?.versions?.node === "string";
+interface PromptRuntimeShape {
+  process?: { versions?: { node?: string } };
+  WebSocketPair?: unknown;
+  navigator?: { userAgent?: string };
+}
+
+export function shouldLoadPromptFromNodeFilesystem(
+  runtime: PromptRuntimeShape = globalThis as unknown as PromptRuntimeShape,
+): boolean {
+  const hasNodeProcess = typeof runtime.process?.versions?.node === "string";
+  const isCloudflareWorker = typeof runtime.WebSocketPair !== "undefined"
+    || runtime.navigator?.userAgent === "Cloudflare-Workers";
+  return hasNodeProcess && !isCloudflareWorker;
 }
 
 async function promptTextFor(key: MessagePromptKey): Promise<string> {
-  if (isNodeRuntime()) {
+  if (shouldLoadPromptFromNodeFilesystem()) {
     const fsPromisesModule = "node:fs/promises";
     const { readFile } = (await import(fsPromisesModule)) as {
       readFile(path: URL, encoding: "utf8"): Promise<string>;

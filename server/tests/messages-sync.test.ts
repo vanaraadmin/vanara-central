@@ -7,6 +7,7 @@ import {
   BEDS24_MESSAGES_MAX_AGE,
   BEDS24_MESSAGES_SOURCE,
   MESSAGES_CURSOR_NAME,
+  normalizeBeds24GuestMessage,
   syncMessages,
   type Beds24GuestMessage,
 } from "../src/services/messages-sync.service.ts";
@@ -350,6 +351,68 @@ function messagesFetcher(messages: Beds24GuestMessage[]): { fetcher: typeof fetc
   };
 }
 
+test("message normalization accepts nested Beds24 message text and strips HTML", () => {
+  const normalized = normalizeBeds24GuestMessage({
+    messageID: "msg-nested",
+    bookingID: "9001",
+    messages: [{ html: "<p>Hello&nbsp;Vanara</p>" }],
+    source: "guest",
+    time: "2026-08-04T09:00:00.000Z",
+    channel: "Booking.com",
+  }, NOW);
+
+  assert.ok(normalized);
+  assert.equal(normalized.providerMessageId, "msg-nested");
+  assert.equal(normalized.providerBookingId, 9001);
+  assert.equal(normalized.guestMessage, "Hello Vanara");
+  assert.equal(normalized.channel, "BOOKING_COM");
+});
+
+test("message normalization accepts non-canonical nested message body fields", () => {
+  const normalized = normalizeBeds24GuestMessage({
+    id: "msg-provider-shape",
+    bookingId: 9001,
+    message: {
+      type: "text",
+      authorOwnerId: 123,
+      bodyHtml: "<div>Do you have parking?</div>",
+    },
+    source: "guest",
+    time: "2026-08-04T09:00:00.000Z",
+  }, NOW);
+
+  assert.ok(normalized);
+  assert.equal(normalized.providerMessageId, "msg-provider-shape");
+  assert.equal(normalized.guestMessage, "Do you have parking?");
+});
+
+test("message normalization accepts numeric Beds24 message ids", () => {
+  const normalized = normalizeBeds24GuestMessage({
+    id: 123456789,
+    bookingId: 9001,
+    message: "Hello Vanara",
+    source: "guest",
+    time: "2026-08-04T09:00:00.000Z",
+  }, NOW);
+
+  assert.ok(normalized);
+  assert.equal(normalized.providerMessageId, "123456789");
+  assert.equal(normalized.idempotencyKey, "BEDS24:123456789");
+});
+
+test("message normalization reports provider payload keys when text is missing", () => {
+  assert.throws(
+    () => normalizeBeds24GuestMessage({
+      id: "bad-1",
+      bookingId: 9001,
+      source: "guest",
+      time: "2026-08-04T09:00:00.000Z",
+      unexpected: true,
+    }, NOW),
+    /Keys: bookingId, id, source, time, unexpected/,
+  );
+});
+
 test("messages imported, linked and unlinked records are persisted with cursor update", async () => {
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Booking.com", api_source: "Booking.com", language_code: "en" }],
@@ -484,6 +547,27 @@ test("GET /api/messages returns imported messages and POST /sync/messages execut
     assert.equal(getBody.data.length, 1);
     assert.equal(getBody.data[0]!.providerMessageId, "msg-1");
     assert.equal(getBody.data[0]!.associationState, "LINKED");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("POST /sync/messages can import messages without generating drafts when explicitly requested", async () => {
+  const db = new FakeMessagesDB({
+    bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Agoda", api_source: "Agoda", language_code: "en" }],
+  });
+  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001)]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = fetcher;
+  try {
+    const post = await worker.fetch(new Request("https://vanara.test/sync/messages?generateDrafts=false", {
+      method: "POST",
+      headers: { cookie: "vanara_session=x" },
+    }), env(db) as never);
+    assert.equal(post.status, 200);
+    const body = await post.json() as { recordsWritten: number; drafts: { attempted: number; generated: number; failed: number } };
+    assert.equal(body.recordsWritten, 1);
+    assert.deepEqual(body.drafts, { attempted: 0, generated: 0, reused: 0, failed: 0, draftIds: [] });
   } finally {
     globalThis.fetch = originalFetch;
   }

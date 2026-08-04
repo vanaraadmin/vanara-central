@@ -1782,7 +1782,10 @@ app.post("/sync/messages", async (c) => {
     await owner(c, "edit");
     validateSyncConfig(c.env);
     const sync = await syncMessages(c.env);
-    const drafts = await generatePendingWarapornDrafts(c.env);
+    const generateDrafts = c.req.query("generateDrafts") !== "false";
+    const drafts = generateDrafts
+      ? await generatePendingWarapornDrafts(c.env)
+      : { attempted: 0, generated: 0, reused: 0, failed: 0, draftIds: [] };
     return c.json({ ...sync, drafts });
   }
   catch (error) {

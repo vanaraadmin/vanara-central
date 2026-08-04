@@ -60,6 +60,8 @@ export interface Beds24GuestMessage {
   [key: string]: unknown;
 }
 
+type JsonRecord = Record<string, unknown>;
+
 interface Beds24MessagesResponse {
   success?: boolean;
   error?: string;
@@ -123,9 +125,114 @@ export const BEDS24_MESSAGES_MAX_AGE = 1;
 
 const PROVIDER: Provider = "BEDS24";
 const CHANNELS = new Set<Channel>(["AIRBNB", "AGODA", "BOOKING_COM", "DIRECT", "EXPEDIA", "VRBO", "UNKNOWN"]);
+const MESSAGE_METADATA_KEYS = new Set([
+  "authorownerid",
+  "booking_id",
+  "bookingid",
+  "channel",
+  "createdat",
+  "created_at",
+  "from",
+  "id",
+  "message_id",
+  "messageid",
+  "propertyid",
+  "read",
+  "roomid",
+  "source",
+  "time",
+  "timestamp",
+  "to",
+  "type",
+]);
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function identifierText(value: unknown): string | null {
+  if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function messageText(value: unknown, depth = 0): string | null {
+  const direct = text(value);
+  if (direct) return stripHtml(direct);
+  if (depth > 5) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = messageText(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isRecord(value)) return null;
+
+  for (const key of [
+    "message",
+    "messages",
+    "guestMessage",
+    "messageText",
+    "text",
+    "body",
+    "plainText",
+    "content",
+    "html",
+    "value",
+  ]) {
+    const found = messageText(value[key], depth + 1);
+    if (found) return found;
+  }
+
+  let fallback: string | null = null;
+  for (const [key, child] of Object.entries(value)) {
+    if (MESSAGE_METADATA_KEYS.has(key.toLowerCase())) continue;
+    const found = messageText(child, depth + 1);
+    if (found && (!fallback || found.length > fallback.length)) fallback = found;
+  }
+  return fallback;
+}
+
+function payloadKeySummary(record: Beds24GuestMessage): string {
+  const keys = Object.keys(record).sort().join(", ") || "none";
+  return `${keys}; message shape: ${payloadShape(record.message)}`;
+}
+
+function payloadShape(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) {
+    const first = value[0];
+    const firstShape = first === undefined ? "empty" : payloadShape(first);
+    return `array(length=${value.length}, first=${firstShape})`;
+  }
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort().join(", ") || "none";
+    return `object(keys=${keys})`;
+  }
+  if (typeof value === "string") {
+    return `string(length=${value.length}, strippedLength=${stripHtml(value).length})`;
+  }
+  return typeof value;
 }
 
 function numberValue(value: unknown): number | null {
@@ -173,13 +280,13 @@ export function normalizeBeds24GuestMessage(
   const receivedAt = isoDate(record.time ?? record.createdAt ?? record.created_at ?? record.receivedAt);
   if (!receivedAt || Date.parse(receivedAt) <= oneDayAgo(now)) return null;
 
-  const providerMessageId = text(record.id ?? record.messageId ?? record.message_id);
-  const guestMessage = text(record.message ?? record.guestMessage ?? record.text ?? record.body);
+  const providerMessageId = identifierText(record.id ?? record.messageId ?? record.message_id ?? record.messageID);
+  const guestMessage = messageText(record.message ?? record.guestMessage ?? record.text ?? record.body ?? record);
   if (!providerMessageId || !guestMessage) {
-    throw new Error("Beds24 guest message payload is missing id or message.");
+    throw new Error(`Beds24 guest message payload is missing id or message. Keys: ${payloadKeySummary(record)}`);
   }
 
-  const providerBookingId = numberValue(record.bookingId ?? record.booking_id);
+  const providerBookingId = numberValue(record.bookingId ?? record.booking_id ?? record.bookingID);
 
   return {
     provider: PROVIDER,

@@ -6,7 +6,9 @@ import { getPromptChecksum } from "../src/services/message-prompt.service.ts";
 import {
   DEFAULT_WARAPORN_VECTOR_STORE_ID,
   generateWarapornDraft,
+  OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
   OPENAI_WARAPORN_DRAFT_MODEL,
+  WARAPORN_REQUIRED_RETRIEVAL_FILENAMES,
 } from "../src/services/waraporn-draft.service.ts";
 
 const NOW = "2026-08-04T10:00:00.000Z";
@@ -48,6 +50,9 @@ type DraftRow = {
   vector_store_id: string;
   openai_response_id: string | null;
   context_hash: string;
+  runtime_context_json: string | null;
+  retrieval_filenames: string;
+  retrieval_result_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -63,6 +68,10 @@ type BookingRow = {
   first_name: string | null;
   arrival_date: string;
   departure_date: string;
+  status: string;
+  api_source: string | null;
+  channel: string | null;
+  language_code: string | null;
   unit_id: number | null;
   room_type_id: number;
 };
@@ -107,6 +116,10 @@ class FakeWarapornDB {
     first_name: "Daniel",
     arrival_date: "2026-12-28",
     departure_date: "2027-01-01",
+    status: "Confirmed",
+    api_source: "Agoda",
+    channel: "Agoda",
+    language_code: "en",
     unit_id: 1,
     room_type_id: 1,
   }];
@@ -164,17 +177,23 @@ class FakeWarapornDB {
       return {
         message_id: message.message_id,
         message_conversation_id: message.message_conversation_id,
+        provider: message.provider,
         booking_id: message.booking_id,
         beds24_booking_id: message.beds24_booking_id,
         guest_message: message.guest_message,
         received_at: message.received_at,
         language: message.language,
         channel: message.channel,
+        booking_status: booking?.status ?? null,
+        booking_source: booking?.api_source ?? null,
+        booking_channel: booking?.channel ?? null,
+        booking_language_code: booking?.language_code ?? null,
         guest_name: booking?.guest_name ?? null,
         first_name: booking?.first_name ?? null,
         arrival_date: booking?.arrival_date ?? null,
         departure_date: booking?.departure_date ?? null,
         unit_name: booking ? "Bungalow 1" : null,
+        unit_type: booking ? "bungalow" : null,
         room_type_name: booking ? "Garden Bungalow" : null,
         room_name: booking ? "Bungalow" : null,
       } as T;
@@ -191,6 +210,38 @@ class FakeWarapornDB {
     }
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) {
       return { results: [] as T[] };
+    }
+    if (sql.includes("FROM unit_availability_cache uac")) {
+      const stayDates = params.filter((value): value is string => typeof value === "string");
+      return {
+        results: stayDates.map((stayDate) => ({
+          unit_id: 1,
+          unit_name: "Bungalow 1",
+          beds24_unit_id: 1001,
+          unit_type: "bungalow",
+          position: 1,
+          room_type_id: 1,
+          room_type_name: "Garden Bungalow",
+          room_name: "Bungalow",
+          beds24_room_id: 501,
+          stay_date: stayDate,
+          availability: 1,
+          closed: 0,
+        })) as T[],
+      };
+    }
+    if (sql.includes("FROM offer_prices")) {
+      const stayDates = params.filter((value): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value));
+      return {
+        results: stayDates.map((stayDate, index) => ({
+          room_type_id: 1,
+          offer_id: 10,
+          beds24_offer_id: 20,
+          arrival_date: stayDate,
+          departure_date: new Date(Date.parse(`${stayDate}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10),
+          price: 2500 + index * 100,
+        })) as T[],
+      };
     }
     if (sql.includes("SELECT m.message_id") && sql.includes("d.message_draft_id IS NULL")) {
       return {
@@ -249,8 +300,11 @@ class FakeWarapornDB {
         vector_store_id: String(params[8]),
         openai_response_id: params[9] as string | null,
         context_hash: String(params[10]),
-        created_at: String(params[11]),
-        updated_at: String(params[12]),
+        runtime_context_json: params[11] as string | null,
+        retrieval_filenames: String(params[12]),
+        retrieval_result_count: Number(params[13]),
+        created_at: String(params[14]),
+        updated_at: String(params[15]),
       });
       return { meta: { changes: 1, last_row_id: this.drafts.length } };
     }
@@ -295,9 +349,29 @@ function openAiFetcher(outputText = READY_DRAFT_TEXT): { fetcher: typeof fetch; 
     bodies,
     fetcher: async (_input, init) => {
       bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-      return jsonResponse(200, { id: "resp-test-1", output_text: outputText });
+      return jsonResponse(200, {
+        id: "resp-test-1",
+        output_text: outputText,
+        output: [{
+          id: "fs-test-1",
+          type: "file_search_call",
+          status: "completed",
+          queries: ["Waraporn character identity"],
+          results: WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.map((filename, index) => ({
+            file_id: `file-${index + 1}`,
+            filename,
+            score: 0.9,
+            text: `Retrieved ${filename}`,
+          })),
+        }],
+      });
     },
   };
+}
+
+function requestText(body: Record<string, unknown>): string {
+  const input = body.input as Array<{ content: Array<{ text: string }> }>;
+  return input[0]!.content.map((item) => item.text).join("\n");
 }
 
 test("message generates one draft and stores it with the frozen prompt checksum", async () => {
@@ -311,6 +385,8 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(draft.promptChecksum, getPromptChecksum());
   assert.equal(db.drafts.length, 1);
   assert.equal(db.drafts[0]!.prompt_checksum, getPromptChecksum());
+  assert.equal(db.drafts[0]!.retrieval_result_count, WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.length);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
   assert.equal(db.conversations[0]!.state, "DRAFT_READY");
   assert.equal(bodies.length, 1);
@@ -325,11 +401,130 @@ test("Waraporn draft request attaches the Make vector store at Responses API lev
   const body = bodies[0]!;
   assert.equal(body.model, OPENAI_WARAPORN_DRAFT_MODEL);
   assert.equal(body.store, true);
+  assert.deepEqual(body.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
   assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: 10,
+    max_num_results: 50,
   }]);
+  assert.equal(body.tool_choice, "required");
+});
+
+test("Waraporn draft request carries the complete verified runtime envelope", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.guest_message = "Can we extend one more night and what is the price?";
+  const { fetcher, bodies } = openAiFetcher();
+
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  const text = requestText(bodies[0]!);
+  assert.match(text, /GUEST FIRST NAME\s+Daniel/);
+  assert.match(text, /CHECK-IN DATE\s+2026-12-28/);
+  assert.match(text, /CHECK-OUT DATE\s+2027-01-01/);
+  assert.match(text, /CONVERSATION CONTEXT\s+No previous conversation history stored in Vanara\./);
+  assert.match(text, /CURRENT GUEST MESSAGE\s+Can we extend one more night and what is the price\?/);
+  assert.match(text, /CURRENT BANGKOK DATE\s+2026-08-04/);
+  assert.match(text, /CURRENT BANGKOK TIME\s+17:00/);
+  assert.match(text, /TRAVEL PHASE\s+pre-arrival/);
+  assert.match(text, /BOOKING STATUS\s+Confirmed/);
+  assert.match(text, /GUEST LANGUAGE\s+en/);
+  assert.match(text, /PROVIDER\s+BEDS24/);
+  assert.match(text, /CHANNEL\s+AGODA/);
+  assert.match(text, /BOOKING SOURCE\s+Agoda/);
+  assert.match(text, /ACCOMMODATION TYPE\s+Bungalow/);
+  assert.match(text, /PHYSICAL UNIT\s+Bungalow 1/);
+  assert.match(text, /VERIFIED AVAILABILITY AND PRICES STATUS\s+USED/);
+  assert.match(text, /Beds24 verified commercial cache/);
+  assert.match(text, /Bungalow: 1\/1 available/);
+  for (const filename of WARAPORN_REQUIRED_RETRIEVAL_FILENAMES) assert.match(text, new RegExp(filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+  const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
+  assert.equal(storedContext.currentBangkokDate, "2026-08-04");
+  assert.equal(storedContext.travelPhase, "pre-arrival");
+  assert.equal(storedContext.availabilityPricesStatus, "USED");
+});
+
+test("availability and prices context is explicit when not applicable", async () => {
+  const db = new FakeWarapornDB();
+  const { fetcher, bodies } = openAiFetcher();
+
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  const text = requestText(bodies[0]!);
+  assert.match(text, /VERIFIED AVAILABILITY AND PRICES STATUS\s+NOT_APPLICABLE/);
+  assert.match(text, /Not applicable to the current guest message\./);
+});
+
+test("missing mandatory file search retrieval prevents a READY draft", async () => {
+  const db = new FakeWarapornDB();
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    assert.deepEqual((JSON.parse(String(init.body)) as Record<string, unknown>).include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
+    return jsonResponse(200, {
+      id: "resp-test-missing-retrieval",
+      output_text: READY_DRAFT_TEXT,
+      output: [{
+        id: "fs-test-1",
+        type: "file_search_call",
+        status: "completed",
+        results: [{
+          file_id: "file-other",
+          filename: "Other_File.md",
+          score: 0.5,
+          text: "Wrong file",
+        }],
+      }],
+    });
+  };
+
+  await assert.rejects(
+    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
+    /retrieval verification failed/i,
+  );
+  assert.equal(db.drafts.length, 0);
+  assert.equal(db.messages[0]!.state, "ASSOCIATED");
+  assert.equal(calls, 3);
+});
+
+test("missing mandatory retrieval is retried with exact filenames before saving READY", async () => {
+  const db = new FakeWarapornDB();
+  const bodies: Array<Record<string, unknown>> = [];
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+    const filenames = calls === 1
+      ? WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.slice(0, 2)
+      : [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES];
+
+    return jsonResponse(200, {
+      id: `resp-test-retry-${calls}`,
+      output_text: READY_DRAFT_TEXT,
+      output: [{
+        id: `fs-test-retry-${calls}`,
+        type: "file_search_call",
+        status: "completed",
+        results: filenames.map((filename, index) => ({
+          file_id: `file-${index + 1}`,
+          filename,
+          score: 0.9,
+          text: `Retrieved ${filename}`,
+        })),
+      }],
+    });
+  };
+
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.equal(draft.state, "READY");
+  assert.equal(calls, 2);
+  assert.equal(db.drafts.length, 1);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
+  const retryText = requestText(bodies[1]!);
+  assert.match(retryText, /RETRIEVAL RETRY REQUIRED FILENAMES/);
+  assert.match(retryText, /Guest_Information_Relevance_Filter\.md/);
+  assert.match(retryText, /Waraporn_Conversational_Instincts\.md/);
 });
 
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {

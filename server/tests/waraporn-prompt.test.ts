@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { shouldLoadPromptFromNodeFilesystem } from "../src/services/message-prompt.service.js";
 
 const promptPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -18,4 +19,20 @@ test("frozen Waraporn prompt asset matches the approved checksum", () => {
 
   assert.equal(actualChecksum, expectedChecksum);
   assert.match(prompt, /^# SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE/);
+});
+
+test("prompt loader does not use Node filesystem inside Cloudflare Workers nodejs_compat", () => {
+  assert.equal(shouldLoadPromptFromNodeFilesystem({
+    process: { versions: { node: "24.0.0" } },
+  }), true);
+
+  assert.equal(shouldLoadPromptFromNodeFilesystem({
+    process: { versions: { node: "24.0.0" } },
+    WebSocketPair: function WebSocketPair() {},
+  }), false);
+
+  assert.equal(shouldLoadPromptFromNodeFilesystem({
+    process: { versions: { node: "24.0.0" } },
+    navigator: { userAgent: "Cloudflare-Workers" },
+  }), false);
 });
