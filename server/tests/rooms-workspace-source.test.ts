@@ -46,12 +46,13 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
+test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Messages, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"chat",/);
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"messages",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"chat",/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
+  assert.match(staffPage, /href:\s*"\/messages"/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
   assert.ok(recentBookingsIndex < workspacesIndex);
   assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);

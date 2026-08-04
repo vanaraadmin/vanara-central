@@ -92,3 +92,65 @@ export interface MessageDelivery {
   state: DeliveryState;
   sentAt: string | null;
 }
+
+export type GuestMessageInboxGroup = "needsReply" | "waitingGuest" | "closed";
+export type GuestMessageTimelineKind = "guest" | "draft" | "sent";
+
+export interface GuestMessageInboxItem {
+  conversationId: string;
+  group: GuestMessageInboxGroup;
+  guestName: string;
+  provider: string;
+  channel: string;
+  otaLabel: string;
+  room: string;
+  bookingId: string | null;
+  lastMessagePreview: string;
+  lastActivityAt: string | null;
+  unreadCount: number;
+  hasReadyDraft: boolean;
+}
+
+export interface GuestMessageInbox {
+  groups: Record<GuestMessageInboxGroup, GuestMessageInboxItem[]>;
+  conversations: GuestMessageInboxItem[];
+}
+
+export interface GuestMessageTimelineItem {
+  id: string;
+  kind: GuestMessageTimelineKind;
+  sender: string;
+  timestamp: string;
+  message: string;
+  status?: "READY" | "SENT";
+}
+
+export interface GuestMessageBookingContext {
+  guest: string;
+  arrival: string | null;
+  departure: string | null;
+  room: string;
+  travelPhase: string;
+  provider: string;
+  channel: string;
+  accommodation: string;
+  bookingStatus: string;
+}
+
+export interface GuestMessageConversationDetail {
+  conversation: GuestMessageInboxItem;
+  timeline: GuestMessageTimelineItem[];
+  bookingContext: GuestMessageBookingContext;
+}
+
+export interface GuestMessageInboxResponse {
+  success: boolean;
+  data?: GuestMessageInbox;
+  error?: string;
+}
+
+export interface GuestMessageConversationResponse {
+  success: boolean;
+  data?: GuestMessageConversationDetail;
+  error?: string;
+}

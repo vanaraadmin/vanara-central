@@ -8,6 +8,7 @@ import { syncProperties, type PropertySyncBindings } from "./services/property-s
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
 import { syncBookings, type BookingsSyncBindings } from "./services/bookings-sync.service.js";
 import { listImportedMessages, syncMessages, type MessagesSyncBindings } from "./services/messages-sync.service.js";
+import { getGuestMessageConversation, listGuestMessageConversations, type GuestMessagesWorkspaceBindings } from "./services/guest-messages-workspace.service.js";
 import { generatePendingWarapornDrafts, generateWarapornDraft, WarapornDraftError, type WarapornDraftBindings } from "./services/waraporn-draft.service.js";
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { AvailabilityPricesError, getAvailabilityPrices } from "./services/availability-prices.service.js";
@@ -60,7 +61,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -291,6 +292,14 @@ async function owner(c: AppContext, action: "access" | "edit" = "access"): Promi
   const user = await resolveCurrentUser(c);
   requireOwner(user);
   requireModulePermission(user, "settings", action);
+  return user;
+}
+
+async function guestMessagesReader(c: AppContext): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  if (!user.views.includes("staff") && !user.views.includes("owner")) {
+    throw new ForbiddenError("Staff view access is required.");
+  }
   return user;
 }
 
@@ -1720,6 +1729,31 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     const message = errorMessage(error);
     const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Conversation not found." ? 404 : 400;
     return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.get("/api/messages/conversations", async (c) => {
+  try {
+    await guestMessagesReader(c);
+    c.header("Cache-Control", "no-store");
+    const search = c.req.query("search");
+    const inbox = await listGuestMessageConversations(c.env, { search });
+    return c.json({ success: true, data: inbox });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/messages/conversations/:conversationId", async (c) => {
+  try {
+    await guestMessagesReader(c);
+    c.header("Cache-Control", "no-store");
+    const conversationId = positiveIntegerParam(c.req.param("conversationId"), "conversation id");
+    const conversation = await getGuestMessageConversation(c.env, conversationId);
+    if (!conversation) return c.json({ success: false, error: "Conversation not found" }, 404);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 

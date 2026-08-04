@@ -327,6 +327,13 @@ try {
   Assert-JsonSuccess $currentUser "Current user"
   Write-Host ("[OK] Authenticated user role: {0}" -f $currentUser.data.role)
 
+  $messagesInbox = Invoke-SmokeGet "/api/messages/conversations"
+  Assert-JsonSuccess $messagesInbox "Guest Messages inbox"
+  foreach ($key in @("needsReply", "waitingGuest", "closed")) {
+    if (-not $messagesInbox.data.groups.PSObject.Properties.Name.Contains($key)) { throw "Guest Messages inbox missing $key group" }
+  }
+  Write-Host ("[OK] Guest Messages inbox read-only groups: {0} conversations" -f @($messagesInbox.data.conversations).Count)
+
   $summary = Invoke-SmokeGet "/api/housekeeping/v2/summary"
   Assert-JsonSuccess $summary "Housekeeping summary"
   foreach ($key in @("toClean", "cleaningInProgress", "completedCleaningToday", "waterDue")) {

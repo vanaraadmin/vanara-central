@@ -22,6 +22,7 @@ import "../styles/StaffPage.css";
 const WORKSPACE_ORDER: StaffCardId[] = [
   "rooms",
   "availability",
+  "messages",
   "reception",
   "housekeeping",
   "maintenance",
@@ -32,6 +33,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
 const workspaceIcons: Record<StaffCardId, string> = {
   rooms: bedIcon,
   availability: calendarCheckIcon,
+  messages: chatIcon,
   reception: airplaneLandingIcon,
   housekeeping: sprayBottleIcon,
   maintenance: wrenchIcon,
@@ -49,6 +51,18 @@ const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
   metrics: [],
   summaryLine1: "Arrival / Departure",
   summaryLine2: "Read-only search",
+};
+
+const MESSAGES_WORKSPACE_CARD: StaffOverviewCard = {
+  id: "messages",
+  module: "chat",
+  title: "Messages",
+  description: "Review guest replies before sending.",
+  href: "/messages",
+  cta: "Open workspace",
+  metrics: [],
+  summaryLine1: "Human review",
+  summaryLine2: "No sending yet",
 };
 
 const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {
@@ -78,6 +92,11 @@ function sortWorkspaces(workspaces: StaffOverviewCard[]) {
 function withAvailabilityWorkspace(workspaces: StaffOverviewCard[]) {
   if (workspaces.some((workspace) => workspace.id === "availability")) return workspaces;
   return [...workspaces, AVAILABILITY_WORKSPACE_CARD];
+}
+
+function withMessagesWorkspace(workspaces: StaffOverviewCard[]) {
+  if (workspaces.some((workspace) => workspace.id === "messages")) return workspaces;
+  return [...workspaces, MESSAGES_WORKSPACE_CARD];
 }
 
 function iconStyle(iconUrl: string): CSSProperties {
@@ -165,7 +184,7 @@ export default function StaffPage() {
     refetchInterval: 60_000,
   });
 
-  const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
+  const workspaces = staff.data ? sortWorkspaces(withMessagesWorkspace(withAvailabilityWorkspace(staff.data.cards))) : [];
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;

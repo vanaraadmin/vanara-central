@@ -79,6 +79,7 @@ test("Staff Home and WorkspaceShell consume backgrounds through the shared confi
   assert.match(workspaceShell, /maintenance: "maintenance"/);
   assert.match(workspaceShell, /procurement: "procurement"/);
   assert.match(workspaceShell, /chat: "chat"/);
+  assert.match(workspaceShell, /messages: "chat"/);
   assert.match(workspaceShell, /workspaceBackgroundStyle\(backgroundKey\)/);
   assert.match(workspaceShell, /preloadWorkspaceBackground\(backgroundKey\)/);
 });
@@ -96,6 +97,7 @@ test("implemented workspaces map to the correct shared shell background keys", (
   assert.match(readFileSync(new URL("../../src/pages/ProcurementOwnerPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
   assert.match(readFileSync(new URL("../../src/pages/SupplyRequestPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
   assert.match(readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8"), /workspace="chat"/);
+  assert.match(readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8"), /workspace="messages"/);
 });
 
 test("workspace background CSS uses the variable, cover rules and dark fallback", () => {

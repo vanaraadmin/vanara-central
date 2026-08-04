@@ -19,6 +19,7 @@ const workspaceNumbers = {
   maintenance: "04",
   procurement: "05",
   chat: "06",
+  messages: "07",
 } as const;
 
 type WorkspaceKey = keyof typeof workspaceNumbers;
@@ -31,6 +32,7 @@ const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
   procurement: "procurement",
   rooms: "rooms",
   chat: "chat",
+  messages: "chat",
 };
 
 interface WorkspaceShellProps {
@@ -41,6 +43,7 @@ interface WorkspaceShellProps {
   heroAction?: React.ReactNode;
   stickyNavigationTitle?: string;
   suppressStickyNavigation?: boolean;
+  wide?: boolean;
 }
 
 function formatToday() {
@@ -65,6 +68,7 @@ export default function WorkspaceShell({
   stickyNavigationTitle,
   suppressStickyNavigation = false,
   title,
+  wide = false,
   workspace,
 }: WorkspaceShellProps) {
   const backgroundKey = workspaceBackgroundKeys[workspace];
@@ -120,7 +124,7 @@ export default function WorkspaceShell({
     <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
       <div className="workspace-page__veil" aria-hidden="true" />
 
-      <section className="workspace-shell" aria-label={`${title} workspace`}>
+      <section className={wide ? "workspace-shell workspace-shell--wide" : "workspace-shell"} aria-label={`${title} workspace`}>
         {!suppressStickyNavigation ? (
           <StickyGlassHeader progress={progress} title={navigationTitle} />
         ) : null}

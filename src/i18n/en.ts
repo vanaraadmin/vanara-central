@@ -4,7 +4,7 @@ const en = {
   noArrivals: "No arrivals today.", noDepartures: "No departures today.", updatedAt: "Updated", cachedData: "cached data",
   adults: "adults", adult: "adult", children: "children", child: "child", guests: "guests", guest: "guest",
   guestsNotSpecified: "Guests not specified", checkIn: "Check-in", checkOut: "Check-out",
-  staffHome: "Staff", dashboard: "Dashboard", rooms: "Rooms", prices: "Prices", pricesDescription: "Check availability and verified prices.", tasks: "Tasks", askWaraporn: "Ask", mainNavigation: "Main navigation",
+  staffHome: "Staff", dashboard: "Dashboard", rooms: "Rooms", prices: "Prices", pricesDescription: "Check availability and verified prices.", messages: "Messages", messagesDescription: "Review guest replies before sending.", tasks: "Tasks", askWaraporn: "Ask", mainNavigation: "Main navigation",
   operationsEyebrow: "Resort operations", todayOverview: "Today at the resort",
   dataMayBeOld: "The displayed data may not be up to date.", latestAvailableData: "Beds24 is unavailable. Showing the latest available data.",
   loadingToday: "Loading today's operations…"

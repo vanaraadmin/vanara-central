@@ -9,6 +9,7 @@ import CreateMaintenancePage from "../pages/CreateMaintenancePage";
 import DashboardPage from "../pages/DashboardPage";
 import MaintenanceDetailPage from "../pages/MaintenanceDetailPage";
 import MaintenancePage from "../pages/MaintenancePage";
+import MessagesPage from "../pages/MessagesPage";
 import HousekeepingV2Page from "../pages/HousekeepingV2Page";
 import LoginPage from "../pages/LoginPage";
 import MovementsPage from "../pages/MovementsPage";
@@ -28,6 +29,7 @@ const moreLinks: PlaceholderLink[] = [
   { labelKey: "staffHome", to: "/staff" },
   { labelKey: "housekeeping", to: "/housekeeping" },
   { labelKey: "maintenance", to: "/maintenance" },
+  { labelKey: "messages", to: "/messages" },
   { labelKey: "procurement", to: "/procurement" },
   { labelKey: "notifications", to: "/notifications" },
   { labelKey: "askWaraporn", to: "/assistant" },
@@ -93,6 +95,7 @@ export default function AppRouter() {
           <Route path="maintenance" element={<MaintenancePage />} />
           <Route path="maintenance/new" element={<CreateMaintenancePage />} />
           <Route path="maintenance/:issueId" element={<MaintenanceDetailPage />} />
+          <Route path="messages" element={<MessagesPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="procurement/new" element={<SupplyRequestPage />} />
           <Route path="procurement/:requestId" element={<ProcurementDetailPage />} />
