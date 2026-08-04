@@ -23,11 +23,14 @@ export type MessageState =
   | "RECEIVED"
   | "DEDUPED"
   | "ASSOCIATED"
+  | "UNLINKED"
   | "DRAFT_PENDING"
   | "DRAFT_READY"
   | "REVIEW_PENDING"
   | "SENT"
   | "FAILED";
+
+export type MessageAssociationState = "LINKED" | "UNLINKED";
 
 export type Intent =
   | "AVAILABILITY"
@@ -64,6 +67,7 @@ export interface Message {
   body: string;
   state: MessageState;
   receivedAt: string;
+  associationState: MessageAssociationState;
 }
 
 export interface Draft {

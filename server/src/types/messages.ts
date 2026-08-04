@@ -25,11 +25,14 @@ export type MessageState =
   | "RECEIVED"
   | "DEDUPED"
   | "ASSOCIATED"
+  | "UNLINKED"
   | "DRAFT_PENDING"
   | "DRAFT_READY"
   | "REVIEW_PENDING"
   | "SENT"
   | "FAILED";
+
+export type MessageAssociationState = "LINKED" | "UNLINKED";
 
 export type Intent =
   | "AVAILABILITY"
@@ -77,7 +80,18 @@ export interface Message {
   receivedAt: string;
   bookingId: number | null;
   beds24BookingId: number | null;
+  associationState: MessageAssociationState;
   idempotencyKey: string;
+}
+
+export interface ImportedMessage extends Message {
+  numericMessageId: number;
+  numericConversationId: number;
+  providerBookingId: number | null;
+  rawProviderPayload: unknown;
+  language: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MessageIntent {

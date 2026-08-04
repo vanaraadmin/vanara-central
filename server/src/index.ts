@@ -7,6 +7,7 @@ import { getTodayDashboard } from "./services/today.service.js";
 import { syncProperties, type PropertySyncBindings } from "./services/property-sync.service.js";
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
 import { syncBookings, type BookingsSyncBindings } from "./services/bookings-sync.service.js";
+import { listImportedMessages, syncMessages, type MessagesSyncBindings } from "./services/messages-sync.service.js";
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { AvailabilityPricesError, getAvailabilityPrices } from "./services/availability-prices.service.js";
 import { getAvailability } from "./services/availability-read.service.js";
@@ -57,7 +58,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   VANARA_DATABASE_ENVIRONMENT: string;
@@ -1674,6 +1675,18 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     return c.json({ success: false, error: message }, status);
   }
 });
+
+app.get("/api/messages", async (c) => {
+  try {
+    await owner(c);
+    const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+    const messages = await listImportedMessages(c.env, limit);
+    return c.json({ success: true, data: messages });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
 app.get("/today", async (c) => {
   try { await authenticated(c, "dashboard", "access"); return c.json(await getTodayDashboard(c.env)); }
   catch (error) {
@@ -1702,6 +1715,14 @@ app.post("/sync/bookings", async (c) => {
   try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncBookings(c.env)); }
   catch (error) {
     console.error("Bookings sync failed:", error);
+    return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/sync/messages", async (c) => {
+  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncMessages(c.env)); }
+  catch (error) {
+    console.error("Messages sync failed:", error);
     return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
@@ -1751,6 +1772,7 @@ app.get("/sync/status", async (c) => {
         (SELECT COUNT(*) FROM offers) AS offers,
         (SELECT COUNT(*) FROM offer_prices) AS offer_prices,
         (SELECT COUNT(*) FROM bookings) AS bookings,
+        (SELECT COUNT(*) FROM messages) AS messages,
         (SELECT COUNT(*) FROM unit_availability_cache) AS unit_availability_cache
     `).first(),
     c.env.DB.prepare("SELECT cursor_name, cursor_value, updated_at FROM sync_cursors ORDER BY cursor_name").all(),
@@ -1826,7 +1848,7 @@ export default {
       return;
     }
     if (controller.cron === "*/5 * * * *") {
-      ctx.waitUntil(syncBookings(env).then(() => undefined));
+      ctx.waitUntil(syncBookings(env).then(() => syncMessages(env)).then(() => undefined));
       return;
     }
     if (controller.cron === "2 * * * *") {
