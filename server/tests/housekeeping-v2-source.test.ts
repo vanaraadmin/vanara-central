@@ -187,7 +187,7 @@ test("v2 task actions render the next server-authorized step only", () => {
   assert.match(page, /card\.capabilities\.canComplete && card\.taskType !== "STANDARD_CLEANING" && card\.taskType !== "WATER_REFILL"/);
   assert.match(page, /waterRefillCompleted: true/);
   assert.doesNotMatch(page, /card\.taskType === "ON_DEMAND_CLEANING"\)/);
-  assert.match(page, /<span>Complete<\/span>/);
+  assert.match(page, /<span>Mark Delivered<\/span>/);
   assert.match(page, /onSettled: \(\) =>/);
   assert.doesNotMatch(page, /Release claim/);
 });
@@ -216,8 +216,38 @@ test("summary counters render room-count wording", () => {
 test("water cards stay one-tap and avoid workflow indicators", () => {
   assert.match(page, /if \(card\.taskType === "WATER_REFILL"\) return null/);
   assert.match(page, /card\.taskType === "WATER_REFILL" && card\.capabilities\.canComplete/);
-  assert.match(page, /const completeWater = \(\) => action\.mutate\(completeHousekeepingTask\(taskId, version, \{ waterRefillCompleted: true \}\)\)/);
+  assert.match(page, /function completeWaterRefill/);
+  assert.match(page, /completeHousekeepingTask\(card\.taskId, card\.taskVersion, \{ waterRefillCompleted: true \}\)/);
+  assert.match(page, /function WaterDeliveryControl/);
+  assert.match(page, /Mark water delivered for \$\{card\.unitName\}/);
+  assert.match(page, /Saving water delivery for \$\{card\.unitName\}/);
+  assert.match(page, /Water delivered for \$\{card\.unitName\}/);
+  assert.match(page, /waterDeliveryStateLabel\(card\)/);
+  assert.match(page, /return "Pending"/);
+  assert.match(page, /return "Delivered"/);
   assert.doesNotMatch(page, /Complete Water|Start Water/);
+});
+
+test("water refill compact rows expose inline delivery without requiring room expansion", () => {
+  const taskCard = page.match(/function TaskCard[\s\S]*?function Section/)?.[0] ?? "";
+  const deliveryControl = page.match(/function WaterDeliveryControl[\s\S]*?function CardMeta/)?.[0] ?? "";
+
+  assert.match(taskCard, /const isWaterTask = card\.taskType === "WATER_REFILL"/);
+  assert.match(taskCard, /housekeeping-v2-task-row--water/);
+  assert.match(taskCard, /isWaterTask \? <WaterDeliveryControl action=\{action\} card=\{card\} \/> : null/);
+  assert.match(taskCard, /<button[\s\S]*className="housekeeping-v2-task-row__toggle"/);
+  assert.match(deliveryControl, /disabled=\{disabled\}/);
+  assert.match(deliveryControl, /action\.isPending \|\| delivered \|\| !card\.capabilities\.canComplete/);
+  assert.match(deliveryControl, /onClick=\{\(\) => completeWaterRefill\(action, card\)\}/);
+  assert.match(deliveryControl, /action\.isPending \? "Saving" : "Mark Delivered"/);
+  assert.match(deliveryControl, /delivered \? "Delivered"/);
+  assert.match(page, /void queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
+  assert.match(page, /This task changed\. The list is refreshing\./);
+  assert.match(css, /\.housekeeping-v2-task-row--water\s*\{/);
+  assert.match(css, /\.housekeeping-v2-water-delivery\s*\{[\s\S]*min-height:\s*44px;/);
+  assert.match(css, /\.housekeeping-v2-water-delivery\.is-delivered/);
+  assert.doesNotMatch(taskCard, /<button[\s\S]*<button[\s\S]*<\/button>[\s\S]*<\/button>/);
+  assert.doesNotMatch(page, /quantityDelivered|waterQuantityDelivered|prompt\(|window\.confirm/);
 });
 
 test("read model includes generated Standard Cleaning work and excludes Room-owned cleaning from the queue", () => {

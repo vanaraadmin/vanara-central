@@ -126,6 +126,7 @@ function reasonLabel(code: string): string {
 }
 
 function statusLabel(card: HousekeepingV2TaskCard): string {
+  if (card.taskType === "WATER_REFILL") return waterDeliveryStateLabel(card);
   if (card.isBlocked && card.blockReason) return card.blockReason;
   if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return "Available";
   if (card.taskStatus === "CLAIMED") return card.assignee ? `Assigned to ${card.assignee}` : "Assigned";
@@ -139,6 +140,17 @@ function statusLabel(card: HousekeepingV2TaskCard): string {
   return "Active";
 }
 
+function waterDeliveryStateLabel(card: HousekeepingV2TaskCard): string {
+  if (card.taskStatus === "COMPLETED" || card.taskStatus === "READY") return "Delivered";
+  if (card.taskStatus === "SKIPPED") return "Skipped";
+  if (card.isBlocked || card.taskStatus === "BLOCKED") return "Blocked";
+  return "Pending";
+}
+
+function completeWaterRefill(action: ReturnType<typeof useOverviewAction>, card: HousekeepingV2TaskCard) {
+  action.mutate(completeHousekeepingTask(card.taskId, card.taskVersion, { waterRefillCompleted: true }));
+}
+
 function useOverviewAction() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -147,6 +159,37 @@ function useOverviewAction() {
       void queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] });
     },
   });
+}
+
+function WaterDeliveryControl({
+  action,
+  card,
+}: {
+  action: ReturnType<typeof useOverviewAction>;
+  card: HousekeepingV2TaskCard;
+}) {
+  const delivered = card.taskStatus === "COMPLETED" || card.taskStatus === "READY";
+  const disabled = action.isPending || delivered || !card.capabilities.canComplete;
+  const ariaLabel = action.isPending
+    ? `Saving water delivery for ${card.unitName}`
+    : delivered
+      ? `Water delivered for ${card.unitName}`
+      : `Mark water delivered for ${card.unitName}`;
+
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={`housekeeping-v2-water-delivery${delivered ? " is-delivered" : ""}`}
+      disabled={disabled}
+      onClick={() => completeWaterRefill(action, card)}
+      type="button"
+    >
+      <span className="housekeeping-v2-water-delivery__check" aria-hidden="true">
+        {delivered ? <CheckIcon /> : null}
+      </span>
+      <span>{delivered ? "Delivered" : action.isPending ? "Saving" : "Mark Delivered"}</span>
+    </button>
+  );
 }
 
 function CardMeta({ card }: { card: HousekeepingV2TaskCard }) {
@@ -189,7 +232,6 @@ function InterventionSheet({ type, onClose }: { type: InterventionType; onClose:
 function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard }) {
   const taskId = card.taskId;
   const version = card.taskVersion;
-  const completeWater = () => action.mutate(completeHousekeepingTask(taskId, version, { waterRefillCompleted: true }));
   const completeRegularTask = () => action.mutate(completeHousekeepingTask(taskId, version, card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? { linenChangeCompleted: true } : { standardCleaningCompleted: true }));
   const regularFinishLabel = card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? "Finish Full Cleaning" : "Finish Cleaning";
   const controls = [
@@ -203,9 +245,9 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
       <button className="vc-primary-action" disabled={action.isPending} key="start" onClick={() => action.mutate(startHousekeepingTask(taskId, version))} type="button">Start</button>
     ) : null,
     card.taskType === "WATER_REFILL" && card.capabilities.canComplete ? (
-      <button className="vc-primary-action" disabled={action.isPending} key="water-complete" onClick={completeWater} type="button">
+      <button className="vc-primary-action" disabled={action.isPending} key="water-complete" onClick={() => completeWaterRefill(action, card)} type="button">
         <CheckIcon />
-        <span>Complete</span>
+        <span>Mark Delivered</span>
       </button>
     ) : null,
     card.capabilities.canComplete && card.taskType === "STANDARD_CLEANING" ? (
@@ -291,10 +333,11 @@ function TaskCard({
   const canReportMaintenance = Boolean(intervention && card.unitId > 0);
   const tone = taskTone(card);
   const assigneeLabel = card.assignee ? `Assigned ${card.assignee}` : "Unassigned";
+  const isWaterTask = card.taskType === "WATER_REFILL";
 
   return (
     <article className={`housekeeping-v2-task-item housekeeping-v2-task-item--${card.priority.toLowerCase()}${card.isBlocked ? " is-blocked" : ""}${expanded ? " is-expanded" : ""}`}>
-      <div className="housekeeping-v2-task-row">
+      <div className={`housekeeping-v2-task-row${isWaterTask ? " housekeeping-v2-task-row--water" : ""}`}>
         <div className="housekeeping-v2-task-row__mark" aria-hidden="true">
           {card.isBlocked ? <AlertIcon /> : <HousekeepingIcon />}
         </div>
@@ -316,6 +359,8 @@ function TaskCard({
           <strong className={`vc-state-${tone}`}>{statusLabel(card)}</strong>
           <span>{assigneeLabel} · {formatDate(card.operationalDate)}</span>
         </div>
+
+        {isWaterTask ? <WaterDeliveryControl action={action} card={card} /> : null}
 
         <button
           aria-expanded={expanded}

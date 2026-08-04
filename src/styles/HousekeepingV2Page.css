@@ -58,6 +58,10 @@
     transform var(--vc-duration-fast) var(--vc-ease-standard);
 }
 
+.housekeeping-v2-task-row--water {
+  grid-template-columns: 40px minmax(0, 1fr) minmax(112px, auto) auto 18px;
+}
+
 .housekeeping-v2-task-item.is-expanded .housekeeping-v2-task-row {
   position: relative;
   z-index: 2;
@@ -190,6 +194,64 @@
 .housekeeping-v2-task-row__toggle:focus-visible {
   outline: 2px solid var(--vc-focus-glass);
   outline-offset: 4px;
+}
+
+.housekeeping-v2-water-delivery {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+  padding: 0 var(--vc-space-3);
+  border: 1px solid rgba(235, 241, 233, 0.18);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(247, 244, 238, 0.84);
+  background: rgba(247, 244, 238, 0.08);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.housekeeping-v2-water-delivery:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.housekeeping-v2-water-delivery:focus-visible {
+  outline: 2px solid var(--vc-focus-glass);
+  outline-offset: 3px;
+}
+
+.housekeeping-v2-water-delivery__check {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(235, 241, 233, 0.18);
+  border-radius: var(--vc-radius-pill);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.housekeeping-v2-water-delivery__check svg {
+  width: 14px;
+  height: 14px;
+}
+
+.housekeeping-v2-water-delivery.is-delivered {
+  border-color: rgba(139, 196, 147, 0.32);
+  color: rgba(232, 255, 236, 0.98);
+  background: rgba(139, 196, 147, 0.15);
+}
+
+.housekeeping-v2-water-delivery.is-delivered .housekeeping-v2-water-delivery__check {
+  border-color: rgba(139, 196, 147, 0.36);
+  background: rgba(139, 196, 147, 0.22);
 }
 
 .housekeeping-v2-task-expanded {
@@ -433,6 +495,10 @@
     padding: var(--vc-space-4) var(--vc-space-3);
   }
 
+  .housekeeping-v2-task-row--water {
+    grid-template-columns: 36px minmax(0, 1fr) 18px;
+  }
+
   .housekeeping-v2-task-row__state {
     grid-column: 2;
     justify-items: start;
@@ -442,6 +508,12 @@
   .housekeeping-v2-task-row__state strong,
   .housekeeping-v2-task-row__state span {
     max-width: 100%;
+  }
+
+  .housekeeping-v2-water-delivery {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: var(--vc-space-1);
   }
 
   .housekeeping-v2-task-expanded {
