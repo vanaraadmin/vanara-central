@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import logoSrc from "../assets/img/logo.png";
 import "../styles/StickyGlassHeader.css";
@@ -78,6 +78,7 @@ export default function StickyGlassHeader({
   variant = "default",
 }: StickyGlassHeaderProps) {
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
+  const lastActivationRef = useRef(0);
   const p = clampProgress(progress);
   const visible = p > 0.05;
   const animationProgress = reducedMotion ? (visible ? 1 : 0) : p;
@@ -107,6 +108,14 @@ export default function StickyGlassHeader({
     transform: `translateX(-50%) translateY(${translateY}px)`,
   };
 
+  const activateReturnToTop = (event?: SyntheticEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    const now = Date.now();
+    if (now - lastActivationRef.current < 250) return;
+    lastActivationRef.current = now;
+    scrollToPageTop();
+  };
+
   return (
     <div
       aria-hidden={!visible}
@@ -120,7 +129,8 @@ export default function StickyGlassHeader({
         <button
           aria-label={`Return to top of ${title}`}
           className="sticky-glass-nav-return vc-interactive-surface"
-          onClick={scrollToPageTop}
+          onClick={activateReturnToTop}
+          onPointerUp={activateReturnToTop}
           tabIndex={visible ? 0 : -1}
           type="button"
         >

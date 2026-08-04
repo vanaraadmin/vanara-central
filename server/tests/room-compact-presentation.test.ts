@@ -355,7 +355,7 @@ test("passport and deposit alerts map to final compact reception signals", () =>
   assert.deepEqual(combined.secondarySignals.map((signal) => signal.label), ["RECEPTION ATTENTION"]);
 });
 
-test("secondary signals are capped to the approved visual limit", () => {
+test("secondary signals preserve every operational alert for wrapping rows", () => {
   const presentation = getRoomCompactPresentation(room({
     operational: {
       maintenance: {
@@ -371,8 +371,8 @@ test("secondary signals are capped to the approved visual limit", () => {
     },
   }));
 
-  assert.equal(presentation.secondarySignals.length, 2);
-  assert.deepEqual(presentation.secondarySignals.map((signal) => signal.label), ["MAINTENANCE", "CHECK-OUT TODAY"]);
+  assert.equal(presentation.secondarySignals.length, 3);
+  assert.deepEqual(presentation.secondarySignals.map((signal) => signal.label), ["MAINTENANCE", "CHECK-OUT TODAY", "PASSPORT MISSING"]);
 });
 
 test("accessible summary includes every displayed operational fact", () => {

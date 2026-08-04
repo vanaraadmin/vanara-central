@@ -98,7 +98,8 @@ function sectionSummaryItems(sections: HousekeepingV2Section[]): VanaraSummaryIt
       id: item.id,
       label: item.label,
       tone: summaryToneForSection(item.id, count),
-      value: formatRoomCount(count),
+      value: count,
+      unitLabel: count === 1 ? "room" : "rooms",
     };
   });
 }

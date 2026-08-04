@@ -131,18 +131,19 @@ function WorkspaceCard({
         <span className="staff-workspace__index" aria-hidden="true">
           {String(index + 1).padStart(2, "0")}
         </span>
-
-        <span
-          className="staff-workspace__icon"
-          style={iconStyle(iconUrl)}
-          aria-hidden="true"
-        >
-          <span className="staff-workspace__glyph" />
-        </span>
       </span>
 
       <span className="staff-workspace__content">
-        <span className="staff-workspace__title">{title}</span>
+        <span className="staff-workspace__title-row">
+          <span
+            className="staff-workspace__icon"
+            style={iconStyle(iconUrl)}
+            aria-hidden="true"
+          >
+            <span className="staff-workspace__glyph" />
+          </span>
+          <span className="staff-workspace__title">{title}</span>
+        </span>
         <span className="staff-workspace__description">{workspace.description}</span>
 
         {metrics.length > 0 ? (

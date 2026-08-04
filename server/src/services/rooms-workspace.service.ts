@@ -1003,7 +1003,17 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       FROM housekeeping_tasks
       WHERE status IN ('WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS', 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED')
         AND (idempotency_key IS NULL OR idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
-        AND (operational_date = ?1 OR due_cycle_date <= ?1)
+        AND (
+          operational_date = ?1
+          OR due_cycle_date <= ?1
+          OR (
+            source = 'manual'
+            AND (
+              task_type = 'ON_DEMAND_CLEANING'
+              OR on_demand_source = 'ROOM_READY_OVERRIDE'
+            )
+          )
+        )
       GROUP BY unit_id
     ) ht_count ON ht_count.unit_id = u.unit_id
     LEFT JOIN (
@@ -1040,7 +1050,17 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
         FROM housekeeping_tasks ht
         WHERE ht.status IN ('WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS', 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED')
           AND (ht.idempotency_key IS NULL OR ht.idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
-          AND (ht.operational_date = ?1 OR ht.due_cycle_date <= ?1)
+          AND (
+            ht.operational_date = ?1
+            OR ht.due_cycle_date <= ?1
+            OR (
+              ht.source = 'manual'
+              AND (
+                ht.task_type = 'ON_DEMAND_CLEANING'
+                OR ht.on_demand_source = 'ROOM_READY_OVERRIDE'
+              )
+            )
+          )
       )
       WHERE task_rank = 1
     ) ht ON ht.unit_id = u.unit_id

@@ -151,7 +151,7 @@ export function getRoomCompactPresentation(room: RoomsWorkspaceRoom): RoomCompac
     mapCompactMaintenance(room.operational),
     mapCompactTurnover(room),
     mapCompactReceptionAlert(room),
-  ].filter((item): item is RoomCompactSignal => item !== null).slice(0, 2);
+  ].filter((item): item is RoomCompactSignal => item !== null);
 
   return {
     mode: "STANDARD",

@@ -32,6 +32,10 @@ export interface BookingPulseItem {
   countryCode?: string | null;
   unitId?: number | null;
   unitName?: string | null;
+  unitNames: string[];
+  roomQuantity: number;
+  compactUnitLabel: string;
+  assignmentComplete: boolean;
   source: string | null;
   arrivalDate?: string | null;
   departureDate?: string | null;

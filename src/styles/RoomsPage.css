@@ -66,8 +66,8 @@
   width: 100%;
   min-height: 96px;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto 18px;
-  align-items: center;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(132px, auto) 18px;
+  align-items: start;
   column-gap: 14px;
   padding: 17px 18px;
   border: 0;
@@ -113,6 +113,7 @@
 }
 
 .room-row__type-mark {
+  align-self: center;
   width: 32px;
   height: 32px;
   display: grid;
@@ -129,6 +130,7 @@
 }
 
 .room-row__identity {
+  align-self: center;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -160,6 +162,7 @@
 }
 
 .room-signals {
+  align-self: center;
   justify-self: end;
   width: fit-content;
   max-width: min(42vw, 280px);
@@ -173,16 +176,17 @@
 .room-signals__secondary {
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  overflow: hidden;
+  overflow: visible;
   color: rgba(244, 237, 223, 0.74);
   font-family: var(--vc-font-sans);
   font-size: 0.72rem;
   letter-spacing: 0;
   line-height: 1.2;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .room-signals__primary {
@@ -203,8 +207,8 @@
 
 .room-signal {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .room-signals__primary .room-signal--information {
@@ -265,6 +269,7 @@
 }
 
 .room-row__chevron {
+  align-self: center;
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
@@ -884,7 +889,7 @@ button.room-domain-card__primary-action {
 
 @media (max-width: 420px) {
   .room-row {
-    grid-template-columns: 32px minmax(0, 1fr) minmax(0, auto) 16px;
+    grid-template-columns: 32px minmax(0, 1fr) minmax(116px, auto) 16px;
     gap: 10px;
     padding: 13px 14px;
   }
@@ -904,12 +909,7 @@ button.room-domain-card__primary-action {
   }
 
   .room-signals {
-    max-width: 48vw;
-  }
-
-  .room-signals__secondary .room-signal:not(:first-of-type),
-  .room-signals__secondary .room-signals__separator {
-    display: none;
+    max-width: 52vw;
   }
 }
 

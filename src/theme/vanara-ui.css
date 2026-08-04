@@ -580,6 +580,16 @@ body :is(.vc-secondary-action, .vc-secondary-glass-action)[data-pressed="true"]:
   letter-spacing: 0.08em;
 }
 
+.vc-summary-item__unit {
+  margin: 0;
+  color: rgba(244, 237, 223, 0.56);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
+  line-height: 1;
+  text-transform: lowercase;
+}
+
 .vc-state-clean {
   color: var(--vc-state-clean-text);
 }

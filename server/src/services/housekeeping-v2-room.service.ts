@@ -4,6 +4,7 @@ import {
   createHousekeepingTask,
   HousekeepingTaskDomainError,
   getHousekeepingTask,
+  ROOM_READY_OVERRIDE_SOURCE,
   syncReleasedTurnoverTasks,
   transitionHousekeepingTask,
   type HousekeepingCompletionInput,
@@ -903,11 +904,22 @@ async function loadRoomTasks(env: HousekeepingV2RoomBindings, unitId: number, da
     SELECT task_id
     FROM housekeeping_tasks
     WHERE unit_id = ?
-      AND (operational_date = ? OR (due_cycle_date <= ? AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')))
+      AND (
+        operational_date = ?
+        OR (due_cycle_date <= ? AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED'))
+        OR (
+          status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
+          AND source = 'manual'
+          AND (
+            task_type = 'ON_DEMAND_CLEANING'
+            OR on_demand_source = ?
+          )
+        )
+      )
     ORDER BY
       CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 WHEN 'WATER_REFILL' THEN 5 ELSE 6 END,
       task_id
-  `).bind(unitId, date, date).all<{ task_id: number }>();
+  `).bind(unitId, date, date, ROOM_READY_OVERRIDE_SOURCE).all<{ task_id: number }>();
   const tasks: HousekeepingTask[] = [];
   for (const row of rows.results ?? []) {
     const task = await getHousekeepingTask(env, row.task_id);

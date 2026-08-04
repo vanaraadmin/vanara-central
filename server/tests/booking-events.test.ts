@@ -406,6 +406,10 @@ test("single booking remains unchanged in Booking Pulse", async () => {
   assert.equal(events[0]?.bookingId, "9101");
   assert.equal(events[0]?.eventId, "9101:NEW:2026-08-02T10:00:00.000Z");
   assert.equal(events[0]?.unitName, "Villa 10");
+  assert.deepEqual(events[0]?.unitNames, ["Villa 10"]);
+  assert.equal(events[0]?.compactUnitLabel, "Villa 10");
+  assert.equal(events[0]?.roomQuantity, 1);
+  assert.equal(events[0]?.assignmentComplete, true);
 });
 
 test("master booking with three bungalows returns one Booking Pulse event", async () => {
@@ -444,7 +448,11 @@ test("master booking with three bungalows returns one Booking Pulse event", asyn
   assert.equal(events.length, 1);
   assert.equal(events[0]?.bookingId, "90858176");
   assert.equal(events[0]?.guestName, "Daniel Padurariu");
-  assert.equal(events[0]?.unitName, "3 Bungalows");
+  assert.equal(events[0]?.unitName, "Bungalow 1, Bungalow 2, Bungalow 3");
+  assert.deepEqual(events[0]?.unitNames, ["Bungalow 1", "Bungalow 2", "Bungalow 3"]);
+  assert.equal(events[0]?.compactUnitLabel, "Bungalow 1, Bungalow 2 +1");
+  assert.equal(events[0]?.roomQuantity, 3);
+  assert.equal(events[0]?.assignmentComplete, true);
   assert.equal(events[0]?.arrivalDate, "2026-12-28");
   assert.equal(events[0]?.departureDate, "2027-01-01");
 });
@@ -479,7 +487,10 @@ test("master booking with villa and tent returns mixed accommodation summary", a
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
 
   assert.equal(events.length, 1);
-  assert.equal(events[0]?.unitName, "1 Villa + 1 Tent");
+  assert.equal(events[0]?.unitName, "Villa 10, Tent 2");
+  assert.deepEqual(events[0]?.unitNames, ["Villa 10", "Tent 2"]);
+  assert.equal(events[0]?.compactUnitLabel, "Villa 10, Tent 2");
+  assert.equal(events[0]?.roomQuantity, 2);
 });
 
 test("master booking with two bungalows and one tent returns mixed plural summary", async () => {
@@ -503,7 +514,32 @@ test("master booking with two bungalows and one tent returns mixed plural summar
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
 
   assert.equal(events.length, 1);
-  assert.equal(events[0]?.unitName, "2 Bungalows + 1 Tent");
+  assert.equal(events[0]?.unitName, "Bungalow 1, Bungalow 2, Tent 1");
+  assert.deepEqual(events[0]?.unitNames, ["Bungalow 1", "Bungalow 2", "Tent 1"]);
+  assert.equal(events[0]?.compactUnitLabel, "Bungalow 1, Bungalow 2 +1");
+  assert.equal(events[0]?.roomQuantity, 3);
+});
+
+test("missing Booking Pulse unit assignment uses explicit pending fallback", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 1,
+      beds24_booking_id: 9401,
+      unit_id: null,
+      unit_name: null,
+      event_accommodation: "Bungalow",
+      occurred_at: "2026-08-02T10:00:00.000Z",
+    }),
+  ];
+  db.groupMembers.set(9401, [groupMember({ beds24_booking_id: 9401, unit_id: null, unit_name: null })]);
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T11:00:00.000Z"));
+
+  assert.equal(events[0]?.unitName, "Unit assignment pending");
+  assert.equal(events[0]?.compactUnitLabel, "Unit assignment pending");
+  assert.deepEqual(events[0]?.unitNames, []);
+  assert.equal(events[0]?.assignmentComplete, false);
 });
 
 test("recent booking event query returns newest first with a maximum limit", async () => {

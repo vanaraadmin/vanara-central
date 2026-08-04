@@ -144,6 +144,7 @@
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .sticky-glass-nav-return:focus-visible,

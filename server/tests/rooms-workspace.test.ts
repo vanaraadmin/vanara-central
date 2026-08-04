@@ -455,6 +455,54 @@ test("Rooms Workspace uses central finish capability for in-progress turnover ow
   assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
 });
 
+test("Room-owned previous-day on-demand cleaning remains visible and completable only by assignee or Owner", async () => {
+  const rooms = [roomRow({
+    unit_id: 23,
+    unit_name: "Room 2",
+    ready_state: "READY",
+    booking_id: 2301,
+    beds24_booking_id: 92301,
+    guest_name: "In House Guest",
+    arrival_date: "2026-08-01",
+    departure_date: "2026-08-05",
+    reception_booking_id: 2301,
+    reception_beds24_booking_id: 92301,
+    reception_guest_name: "In House Guest",
+    reception_arrival_date: "2026-08-01",
+    reception_departure_date: "2026-08-05",
+    reception_guest_arrived: 1,
+    active_task_count: 1,
+    active_task_id: 23001,
+    active_task_version: 4,
+    active_task_status: "IN_PROGRESS",
+    active_task_type: "ON_DEMAND_CLEANING",
+    active_task_priority: "NORMAL",
+    active_task_assignee_id: "rooms-1",
+    active_task_assignee: "Nun",
+  })];
+  const otherUser = { ...housekeepingCapableUser, id: "rooms-2", displayName: "Other Staff", fullName: "Other Staff", username: "other-staff" };
+  const ownerUser: CurrentUser = { ...housekeepingCapableUser, id: "owner-1", displayName: "Owner", fullName: "Owner", username: "owner", role: "Owner", views: ["owner", "staff"] };
+
+  const assigned = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser)).rooms, "Room 2");
+  const other = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", otherUser)).rooms, "Room 2");
+  const owner = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", ownerUser)).rooms, "Room 2");
+
+  assert.deepEqual(assigned.housekeeping.activeTask, {
+    id: 23001,
+    version: 4,
+    taskType: "Cleaning",
+    status: "IN_PROGRESS",
+    priority: "NORMAL",
+    assignee: "Nun",
+  });
+  assert.equal(assigned.housekeeping.primaryStatus, "Cleaning In Progress");
+  assert.equal(assigned.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(assigned.housekeeping.primaryAction?.label, "Finish Cleaning");
+  assert.equal(other.housekeeping.primaryAction, null);
+  assert.equal(owner.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
+});
+
 test("Housekeeping card exposes DIRTY when no active task exists and physical condition is NOT_READY", async () => {
   const rooms = [
     roomRow({

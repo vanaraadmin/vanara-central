@@ -3,6 +3,7 @@
   display: grid;
   gap: 0.8rem;
   margin: 0 0 clamp(1.65rem, 4vw, 2.35rem);
+  overflow-anchor: none;
 }
 
 .recent-bookings__heading {
@@ -68,6 +69,7 @@
 
   position: relative;
   isolation: isolate;
+  contain: paint;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--recent-bookings-border);
@@ -141,6 +143,7 @@
   display: block;
   min-height: 4.35rem;
   padding: 0.76rem 3rem 0.76rem 1rem;
+  overflow-anchor: none;
 }
 
 .recent-bookings__event-trigger,
@@ -356,6 +359,7 @@
   margin: 0.74rem 0 0 1.77rem;
   padding-top: 0.78rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-anchor: none;
 }
 
 .booking-pulse__detail-grid {
@@ -386,11 +390,12 @@
 }
 
 .booking-pulse__detail-value {
-  overflow: hidden;
+  overflow: visible;
   color: rgba(250, 247, 238, 0.94);
   font-size: 0.82rem;
   line-height: 1.35;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
 }
 
 .booking-pulse__error button {

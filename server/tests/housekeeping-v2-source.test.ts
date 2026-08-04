@@ -202,12 +202,13 @@ test("v2 page uses intervention wording and informational help instead of checkl
   assert.match(page, /Finish Full Cleaning/);
 });
 
-test("summary counters render room-count wording", () => {
+test("summary counters render centered count and subordinate room unit", () => {
   assert.match(page, /function formatRoomCount\(value: number\): string/);
   assert.match(page, /return `\$\{value}/);
   assert.match(page, /value === 1 \? "Room" : "Rooms"/);
   assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\]\): VanaraSummaryItem\[\]/);
-  assert.match(page, /value: formatRoomCount\(count\)/);
+  assert.match(page, /value: count/);
+  assert.match(page, /unitLabel: count === 1 \? "room" : "rooms"/);
   assert.match(page, /meta=\{formatRoomCount\(section\.cards\.length\)\}/);
   assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
   assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);

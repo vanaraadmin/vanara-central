@@ -7,6 +7,7 @@ export type VanaraSummaryItem = {
   id?: string;
   label: string;
   value: number | string;
+  unitLabel?: string;
   tone?: VanaraSummaryTone;
 };
 
@@ -63,7 +64,7 @@ export default function VanaraSummaryGrid({
             {isInteractive ? (
               <button
                 aria-expanded={isActive}
-                aria-label={`${item.label}: ${item.value}`}
+                aria-label={`${item.label}: ${item.value}${item.unitLabel ? ` ${item.unitLabel}` : ""}`}
                 className="vc-summary-item__button"
                 onClick={() => onItemSelect?.(item)}
                 type="button"
@@ -73,6 +74,7 @@ export default function VanaraSummaryGrid({
             <dd className={`vc-summary-item__value vc-state-${item.tone ?? "neutral"}`}>
               {item.value}
             </dd>
+            {item.unitLabel ? <dd className="vc-summary-item__unit">{item.unitLabel}</dd> : null}
           </div>
         );
       })}

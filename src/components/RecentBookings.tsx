@@ -139,6 +139,7 @@ function BookingPulseDetails({
   item: RecentBookingEvent;
 }) {
   const bookingValue = canViewBookingValue ? formatBookingValue(item.totalPrice) : null;
+  const roomQuantity = item.roomQuantity > 1 ? item.roomQuantity : null;
 
   return (
     <div
@@ -150,6 +151,7 @@ function BookingPulseDetails({
       <dl className="booking-pulse__detail-grid">
         <BookingPulseDetail label="Guest" value={item.guestName} />
         <BookingPulseDetail label="Room" value={item.unitName} />
+        <BookingPulseDetail label="Room Quantity" value={roomQuantity} />
         <BookingPulseDetail label="Source" value={item.source} />
         <BookingPulseDetail label="Arrival" value={formatDate(item.arrivalDate)} />
         <BookingPulseDetail label="Departure" value={formatDate(item.departureDate)} />
@@ -175,7 +177,7 @@ function BookingEventRow({
   onToggle: () => void;
 }) {
   const tone = eventTone(event.eventType);
-  const detail = [event.unitName, event.source].filter(Boolean).join(" / ");
+  const detail = [event.compactUnitLabel || event.unitName, event.source].filter(Boolean).join(" / ");
   const arrival = formatArrival(event.arrivalDate);
   const eventTime = formatRelativeEventTime(event.eventTimestamp);
   const timing = [arrival, eventTime].filter(Boolean).join(" / ");

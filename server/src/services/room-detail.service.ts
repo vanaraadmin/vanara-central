@@ -406,11 +406,21 @@ async function loadActiveHousekeepingTasks(env: RoomDetailBindings, unitId: numb
     WHERE unit_id = ?
       AND status IN ('WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS', 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED')
       AND (idempotency_key IS NULL OR idempotency_key NOT LIKE 'room-ready-baseline:not-ready:%')
-      AND (operational_date = ? OR due_cycle_date <= ?)
+      AND (
+        operational_date = ?
+        OR due_cycle_date <= ?
+        OR (
+          source = 'manual'
+          AND (
+            task_type = 'ON_DEMAND_CLEANING'
+            OR on_demand_source = ?
+          )
+        )
+      )
     ORDER BY
       CASE task_type WHEN 'TURNOVER' THEN 1 WHEN 'ON_DEMAND_CLEANING' THEN 2 WHEN 'STANDARD_CLEANING' THEN 3 WHEN 'LINEN_CHANGE' THEN 4 WHEN 'WATER_REFILL' THEN 5 ELSE 6 END,
       task_id
-  `).bind(unitId, date, date).all<{ task_id: number }>();
+  `).bind(unitId, date, date, ROOM_READY_OVERRIDE_SOURCE).all<{ task_id: number }>();
 
   const tasks: HousekeepingTask[] = [];
   for (const row of rows.results ?? []) {

@@ -71,7 +71,7 @@ test("Booking Pulse is self-contained and has no booking navigation action", () 
 });
 
 test("Booking Pulse expanded details keep only the compact informational set", () => {
-  for (const label of ["Guest", "Room", "Source", "Arrival", "Departure", "Stay", "Guest Count"]) {
+  for (const label of ["Guest", "Room", "Room Quantity", "Source", "Arrival", "Departure", "Stay", "Guest Count"]) {
     assert.match(component, new RegExp(`label="${label}"`));
   }
   for (const removedLabel of ["Status", "Event", "Event time", "Nationality", "Total"]) {
@@ -116,7 +116,10 @@ test("Booking Pulse groups Beds24 master booking children without guest-date heu
   assert.match(service, /booking_group_members/);
   assert.match(service, /master_beds24_booking_id/);
   assert.match(service, /pulseGroupKeyFor/);
-  assert.match(service, /accommodationSummaryFor/);
+  assert.match(service, /bookingPulseUnitSummaryFor/);
+  assert.match(service, /unitNames/);
+  assert.match(service, /roomQuantity/);
+  assert.match(service, /compactUnitLabel/);
   assert.doesNotMatch(service, /guest_name[\s\S]*GROUP BY|arrival_date[\s\S]*GROUP BY|departure_date[\s\S]*GROUP BY/);
 });
 

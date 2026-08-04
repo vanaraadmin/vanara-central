@@ -145,7 +145,7 @@ test("Compact row signals use one centralized presentation mapper", () => {
   assert.match(presentation, /export function getRoomCompactPresentation/);
   assert.match(presentation, /mode:\s*"MAINTENANCE_BLOCKED"/);
   assert.match(presentation, /mode:\s*"SEASON_CLOSED"/);
-  assert.match(presentation, /secondarySignals[\s\S]*slice\(0, 2\)/);
+  assert.doesNotMatch(presentation, /secondarySignals[\s\S]*slice\(0, 2\)/);
   assert.match(presentation, /"OUT OF SERVICE"/);
   assert.match(presentation, /"SEASON CLOSED"/);
   assert.match(presentation, /"CLEANING IN PROGRESS"/);
@@ -166,11 +166,11 @@ test("Compact row type mark uses local monochrome accommodation icons", () => {
   assert.doesNotMatch(accommodationTypeIcon, /emoji|img|png|jpg|lucide|SF Symbol/i);
 });
 
-test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
+test("Compact row CSS keeps operational alerts readable without uncontrolled status-pill clouds", () => {
   const roomRowCss = sourceBlockBetween(css, ".room-row {", ".rooms-home__item:last-child .room-row");
 
   assert.match(css, /\.room-row/);
-  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+auto\s+18px/);
+  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+minmax\(132px,\s*auto\)\s+18px/);
   assert.match(css, /min-height:\s*96px/);
   assert.match(css, /padding:\s*17px 18px/);
   assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1\.125rem/);
@@ -178,10 +178,11 @@ test("Compact row CSS prevents uncontrolled status-pill clouds", () => {
   assert.match(css, /\.room-row__guest[\s\S]*font-size:\s*0\.78rem/);
   assert.match(css, /\.room-signals__primary/);
   assert.match(css, /\.room-signals__secondary/);
-  assert.match(css, /white-space:\s*nowrap/);
-  assert.match(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)/);
+  assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*white-space:\s*normal/);
+  assert.doesNotMatch(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)[\s\S]*display:\s*none/);
+  assert.doesNotMatch(css, /\.room-signal\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.match(roomRowCss, /box-shadow:\s*none/);
-  assert.doesNotMatch(css, /\.room-row__signals[\s\S]*flex-wrap:\s*wrap/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });
 
@@ -386,6 +387,18 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
   assert.match(serverService, /hasActionPermission\(user, "can_complete_checkin_checkout"\)/);
   assert.match(serverService, /hasModulePermission\(user, "movements", "access"\)/);
   assert.doesNotMatch(serverService, /getReceptionOverview/);
+});
+
+test("Room-owned active cleaning stays visible in room read models beyond its creation date", () => {
+  const roomDetailService = readFileSync(new URL("../src/services/room-detail.service.ts", import.meta.url), "utf8");
+  const housekeepingRoomService = readFileSync(new URL("../src/services/housekeeping-v2-room.service.ts", import.meta.url), "utf8");
+
+  for (const source of [serverService, roomDetailService, housekeepingRoomService]) {
+    assert.match(source, /task_type = 'ON_DEMAND_CLEANING'/);
+    assert.match(source, /on_demand_source =/);
+    assert.match(source, /source = 'manual'/);
+  }
+  assert.match(staffService, /getHousekeepingV2Overview/);
 });
 
 test("Room Workspace UI copy does not present raw database or task enums", () => {

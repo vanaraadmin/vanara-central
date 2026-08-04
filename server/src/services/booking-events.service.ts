@@ -39,6 +39,10 @@ export interface BookingPulseItem {
   countryCode?: string | null;
   unitId?: number | null;
   unitName?: string | null;
+  unitNames: string[];
+  roomQuantity: number;
+  compactUnitLabel: string;
+  assignmentComplete: boolean;
   source: string | null;
   arrivalDate?: string | null;
   departureDate?: string | null;
@@ -157,47 +161,27 @@ function isProviderDeletedBookingPulseRow(row: BookingEventRow): boolean {
   return normalizedText(row.booking_sub_status) === "provider_deleted";
 }
 
-function accommodationFamilyFor(value: string | null | undefined): string | null {
+function unitSortKey(value: string): [number, number, string] {
   const normalized = normalizedText(value);
-  if (!normalized) return null;
-  if (normalized.includes("villa")) return "Villa";
-  if (normalized.includes("bungalow")) return "Bungalow";
-  if (normalized.includes("tent") || normalized.includes("yurt")) return "Tent";
-  return null;
+  const familyRank = normalized.includes("villa") ? 1 : normalized.includes("bungalow") ? 2 : normalized.includes("tent") || normalized.includes("yurt") ? 3 : 99;
+  const numberMatch = normalized.match(/\d+/);
+  return [familyRank, numberMatch ? Number(numberMatch[0]) : 9999, normalized];
 }
 
-function accommodationFamilyForMember(row: Pick<BookingPulseGroupMemberRow, "room_name" | "room_type_name" | "unit_name" | "unit_type">): string {
-  if (row.unit_type) {
-    const normalized = normalizedText(row.unit_type);
-    if (normalized === "villa") return "Villa";
-    if (normalized === "bungalow") return "Bungalow";
-    if (normalized === "tent" || normalized === "yurt") return "Tent";
+function sortUnitNames(left: string, right: string): number {
+  const leftKey = unitSortKey(left);
+  const rightKey = unitSortKey(right);
+  return leftKey[0] - rightKey[0] || leftKey[1] - rightKey[1] || leftKey[2].localeCompare(rightKey[2]);
+}
+
+function uniqueUnitNames(values: Array<string | null | undefined>): string[] {
+  const names = new Map<string, string>();
+  for (const value of values) {
+    const cleaned = cleanOptionalText(value);
+    if (!cleaned) continue;
+    names.set(normalizedText(cleaned), cleaned);
   }
-
-  return accommodationFamilyFor(row.unit_name)
-    ?? accommodationFamilyFor(row.room_type_name)
-    ?? accommodationFamilyFor(row.room_name)
-    ?? cleanOptionalText(row.room_type_name)
-    ?? cleanOptionalText(row.room_name)
-    ?? "Room";
-}
-
-function pluralAccommodation(label: string, count: number): string {
-  if (count === 1) return label;
-  if (label === "Bungalow") return "Bungalows";
-  if (label === "Villa") return "Villas";
-  if (label === "Tent") return "Tents";
-  if (label.endsWith("s")) return label;
-  return `${label}s`;
-}
-
-function sortAccommodationLabel(left: string, right: string): number {
-  const rank = new Map<string, number>([
-    ["Villa", 1],
-    ["Bungalow", 2],
-    ["Tent", 3],
-  ]);
-  return (rank.get(left) ?? 99) - (rank.get(right) ?? 99) || left.localeCompare(right);
+  return [...names.values()].sort(sortUnitNames);
 }
 
 function uniqueGroupMembers(members: BookingPulseGroupMemberRow[]): BookingPulseGroupMemberRow[] {
@@ -218,23 +202,27 @@ function isGroupPulse(row: BookingEventRow, members: BookingPulseGroupMemberRow[
   return pulseGroupKeyFor(row) !== row.beds24_booking_id || uniqueGroupMembers(members).length > 1;
 }
 
-function accommodationSummaryFor(row: BookingEventRow, members: BookingPulseGroupMemberRow[]): string | null {
-  if (!isGroupPulse(row, members)) {
-    return cleanOptionalText(row.unit_name) ?? cleanOptionalText(row.event_accommodation);
-  }
+function bookingPulseUnitSummaryFor(row: BookingEventRow, members: BookingPulseGroupMemberRow[]) {
+  const group = isGroupPulse(row, members);
+  const memberRows = group ? roomMembersForSummary(members) : [];
+  const rawUnitNames = group ? memberRows.map((member) => member.unit_name) : [row.unit_name];
+  const unitNames = uniqueUnitNames(rawUnitNames);
+  const roomQuantity = group ? Math.max(uniqueGroupMembers(members).length, unitNames.length, 1) : 1;
+  const assignmentComplete = unitNames.length > 0 && unitNames.length >= roomQuantity;
+  const fallback = "Unit assignment pending";
+  const compactUnitLabel = unitNames.length === 0
+    ? fallback
+    : unitNames.length > 2
+      ? `${unitNames.slice(0, 2).join(", ")} +${unitNames.length - 2}`
+      : unitNames.join(", ");
 
-  const counts = new Map<string, number>();
-  for (const member of roomMembersForSummary(members)) {
-    const label = accommodationFamilyForMember(member);
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-
-  const summary = [...counts.entries()]
-    .sort(([left], [right]) => sortAccommodationLabel(left, right))
-    .map(([label, count]) => `${count} ${pluralAccommodation(label, count)}`)
-    .join(" + ");
-
-  return cleanOptionalText(summary) ?? cleanOptionalText(row.unit_name) ?? cleanOptionalText(row.event_accommodation);
+  return {
+    unitNames,
+    roomQuantity,
+    compactUnitLabel,
+    assignmentComplete,
+    unitName: unitNames.length > 0 ? unitNames.join(", ") : fallback,
+  };
 }
 
 function groupUnitIdFor(row: BookingEventRow, members: BookingPulseGroupMemberRow[]): number | null {
@@ -288,6 +276,7 @@ function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEven
   const groupKey = pulseGroupKeyFor(row);
   const arrivalDate = groupDateFor(row, groupMembers, "arrival_date");
   const departureDate = groupDateFor(row, groupMembers, "departure_date");
+  const unitSummary = bookingPulseUnitSummaryFor(row, groupMembers);
   return {
     eventId: `${groupKey}:${eventType}:${row.occurred_at}`,
     bookingId: String(groupKey),
@@ -297,7 +286,11 @@ function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEven
     nationality: cleanOptionalText(row.country) ?? cleanOptionalText(row.country_code),
     countryCode: cleanOptionalText(row.country_code),
     unitId: groupUnitIdFor(row, groupMembers),
-    unitName: accommodationSummaryFor(row, groupMembers),
+    unitName: unitSummary.unitName,
+    unitNames: unitSummary.unitNames,
+    roomQuantity: unitSummary.roomQuantity,
+    compactUnitLabel: unitSummary.compactUnitLabel,
+    assignmentComplete: unitSummary.assignmentComplete,
     source: sourceFor(row),
     arrivalDate,
     departureDate,
