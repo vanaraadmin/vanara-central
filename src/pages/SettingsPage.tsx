@@ -2,8 +2,10 @@ import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import { createUser, disableUser, listUsers, updateUser } from "../services/auth.service";
+import { listWarapornKbBackups } from "../services/waraporn-kb.service";
 import type { ActionPermissionKey, ManagedUser, ModuleKey, ModulePermission, SaveUserPayload, UserRole, UserStatus, UserView } from "../types/auth";
 import { moduleKeys, roleOptions, statusOptions, viewOptions } from "../types/auth";
+import type { WarapornKbBackupSummary } from "../types/waraporn-kb";
 import "../styles/AuthPage.css";
 
 const defaultPermissions = moduleKeys.map((module) => ({ module, canAccess: module === "dashboard", canEdit: false }));
@@ -38,9 +40,71 @@ function canAction(payload: SaveUserPayload, action: ActionPermissionKey) {
   return payload.actionPermissions?.find((item) => item.action === action)?.allowed ?? false;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatBackupDate(value: string | null): string {
+  if (!value) return "Pending";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function WarapornKbBackupPanel(props: { latest: WarapornKbBackupSummary | null; backups: WarapornKbBackupSummary[] }) {
+  const latest = props.latest;
+  const previous = props.backups.filter((backup) => backup.backupId !== latest?.backupId);
+  return (
+    <section className="kb-backup-panel" aria-label="Waraporn KB Backup">
+      <header>
+        <div>
+          <p>Owner recovery</p>
+          <h2>Waraporn KB Backup</h2>
+          <span>Private R2 archive. No document preview.</span>
+        </div>
+      </header>
+      {latest ? (
+        <>
+          <dl className="kb-backup-panel__stats">
+            <div><dt>Latest backup</dt><dd>{formatBackupDate(latest.completedAt ?? latest.createdAt)}</dd></div>
+            <div><dt>Status</dt><dd>{latest.status}</dd></div>
+            <div><dt>Total files</dt><dd>{latest.totalFileCount}</dd></div>
+            <div><dt>Markdown files</dt><dd>{latest.markdownFileCount}</dd></div>
+            <div><dt>Total size</dt><dd>{formatBytes(latest.totalBytes)}</dd></div>
+            <div><dt>Manifest checksum</dt><dd>{latest.manifestChecksum}</dd></div>
+          </dl>
+          <div className="kb-backup-panel__collections" aria-label="Collections">
+            {latest.topLevelCollections.map((collection) => <span key={collection}>{collection}</span>)}
+          </div>
+          <a className="kb-backup-panel__download" href={`/api/management/waraporn-kb-backups/${encodeURIComponent(latest.backupId)}/download`}>
+            Download Complete Backup
+          </a>
+          <div className="kb-backup-panel__versions">
+            <strong>Previous complete versions</strong>
+            {previous.length === 0 ? <span>None</span> : previous.map((backup) => (
+              <a key={backup.backupId} href={`/api/management/waraporn-kb-backups/${encodeURIComponent(backup.backupId)}/download`}>
+                {formatBackupDate(backup.completedAt ?? backup.createdAt)}
+              </a>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="kb-backup-panel__empty">No complete Waraporn KB backup is available yet.</p>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const usersQuery = useQuery({ queryKey: ["users"], queryFn: ({ signal }) => listUsers(signal) });
+  const kbBackupsQuery = useQuery({ queryKey: ["waraporn-kb-backups"], queryFn: ({ signal }) => listWarapornKbBackups(signal) });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SaveUserPayload>(emptyForm);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -154,6 +218,14 @@ export default function SettingsPage() {
 
       <section className="settings-grid">
         <div className="user-list">
+          {kbBackupsQuery.isLoading ? (
+            <section className="kb-backup-panel" aria-label="Waraporn KB Backup"><p className="kb-backup-panel__empty">Loading Waraporn KB backup.</p></section>
+          ) : kbBackupsQuery.isError ? (
+            <section className="kb-backup-panel" aria-label="Waraporn KB Backup"><p className="auth-error">Waraporn KB backup is unavailable.</p></section>
+          ) : (
+            <WarapornKbBackupPanel latest={kbBackupsQuery.data?.latest ?? null} backups={kbBackupsQuery.data?.backups ?? []} />
+          )}
+
           {(usersQuery.data ?? []).map((user) => (
             <article className="user-row" key={user.id}>
               <div className="user-row__avatar">{user.profilePhotoUrl ? <img src={user.profilePhotoUrl} alt="" /> : user.fullName.slice(0, 1)}</div>

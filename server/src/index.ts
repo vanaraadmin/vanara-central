@@ -31,6 +31,7 @@ import { createBookingPassport, listBookingPassports, type BookingPassportBindin
 import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentionBindings } from "./services/passport-retention.service.js";
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
+import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -59,10 +60,11 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
+  WARAPORN_KB_ARCHIVE: R2Bucket;
   VANARA_DATABASE_ENVIRONMENT: string;
   VANARA_DATABASE_NAME: string;
   VANARA_DATABASE_ID: string;
@@ -453,6 +455,42 @@ app.post("/api/users/:id/disable", async (c) => {
     return c.json({ success: true, data: user });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/management/waraporn-kb-backups", async (c) => {
+  try {
+    await owner(c, "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listWarapornKbBackups(c.env) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/management/waraporn-kb-backups/:backupId", async (c) => {
+  try {
+    await owner(c, "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getWarapornKbBackupManifest(c.env, c.req.param("backupId")) });
+  } catch (error) {
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : warapornKbBackupErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
+  }
+});
+
+app.get("/api/management/waraporn-kb-backups/:backupId/download", async (c) => {
+  try {
+    await owner(c, "access");
+    const result = await buildWarapornKbRecoveryZip(c.env, c.req.param("backupId"));
+    c.header("Cache-Control", "no-store");
+    c.header("Content-Type", "application/zip");
+    c.header("Content-Disposition", `attachment; filename="waraporn-kb-${result.backupId}.zip"`);
+    const body = result.zip.buffer.slice(result.zip.byteOffset, result.zip.byteOffset + result.zip.byteLength) as ArrayBuffer;
+    return c.body(body);
+  } catch (error) {
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : warapornKbBackupErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
   }
 });
 

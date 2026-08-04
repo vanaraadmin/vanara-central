@@ -29,3 +29,6 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+
+# Temporary restore output
+tmp/waraporn-kb-restore/

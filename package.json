@@ -12,6 +12,8 @@
     "deploy:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-preflight.ps1",
     "deploy:production": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-production.ps1",
     "deploy:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-smoke.ps1",
+    "kb:backup": "node server/node_modules/tsx/dist/cli.mjs scripts/backup-waraporn-kb.ts",
+    "kb:restore": "node server/node_modules/tsx/dist/cli.mjs scripts/restore-waraporn-kb.ts",
     "typecheck": "tsc -b"
   },
   "dependencies": {

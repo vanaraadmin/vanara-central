@@ -91,7 +91,7 @@ if ($version.ExitCode -ne 0) {
 $config = Read-Config
 $workerName = [string]$config.name
 $database = $config.d1_databases | Select-Object -First 1
-$r2 = $config.r2_buckets | Select-Object -First 1
+$r2Buckets = @($config.r2_buckets)
 $url = if ($ProductionUrl) { $ProductionUrl.TrimEnd("/") } else { $DefaultProductionUrl }
 
 Write-Check "Wrangler configuration" ($workerName -eq "vanara-central") ("Worker {0}, main {1}, compatibility_date {2}" -f $workerName, $config.main, $config.compatibility_date)
@@ -110,8 +110,21 @@ $noPending = $migrations.ExitCode -eq 0 -and $migrations.Output -match "No migra
 Write-Check "D1 access" ($migrations.ExitCode -eq 0) ("Database {0} migration state is readable." -f $d1Name)
 Write-Check "Pending migrations" ($migrations.ExitCode -eq 0) ($(if ($noPending) { "No migrations to apply." } elseif ($AllowPendingMigrations) { "Pending approved migrations will be applied by deploy:production." } else { "Pending migrations detected; deploy:production applies approved migrations safely." }))
 
-$r2Present = $null -ne $r2 -and [string]$r2.binding -eq "R2_STORAGE" -and [string]$r2.bucket_name -ne ""
-Write-Check "R2 binding" $r2Present ($(if ($r2Present) { "R2_STORAGE -> " + [string]$r2.bucket_name } else { "Missing R2_STORAGE binding." }))
+$requiredR2Bindings = @{
+  R2_STORAGE = "vanara-central-documents"
+  WARAPORN_KB_ARCHIVE = "vanara-waraporn-kb-archive"
+}
+$r2Present = $true
+$r2Details = @()
+foreach ($bindingName in $requiredR2Bindings.Keys) {
+  $match = @($r2Buckets | Where-Object { [string]$_.binding -eq $bindingName }) | Select-Object -First 1
+  if ($null -eq $match -or [string]$match.bucket_name -ne $requiredR2Bindings[$bindingName]) {
+    $r2Present = $false
+  } else {
+    $r2Details += ("{0} -> {1}" -f $bindingName, [string]$match.bucket_name)
+  }
+}
+Write-Check "R2 binding" $r2Present ($(if ($r2Present) { $r2Details -join "; " } else { "Missing required R2 binding." }))
 
 $varsPresent = $true
 foreach ($name in $RequiredVars) {

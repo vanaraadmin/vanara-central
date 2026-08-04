@@ -14,7 +14,8 @@
 .auth-card,
 .settings-header,
 .user-list,
-.user-form {
+.user-form,
+.kb-backup-panel {
   background: #fff;
   border: 1px solid rgba(23, 53, 43, 0.1);
   border-radius: 28px;
@@ -134,8 +135,110 @@
 }
 
 .user-list,
-.user-form {
+.user-form,
+.kb-backup-panel {
   padding: 18px;
+}
+
+.kb-backup-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.kb-backup-panel header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kb-backup-panel header p {
+  margin: 0 0 4px;
+  color: #8d7242;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.kb-backup-panel h2 {
+  margin: 0;
+  color: #17352b;
+}
+
+.kb-backup-panel header span,
+.kb-backup-panel__empty,
+.kb-backup-panel__versions span {
+  color: #64756e;
+}
+
+.kb-backup-panel__stats {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.kb-backup-panel__stats div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 14px;
+  background: #faf7f0;
+}
+
+.kb-backup-panel__stats dt {
+  color: #8d7242;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kb-backup-panel__stats dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #17352b;
+  font-weight: 800;
+}
+
+.kb-backup-panel__collections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kb-backup-panel__collections span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(23, 53, 43, 0.08);
+  color: #50645b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.kb-backup-panel__download,
+.kb-backup-panel__versions a {
+  color: #17352b;
+  font-weight: 900;
+}
+
+.kb-backup-panel__download {
+  display: inline-grid;
+  min-height: 44px;
+  place-items: center;
+  border-radius: 16px;
+  background: #17352b;
+  color: #fff;
+  text-decoration: none;
+}
+
+.kb-backup-panel__versions {
+  display: grid;
+  gap: 7px;
+  font-size: 0.9rem;
 }
 
 .user-row {

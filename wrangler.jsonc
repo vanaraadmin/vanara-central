@@ -26,6 +26,10 @@
     {
       "binding": "R2_STORAGE",
       "bucket_name": "vanara-central-documents"
+    },
+    {
+      "binding": "WARAPORN_KB_ARCHIVE",
+      "bucket_name": "vanara-waraporn-kb-archive"
     }
   ],
   "triggers": {
