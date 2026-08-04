@@ -81,6 +81,8 @@ function isTransientNetworkError(error: unknown): boolean {
 async function requestJson<T>(
   env: Beds24Bindings,
   url: URL,
+  method: "GET" | "POST",
+  body: unknown,
   options: Beds24RequestOptions = {},
 ): Promise<T> {
   const fetcher = options.fetcher ?? fetch;
@@ -92,11 +94,16 @@ async function requestJson<T>(
   while (true) {
     try {
       const response = await fetcher(url, {
-        method: "GET",
-        headers: { accept: "application/json", token: getLongLifeToken(env) },
+        method,
+        headers: {
+          accept: "application/json",
+          token: getLongLifeToken(env),
+          ...(method === "POST" ? { "content-type": "application/json" } : {}),
+        },
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
       });
 
-      const body = await response.text();
+      const responseBody = await response.text();
 
       if (!response.ok) {
         throw new Beds24ApiError(
@@ -106,7 +113,7 @@ async function requestJson<T>(
       }
 
       try {
-        return JSON.parse(body) as T;
+        return JSON.parse(responseBody) as T;
       } catch {
         throw new Error(`Beds24 returned invalid JSON from ${url.pathname}.`);
       } finally {
@@ -134,6 +141,62 @@ async function requestJson<T>(
   }
 }
 
+function readAccessToken(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload as Record<string, unknown>;
+  const direct = record.token;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const data = record.data;
+  if (typeof data === "object" && data !== null) {
+    const nested = (data as Record<string, unknown>).token;
+    if (typeof nested === "string" && nested.trim()) return nested.trim();
+  }
+  return null;
+}
+
+async function getBeds24AccessToken(env: Beds24Bindings, options: Beds24RequestOptions = {}): Promise<string> {
+  const fetcher = options.fetcher ?? fetch;
+  const url = new URL(`${getBaseUrl(env)}/authentication/token`);
+  const response = await fetcher(url, {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      refreshToken: getLongLifeToken(env),
+    },
+  });
+  const responseBody = await response.text();
+  if (!response.ok) {
+    throw new Beds24ApiError(response.status, parseRetryAfter(response.headers.get("Retry-After")));
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(responseBody);
+  } catch {
+    throw new Error("Beds24 returned invalid JSON from authentication/token.");
+  }
+  const token = readAccessToken(payload);
+  if (!token) {
+    throw new Error("Beds24 authentication response did not include an access token.");
+  }
+  return token;
+}
+
+async function postJson<T>(
+  env: Beds24Bindings,
+  url: URL,
+  body: unknown,
+  options: Beds24RequestOptions = {},
+): Promise<T> {
+  const accessToken = await getBeds24AccessToken(env, options);
+  return requestJson<T>(
+    { ...env, BEDS24_LONG_LIFE_TOKEN: accessToken },
+    url,
+    "POST",
+    body,
+    options,
+  );
+}
+
 export async function beds24Get<T>(
   env: Beds24Bindings,
   endpoint: string,
@@ -145,7 +208,7 @@ export async function beds24Get<T>(
   for (const [key, value] of Object.entries(queryParams ?? {})) {
     url.searchParams.set(key, String(value));
   }
-  return requestJson<T>(env, url, options);
+  return requestJson<T>(env, url, "GET", undefined, options);
 }
 
 export async function beds24GetAbsolute<T>(
@@ -158,5 +221,34 @@ export async function beds24GetAbsolute<T>(
   if (url.host !== allowedHost) {
     throw new Error(`Rejected Beds24 pagination host: ${url.host}`);
   }
-  return requestJson<T>(env, url, options);
+  return requestJson<T>(env, url, "GET", undefined, options);
+}
+
+export async function beds24PostAbsolute<T>(
+  env: Beds24Bindings,
+  absoluteUrl: string,
+  body: unknown,
+  options?: Beds24RequestOptions,
+): Promise<T> {
+  const url = new URL(absoluteUrl);
+  if (url.protocol !== "https:" || url.host !== "beds24.com" || !url.pathname.startsWith("/api/v2/")) {
+    throw new Error(`Rejected Beds24 POST host: ${url.host}`);
+  }
+  return postJson<T>(
+    { ...env, BEDS24_BASE_URL: "https://beds24.com/api/v2" },
+    url,
+    body,
+    options,
+  );
+}
+
+export async function beds24Post<T>(
+  env: Beds24Bindings,
+  endpoint: string,
+  body: unknown,
+  options?: Beds24RequestOptions,
+): Promise<T> {
+  const normalized = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const url = new URL(`${getBaseUrl(env)}${normalized}`);
+  return postJson<T>(env, url, body, options);
 }

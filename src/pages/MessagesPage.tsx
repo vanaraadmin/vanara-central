@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import {
+  approveGuestMessageDraft,
   loadGuestMessageConversation,
   loadGuestMessageInbox,
+  rejectGuestMessageDraft,
+  saveGuestMessageDraft,
 } from "../services/messages.service";
 import type {
   GuestMessageBookingContext,
+  GuestMessageConversationDetail,
   GuestMessageInboxGroup,
   GuestMessageInboxItem,
   GuestMessageTimelineItem,
@@ -144,7 +148,15 @@ function InboxColumn({
   );
 }
 
-function TimelineBubble({ item }: { item: GuestMessageTimelineItem }) {
+interface DraftActionHandlers {
+  busy: boolean;
+  onApprove: (draftId: string) => Promise<void>;
+  onApproveEdited: (draftId: string, draftText: string) => Promise<void>;
+  onReject: (draftId: string) => Promise<void>;
+  onSave: (draftId: string, draftText: string) => Promise<void>;
+}
+
+function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
   const label = item.kind === "draft" ? "Waraporn Draft" : item.sender;
   return (
     <article className={`messages-bubble messages-bubble--${item.kind}`}>
@@ -155,39 +167,118 @@ function TimelineBubble({ item }: { item: GuestMessageTimelineItem }) {
       {item.kind === "draft" ? (
         <div className="messages-bubble__draft-header">
           <span>Waraporn Draft</span>
-          <strong>READY</strong>
+          <strong>{item.status}</strong>
         </div>
       ) : null}
       <p>{item.message}</p>
+      {item.kind === "draft" && item.status === "READY" ? (
+        <DraftActions actions={actions} item={item} key={`${item.draftId ?? item.id}:${item.message}`} />
+      ) : null}
     </article>
   );
 }
 
-function DraftActions() {
+function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
+  const [editing, setEditing] = useState(false);
+  const [draftText, setDraftText] = useState(item.message);
   const [notice, setNotice] = useState("");
-  const showNotice = () => setNotice("Coming in Sprint 08.");
+  const [error, setError] = useState("");
+  const draftId = item.draftId;
+  const canReview = Boolean(item.canReview && draftId);
+
+  const run = async (callback: () => Promise<void>, success: string) => {
+    setError("");
+    setNotice("");
+    try {
+      await callback();
+      setNotice(success);
+      setEditing(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The review action could not be completed.");
+    }
+  };
+
+  if (!canReview) {
+    return (
+      <div className="messages-draft-actions" aria-label="Draft review actions">
+        <button className="vc-secondary-action" type="button" disabled>
+          Read only
+        </button>
+      </div>
+    );
+  }
+  const activeDraftId = draftId!;
 
   return (
     <div className="messages-draft-actions" aria-label="Draft review actions">
-      <button className="vc-primary-action" type="button" aria-disabled="true" onClick={showNotice}>
-        Approve
-      </button>
-      <button className="vc-secondary-action" type="button" aria-disabled="true" onClick={showNotice}>
-        Edit
-      </button>
-      <button className="vc-secondary-action" type="button" aria-disabled="true" onClick={showNotice}>
-        Reject
-      </button>
+      {editing ? (
+        <div className="messages-draft-editor">
+          <label>
+            <span className="vc-sr-only">Edit Waraporn draft</span>
+            <textarea
+              value={draftText}
+              onChange={(event) => setDraftText(event.target.value)}
+              rows={8}
+            />
+          </label>
+          <div className="messages-draft-editor__actions">
+            <button
+              className="vc-secondary-action"
+              type="button"
+              disabled={actions.busy || !draftText.trim()}
+              onClick={() => run(() => actions.onSave(activeDraftId, draftText), "Draft saved.")}
+            >
+              Save Draft
+            </button>
+            <button
+              className="vc-primary-action"
+              type="button"
+              disabled={actions.busy || !draftText.trim()}
+              onClick={() => run(() => actions.onApproveEdited(activeDraftId, draftText), "Edited reply sent.")}
+            >
+              Approve & Send
+            </button>
+            <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <button
+            className="vc-primary-action"
+            type="button"
+            disabled={actions.busy}
+            onClick={() => run(() => actions.onApprove(activeDraftId), "Reply sent.")}
+          >
+            Approve
+          </button>
+          <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(true)}>
+            Edit
+          </button>
+          <button
+            className="vc-secondary-action"
+            type="button"
+            disabled={actions.busy}
+            onClick={() => run(() => actions.onReject(activeDraftId), "Draft rejected.")}
+          >
+            Reject
+          </button>
+        </>
+      )}
       {notice ? <p role="status">{notice}</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
     </div>
   );
 }
 
 function ConversationColumn({
+  actions,
   conversation,
   loading,
   onRetry,
 }: {
+  actions: DraftActionHandlers;
   conversation: GuestMessageTimelineItem[];
   loading: boolean;
   onRetry: () => void;
@@ -224,10 +315,9 @@ function ConversationColumn({
       </div>
       <div className="messages-timeline">
         {conversation.map((item) => (
-          <TimelineBubble item={item} key={item.id} />
+          <TimelineBubble actions={actions} item={item} key={item.id} />
         ))}
       </div>
-      {hasReadyDraft ? <DraftActions /> : null}
     </VanaraGlassSheet>
   );
 }
@@ -274,6 +364,7 @@ function ContextColumn({ context }: { context: GuestMessageBookingContext | null
 export default function MessagesPage() {
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState("");
+  const queryClient = useQueryClient();
   const inboxQuery = useQuery({
     queryKey: ["guest-messages", "inbox", search.trim()],
     queryFn: ({ signal }) => loadGuestMessageInbox(search, signal),
@@ -296,6 +387,41 @@ export default function MessagesPage() {
   const retry = () => {
     void inboxQuery.refetch();
     void detailQuery.refetch();
+  };
+
+  const applyConversation = (detail: GuestMessageConversationDetail) => {
+    queryClient.setQueryData(["guest-messages", "conversation", detail.conversation.conversationId], detail);
+    void queryClient.invalidateQueries({ queryKey: ["guest-messages", "inbox"] });
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: approveGuestMessageDraft,
+    onSuccess: applyConversation,
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (draftId: string) => rejectGuestMessageDraft(draftId),
+    onSuccess: applyConversation,
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ draftId, draftText }: { draftId: string; draftText: string }) => saveGuestMessageDraft(draftId, draftText),
+    onSuccess: applyConversation,
+  });
+
+  const draftActions: DraftActionHandlers = {
+    busy: approveMutation.isPending || rejectMutation.isPending || saveMutation.isPending,
+    onApprove: async (draftId) => {
+      await approveMutation.mutateAsync(draftId);
+    },
+    onApproveEdited: async (draftId, draftText) => {
+      await saveMutation.mutateAsync({ draftId, draftText });
+      await approveMutation.mutateAsync(draftId);
+    },
+    onReject: async (draftId) => {
+      await rejectMutation.mutateAsync(draftId);
+    },
+    onSave: async (draftId, draftText) => {
+      await saveMutation.mutateAsync({ draftId, draftText });
+    },
   };
 
   if (inboxQuery.isError && !inboxQuery.data) {
@@ -332,6 +458,7 @@ export default function MessagesPage() {
         />
 
         <ConversationColumn
+          actions={draftActions}
           conversation={detailQuery.data?.timeline ?? []}
           loading={detailQuery.isLoading}
           onRetry={retry}

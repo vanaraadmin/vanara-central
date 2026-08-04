@@ -9,6 +9,7 @@ import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-
 import { syncBookings, type BookingsSyncBindings } from "./services/bookings-sync.service.js";
 import { listImportedMessages, syncMessages, type MessagesSyncBindings } from "./services/messages-sync.service.js";
 import { getGuestMessageConversation, listGuestMessageConversations, type GuestMessagesWorkspaceBindings } from "./services/guest-messages-workspace.service.js";
+import { approveMessageDraft, canReviewGuestMessages, editMessageDraft, MessageReviewError, rejectMessageDraft, type MessageReviewBindings } from "./services/message-review.service.js";
 import { generatePendingWarapornDrafts, generateWarapornDraft, WarapornDraftError, type WarapornDraftBindings } from "./services/waraporn-draft.service.js";
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { AvailabilityPricesError, getAvailabilityPrices } from "./services/availability-prices.service.js";
@@ -61,7 +62,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -113,6 +114,13 @@ function warapornDraftErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 500 |
   if (error instanceof AuthenticationError) return 401;
   if (error instanceof ForbiddenError) return 403;
   if (error instanceof WarapornDraftError) return error.status;
+  return 500;
+}
+
+function messageReviewErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 409 | 500 | 502 {
+  if (error instanceof AuthenticationError) return 401;
+  if (error instanceof ForbiddenError) return 403;
+  if (error instanceof MessageReviewError) return error.status;
   return 500;
 }
 
@@ -299,6 +307,14 @@ async function guestMessagesReader(c: AppContext): Promise<CurrentUser> {
   const user = await resolveCurrentUser(c);
   if (!user.views.includes("staff") && !user.views.includes("owner")) {
     throw new ForbiddenError("Staff view access is required.");
+  }
+  return user;
+}
+
+async function guestMessagesReviewer(c: AppContext): Promise<CurrentUser> {
+  const user = await guestMessagesReader(c);
+  if (!canReviewGuestMessages(user)) {
+    throw new ForbiddenError("Messages review access is required.");
   }
   return user;
 }
@@ -1746,14 +1762,52 @@ app.get("/api/messages/conversations", async (c) => {
 
 app.get("/api/messages/conversations/:conversationId", async (c) => {
   try {
-    await guestMessagesReader(c);
+    const user = await guestMessagesReader(c);
     c.header("Cache-Control", "no-store");
     const conversationId = positiveIntegerParam(c.req.param("conversationId"), "conversation id");
-    const conversation = await getGuestMessageConversation(c.env, conversationId);
+    const conversation = await getGuestMessageConversation(c.env, conversationId, user);
     if (!conversation) return c.json({ success: false, error: "Conversation not found" }, 404);
     return c.json({ success: true, data: conversation });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.patch("/api/messages/drafts/:draftId", async (c) => {
+  try {
+    const user = await guestMessagesReviewer(c);
+    const draftId = positiveIntegerParam(c.req.param("draftId"), "draft id");
+    const payload = await c.req.json().catch(() => null);
+    const draft = await editMessageDraft(c.env, draftId, user, payload && typeof payload === "object" && "draftText" in payload ? payload.draftText : null);
+    const conversation = await getGuestMessageConversation(c.env, Number(draft.conversationId), user);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, messageReviewErrorStatus(error));
+  }
+});
+
+app.post("/api/messages/drafts/:draftId/approve", async (c) => {
+  try {
+    const user = await guestMessagesReviewer(c);
+    const draftId = positiveIntegerParam(c.req.param("draftId"), "draft id");
+    const draft = await approveMessageDraft(c.env, draftId, user);
+    const conversation = await getGuestMessageConversation(c.env, Number(draft.conversationId), user);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, messageReviewErrorStatus(error));
+  }
+});
+
+app.post("/api/messages/drafts/:draftId/reject", async (c) => {
+  try {
+    const user = await guestMessagesReviewer(c);
+    const draftId = positiveIntegerParam(c.req.param("draftId"), "draft id");
+    const payload = await c.req.json().catch(() => null);
+    const draft = await rejectMessageDraft(c.env, draftId, user, payload && typeof payload === "object" && "reason" in payload ? payload.reason : null);
+    const conversation = await getGuestMessageConversation(c.env, Number(draft.conversationId), user);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, messageReviewErrorStatus(error));
   }
 });
 

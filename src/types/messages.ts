@@ -28,7 +28,8 @@ export type MessageState =
   | "DRAFT_READY"
   | "REVIEW_PENDING"
   | "SENT"
-  | "FAILED";
+  | "FAILED"
+  | "FAILED_MANUAL_RETRY";
 
 export type MessageAssociationState = "LINKED" | "UNLINKED";
 
@@ -69,14 +70,14 @@ export interface Message {
   receivedAt: string;
   associationState: MessageAssociationState;
   draftExists?: boolean;
-  draftStatus?: "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "FAILED";
+  draftStatus?: "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "SENT" | "FAILED";
   draftId?: string | null;
 }
 
 export interface Draft {
   draftId: string;
   messageId: string;
-  state: "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "FAILED";
+  state: "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "SENT" | "FAILED";
   body: string | null;
 }
 
@@ -94,7 +95,7 @@ export interface MessageDelivery {
 }
 
 export type GuestMessageInboxGroup = "needsReply" | "waitingGuest" | "closed";
-export type GuestMessageTimelineKind = "guest" | "draft" | "sent";
+export type GuestMessageTimelineKind = "guest" | "draft" | "review" | "sent";
 
 export interface GuestMessageInboxItem {
   conversationId: string;
@@ -122,7 +123,9 @@ export interface GuestMessageTimelineItem {
   sender: string;
   timestamp: string;
   message: string;
-  status?: "READY" | "SENT";
+  status?: "READY" | "REJECTED" | "SENT";
+  draftId?: string;
+  canReview?: boolean;
 }
 
 export interface GuestMessageBookingContext {
@@ -141,6 +144,9 @@ export interface GuestMessageConversationDetail {
   conversation: GuestMessageInboxItem;
   timeline: GuestMessageTimelineItem[];
   bookingContext: GuestMessageBookingContext;
+  capabilities: {
+    canReviewDrafts: boolean;
+  };
 }
 
 export interface GuestMessageInboxResponse {

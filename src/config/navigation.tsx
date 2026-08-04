@@ -29,7 +29,7 @@ export const primaryNavigation: NavigationItem[] = [
   { key: "dashboard", moduleKey: "dashboard", labelKey: "dashboard", path: "/dashboard", Icon: TodayIcon },
   { key: "rooms", moduleKey: "rooms", labelKey: "rooms", path: "/rooms", Icon: RoomIcon },
   { key: "availability", moduleKey: "rooms", labelKey: "prices", path: "/availability-prices", Icon: CalendarIcon },
-  { key: "messages", labelKey: "messages", path: "/messages", Icon: AskIcon },
+  { key: "messages", moduleKey: "messages", labelKey: "messages", path: "/messages", Icon: AskIcon },
   { key: "chat", moduleKey: "chat", labelKey: "chat", path: "/chat", Icon: AskIcon },
   { key: "more", labelKey: "more", path: "/more", Icon: PlusIcon },
 ];
@@ -39,7 +39,7 @@ export const dashboardModules: NavigationItem[] = [
   { key: "rooms", moduleKey: "rooms", labelKey: "roomWorkspace", descriptionKey: "roomsDescription", path: "/rooms", Icon: RoomIcon, tone: "green" },
   { key: "housekeeping", moduleKey: "housekeeping", labelKey: "housekeeping", descriptionKey: "housekeepingDescription", path: "/housekeeping", Icon: HousekeepingIcon, tone: "gold" },
   { key: "availability", moduleKey: "rooms", labelKey: "prices", descriptionKey: "pricesDescription", path: "/availability-prices", Icon: CalendarIcon, tone: "blue" },
-  { key: "messages", labelKey: "messages", descriptionKey: "messagesDescription", path: "/messages", Icon: AskIcon, tone: "blue" },
+  { key: "messages", moduleKey: "messages", labelKey: "messages", descriptionKey: "messagesDescription", path: "/messages", Icon: AskIcon, tone: "blue" },
   { key: "maintenance", moduleKey: "maintenance", labelKey: "maintenance", descriptionKey: "maintenanceDescription", path: "/maintenance", Icon: MaintenanceIcon, tone: "rose" },
   { key: "procurement", moduleKey: "procurement", labelKey: "procurement", descriptionKey: "procurementDescription", path: "/procurement", Icon: TasksIcon, tone: "slate" },
   { key: "chat", moduleKey: "chat", labelKey: "chat", descriptionKey: "chatDescription", path: "/chat", Icon: AskIcon, tone: "green" },

@@ -64,6 +64,7 @@ export const DRAFT_STATES = [
   "READY",
   "REJECTED",
   "APPROVED",
+  "SENT",
   "FAILED",
 ] as const satisfies readonly DraftState[];
 

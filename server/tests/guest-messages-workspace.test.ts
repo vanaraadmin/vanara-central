@@ -398,13 +398,15 @@ test("guest message endpoints are read-only and require an authenticated staff o
   assert.equal(forbidden.status, 403);
 });
 
-test("guest messages UI has no outbound sending generation or Beds24 mutation path", () => {
+test("guest messages UI uses only the human review draft endpoints and no AI or sync path", () => {
   const page = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
   const service = readFileSync(new URL("../../src/services/messages.service.ts", import.meta.url), "utf8");
 
-  assert.match(page, /Coming in Sprint 08\./);
-  assert.match(page, /aria-disabled="true"/);
-  assert.doesNotMatch(service, /method:\s*["'](?:POST|PATCH|DELETE)["']/);
-  assert.doesNotMatch(page + service, /generateWarapornDraft|sync\/messages|Beds24 outbound/i);
+  assert.match(page, /Approve & Send/);
+  assert.match(page, /Save Draft/);
+  assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/approve/);
+  assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/reject/);
+  assert.doesNotMatch(service, /method:\s*["']DELETE["']/);
+  assert.doesNotMatch(page + service, /generateWarapornDraft|sync\/messages|OpenAI|Responses|BEDS24_LONG_LIFE_TOKEN|beds24\.com|api\.beds24/i);
   assert.match(service, /\/api\/messages\/conversations/);
 });

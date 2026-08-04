@@ -8,6 +8,7 @@ export type ModuleKey =
   | "movements"
   | "maintenance"
   | "procurement"
+  | "messages"
   | "chat"
   | "owner-dashboard"
   | "settings";
@@ -83,6 +84,7 @@ const MODULES: ModuleKey[] = [
   "movements",
   "maintenance",
   "procurement",
+  "messages",
   "chat",
   "owner-dashboard",
   "settings",
@@ -491,6 +493,7 @@ const staffOperationalModules = new Set<ModuleKey>([
   "movements",
   "maintenance",
   "procurement",
+  "messages",
   "chat",
 ]);
 

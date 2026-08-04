@@ -1,11 +1,13 @@
 import { getBangkokDate } from "./today.service.js";
+import { canReviewGuestMessages } from "./message-review.service.js";
+import type { CurrentUser } from "./current-user.service.js";
 
 export interface GuestMessagesWorkspaceBindings {
   DB: D1Database;
 }
 
 export type GuestMessageInboxGroup = "needsReply" | "waitingGuest" | "closed";
-export type GuestMessageTimelineKind = "guest" | "draft" | "sent";
+export type GuestMessageTimelineKind = "guest" | "draft" | "review" | "sent";
 
 interface ConversationListRow {
   message_conversation_id: number;
@@ -52,7 +54,17 @@ interface TimelineDraftRow {
   message_draft_id: number;
   message_id: number;
   draft_text: string;
-  status: "READY";
+  status: "READY" | "REJECTED" | "SENT";
+  original_draft_text: string | null;
+  edited_draft_text: string | null;
+  edited_by_name: string | null;
+  edited_at: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  rejected_by_name: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  sent_at: string | null;
   created_at: string;
 }
 
@@ -77,7 +89,9 @@ export interface GuestMessageTimelineItem {
   sender: string;
   timestamp: string;
   message: string;
-  status?: "READY" | "SENT";
+  status?: "READY" | "REJECTED" | "SENT";
+  draftId?: string;
+  canReview?: boolean;
 }
 
 export interface GuestMessageBookingContext {
@@ -96,6 +110,9 @@ export interface GuestMessageConversationDetail {
   conversation: GuestMessageInboxItem;
   timeline: GuestMessageTimelineItem[];
   bookingContext: GuestMessageBookingContext;
+  capabilities: {
+    canReviewDrafts: boolean;
+  };
 }
 
 export interface GuestMessageInbox {
@@ -374,30 +391,72 @@ function toMessageTimelineItem(row: TimelineMessageRow): GuestMessageTimelineIte
   };
 }
 
-function toDraftTimelineItem(row: TimelineDraftRow): GuestMessageTimelineItem {
-  return {
+function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): GuestMessageTimelineItem[] {
+  const items: GuestMessageTimelineItem[] = [{
     id: `draft:${row.message_draft_id}`,
     kind: "draft",
     sender: "Waraporn Draft",
     timestamp: row.created_at,
-    message: row.draft_text,
-    status: "READY",
-  };
+    message: row.original_draft_text ?? row.draft_text,
+    status: row.status,
+    draftId: String(row.message_draft_id),
+    canReview: canReviewDrafts && row.status === "READY",
+  }];
+
+  if (row.edited_at) {
+    items.push({
+      id: `draft:${row.message_draft_id}:edited`,
+      kind: "review",
+      sender: `Edited by ${textOr(row.edited_by_name, "Staff")}`,
+      timestamp: row.edited_at,
+      message: row.edited_draft_text ?? row.draft_text,
+      status: row.status,
+      draftId: String(row.message_draft_id),
+    });
+  }
+
+  if (row.rejected_at) {
+    items.push({
+      id: `draft:${row.message_draft_id}:rejected`,
+      kind: "review",
+      sender: "Draft Rejected",
+      timestamp: row.rejected_at,
+      message: row.rejection_reason ?? `Rejected by ${textOr(row.rejected_by_name, "Staff")}.`,
+      status: "REJECTED",
+      draftId: String(row.message_draft_id),
+    });
+  }
+
+  if (row.approved_at) {
+    items.push({
+      id: `draft:${row.message_draft_id}:approved`,
+      kind: "review",
+      sender: "Human Approved",
+      timestamp: row.approved_at,
+      message: `Approved by ${textOr(row.approved_by_name, "Staff")}.`,
+      status: row.status,
+      draftId: String(row.message_draft_id),
+    });
+  }
+
+  return items;
 }
 
 function sortTimeline(left: GuestMessageTimelineItem, right: GuestMessageTimelineItem): number {
   const time = left.timestamp.localeCompare(right.timestamp);
   if (time !== 0) return time;
-  const rank: Record<GuestMessageTimelineKind, number> = { guest: 1, draft: 2, sent: 3 };
+  const rank: Record<GuestMessageTimelineKind, number> = { guest: 1, draft: 2, review: 3, sent: 4 };
   return rank[left.kind] - rank[right.kind];
 }
 
 export async function getGuestMessageConversation(
   env: GuestMessagesWorkspaceBindings,
   conversationId: number,
+  user?: CurrentUser | null,
 ): Promise<GuestMessageConversationDetail | null> {
   const header = await loadConversationHeader(env, conversationId);
   if (!header) return null;
+  const canReviewDrafts = user ? canReviewGuestMessages(user) : false;
 
   const [messages, drafts] = await Promise.all([
     env.DB.prepare(`
@@ -411,17 +470,32 @@ export async function getGuestMessageConversation(
       ORDER BY received_at ASC, message_id ASC
     `).bind(conversationId).all<TimelineMessageRow>(),
     env.DB.prepare(`
-      SELECT message_draft_id, message_id, draft_text, status, created_at
+      SELECT
+        message_draft_id,
+        message_id,
+        draft_text,
+        status,
+        original_draft_text,
+        edited_draft_text,
+        edited_by_name,
+        edited_at,
+        approved_by_name,
+        approved_at,
+        rejected_by_name,
+        rejected_at,
+        rejection_reason,
+        sent_at,
+        created_at
       FROM message_drafts
       WHERE message_conversation_id = ?
-        AND status = 'READY'
+        AND status IN ('READY', 'REJECTED', 'SENT')
       ORDER BY created_at ASC, message_draft_id ASC
     `).bind(conversationId).all<TimelineDraftRow>(),
   ]);
 
   const timeline = [
     ...(messages.results ?? []).map(toMessageTimelineItem),
-    ...(drafts.results ?? []).map(toDraftTimelineItem),
+    ...(drafts.results ?? []).flatMap((draft) => toDraftTimelineItems(draft, canReviewDrafts)),
   ].sort(sortTimeline);
 
   return {
@@ -437,6 +511,9 @@ export async function getGuestMessageConversation(
       channel: channelLabel(header.booking_channel ?? header.channel),
       accommodation: accommodationName(header),
       bookingStatus: textOr(header.booking_status, "Unknown"),
+    },
+    capabilities: {
+      canReviewDrafts,
     },
   };
 }

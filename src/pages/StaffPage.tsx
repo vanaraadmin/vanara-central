@@ -55,14 +55,14 @@ const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
 
 const MESSAGES_WORKSPACE_CARD: StaffOverviewCard = {
   id: "messages",
-  module: "chat",
+  module: "messages",
   title: "Messages",
   description: "Review guest replies before sending.",
   href: "/messages",
   cta: "Open workspace",
   metrics: [],
   summaryLine1: "Human review",
-  summaryLine2: "No sending yet",
+  summaryLine2: "Review before send",
 };
 
 const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {

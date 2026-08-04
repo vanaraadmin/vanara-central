@@ -51,7 +51,7 @@ export type Intent =
 
 export type ReviewState = "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED" | "EDITED";
 
-export type DraftState = "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "FAILED";
+export type DraftState = "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "SENT" | "FAILED";
 
 export type DeliveryState = "NOT_READY" | "READY" | "SENDING" | "SENT" | "FAILED" | "RETRY_PENDING";
 
