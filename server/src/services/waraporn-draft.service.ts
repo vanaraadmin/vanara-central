@@ -42,6 +42,7 @@ interface DraftRow {
   runtime_context_json: string | null;
   retrieval_filenames: string | null;
   retrieval_result_count: number | null;
+  openai_file_search_call_count: number | null;
   openai_request_count: number | null;
   openai_input_tokens: number | null;
   openai_cached_input_tokens: number | null;
@@ -67,6 +68,8 @@ export const OPENAI_WARAPORN_DRAFT_MODEL = "gpt-5.5";
 export const OPENAI_WARAPORN_DRAFT_TIMEOUT_MS = 60_000;
 export const DEFAULT_WARAPORN_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 export const OPENAI_RESPONSES_FILE_SEARCH_INCLUDE = ["file_search_call.results"] as const;
+export const WARAPORN_MAX_TOOL_CALLS = 2;
+export const WARAPORN_PROMPT_CACHE_KEY = "waraporn-v4-rc3-payload-optimized";
 export const WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES = [
   "Waraporn_Conversation_Composer.md",
   "Vanara_Hospitality_Behaviour.md",
@@ -81,18 +84,6 @@ const WARAPORN_FILE_SEARCH_MAX_RESULTS = 10;
 const GPT_5_5_INPUT_USD_PER_MILLION = 5;
 const GPT_5_5_CACHED_INPUT_USD_PER_MILLION = 0.5;
 const GPT_5_5_OUTPUT_USD_PER_MILLION = 30;
-export const WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION = [
-  "Before composing, retrieve and apply these six exact foundation documents from the attached Vector Store:",
-  "",
-  "- Waraporn_Conversation_Composer.md",
-  "- Vanara_Hospitality_Behaviour.md",
-  "- Guest_Information_Relevance_Filter.md",
-  "- Waraporn_Conversational_Instincts.md",
-  "- Seasonal_Advices.md",
-  "- Thai Holidays_TrafficLogics_Koh_Chang.md",
-  "",
-  "Then retrieve only the additional documents genuinely required by the current guest decision.",
-].join("\n");
 
 interface OpenAiUsage {
   inputTokens: number;
@@ -107,6 +98,7 @@ interface OpenAiResponsesResult {
   responseId: string | null;
   retrievalFilenames: string[];
   retrievalResultCount: number;
+  fileSearchCallCount: number;
   usage: OpenAiUsage;
   elapsedMs: number;
   estimatedCostUsd: number;
@@ -121,6 +113,7 @@ export class WarapornDraftError extends Error {
       | "openai_request_failed"
       | "openai_timeout"
       | "openai_invalid_response"
+      | "openai_tool_call_limit_exceeded"
       | "draft_not_eligible"
       | "draft_persistence_failed",
     public readonly status: 400 | 404 | 500 | 502 = 400,
@@ -200,30 +193,25 @@ function inputPair(label: string, value: string | number | null | undefined): Ar
   ];
 }
 
-function runtimeContextText(context: VerifiedMessageContext): string {
-  return JSON.stringify({
-    messageId: context.messageId,
-    conversationId: context.conversationId,
-    bookingId: context.bookingId,
-    beds24BookingId: context.beds24BookingId,
-    guestName: context.guestName,
-    guestFirstName: context.guestFirstName,
-    arrivalDate: context.arrivalDate,
-    departureDate: context.departureDate,
-    bookingStatus: context.bookingStatus,
-    bookingSource: context.bookingSource,
-    accommodationType: context.accommodationType,
-    physicalUnit: context.physicalUnit,
-    roomSummary: context.roomSummary,
-    language: context.language,
-    provider: context.provider,
-    channel: context.channel,
-    currentBangkokDate: context.currentBangkokDate,
-    currentBangkokTime: context.currentBangkokTime,
-    travelPhase: context.travelPhase,
-    availabilityPricesStatus: context.availabilityPricesStatus,
-    verifiedAt: context.verifiedAt,
-  }, null, 2);
+function compactRuntimeEnvelopeText(context: VerifiedMessageContext): string {
+  const lines = [
+    `Guest first name: ${valueText(context.guestFirstName)}`,
+    `Check-in date: ${valueText(context.arrivalDate)}`,
+    `Check-out date: ${valueText(context.departureDate)}`,
+    `Booking status: ${valueText(context.bookingStatus)}`,
+    `Accommodation: ${valueText(context.accommodationType)}`,
+    `Physical unit: ${valueText(context.physicalUnit)}`,
+    `Current Bangkok date/time: ${context.currentBangkokDate} ${context.currentBangkokTime}`,
+    `Travel phase: ${context.travelPhase}`,
+    `Provider/channel: ${context.provider}/${context.channel}`,
+    `Guest-message language: ${valueText(context.language)}`,
+  ];
+
+  if (context.availabilityPricesStatus !== "NOT_APPLICABLE") {
+    lines.push(`Verified availability/prices: ${context.availabilityPricesStatus}. ${context.availabilityPricesContext}`);
+  }
+
+  return lines.join("\n");
 }
 
 function parseStoredFilenames(value: string | null | undefined): string[] {
@@ -273,6 +261,11 @@ function retrievalResultCountFrom(response: unknown): number {
   }
 
   return count;
+}
+
+function fileSearchCallCountFrom(response: unknown): number {
+  if (!isRecord(response) || !Array.isArray(response.output)) return 0;
+  return response.output.filter((outputItem) => isRecord(outputItem) && outputItem.type === "file_search_call").length;
 }
 
 function numeric(value: unknown): number {
@@ -325,47 +318,37 @@ export function buildWarapornResponsesRequest(
   storeId: string,
 ): JsonRecord {
   const content = [
-    { type: "input_text" as const, text: WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION },
-    ...inputPair("GUEST FIRST NAME", context.guestFirstName),
-    ...inputPair("CHECK-IN DATE", context.arrivalDate),
-    ...inputPair("CHECK-OUT DATE", context.departureDate),
+    ...inputPair("VANARA VERIFIED RUNTIME CONTEXT", compactRuntimeEnvelopeText(context)),
     ...inputPair("CONVERSATION CONTEXT", context.conversationContext),
     ...inputPair("CURRENT GUEST MESSAGE", context.currentGuestMessage),
-    ...inputPair("VANARA VERIFIED RUNTIME CONTEXT", runtimeContextText(context)),
-    ...inputPair("CURRENT BANGKOK DATE", context.currentBangkokDate),
-    ...inputPair("CURRENT BANGKOK TIME", context.currentBangkokTime),
-    ...inputPair("TRAVEL PHASE", context.travelPhase),
-    ...inputPair("BOOKING STATUS", context.bookingStatus),
-    ...inputPair("GUEST LANGUAGE", context.language),
-    ...inputPair("PROVIDER", context.provider),
-    ...inputPair("CHANNEL", context.channel),
-    ...inputPair("BOOKING SOURCE", context.bookingSource),
-    ...inputPair("ACCOMMODATION TYPE", context.accommodationType),
-    ...inputPair("PHYSICAL UNIT", context.physicalUnit),
-    ...inputPair("ROOM SUMMARY", context.roomSummary),
-    ...inputPair("VERIFIED AVAILABILITY AND PRICES STATUS", context.availabilityPricesStatus),
-    ...inputPair("VERIFIED AVAILABILITY AND PRICES", context.availabilityPricesContext),
   ];
 
   return {
     model: OPENAI_WARAPORN_DRAFT_MODEL,
     instructions: promptText,
-    input: [{
-      role: "user",
-      content,
-    }],
-    include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
     tools: [{
       type: "file_search",
       vector_store_ids: [storeId],
       max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
     }],
     tool_choice: "required",
+    max_tool_calls: WARAPORN_MAX_TOOL_CALLS,
+    reasoning: {
+      effort: "low",
+    },
     text: {
+      verbosity: "low",
       format: {
         type: "text",
       },
     },
+    prompt_cache_key: WARAPORN_PROMPT_CACHE_KEY,
+    prompt_cache_retention: "24h",
+    include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
+    input: [{
+      role: "user",
+      content,
+    }],
     store: true,
   };
 }
@@ -406,6 +389,7 @@ async function loadReadyDraft(env: Pick<WarapornDraftBindings, "DB">, messageId:
       runtime_context_json,
       retrieval_filenames,
       retrieval_result_count,
+      openai_file_search_call_count,
       openai_request_count,
       openai_input_tokens,
       openai_cached_input_tokens,
@@ -476,11 +460,20 @@ async function persistFailedDraftAttempt(
     context: Awaited<ReturnType<typeof buildMessageContext>> | null;
     storeId: string;
     openAiRequestCount: 0 | 1;
+    openAiResult?: OpenAiResponsesResult | null;
     error: unknown;
   },
 ): Promise<void> {
   await markMessageFailedManualRetry(env, params.messageId, params.now);
   if (!params.prompt || !params.context || params.openAiRequestCount !== 1) return;
+  const result = params.openAiResult ?? null;
+  const usage = result?.usage ?? {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0,
+  };
 
   await env.DB.prepare(`
     INSERT INTO message_drafts (
@@ -499,6 +492,7 @@ async function persistFailedDraftAttempt(
       runtime_context_json,
       retrieval_filenames,
       retrieval_result_count,
+      openai_file_search_call_count,
       openai_request_count,
       openai_input_tokens,
       openai_cached_input_tokens,
@@ -512,7 +506,7 @@ async function persistFailedDraftAttempt(
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, NULL, ?, ?, '[]', 0, ?, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(message_id) DO NOTHING
   `).bind(
     params.messageId,
@@ -523,9 +517,20 @@ async function persistFailedDraftAttempt(
     params.prompt.checksum,
     OPENAI_WARAPORN_DRAFT_MODEL,
     params.storeId,
+    result?.responseId ?? null,
     params.context.contextHash,
     JSON.stringify(params.context.context),
+    JSON.stringify(result?.retrievalFilenames ?? []),
+    result?.retrievalResultCount ?? 0,
+    result?.fileSearchCallCount ?? 0,
     params.openAiRequestCount,
+    usage.inputTokens,
+    usage.cachedInputTokens,
+    usage.outputTokens,
+    usage.reasoningTokens,
+    usage.totalTokens,
+    result?.elapsedMs ?? 0,
+    result?.estimatedCostUsd ?? 0,
     failureCode(params.error),
     failureMessage(params.error),
     params.now,
@@ -574,12 +579,14 @@ async function callOpenAiResponses(
     throw new WarapornDraftError(openAiErrorMessage(payload), "openai_request_failed", 502);
   }
   const usage = usageFrom(payload);
+  const fileSearchCallCount = fileSearchCallCountFrom(payload);
 
   return {
     text: outputTextFrom(payload),
     responseId: openAiResponseId(payload),
     retrievalFilenames: retrievalFilenamesFrom(payload),
     retrievalResultCount: retrievalResultCountFrom(payload),
+    fileSearchCallCount,
     usage,
     elapsedMs,
     estimatedCostUsd: estimateGpt55CostUsd(usage),
@@ -606,6 +613,7 @@ export async function generateWarapornDraft(
   let prompt: Awaited<ReturnType<typeof loadPrompt>> | null = null;
   let context: Awaited<ReturnType<typeof buildMessageContext>> | null = null;
   let openAiRequestCount: 0 | 1 = 0;
+  let openAiResult: OpenAiResponsesResult | null = null;
 
   try {
     prompt = await loadPrompt(DEFAULT_WARAPORN_PROMPT_KEY);
@@ -619,6 +627,10 @@ export async function generateWarapornDraft(
     const requestBody = buildWarapornResponsesRequest(prompt.text, context.context, storeId);
     openAiRequestCount = 1;
     const generated = await callOpenAiResponses(env, requestBody, options);
+    openAiResult = generated;
+    if (generated.fileSearchCallCount > WARAPORN_MAX_TOOL_CALLS) {
+      throw new WarapornDraftError("OpenAI exceeded the Waraporn file_search call limit.", "openai_tool_call_limit_exceeded", 502);
+    }
 
     const inserted = await env.DB.prepare(`
       INSERT INTO message_drafts (
@@ -637,6 +649,7 @@ export async function generateWarapornDraft(
         runtime_context_json,
         retrieval_filenames,
         retrieval_result_count,
+        openai_file_search_call_count,
         openai_request_count,
         openai_input_tokens,
         openai_cached_input_tokens,
@@ -650,7 +663,7 @@ export async function generateWarapornDraft(
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
       ON CONFLICT(message_id) DO NOTHING
     `).bind(
       messageId,
@@ -667,6 +680,7 @@ export async function generateWarapornDraft(
       JSON.stringify(context.context),
       JSON.stringify(generated.retrievalFilenames),
       generated.retrievalResultCount,
+      generated.fileSearchCallCount,
       generated.usage.inputTokens,
       generated.usage.cachedInputTokens,
       generated.usage.outputTokens,
@@ -698,7 +712,7 @@ export async function generateWarapornDraft(
 
     return draft;
   } catch (error) {
-    await persistFailedDraftAttempt(env, { messageId, now, prompt, context, storeId, openAiRequestCount, error });
+    await persistFailedDraftAttempt(env, { messageId, now, prompt, context, storeId, openAiRequestCount, openAiResult, error });
     throw error;
   }
 }

@@ -43,8 +43,9 @@ interface MessageContextRow {
 interface ConversationHistoryRow {
   message_id: number;
   received_at: string;
+  direction: "INBOUND" | "OUTBOUND";
+  author: "GUEST" | "WARAPORN" | "STAFF" | "PROVIDER";
   guest_message: string;
-  draft_text: string | null;
 }
 
 function clean(value: string | null | undefined): string | null {
@@ -128,14 +129,20 @@ function accommodationTypeFrom(row: Pick<MessageContextRow, "unit_type" | "unit_
   return mapAccommodationType(clean(row.unit_type), unitName, roomTypeName);
 }
 
-function historyText(rows: ConversationHistoryRow[], currentMessageId: number): string {
-  const previous = rows.filter((row) => row.message_id !== currentMessageId);
+function normalizeMessageText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function historyText(rows: ConversationHistoryRow[], currentMessageId: number, currentGuestMessage: string): string {
+  const currentNormalized = normalizeMessageText(currentGuestMessage);
+  const previous = rows
+    .filter((row) => row.message_id !== currentMessageId)
+    .filter((row) => row.direction !== "INBOUND" || normalizeMessageText(row.guest_message) !== currentNormalized);
   if (previous.length === 0) return "No previous conversation history stored in Vanara.";
 
   return previous.map((row) => {
-    const parts = [`${row.received_at} | Guest: ${row.guest_message}`];
-    if (clean(row.draft_text)) parts.push(`Waraporn draft: ${row.draft_text}`);
-    return parts.join(" | ");
+    const speaker = row.direction === "OUTBOUND" && row.author === "WARAPORN" ? "Waraporn sent" : "Guest";
+    return `${row.received_at} | ${speaker}: ${row.guest_message}`;
   }).join("\n---\n");
 }
 
@@ -330,19 +337,21 @@ export async function buildMessageContext(
     SELECT
       m.message_id,
       m.received_at,
-      m.guest_message,
-      d.draft_text
+      m.direction,
+      m.author,
+      m.guest_message
     FROM messages m
-    LEFT JOIN message_drafts d
-      ON d.message_id = m.message_id
-      AND d.status = 'READY'
     WHERE m.message_conversation_id = ?
-      AND (m.received_at < ? OR (m.received_at = ? AND m.message_id <= ?))
+      AND (m.received_at < ? OR (m.received_at = ? AND m.message_id < ?))
+      AND (
+        (m.direction = 'INBOUND' AND m.author = 'GUEST')
+        OR (m.direction = 'OUTBOUND' AND m.author = 'WARAPORN' AND m.state = 'SENT')
+      )
     ORDER BY m.received_at ASC, m.message_id ASC
     LIMIT 25
   `).bind(row.message_conversation_id, row.received_at, row.received_at, row.message_id).all<ConversationHistoryRow>();
 
-  const conversationContext = historyText(historyRows.results ?? [], row.message_id);
+  const conversationContext = historyText(historyRows.results ?? [], row.message_id, row.guest_message);
   const availabilityPrices = await buildAvailabilityPricesContext(env, input, row, conversationContext);
   const bangkok = bangkokRuntime(now);
   const context: VerifiedMessageContext = {

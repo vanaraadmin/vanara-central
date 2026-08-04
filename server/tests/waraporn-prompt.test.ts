@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { shouldLoadPromptFromNodeFilesystem } from "../src/services/message-prompt.service.js";
+import {
+  DEFAULT_WARAPORN_PROMPT_KEY,
+  getPromptChecksum,
+  getPromptVersion,
+  listPromptVersions,
+  shouldLoadPromptFromNodeFilesystem,
+} from "../src/services/message-prompt.service.js";
 
 const promptPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -18,7 +24,17 @@ test("frozen Waraporn prompt asset matches the approved checksum", () => {
   const actualChecksum = createHash("sha256").update(prompt, "utf8").digest("hex");
 
   assert.equal(actualChecksum, expectedChecksum);
+  assert.equal(getPromptChecksum(DEFAULT_WARAPORN_PROMPT_KEY), expectedChecksum);
+  assert.equal(getPromptVersion(DEFAULT_WARAPORN_PROMPT_KEY), "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE");
   assert.match(prompt, /^# SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE/);
+});
+
+test("prompt registry contains only the current frozen Make prompt", () => {
+  const prompts = listPromptVersions();
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0]?.key, DEFAULT_WARAPORN_PROMPT_KEY);
+  assert.equal(prompts[0]?.checksum, expectedChecksum);
 });
 
 test("prompt loader does not use Node filesystem inside Cloudflare Workers nodejs_compat", () => {
