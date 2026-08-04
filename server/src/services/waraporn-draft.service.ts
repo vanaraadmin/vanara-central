@@ -42,6 +42,16 @@ interface DraftRow {
   runtime_context_json: string | null;
   retrieval_filenames: string | null;
   retrieval_result_count: number | null;
+  openai_request_count: number | null;
+  openai_input_tokens: number | null;
+  openai_cached_input_tokens: number | null;
+  openai_output_tokens: number | null;
+  openai_reasoning_tokens: number | null;
+  openai_total_tokens: number | null;
+  openai_elapsed_ms: number | null;
+  estimated_cost_usd: number | null;
+  failure_code: string | null;
+  failure_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,29 +76,40 @@ export const WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES = [
   "Thai Holidays_TrafficLogics_Koh_Chang.md",
 ] as const;
 export const WARAPORN_REQUIRED_RETRIEVAL_FILENAMES = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES;
-const WARAPORN_FOUNDATION_RETRIEVAL_FILENAME_SET = new Set<string>(WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES);
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const WARAPORN_DECISION_FILE_SEARCH_MAX_RESULTS = 10;
-const WARAPORN_RETRIEVAL_MAX_ATTEMPTS = 3;
+const WARAPORN_FILE_SEARCH_MAX_RESULTS = 10;
+const GPT_5_5_INPUT_USD_PER_MILLION = 5;
+const GPT_5_5_CACHED_INPUT_USD_PER_MILLION = 0.5;
+const GPT_5_5_OUTPUT_USD_PER_MILLION = 30;
+export const WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION = [
+  "Before composing, retrieve and apply these six exact foundation documents from the attached Vector Store:",
+  "",
+  "- Waraporn_Conversation_Composer.md",
+  "- Vanara_Hospitality_Behaviour.md",
+  "- Guest_Information_Relevance_Filter.md",
+  "- Waraporn_Conversational_Instincts.md",
+  "- Seasonal_Advices.md",
+  "- Thai Holidays_TrafficLogics_Koh_Chang.md",
+  "",
+  "Then retrieve only the additional documents genuinely required by the current guest decision.",
+].join("\n");
 
-interface RetrievedFileSearchResult {
-  filename: string;
-  text: string | null;
-  score: number | null;
+interface OpenAiUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
 }
 
 interface OpenAiResponsesResult {
   text: string;
   responseId: string | null;
   retrievalFilenames: string[];
-  retrievalResults: RetrievedFileSearchResult[];
-  fileSearchCompleted: boolean;
-}
-
-interface FoundationRetrievalResult {
-  filenames: string[];
-  results: RetrievedFileSearchResult[];
-  responseId: string;
+  retrievalResultCount: number;
+  usage: OpenAiUsage;
+  elapsedMs: number;
+  estimatedCostUsd: number;
 }
 
 export class WarapornDraftError extends Error {
@@ -100,7 +121,7 @@ export class WarapornDraftError extends Error {
       | "openai_request_failed"
       | "openai_timeout"
       | "openai_invalid_response"
-      | "retrieval_verification_failed"
+      | "draft_not_eligible"
       | "draft_persistence_failed",
     public readonly status: 400 | 404 | 500 | 502 = 400,
   ) {
@@ -242,103 +263,69 @@ function retrievalFilenamesFrom(response: unknown): string[] {
   return [...new Set(filenames)];
 }
 
-function pushUniqueFilename(target: string[], filename: string): void {
-  if (!target.includes(filename)) target.push(filename);
-}
-
-function isFoundationFilename(filename: string): boolean {
-  return WARAPORN_FOUNDATION_RETRIEVAL_FILENAME_SET.has(filename);
-}
-
-function retrievedFoundationFilenameSet(filenames: readonly string[]): Set<string> {
-  return new Set(filenames.filter(isFoundationFilename));
-}
-
-function missingFoundationRetrievalFilenames(filenames: readonly string[]): string[] {
-  const found = retrievedFoundationFilenameSet(filenames);
-  return WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.filter((filename) => !found.has(filename));
-}
-
-function fileSearchCompletedFrom(response: unknown): boolean {
-  if (!isRecord(response) || !Array.isArray(response.output)) return false;
-  return response.output.some((outputItem) => {
-    return isRecord(outputItem)
-      && outputItem.type === "file_search_call"
-      && (outputItem.status === undefined || outputItem.status === "completed");
-  });
-}
-
-function retrievalResultsFrom(response: unknown): RetrievedFileSearchResult[] {
-  if (!isRecord(response) || !Array.isArray(response.output)) return [];
-  const results: RetrievedFileSearchResult[] = [];
+function retrievalResultCountFrom(response: unknown): number {
+  if (!isRecord(response) || !Array.isArray(response.output)) return 0;
+  let count = 0;
 
   for (const outputItem of response.output) {
     if (!isRecord(outputItem) || outputItem.type !== "file_search_call" || !Array.isArray(outputItem.results)) continue;
-    for (const result of outputItem.results) {
-      if (!isRecord(result) || typeof result.filename !== "string" || !result.filename.trim()) continue;
-      results.push({
-        filename: result.filename.trim(),
-        text: typeof result.text === "string" && result.text.trim() ? result.text.trim() : null,
-        score: typeof result.score === "number" && Number.isFinite(result.score) ? result.score : null,
-      });
-    }
+    count += outputItem.results.length;
   }
 
-  return results;
+  return count;
 }
 
-function combinedRetrievalFilenames(foundation: FoundationRetrievalResult, decision: OpenAiResponsesResult): string[] {
-  const filenames: string[] = [];
-  for (const filename of foundation.filenames) pushUniqueFilename(filenames, filename);
-  for (const filename of decision.retrievalFilenames) pushUniqueFilename(filenames, filename);
-  return filenames;
+function numeric(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(Math.trunc(value), 0) : 0;
 }
 
-export function buildWarapornFoundationRetrievalRequest(
-  storeId: string,
-  filenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
-  previousResponseId: string | null = null,
-): JsonRecord {
-  const request: JsonRecord = {
-    model: OPENAI_WARAPORN_DRAFT_MODEL,
-    instructions: [
-      "Retrieve only the exact Vanara Waraporn foundation filenames requested by the user input.",
-      "Do not answer any guest question.",
-      "Do not retrieve destination, transport, room, activity, price, or area documents in this phase.",
-      "Return FOUNDATION_RETRIEVAL_COMPLETE after the file search call.",
-    ].join("\n"),
-    input: [{
-      role: "user",
-      content: [
-        ...inputPair("FOUNDATION FILES TO RETRIEVE", filenames.join("\n")),
-        ...inputPair("RETRIEVAL SCOPE", "Foundation contracts only. No decision-specific knowledge."),
-      ],
-    }],
-    include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
-    tools: [{
-      type: "file_search",
-      vector_store_ids: [storeId],
-      max_num_results: Math.max(filenames.length, 1),
-    }],
-    tool_choice: "required",
-    text: {
-      format: {
-        type: "text",
-      },
-    },
-    store: true,
+function usageFrom(response: unknown): OpenAiUsage {
+  if (!isRecord(response) || !isRecord(response.usage)) {
+    return {
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0,
+    };
+  }
+
+  const inputTokens = numeric(response.usage.input_tokens);
+  const outputTokens = numeric(response.usage.output_tokens);
+  const totalTokens = numeric(response.usage.total_tokens) || inputTokens + outputTokens;
+  const cachedInputTokens = isRecord(response.usage.input_tokens_details)
+    ? numeric(response.usage.input_tokens_details.cached_tokens)
+    : 0;
+  const reasoningTokens = isRecord(response.usage.output_tokens_details)
+    ? numeric(response.usage.output_tokens_details.reasoning_tokens)
+    : 0;
+
+  return {
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens,
   };
-  if (previousResponseId) request.previous_response_id = previousResponseId;
-  return request;
+}
+
+function estimateGpt55CostUsd(usage: OpenAiUsage): number {
+  const uncachedInputTokens = Math.max(usage.inputTokens - usage.cachedInputTokens, 0);
+  const cost = (
+    uncachedInputTokens * GPT_5_5_INPUT_USD_PER_MILLION
+    + usage.cachedInputTokens * GPT_5_5_CACHED_INPUT_USD_PER_MILLION
+    + usage.outputTokens * GPT_5_5_OUTPUT_USD_PER_MILLION
+  ) / 1_000_000;
+  return Number(cost.toFixed(8));
 }
 
 export function buildWarapornResponsesRequest(
   promptText: string,
   context: VerifiedMessageContext,
   storeId: string,
-  foundation: FoundationRetrievalResult,
 ): JsonRecord {
   const content = [
+    { type: "input_text" as const, text: WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION },
     ...inputPair("GUEST FIRST NAME", context.guestFirstName),
     ...inputPair("CHECK-IN DATE", context.arrivalDate),
     ...inputPair("CHECK-OUT DATE", context.departureDate),
@@ -363,7 +350,6 @@ export function buildWarapornResponsesRequest(
   return {
     model: OPENAI_WARAPORN_DRAFT_MODEL,
     instructions: promptText,
-    previous_response_id: foundation.responseId,
     input: [{
       role: "user",
       content,
@@ -372,7 +358,7 @@ export function buildWarapornResponsesRequest(
     tools: [{
       type: "file_search",
       vector_store_ids: [storeId],
-      max_num_results: WARAPORN_DECISION_FILE_SEARCH_MAX_RESULTS,
+      max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
     }],
     tool_choice: "required",
     text: {
@@ -381,92 +367,6 @@ export function buildWarapornResponsesRequest(
       },
     },
     store: true,
-  };
-}
-
-async function retrieveWarapornFoundation(
-  env: WarapornDraftBindings,
-  storeId: string,
-  options: GenerateWarapornDraftOptions,
-): Promise<FoundationRetrievalResult> {
-  let missing: string[] = [...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES];
-  const retrievedFilenames: string[] = [];
-  const retrievedResults: RetrievedFileSearchResult[] = [];
-  let previousResponseId: string | null = null;
-
-  for (let attempt = 1; attempt <= WARAPORN_RETRIEVAL_MAX_ATTEMPTS; attempt += 1) {
-    const requestBody = buildWarapornFoundationRetrievalRequest(storeId, missing, previousResponseId);
-    const generated = await callOpenAiResponses(env, requestBody, options);
-
-    if (!generated.fileSearchCompleted) {
-      throw new WarapornDraftError(
-        "Waraporn foundation retrieval did not complete.",
-        "retrieval_verification_failed",
-        502,
-      );
-    }
-    if (!generated.responseId) {
-      throw new WarapornDraftError(
-        "OpenAI foundation retrieval response did not include a response id.",
-        "openai_invalid_response",
-        502,
-      );
-    }
-    previousResponseId = generated.responseId;
-
-    for (const filename of generated.retrievalFilenames) {
-      if (isFoundationFilename(filename)) {
-        pushUniqueFilename(retrievedFilenames, filename);
-      }
-    }
-    for (const result of generated.retrievalResults) {
-      if (isFoundationFilename(result.filename)) {
-        retrievedResults.push(result);
-      }
-    }
-
-    missing = missingFoundationRetrievalFilenames(retrievedFilenames);
-    if (missing.length === 0) {
-      return {
-        filenames: [...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES],
-        results: retrievedResults,
-        responseId: previousResponseId,
-      };
-    }
-  }
-
-  throw new WarapornDraftError(
-    `Waraporn foundation retrieval verification failed. Missing: ${missing.join(", ")}`,
-    "retrieval_verification_failed",
-    502,
-  );
-}
-
-async function callOpenAiResponsesWithRetrievalVerification(
-  env: WarapornDraftBindings,
-  promptText: string,
-  context: VerifiedMessageContext,
-  storeId: string,
-  options: GenerateWarapornDraftOptions,
-): Promise<{ text: string; responseId: string | null; retrievalFilenames: string[]; foundationFilenames: string[]; decisionFilenames: string[] }> {
-  const foundation = await retrieveWarapornFoundation(env, storeId, options);
-  const requestBody = buildWarapornResponsesRequest(promptText, context, storeId, foundation);
-  const decision = await callOpenAiResponses(env, requestBody, options);
-
-  if (!decision.fileSearchCompleted) {
-    throw new WarapornDraftError(
-      "Waraporn decision retrieval did not complete.",
-      "retrieval_verification_failed",
-      502,
-    );
-  }
-
-  return {
-    text: decision.text,
-    responseId: decision.responseId,
-    foundationFilenames: foundation.filenames,
-    decisionFilenames: decision.retrievalFilenames,
-    retrievalFilenames: combinedRetrievalFilenames(foundation, decision),
   };
 }
 
@@ -506,6 +406,16 @@ async function loadReadyDraft(env: Pick<WarapornDraftBindings, "DB">, messageId:
       runtime_context_json,
       retrieval_filenames,
       retrieval_result_count,
+      openai_request_count,
+      openai_input_tokens,
+      openai_cached_input_tokens,
+      openai_output_tokens,
+      openai_reasoning_tokens,
+      openai_total_tokens,
+      openai_elapsed_ms,
+      estimated_cost_usd,
+      failure_code,
+      failure_message,
       created_at,
       updated_at
     FROM message_drafts
@@ -515,6 +425,112 @@ async function loadReadyDraft(env: Pick<WarapornDraftBindings, "DB">, messageId:
   `).bind(messageId).first<DraftRow>();
 
   return row ? toDraft(row) : null;
+}
+
+async function acquireDraftLease(env: Pick<WarapornDraftBindings, "DB">, messageId: number, now: string): Promise<boolean> {
+  const result = await env.DB.prepare(`
+    UPDATE messages
+    SET state = 'GENERATING',
+        updated_at = ?
+    WHERE message_id = ?
+      AND state = 'ASSOCIATED'
+      AND association_state = 'LINKED'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM message_drafts
+        WHERE message_id = ?
+      )
+  `).bind(now, messageId, messageId).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+function failureCode(error: unknown): string {
+  return error instanceof WarapornDraftError ? error.code : "unknown";
+}
+
+function failureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Unknown Waraporn draft failure.";
+  return message.slice(0, 1000);
+}
+
+async function markMessageFailedManualRetry(
+  env: Pick<WarapornDraftBindings, "DB">,
+  messageId: number,
+  now: string,
+): Promise<void> {
+  await env.DB.prepare(`
+    UPDATE messages
+    SET state = 'FAILED_MANUAL_RETRY',
+        updated_at = ?
+    WHERE message_id = ?
+      AND state <> 'DRAFT_READY'
+  `).bind(now, messageId).run();
+}
+
+async function persistFailedDraftAttempt(
+  env: Pick<WarapornDraftBindings, "DB">,
+  params: {
+    messageId: number;
+    now: string;
+    prompt: Awaited<ReturnType<typeof loadPrompt>> | null;
+    context: Awaited<ReturnType<typeof buildMessageContext>> | null;
+    storeId: string;
+    openAiRequestCount: 0 | 1;
+    error: unknown;
+  },
+): Promise<void> {
+  await markMessageFailedManualRetry(env, params.messageId, params.now);
+  if (!params.prompt || !params.context || params.openAiRequestCount !== 1) return;
+
+  await env.DB.prepare(`
+    INSERT INTO message_drafts (
+      message_id,
+      message_conversation_id,
+      booking_id,
+      prompt_key,
+      prompt_version,
+      prompt_checksum,
+      draft_text,
+      status,
+      model,
+      vector_store_id,
+      openai_response_id,
+      context_hash,
+      runtime_context_json,
+      retrieval_filenames,
+      retrieval_result_count,
+      openai_request_count,
+      openai_input_tokens,
+      openai_cached_input_tokens,
+      openai_output_tokens,
+      openai_reasoning_tokens,
+      openai_total_tokens,
+      openai_elapsed_ms,
+      estimated_cost_usd,
+      failure_code,
+      failure_message,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, NULL, ?, ?, '[]', 0, ?, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?)
+    ON CONFLICT(message_id) DO NOTHING
+  `).bind(
+    params.messageId,
+    Number(params.context.context.conversationId),
+    params.context.context.bookingId,
+    params.prompt.key,
+    params.prompt.version,
+    params.prompt.checksum,
+    OPENAI_WARAPORN_DRAFT_MODEL,
+    params.storeId,
+    params.context.contextHash,
+    JSON.stringify(params.context.context),
+    params.openAiRequestCount,
+    failureCode(params.error),
+    failureMessage(params.error),
+    params.now,
+    params.now,
+  ).run();
 }
 
 async function callOpenAiResponses(
@@ -530,6 +546,7 @@ async function callOpenAiResponses(
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), OPENAI_WARAPORN_DRAFT_TIMEOUT_MS);
   const fetcher = options.fetcher ?? env.fetcher ?? fetch;
+  const started = Date.now();
 
   let response: Response;
   try {
@@ -552,16 +569,20 @@ async function callOpenAiResponses(
   }
 
   const payload: unknown = await response.json().catch(() => null);
+  const elapsedMs = Date.now() - started;
   if (!response.ok) {
     throw new WarapornDraftError(openAiErrorMessage(payload), "openai_request_failed", 502);
   }
+  const usage = usageFrom(payload);
 
   return {
     text: outputTextFrom(payload),
     responseId: openAiResponseId(payload),
     retrievalFilenames: retrievalFilenamesFrom(payload),
-    retrievalResults: retrievalResultsFrom(payload),
-    fileSearchCompleted: fileSearchCompletedFrom(payload),
+    retrievalResultCount: retrievalResultCountFrom(payload),
+    usage,
+    elapsedMs,
+    estimatedCostUsd: estimateGpt55CostUsd(usage),
   };
 }
 
@@ -574,77 +595,112 @@ export async function generateWarapornDraft(
   if (existing) return existing;
 
   const now = options.now ?? new Date().toISOString();
-  const prompt = await loadPrompt(DEFAULT_WARAPORN_PROMPT_KEY);
-  if (!await verifyPromptChecksum(prompt.key)) {
-    throw new WarapornDraftError("Frozen Waraporn prompt checksum mismatch.", "prompt_checksum_mismatch", 500);
-  }
-
-  const context = await buildMessageContext(env, { messageId, now });
-  if (!context) throw new WarapornDraftError("Message not found.", "message_not_found", 404);
-
-  const storeId = vectorStoreId(env);
-  const generated = await callOpenAiResponsesWithRetrievalVerification(env, prompt.text, context.context, storeId, options);
-
-  const inserted = await env.DB.prepare(`
-    INSERT INTO message_drafts (
-      message_id,
-      message_conversation_id,
-      booking_id,
-      prompt_key,
-      prompt_version,
-      prompt_checksum,
-      draft_text,
-      status,
-      model,
-      vector_store_id,
-      openai_response_id,
-      context_hash,
-      runtime_context_json,
-      retrieval_filenames,
-      retrieval_result_count,
-      created_at,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(message_id) DO NOTHING
-  `).bind(
-    messageId,
-    Number(context.context.conversationId),
-    context.context.bookingId,
-    prompt.key,
-    prompt.version,
-    prompt.checksum,
-    generated.text,
-    OPENAI_WARAPORN_DRAFT_MODEL,
-    storeId,
-    generated.responseId,
-    context.contextHash,
-    JSON.stringify(context.context),
-    JSON.stringify(generated.retrievalFilenames),
-    generated.retrievalFilenames.length,
-    now,
-    now,
-  ).run();
-
-  if ((inserted.meta?.changes ?? 0) === 0) {
+  const leased = await acquireDraftLease(env, messageId, now);
+  if (!leased) {
     const replay = await loadReadyDraft(env, messageId);
     if (replay) return replay;
-    throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
+    throw new WarapornDraftError("Waraporn draft generation is not eligible for automatic retry.", "draft_not_eligible", 400);
   }
 
-  const draft = await loadReadyDraft(env, messageId);
-  if (!draft) throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
+  const storeId = vectorStoreId(env);
+  let prompt: Awaited<ReturnType<typeof loadPrompt>> | null = null;
+  let context: Awaited<ReturnType<typeof buildMessageContext>> | null = null;
+  let openAiRequestCount: 0 | 1 = 0;
 
-  await env.DB.batch([
-    env.DB.prepare("UPDATE messages SET state = 'DRAFT_READY', updated_at = ? WHERE message_id = ?").bind(now, messageId),
-    env.DB.prepare(`
-      UPDATE message_conversations
-      SET state = 'DRAFT_READY', updated_at = ?
-      WHERE message_conversation_id = ?
-    `).bind(now, Number(draft.conversationId)),
-  ]);
+  try {
+    prompt = await loadPrompt(DEFAULT_WARAPORN_PROMPT_KEY);
+    if (!await verifyPromptChecksum(prompt.key)) {
+      throw new WarapornDraftError("Frozen Waraporn prompt checksum mismatch.", "prompt_checksum_mismatch", 500);
+    }
 
-  return draft;
+    context = await buildMessageContext(env, { messageId, now });
+    if (!context) throw new WarapornDraftError("Message not found.", "message_not_found", 404);
+
+    const requestBody = buildWarapornResponsesRequest(prompt.text, context.context, storeId);
+    openAiRequestCount = 1;
+    const generated = await callOpenAiResponses(env, requestBody, options);
+
+    const inserted = await env.DB.prepare(`
+      INSERT INTO message_drafts (
+        message_id,
+        message_conversation_id,
+        booking_id,
+        prompt_key,
+        prompt_version,
+        prompt_checksum,
+        draft_text,
+        status,
+        model,
+        vector_store_id,
+        openai_response_id,
+        context_hash,
+        runtime_context_json,
+        retrieval_filenames,
+        retrieval_result_count,
+        openai_request_count,
+        openai_input_tokens,
+        openai_cached_input_tokens,
+        openai_output_tokens,
+        openai_reasoning_tokens,
+        openai_total_tokens,
+        openai_elapsed_ms,
+        estimated_cost_usd,
+        failure_code,
+        failure_message,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+      ON CONFLICT(message_id) DO NOTHING
+    `).bind(
+      messageId,
+      Number(context.context.conversationId),
+      context.context.bookingId,
+      prompt.key,
+      prompt.version,
+      prompt.checksum,
+      generated.text,
+      OPENAI_WARAPORN_DRAFT_MODEL,
+      storeId,
+      generated.responseId,
+      context.contextHash,
+      JSON.stringify(context.context),
+      JSON.stringify(generated.retrievalFilenames),
+      generated.retrievalResultCount,
+      generated.usage.inputTokens,
+      generated.usage.cachedInputTokens,
+      generated.usage.outputTokens,
+      generated.usage.reasoningTokens,
+      generated.usage.totalTokens,
+      generated.elapsedMs,
+      generated.estimatedCostUsd,
+      now,
+      now,
+    ).run();
+
+    if ((inserted.meta?.changes ?? 0) === 0) {
+      const replay = await loadReadyDraft(env, messageId);
+      if (replay) return replay;
+      throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
+    }
+
+    const draft = await loadReadyDraft(env, messageId);
+    if (!draft) throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
+
+    await env.DB.batch([
+      env.DB.prepare("UPDATE messages SET state = 'DRAFT_READY', updated_at = ? WHERE message_id = ?").bind(now, messageId),
+      env.DB.prepare(`
+        UPDATE message_conversations
+        SET state = 'DRAFT_READY', updated_at = ?
+        WHERE message_conversation_id = ?
+      `).bind(now, Number(draft.conversationId)),
+    ]);
+
+    return draft;
+  } catch (error) {
+    await persistFailedDraftAttempt(env, { messageId, now, prompt, context, storeId, openAiRequestCount, error });
+    throw error;
+  }
 }
 
 export async function generatePendingWarapornDrafts(
@@ -657,9 +713,9 @@ export async function generatePendingWarapornDrafts(
     FROM messages m
     LEFT JOIN message_drafts d
       ON d.message_id = m.message_id
-      AND d.status = 'READY'
     WHERE d.message_draft_id IS NULL
-      AND m.state <> 'FAILED'
+      AND m.state = 'ASSOCIATED'
+      AND m.association_state = 'LINKED'
     ORDER BY m.received_at ASC, m.message_id ASC
     LIMIT ?
   `).bind(limit).all<MessageDraftTargetRow>();

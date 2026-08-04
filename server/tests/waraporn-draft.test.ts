@@ -11,6 +11,7 @@ import {
   OPENAI_WARAPORN_DRAFT_MODEL,
   WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
   WARAPORN_REQUIRED_RETRIEVAL_FILENAMES,
+  WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION,
 } from "../src/services/waraporn-draft.service.ts";
 
 const NOW = "2026-08-04T10:00:00.000Z";
@@ -47,7 +48,7 @@ type DraftRow = {
   prompt_version: string;
   prompt_checksum: string;
   draft_text: string;
-  status: "READY";
+  status: "READY" | "FAILED";
   model: string;
   vector_store_id: string;
   openai_response_id: string | null;
@@ -55,6 +56,16 @@ type DraftRow = {
   runtime_context_json: string | null;
   retrieval_filenames: string;
   retrieval_result_count: number;
+  openai_request_count: number;
+  openai_input_tokens: number;
+  openai_cached_input_tokens: number;
+  openai_output_tokens: number;
+  openai_reasoning_tokens: number;
+  openai_total_tokens: number;
+  openai_elapsed_ms: number;
+  estimated_cost_usd: number;
+  failure_code: string | null;
+  failure_message: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -248,8 +259,9 @@ class FakeWarapornDB {
     if (sql.includes("SELECT m.message_id") && sql.includes("d.message_draft_id IS NULL")) {
       return {
         results: this.messages
-          .filter((message) => !this.drafts.some((draft) => draft.message_id === message.message_id && draft.status === "READY"))
-          .filter((message) => sql.includes("m.state <> 'FAILED'") ? message.state !== "FAILED" : true)
+          .filter((message) => !this.drafts.some((draft) => draft.message_id === message.message_id))
+          .filter((message) => sql.includes("m.state = 'ASSOCIATED'") ? message.state === "ASSOCIATED" : true)
+          .filter((message) => sql.includes("m.association_state = 'LINKED'") ? message.association_state === "LINKED" : true)
           .map((message) => ({ message_id: message.message_id }))
           .slice(0, Number(params[0])) as T[],
       };
@@ -284,11 +296,23 @@ class FakeWarapornDB {
   }
 
   async run(sql: string, params: unknown[]) {
+    if (sql.includes("UPDATE messages") && sql.includes("state = 'GENERATING'")) {
+      const messageId = Number(params[1]);
+      const message = this.messages.find((item) => item.message_id === messageId);
+      const hasDraft = this.drafts.some((draft) => draft.message_id === messageId);
+      if (!message || message.state !== "ASSOCIATED" || message.association_state !== "LINKED" || hasDraft) {
+        return { meta: { changes: 0, last_row_id: 0 } };
+      }
+      message.state = "GENERATING";
+      message.updated_at = String(params[0]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     if (sql.includes("INSERT INTO message_drafts")) {
       const messageId = Number(params[0]);
       if (this.drafts.some((draft) => draft.message_id === messageId)) {
         return { meta: { changes: 0, last_row_id: 0 } };
       }
+      const failed = sql.includes("'FAILED'");
       this.drafts.push({
         message_draft_id: this.nextDraftId++,
         message_id: messageId,
@@ -297,19 +321,37 @@ class FakeWarapornDB {
         prompt_key: String(params[3]),
         prompt_version: String(params[4]),
         prompt_checksum: String(params[5]),
-        draft_text: String(params[6]),
-        status: "READY",
-        model: String(params[7]),
-        vector_store_id: String(params[8]),
-        openai_response_id: params[9] as string | null,
-        context_hash: String(params[10]),
-        runtime_context_json: params[11] as string | null,
-        retrieval_filenames: String(params[12]),
-        retrieval_result_count: Number(params[13]),
-        created_at: String(params[14]),
-        updated_at: String(params[15]),
+        draft_text: failed ? "" : String(params[6]),
+        status: failed ? "FAILED" : "READY",
+        model: String(params[failed ? 6 : 7]),
+        vector_store_id: String(params[failed ? 7 : 8]),
+        openai_response_id: failed ? null : params[9] as string | null,
+        context_hash: String(params[failed ? 8 : 10]),
+        runtime_context_json: params[failed ? 9 : 11] as string | null,
+        retrieval_filenames: failed ? "[]" : String(params[12]),
+        retrieval_result_count: failed ? 0 : Number(params[13]),
+        openai_request_count: failed ? Number(params[10]) : 1,
+        openai_input_tokens: failed ? 0 : Number(params[14]),
+        openai_cached_input_tokens: failed ? 0 : Number(params[15]),
+        openai_output_tokens: failed ? 0 : Number(params[16]),
+        openai_reasoning_tokens: failed ? 0 : Number(params[17]),
+        openai_total_tokens: failed ? 0 : Number(params[18]),
+        openai_elapsed_ms: failed ? 0 : Number(params[19]),
+        estimated_cost_usd: failed ? 0 : Number(params[20]),
+        failure_code: failed ? String(params[11]) : null,
+        failure_message: failed ? String(params[12]) : null,
+        created_at: String(params[failed ? 13 : 21]),
+        updated_at: String(params[failed ? 14 : 22]),
       });
       return { meta: { changes: 1, last_row_id: this.drafts.length } };
+    }
+    if (sql.includes("UPDATE messages") && sql.includes("state = 'FAILED_MANUAL_RETRY'")) {
+      const message = this.messages.find((item) => item.message_id === Number(params[1]));
+      if (message && message.state !== "DRAFT_READY") {
+        message.state = "FAILED_MANUAL_RETRY";
+        message.updated_at = String(params[0]);
+      }
+      return { meta: { changes: message ? 1 : 0, last_row_id: 0 } };
     }
     if (sql.includes("UPDATE messages SET state = 'DRAFT_READY'")) {
       const message = this.messages.find((item) => item.message_id === Number(params[1]));
@@ -350,6 +392,13 @@ function openAiFileSearchPayload(id: string, outputText: string, filenames: read
   return {
     id,
     output_text: outputText,
+    usage: {
+      input_tokens: 1200,
+      input_tokens_details: { cached_tokens: 200 },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 40 },
+      total_tokens: 1300,
+    },
     output: [{
       id: `fs-${id}`,
       type: "file_search_call",
@@ -367,20 +416,14 @@ function openAiFileSearchPayload(id: string, outputText: string, filenames: read
 
 function openAiFetcher(
   outputText = READY_DRAFT_TEXT,
-  decisionFilenames: readonly string[] = [],
-  foundationFilenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
+  filenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
 ): { fetcher: typeof fetch; bodies: Array<Record<string, unknown>> } {
   const bodies: Array<Record<string, unknown>> = [];
-  let calls = 0;
   return {
     bodies,
     fetcher: async (_input, init) => {
-      calls += 1;
       bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-      const payload = calls === 1
-        ? openAiFileSearchPayload("resp-foundation", "FOUNDATION_RETRIEVAL_COMPLETE", foundationFilenames)
-        : openAiFileSearchPayload("resp-decision", outputText, decisionFilenames);
-      return jsonResponse(200, payload);
+      return jsonResponse(200, openAiFileSearchPayload("resp-single", outputText, filenames));
     },
   };
 }
@@ -390,7 +433,7 @@ function requestText(body: Record<string, unknown>): string {
   return input[0]!.content.map((item) => item.text).join("\n");
 }
 
-test("Waraporn foundation retrieval is limited to the six permanent reasoning documents", async () => {
+test("one OTA message creates exactly one OpenAI Responses request with the foundation instruction", async () => {
   const db = new FakeWarapornDB();
   const { fetcher, bodies } = openAiFetcher();
 
@@ -405,34 +448,34 @@ test("Waraporn foundation retrieval is limited to the six permanent reasoning do
     "Thai Holidays_TrafficLogics_Koh_Chang.md",
   ]);
 
-  const foundationBody = bodies[0]!;
-  const text = requestText(foundationBody);
+  assert.equal(bodies.length, 1);
+  const body = bodies[0]!;
+  const text = requestText(body);
+  assert.match(text, /Before composing, retrieve and apply these six exact foundation documents/);
   for (const filename of WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES) assert.match(text, new RegExp(filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.doesNotMatch(text, /MOBILITY_REASONING_CONTRACT_v1\.md/);
-  assert.doesNotMatch(text, /Bailan_MASTER\.md/);
-  assert.deepEqual(foundationBody.tools, [{
+  assert.equal(text.includes(WARAPORN_SINGLE_REQUEST_FOUNDATION_INSTRUCTION), true);
+  assert.equal("previous_response_id" in body, false);
+  assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.length,
+    max_num_results: 10,
   }]);
 });
 
-test("Waraporn decision retrieval is delegated to the frozen prompt without backend filename rules", async () => {
+test("additional retrieval remains decision-driven without backend filename retries", async () => {
   const db = new FakeWarapornDB();
   db.messages[0]!.guest_message = "Is it safe to rent a scooter if we normally drive motorbikes?";
   const { fetcher, bodies } = openAiFetcher(READY_DRAFT_TEXT, ["MOBILITY_REASONING_CONTRACT_v1.md"]);
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const decisionText = requestText(bodies[1]!);
-  assert.doesNotMatch(decisionText, /CURRENT DECISION REQUIRED RETRIEVAL FILENAMES/);
-  assert.doesNotMatch(decisionText, /RETRIEVAL RETRY REQUIRED FILENAMES/);
-  assert.doesNotMatch(decisionText, /FOUNDATION RETRIEVAL VERIFIED FILENAMES/);
-  assert.equal(bodies[1]!.previous_response_id, "resp-foundation");
-  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [
-    ...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
-    "MOBILITY_REASONING_CONTRACT_v1.md",
-  ]);
+  assert.equal(bodies.length, 1);
+  const text = requestText(bodies[0]!);
+  assert.doesNotMatch(text, /CURRENT DECISION REQUIRED RETRIEVAL FILENAMES/);
+  assert.doesNotMatch(text, /RETRIEVAL RETRY REQUIRED FILENAMES/);
+  assert.doesNotMatch(text, /FOUNDATION RETRIEVAL VERIFIED FILENAMES/);
+  assert.equal("previous_response_id" in bodies[0]!, false);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), ["MOBILITY_REASONING_CONTRACT_v1.md"]);
 });
 
 test("message generates one draft and stores it with the frozen prompt checksum", async () => {
@@ -448,9 +491,16 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(db.drafts[0]!.prompt_checksum, getPromptChecksum());
   assert.equal(db.drafts[0]!.retrieval_result_count, WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.length);
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
+  assert.equal(db.drafts[0]!.openai_request_count, 1);
+  assert.equal(db.drafts[0]!.openai_input_tokens, 1200);
+  assert.equal(db.drafts[0]!.openai_cached_input_tokens, 200);
+  assert.equal(db.drafts[0]!.openai_output_tokens, 100);
+  assert.equal(db.drafts[0]!.openai_reasoning_tokens, 40);
+  assert.equal(db.drafts[0]!.openai_total_tokens, 1300);
+  assert.equal(db.drafts[0]!.estimated_cost_usd, 0.0081);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
   assert.equal(db.conversations[0]!.state, "DRAFT_READY");
-  assert.equal(bodies.length, 2);
+  assert.equal(bodies.length, 1);
 });
 
 test("Waraporn draft request attaches the Make vector store at Responses API level", async () => {
@@ -459,28 +509,17 @@ test("Waraporn draft request attaches the Make vector store at Responses API lev
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const foundationBody = bodies[0]!;
-  assert.equal(foundationBody.model, OPENAI_WARAPORN_DRAFT_MODEL);
-  assert.equal(foundationBody.store, true);
-  assert.deepEqual(foundationBody.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
-  assert.deepEqual(foundationBody.tools, [{
-    type: "file_search",
-    vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.length,
-  }]);
-  assert.equal(foundationBody.tool_choice, "required");
-
-  const decisionBody = bodies[1]!;
-  assert.equal(decisionBody.model, OPENAI_WARAPORN_DRAFT_MODEL);
-  assert.equal(decisionBody.previous_response_id, "resp-foundation");
-  assert.equal(decisionBody.store, true);
-  assert.deepEqual(decisionBody.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
-  assert.deepEqual(decisionBody.tools, [{
+  const body = bodies[0]!;
+  assert.equal(body.model, OPENAI_WARAPORN_DRAFT_MODEL);
+  assert.equal(body.store, true);
+  assert.deepEqual(body.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
+  assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
     max_num_results: 10,
   }]);
-  assert.equal(decisionBody.tool_choice, "required");
+  assert.equal(body.tool_choice, "required");
+  assert.equal("previous_response_id" in body, false);
 });
 
 test("Waraporn draft request carries the complete verified runtime envelope", async () => {
@@ -490,7 +529,7 @@ test("Waraporn draft request carries the complete verified runtime envelope", as
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const text = requestText(bodies[1]!);
+  const text = requestText(bodies[0]!);
   assert.match(text, /GUEST FIRST NAME\s+Daniel/);
   assert.match(text, /CHECK-IN DATE\s+2026-12-28/);
   assert.match(text, /CHECK-OUT DATE\s+2027-01-01/);
@@ -524,7 +563,7 @@ test("Waraporn reply language follows the current guest message, not booking lan
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const text = requestText(bodies[1]!);
+  const text = requestText(bodies[0]!);
   assert.match(text, /GUEST LANGUAGE\s+en/);
   const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
   assert.equal(storedContext.language, "en");
@@ -536,63 +575,26 @@ test("availability and prices context is explicit when not applicable", async ()
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const text = requestText(bodies[1]!);
+  const text = requestText(bodies[0]!);
   assert.match(text, /VERIFIED AVAILABILITY AND PRICES STATUS\s+NOT_APPLICABLE/);
   assert.match(text, /Not applicable to the current guest message\./);
 });
 
-test("missing foundation retrieval prevents a READY draft", async () => {
+test("successful assistant text is accepted without backend retrieval filename rejection", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
   const fetcher: typeof fetch = async (_input, init) => {
     calls += 1;
     assert.deepEqual((JSON.parse(String(init.body)) as Record<string, unknown>).include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
-    return jsonResponse(200, {
-      ...openAiFileSearchPayload("resp-test-missing-retrieval", "FOUNDATION_RETRIEVAL_COMPLETE", ["Other_File.md"]),
-    });
-  };
-
-  await assert.rejects(
-    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
-    /foundation retrieval verification failed/i,
-  );
-  assert.equal(db.drafts.length, 0);
-  assert.equal(db.messages[0]!.state, "ASSOCIATED");
-  assert.equal(calls, 3);
-});
-
-test("missing foundation retrieval is retried with exact filenames before saving READY", async () => {
-  const db = new FakeWarapornDB();
-  const bodies: Array<Record<string, unknown>> = [];
-  let calls = 0;
-  const fetcher: typeof fetch = async (_input, init) => {
-    calls += 1;
-    bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-    const filenames = calls === 1
-      ? WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.slice(0, 2)
-      : calls === 2
-        ? [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]
-        : [];
-
-    return jsonResponse(200, openAiFileSearchPayload(
-      `resp-test-retry-${calls}`,
-      calls === 3 ? READY_DRAFT_TEXT : "FOUNDATION_RETRIEVAL_COMPLETE",
-      filenames,
-    ));
+    return jsonResponse(200, openAiFileSearchPayload("resp-test-missing-retrieval", READY_DRAFT_TEXT, ["Other_File.md"]));
   };
 
   const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
   assert.equal(draft.state, "READY");
-  assert.equal(calls, 3);
+  assert.equal(calls, 1);
   assert.equal(db.drafts.length, 1);
-  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
-  const retryText = requestText(bodies[1]!);
-  assert.match(retryText, /FOUNDATION FILES TO RETRIEVE/);
-  assert.match(retryText, /Guest_Information_Relevance_Filter\.md/);
-  assert.match(retryText, /Waraporn_Conversational_Instincts\.md/);
-  assert.equal(bodies[1]!.previous_response_id, "resp-test-retry-1");
-  assert.equal(bodies[2]!.previous_response_id, "resp-test-retry-2");
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), ["Other_File.md"]);
 });
 
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {
@@ -605,12 +607,43 @@ test("second generate call reuses an existing READY draft without calling OpenAI
 
   assert.equal(first.draftId, replay.draftId);
   assert.equal(db.drafts.length, 1);
-  assert.equal(bodies.length, 2);
+  assert.equal(bodies.length, 1);
+});
+
+test("concurrent pending generation cannot call OpenAI twice for the same message", async () => {
+  const db = new FakeWarapornDB();
+  let calls = 0;
+  let release: (() => void) | null = null;
+  let resolveEntered: (() => void) | null = null;
+  const entered = new Promise<void>((resolve) => { resolveEntered = resolve; });
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls += 1;
+    resolveEntered?.();
+    await new Promise<void>((resolve) => { release = resolve; });
+    return openAiFetcher().fetcher(_input, init);
+  };
+  const bindings = env(db, fetcher) as never;
+
+  const first = generateWarapornDraft(bindings, 1, { now: NOW });
+  await entered;
+  const second = generateWarapornDraft(bindings, 1, { now: NOW }).catch((error: unknown) => error);
+  release?.();
+  const [draft, blocked] = await Promise.all([first, second]);
+
+  assert.equal(draft.state, "READY");
+  assert.ok(blocked instanceof Error);
+  assert.match(blocked.message, /not eligible/i);
+  assert.equal(calls, 1);
+  assert.equal(db.drafts.length, 1);
+
+  const replay = await generateWarapornDraft(bindings, 1, { now: NOW });
+  assert.equal(replay.draftId, draft.draftId);
+  assert.equal(calls, 1);
 });
 
 test("pending Waraporn generation ignores terminal failed messages without calling OpenAI", async () => {
   const db = new FakeWarapornDB();
-  db.messages[0]!.state = "FAILED";
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
   let calls = 0;
   const fetcher: typeof fetch = async () => {
     calls += 1;
@@ -626,28 +659,50 @@ test("pending Waraporn generation ignores terminal failed messages without calli
   assert.equal(calls, 0);
 });
 
-test("OpenAI failure is handled without storing a draft", async () => {
+test("OpenAI failure persists FAILED_MANUAL_RETRY and is not retried by later cron cycles", async () => {
   const db = new FakeWarapornDB();
+  let calls = 0;
   const fetcher: typeof fetch = async () => jsonResponse(500, { error: { message: "temporary model failure" } });
+  const countingFetcher: typeof fetch = async (input, init) => {
+    calls += 1;
+    return fetcher(input, init);
+  };
 
   await assert.rejects(
-    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
+    generateWarapornDraft(env(db, countingFetcher) as never, 1, { now: NOW }),
     /temporary model failure/,
   );
 
-  assert.equal(db.drafts.length, 0);
+  assert.equal(calls, 1);
+  assert.equal(db.messages[0]!.state, "FAILED_MANUAL_RETRY");
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "FAILED");
+  assert.equal(db.drafts[0]!.openai_request_count, 1);
+  assert.equal(db.drafts[0]!.failure_code, "openai_request_failed");
+
+  const result = await generatePendingWarapornDrafts(env(db, countingFetcher) as never, { now: NOW });
+  assert.equal(result.attempted, 0);
+  assert.equal(calls, 1);
 });
 
-test("malformed AI response is rejected without storing a draft", async () => {
+test("malformed AI response becomes terminal without retrying", async () => {
   const db = new FakeWarapornDB();
+  let calls = 0;
   const fetcher: typeof fetch = async () => jsonResponse(200, { output: [] });
+  const countingFetcher: typeof fetch = async (input, init) => {
+    calls += 1;
+    return fetcher(input, init);
+  };
 
   await assert.rejects(
-    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
+    generateWarapornDraft(env(db, countingFetcher) as never, 1, { now: NOW }),
     /draft text/,
   );
 
-  assert.equal(db.drafts.length, 0);
+  assert.equal(calls, 1);
+  assert.equal(db.messages[0]!.state, "FAILED_MANUAL_RETRY");
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "FAILED");
 });
 
 test("GET /api/messages reports draft status without exposing draft body", async () => {
@@ -686,7 +741,7 @@ test("POST /api/messages/:messageId/generate creates and replays a READY draft",
   assert.equal(first.status, 200);
   assert.equal(replay.status, 200);
   assert.equal(db.drafts.length, 1);
-  assert.equal(bodies.length, 2);
+  assert.equal(bodies.length, 1);
   const firstBody = await first.json() as { data: { draftId: string; state: string } };
   const replayBody = await replay.json() as { data: { draftId: string; state: string } };
   assert.equal(firstBody.data.draftId, replayBody.data.draftId);

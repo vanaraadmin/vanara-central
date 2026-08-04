@@ -50,10 +50,12 @@ export const MESSAGE_STATES = [
   "ASSOCIATED",
   "UNLINKED",
   "DRAFT_PENDING",
+  "GENERATING",
   "DRAFT_READY",
   "REVIEW_PENDING",
   "SENT",
   "FAILED",
+  "FAILED_MANUAL_RETRY",
 ] as const satisfies readonly MessageState[];
 
 export const DRAFT_STATES = [

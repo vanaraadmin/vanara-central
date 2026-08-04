@@ -27,10 +27,12 @@ export type MessageState =
   | "ASSOCIATED"
   | "UNLINKED"
   | "DRAFT_PENDING"
+  | "GENERATING"
   | "DRAFT_READY"
   | "REVIEW_PENDING"
   | "SENT"
-  | "FAILED";
+  | "FAILED"
+  | "FAILED_MANUAL_RETRY";
 
 export type MessageAssociationState = "LINKED" | "UNLINKED";
 
