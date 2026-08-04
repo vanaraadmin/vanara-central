@@ -123,7 +123,7 @@ export interface GuestMessageTimelineItem {
   sender: string;
   timestamp: string;
   message: string;
-  status?: "READY" | "REJECTED" | "SENT";
+  status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT";
   draftId?: string;
   canReview?: boolean;
 }

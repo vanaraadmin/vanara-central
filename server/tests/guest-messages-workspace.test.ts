@@ -36,7 +36,8 @@ type DraftRow = {
   message_id: number;
   message_conversation_id: number;
   draft_text: string;
-  status: "READY" | "FAILED";
+  status: "READY" | "FAILED" | "APPROVED";
+  failure_code: string | null;
   created_at: string;
 };
 
@@ -248,7 +249,7 @@ class FakeGuestMessagesDB {
       const conversationId = Number(params[0]);
       return {
         results: this.drafts
-          .filter((draft) => draft.message_conversation_id === conversationId && draft.status === "READY")
+          .filter((draft) => draft.message_conversation_id === conversationId && (draft.status === "READY" || (draft.status === "APPROVED" && draft.failure_code === "beds24_delivery_failed")))
           .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.message_draft_id - right.message_draft_id) as T[],
       };
     }
@@ -320,6 +321,7 @@ function draftRow(
     message_conversation_id: conversationId,
     draft_text: body,
     status,
+    failure_code: null,
     created_at: createdAt,
   };
 }
@@ -365,6 +367,29 @@ test("guest message conversation detail exposes only guest messages ready drafts
   assert.doesNotMatch(detail.timeline.map((item) => item.message).join("\n"), /Failed internal draft|Provider event/);
 });
 
+test("guest message conversation detail keeps failed delivery drafts visible for retry", async () => {
+  const db = new FakeGuestMessagesDB();
+  db.drafts[0]!.status = "APPROVED";
+  db.drafts[0]!.failure_code = "beds24_delivery_failed";
+
+  const detail = await getGuestMessageConversation({ DB: db } as never, 1, {
+    ...USER_ROW,
+    id: USER_ROW.user_id,
+    displayName: USER_ROW.full_name,
+    fullName: USER_ROW.full_name,
+    role: "Owner",
+    view: "owner",
+    views: ["owner"],
+    permissions: [],
+    actionPermissions: [],
+  } as never);
+
+  assert.ok(detail);
+  assert.equal(detail.timeline[1]!.kind, "draft");
+  assert.equal(detail.timeline[1]!.status, "DELIVERY_FAILED");
+  assert.equal(detail.timeline[1]!.canReview, true);
+});
+
 test("guest message booking context is read-only and complete for linked bookings", async () => {
   const detail = await getGuestMessageConversation({ DB: new FakeGuestMessagesDB() } as never, 1);
 
@@ -403,6 +428,7 @@ test("guest messages UI uses only the human review draft endpoints and no AI or 
   const service = readFileSync(new URL("../../src/services/messages.service.ts", import.meta.url), "utf8");
 
   assert.match(page, /Approve & Send/);
+  assert.match(page, /Retry Send/);
   assert.match(page, /Save Draft/);
   assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/approve/);
   assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/reject/);

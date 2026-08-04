@@ -190,6 +190,7 @@ function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
 
 function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
   const label = item.kind === "draft" ? "Waraporn Draft" : item.sender;
+  const canActOnDraft = item.kind === "draft" && (item.status === "READY" || item.status === "DELIVERY_FAILED");
   return (
     <article className={`messages-bubble messages-bubble--${item.kind}`}>
       <div className="messages-bubble__meta">
@@ -203,7 +204,7 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
         </div>
       ) : null}
       <p>{item.message}</p>
-      {item.kind === "draft" && item.status === "READY" ? (
+      {canActOnDraft ? (
         <DraftActions actions={actions} item={item} key={`${item.draftId ?? item.id}:${item.message}`} />
       ) : null}
     </article>
@@ -283,7 +284,7 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
             disabled={actions.busy}
             onClick={() => run(() => actions.onApprove(activeDraftId), "Reply sent.")}
           >
-            Approve
+            {item.status === "DELIVERY_FAILED" ? "Retry Send" : "Approve"}
           </button>
           <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(true)}>
             Edit

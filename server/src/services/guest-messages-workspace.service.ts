@@ -54,7 +54,8 @@ interface TimelineDraftRow {
   message_draft_id: number;
   message_id: number;
   draft_text: string;
-  status: "READY" | "REJECTED" | "SENT";
+  status: "READY" | "REJECTED" | "APPROVED" | "SENT";
+  failure_code: string | null;
   original_draft_text: string | null;
   edited_draft_text: string | null;
   edited_by_name: string | null;
@@ -89,7 +90,7 @@ export interface GuestMessageTimelineItem {
   sender: string;
   timestamp: string;
   message: string;
-  status?: "READY" | "REJECTED" | "SENT";
+  status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT";
   draftId?: string;
   canReview?: boolean;
 }
@@ -392,15 +393,17 @@ function toMessageTimelineItem(row: TimelineMessageRow): GuestMessageTimelineIte
 }
 
 function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): GuestMessageTimelineItem[] {
+  const isFailedDelivery = row.status === "APPROVED" && row.failure_code === "beds24_delivery_failed";
+  const presentationStatus = isFailedDelivery ? "DELIVERY_FAILED" : row.status === "APPROVED" ? "READY" : row.status;
   const items: GuestMessageTimelineItem[] = [{
     id: `draft:${row.message_draft_id}`,
     kind: "draft",
     sender: "Waraporn Draft",
     timestamp: row.created_at,
     message: row.original_draft_text ?? row.draft_text,
-    status: row.status,
+    status: presentationStatus,
     draftId: String(row.message_draft_id),
-    canReview: canReviewDrafts && row.status === "READY",
+    canReview: canReviewDrafts && (row.status === "READY" || isFailedDelivery),
   }];
 
   if (row.edited_at) {
@@ -410,7 +413,7 @@ function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): 
       sender: `Edited by ${textOr(row.edited_by_name, "Staff")}`,
       timestamp: row.edited_at,
       message: row.edited_draft_text ?? row.draft_text,
-      status: row.status,
+      status: presentationStatus,
       draftId: String(row.message_draft_id),
     });
   }
@@ -434,7 +437,7 @@ function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): 
       sender: "Human Approved",
       timestamp: row.approved_at,
       message: `Approved by ${textOr(row.approved_by_name, "Staff")}.`,
-      status: row.status,
+      status: presentationStatus,
       draftId: String(row.message_draft_id),
     });
   }
@@ -475,6 +478,7 @@ export async function getGuestMessageConversation(
         message_id,
         draft_text,
         status,
+        failure_code,
         original_draft_text,
         edited_draft_text,
         edited_by_name,
@@ -488,7 +492,10 @@ export async function getGuestMessageConversation(
         created_at
       FROM message_drafts
       WHERE message_conversation_id = ?
-        AND status IN ('READY', 'REJECTED', 'SENT')
+        AND (
+          status IN ('READY', 'REJECTED', 'SENT')
+          OR (status = 'APPROVED' AND failure_code = 'beds24_delivery_failed')
+        )
       ORDER BY created_at ASC, message_draft_id ASC
     `).bind(conversationId).all<TimelineDraftRow>(),
   ]);
