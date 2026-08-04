@@ -2,7 +2,7 @@ import { beds24Get, type Beds24Bindings, type Beds24RequestOptions } from "./bed
 import { sanitizeLogMessage } from "./log-safety.service.js";
 import { acquireSyncLock, recordSkippedSyncRun, releaseSyncLock, type SyncLockBindings } from "./sync-lock.service.js";
 import { SyncMetrics } from "./sync-metrics.service.js";
-import type { Channel, ImportedMessage, MessageAssociationState, Provider } from "../types/messages.js";
+import type { Channel, DraftState, ImportedMessage, MessageAssociationState, Provider } from "../types/messages.js";
 
 export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings {
   DB: D1Database;
@@ -105,6 +105,8 @@ interface MessageRow {
   association_state: MessageAssociationState;
   raw_provider_payload: string;
   idempotency_key: string;
+  draft_id: number | null;
+  draft_status: DraftState | null;
   created_at: string;
   updated_at: string;
 }
@@ -347,6 +349,9 @@ function toImportedMessage(row: MessageRow): ImportedMessage {
     idempotencyKey: row.idempotency_key,
     rawProviderPayload: JSON.parse(row.raw_provider_payload) as unknown,
     language: row.language,
+    draftExists: row.draft_id !== null,
+    draftStatus: row.draft_status ?? "NOT_STARTED",
+    draftId: row.draft_id !== null ? String(row.draft_id) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -584,27 +589,32 @@ export async function syncMessages(
 export async function listImportedMessages(env: Pick<MessagesSyncBindings, "DB">, limit = 100): Promise<ImportedMessage[]> {
   const rows = await env.DB.prepare(`
     SELECT
-      message_id,
-      message_conversation_id,
-      provider,
-      provider_message_id,
-      provider_booking_id,
-      booking_id,
-      beds24_booking_id,
-      direction,
-      author,
-      received_at,
-      guest_message,
-      language,
-      channel,
-      state,
-      association_state,
-      raw_provider_payload,
-      idempotency_key,
-      created_at,
-      updated_at
-    FROM messages
-    ORDER BY received_at DESC, message_id DESC
+      m.message_id,
+      m.message_conversation_id,
+      m.provider,
+      m.provider_message_id,
+      m.provider_booking_id,
+      m.booking_id,
+      m.beds24_booking_id,
+      m.direction,
+      m.author,
+      m.received_at,
+      m.guest_message,
+      m.language,
+      m.channel,
+      m.state,
+      m.association_state,
+      m.raw_provider_payload,
+      m.idempotency_key,
+      d.message_draft_id AS draft_id,
+      d.status AS draft_status,
+      m.created_at,
+      m.updated_at
+    FROM messages m
+    LEFT JOIN message_drafts d
+      ON d.message_id = m.message_id
+      AND d.status = 'READY'
+    ORDER BY m.received_at DESC, m.message_id DESC
     LIMIT ?
   `).bind(Math.min(Math.max(Math.trunc(limit), 1), 500)).all<MessageRow>();
 

@@ -1,4 +1,3 @@
-import warapornGeneralRequestsPrompt from "../assets/prompts/waraporn-general-requests-v4-rc3.prompt.txt?raw";
 import type { MessagePromptKey } from "../types/messages.js";
 
 export interface PromptMetadata {
@@ -22,14 +21,32 @@ const WARAPORN_GENERAL_REQUESTS_METADATA: PromptMetadata = {
 };
 
 const PROMPT_REGISTRY = {
-  [DEFAULT_WARAPORN_PROMPT_KEY]: {
-    ...WARAPORN_GENERAL_REQUESTS_METADATA,
-    text: warapornGeneralRequestsPrompt,
-  },
-} as const satisfies Record<MessagePromptKey, LoadedPrompt>;
+  [DEFAULT_WARAPORN_PROMPT_KEY]: WARAPORN_GENERAL_REQUESTS_METADATA,
+} as const satisfies Record<MessagePromptKey, PromptMetadata>;
 
-function promptFor(key: MessagePromptKey): LoadedPrompt {
+const PROMPT_ASSET_PATHS = {
+  [DEFAULT_WARAPORN_PROMPT_KEY]: "../assets/prompts/waraporn-general-requests-v4-rc3.prompt.txt",
+} as const satisfies Record<MessagePromptKey, string>;
+
+function promptFor(key: MessagePromptKey): PromptMetadata {
   return PROMPT_REGISTRY[key];
+}
+
+function isNodeRuntime(): boolean {
+  const maybeProcess = (globalThis as unknown as { process?: { versions?: { node?: string } } }).process;
+  return typeof maybeProcess?.versions?.node === "string";
+}
+
+async function promptTextFor(key: MessagePromptKey): Promise<string> {
+  if (isNodeRuntime()) {
+    const fsPromisesModule = "node:fs/promises";
+    const { readFile } = (await import(fsPromisesModule)) as {
+      readFile(path: URL, encoding: "utf8"): Promise<string>;
+    };
+    return readFile(new URL(PROMPT_ASSET_PATHS[key], import.meta.url), "utf8");
+  }
+  const module = await import("../assets/prompts/waraporn-general-requests-v4-rc3.prompt.txt?raw");
+  return typeof module.default === "string" ? module.default : String(module.default);
 }
 
 function bytesToHex(bytes: ArrayBuffer): string {
@@ -55,12 +72,15 @@ export function getPromptChecksum(key: MessagePromptKey = DEFAULT_WARAPORN_PROMP
   return promptFor(key).checksum;
 }
 
-export function loadPrompt(key: MessagePromptKey = DEFAULT_WARAPORN_PROMPT_KEY): LoadedPrompt {
-  return promptFor(key);
+export async function loadPrompt(key: MessagePromptKey = DEFAULT_WARAPORN_PROMPT_KEY): Promise<LoadedPrompt> {
+  return {
+    ...promptFor(key),
+    text: await promptTextFor(key),
+  };
 }
 
 export async function verifyPromptChecksum(key: MessagePromptKey = DEFAULT_WARAPORN_PROMPT_KEY): Promise<boolean> {
-  const prompt = promptFor(key);
+  const prompt = await loadPrompt(key);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(prompt.text));
   return bytesToHex(digest) === prompt.checksum;
 }

@@ -68,6 +68,9 @@ export interface Message {
   state: MessageState;
   receivedAt: string;
   associationState: MessageAssociationState;
+  draftExists?: boolean;
+  draftStatus?: "NOT_STARTED" | "GENERATING" | "READY" | "REJECTED" | "APPROVED" | "FAILED";
+  draftId?: string | null;
 }
 
 export interface Draft {

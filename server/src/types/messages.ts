@@ -90,6 +90,9 @@ export interface ImportedMessage extends Message {
   providerBookingId: number | null;
   rawProviderPayload: unknown;
   language: string | null;
+  draftExists: boolean;
+  draftStatus: DraftState;
+  draftId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -137,11 +140,17 @@ export interface MessageDelivery {
 
 export interface VerifiedMessageContext {
   messageId: string;
+  conversationId: string;
   bookingId: number | null;
   beds24BookingId: number | null;
   guestName: string | null;
+  guestFirstName: string | null;
   arrivalDate: string | null;
   departureDate: string | null;
   roomSummary: string | null;
+  language: string | null;
+  channel: Channel;
+  conversationContext: string;
+  currentGuestMessage: string;
   verifiedAt: string;
 }

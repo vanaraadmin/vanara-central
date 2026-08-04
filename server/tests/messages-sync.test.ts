@@ -159,12 +159,13 @@ class FakeMessagesDB {
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) {
       return { results: [] as T[] };
     }
-    if (sql.includes("FROM messages") && sql.includes("ORDER BY received_at DESC")) {
+    if (sql.includes("FROM messages m") && sql.includes("ORDER BY m.received_at DESC")) {
       const limit = Number(params[0]);
       return {
         results: [...this.messages]
           .sort((left, right) => right.received_at.localeCompare(left.received_at) || right.message_id - left.message_id)
-          .slice(0, limit) as T[],
+          .slice(0, limit)
+          .map((message) => ({ ...message, draft_id: null, draft_status: null })) as T[],
       };
     }
     return { results: [] as T[] };

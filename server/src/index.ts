@@ -8,6 +8,7 @@ import { syncProperties, type PropertySyncBindings } from "./services/property-s
 import { syncOfferPrices, type OfferPricesSyncBindings } from "./services/offer-prices.service.js";
 import { syncBookings, type BookingsSyncBindings } from "./services/bookings-sync.service.js";
 import { listImportedMessages, syncMessages, type MessagesSyncBindings } from "./services/messages-sync.service.js";
+import { generatePendingWarapornDrafts, generateWarapornDraft, WarapornDraftError, type WarapornDraftBindings } from "./services/waraporn-draft.service.js";
 import { syncAvailabilityCache, type AvailabilitySyncBindings } from "./services/availability-cache.service.js";
 import { AvailabilityPricesError, getAvailabilityPrices } from "./services/availability-prices.service.js";
 import { getAvailability } from "./services/availability-read.service.js";
@@ -58,9 +59,10 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
+  WARAPORN_VECTOR_STORE_ID?: string;
   VANARA_DATABASE_ENVIRONMENT: string;
   VANARA_DATABASE_NAME: string;
   VANARA_DATABASE_ID: string;
@@ -102,6 +104,13 @@ function passportUploadErrorStatus(error: unknown): 400 | 401 | 403 | 413 | 502 
   if (error instanceof PassportUploadError && error.code === "passport_upload_too_large") return 413;
   if (error instanceof PassportUploadError && error.code === "passport_storage_failed") return 502;
   return error instanceof PassportOcrError || error instanceof PassportClassificationError || error instanceof PassportLivePreflightError ? 502 : 400;
+}
+
+function warapornDraftErrorStatus(error: unknown): 400 | 401 | 403 | 404 | 500 | 502 {
+  if (error instanceof AuthenticationError) return 401;
+  if (error instanceof ForbiddenError) return 403;
+  if (error instanceof WarapornDraftError) return error.status;
+  return 500;
 }
 
 function passportUploadError(error: unknown, requestId?: string): { code: string; message: string; requestId?: string } {
@@ -1687,6 +1696,17 @@ app.get("/api/messages", async (c) => {
   }
 });
 
+app.post("/api/messages/:messageId/generate", async (c) => {
+  try {
+    await owner(c, "edit");
+    const messageId = positiveIntegerParam(c.req.param("messageId"), "message id");
+    const draft = await generateWarapornDraft(c.env, messageId);
+    return c.json({ success: true, data: draft });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, warapornDraftErrorStatus(error));
+  }
+});
+
 app.get("/today", async (c) => {
   try { await authenticated(c, "dashboard", "access"); return c.json(await getTodayDashboard(c.env)); }
   catch (error) {
@@ -1720,7 +1740,13 @@ app.post("/sync/bookings", async (c) => {
 });
 
 app.post("/sync/messages", async (c) => {
-  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncMessages(c.env)); }
+  try {
+    await owner(c, "edit");
+    validateSyncConfig(c.env);
+    const sync = await syncMessages(c.env);
+    const drafts = await generatePendingWarapornDrafts(c.env);
+    return c.json({ ...sync, drafts });
+  }
   catch (error) {
     console.error("Messages sync failed:", error);
     return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
@@ -1848,7 +1874,7 @@ export default {
       return;
     }
     if (controller.cron === "*/5 * * * *") {
-      ctx.waitUntil(syncBookings(env).then(() => syncMessages(env)).then(() => undefined));
+      ctx.waitUntil(syncBookings(env).then(() => syncMessages(env)).then(() => generatePendingWarapornDrafts(env)).then(() => undefined));
       return;
     }
     if (controller.cron === "2 * * * *") {
