@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import worker from "../src/index.ts";
 import { getStaffOverview } from "../src/services/staff-overview.service.ts";
@@ -51,7 +51,17 @@ const USER_ROW = {
   last_login_at: null,
 };
 
-const RECENT_BOOKING_EVENT_AT = new Date(Date.now() - 60_000).toISOString();
+const STAFF_OVERVIEW_TEST_DATE = "2026-08-03";
+const STAFF_OVERVIEW_TEST_NOW = new Date("2026-08-03T05:00:00.000Z");
+const RECENT_BOOKING_EVENT_AT = "2026-08-03T04:59:00.000Z";
+
+test.before(() => {
+  mock.timers.enable({ apis: ["Date"], now: STAFF_OVERVIEW_TEST_NOW });
+});
+
+test.after(() => {
+  mock.timers.reset();
+});
 
 function currentUser(
   permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>,
@@ -422,14 +432,14 @@ const procurementAccess: Permission = { module_key: "procurement", can_access: 1
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
 test("staff overview returns the complete operational workspace set for the Staff visual experience", async () => {
-  const overview = await getStaffOverview(env([]), currentUser([]), "2026-08-03");
+  const overview = await getStaffOverview(env([]), currentUser([]), STAFF_OVERVIEW_TEST_DATE);
   assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement", "chat"]);
   assert.deepEqual(overview.cards.map((card) => card.href), ["/reception", "/rooms", "/housekeeping", "/maintenance", "/procurement", "/chat"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
 });
 
 test("staff overview housekeeping summary derives from the Housekeeping V2 task engine", async () => {
-  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]), "2026-08-03");
+  const overview = await getStaffOverview(env([housekeepingAccess]), currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]), STAFF_OVERVIEW_TEST_DATE);
   const card = overview.cards.find((item) => item.id === "housekeeping");
   assert.ok(card);
 
@@ -447,7 +457,7 @@ test("staff overview housekeeping summary derives from the Housekeeping V2 task 
 });
 
 test("staff overview rooms summary exposes reconciled operating counters from the Rooms read model", async () => {
-  const overview = await getStaffOverview(env([roomsAccess]), currentUser([{ module: "rooms", canAccess: true, canEdit: false }]), "2026-08-03");
+  const overview = await getStaffOverview(env([roomsAccess]), currentUser([{ module: "rooms", canAccess: true, canEdit: false }]), STAFF_OVERVIEW_TEST_DATE);
   const card = overview.cards.find((item) => item.id === "rooms");
   assert.ok(card);
 
