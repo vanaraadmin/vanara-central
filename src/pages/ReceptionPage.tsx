@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import addressBookIcon from "../assets/img/address-book-light.svg";
 import emailIcon from "../assets/img/envelope-light.svg";
 import depositIcon from "../assets/img/hand-coins-light.svg";
 import passportIcon from "../assets/img/identification-card-light.svg";
@@ -181,6 +180,20 @@ function MaintenanceBadge({ stay }: { stay: ReceptionStay }) {
 
 function SheetIcon({ alt = "", src }: { alt?: string; src: string }) {
   return <img alt={alt} className="reception-sheet-icon" src={src} />;
+}
+
+function AddressBookIcon() {
+  return (
+    <svg aria-hidden="true" className="reception-address-book-icon" viewBox="0 0 24 24" focusable="false">
+      <path d="M7.25 4.25h8.5a2.5 2.5 0 0 1 2.5 2.5v10.5a2.5 2.5 0 0 1-2.5 2.5h-8.5a2.5 2.5 0 0 1-2.5-2.5V6.75a2.5 2.5 0 0 1 2.5-2.5Z" />
+      <path d="M8.75 8.25h6.5" />
+      <path d="M8.75 12h6.5" />
+      <path d="M8.75 15.75H13" />
+      <path d="M4.75 8h-1.5" />
+      <path d="M4.75 12h-1.5" />
+      <path d="M4.75 16h-1.5" />
+    </svg>
+  );
 }
 
 function useSheetScrollLock(active: boolean) {
@@ -378,7 +391,7 @@ function StayCard({
             }}
             type="button"
           >
-            <img alt="" src={addressBookIcon} />
+            <AddressBookIcon />
           </button>
         </div>
       </div>
@@ -833,7 +846,7 @@ function ContactSheet({
 
         <header className="reception-contact-header">
           <span className="reception-contact-header__icon" aria-hidden="true">
-            <img alt="" src={addressBookIcon} />
+            <AddressBookIcon />
           </span>
 
           <div>
@@ -1240,8 +1253,6 @@ function BookingDetailsSheet({
       />
 
       <VanaraGlassSheet className="reception-sheet__panel reception-details-sheet__panel">
-        <div className="reception-sheet__handle" />
-
         <header className="reception-sheet__header">
           <span>Booking Details</span>
           <h2 id="reception-booking-details-title">{stay.guestName}</h2>
@@ -1428,9 +1439,13 @@ export default function ReceptionPage() {
   const showCardSkeletons = reception.isFetching && !reception.data;
 
   return (
-    <WorkspaceShell title="Check-In / Out" workspace="reception" bodyClassName="reception-page">
+    <WorkspaceShell
+      title="Check-In / Out"
+      workspace="reception"
+      bodyClassName="reception-page"
+      suppressStickyNavigation={Boolean(contactRequest)}
+    >
       <div className="workspace-body-actions reception-date-actions">
-        <span>{reception.data ? formatDate(reception.data.date) : formatDate(selectedDate)}</span>
         <button className="reception-today-chip vc-secondary-action" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">Today</button>
         <ReceptionDatePicker onChange={setSelectedDate} selectedDate={selectedDate} today={today} />
       </div>

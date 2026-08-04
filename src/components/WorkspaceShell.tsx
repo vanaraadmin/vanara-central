@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import logo from "../assets/img/logo.png";
 import shadowCanopy from "../assets/img/shadow-canopy.svg";
 import StickyGlassHeader from "./StickyGlassHeader";
+import VanaraStaffHomeAction from "./vanara/VanaraStaffHomeAction";
 import WorkspaceHero from "./WorkspaceHero";
 import {
   preloadWorkspaceBackground,
@@ -38,6 +39,8 @@ interface WorkspaceShellProps {
   workspace: WorkspaceKey;
   bodyClassName?: string;
   heroAction?: React.ReactNode;
+  stickyNavigationTitle?: string;
+  suppressStickyNavigation?: boolean;
 }
 
 function formatToday() {
@@ -59,6 +62,8 @@ export default function WorkspaceShell({
   bodyClassName,
   children,
   heroAction,
+  stickyNavigationTitle,
+  suppressStickyNavigation = false,
   title,
   workspace,
 }: WorkspaceShellProps) {
@@ -68,6 +73,8 @@ export default function WorkspaceShell({
   const progressRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const today = useMemo(() => formatToday(), []);
+  const heroActionNode = workspace === "staffHome" ? heroAction : (heroAction ?? <VanaraStaffHomeAction />);
+  const navigationTitle = stickyNavigationTitle ?? title;
 
   useEffect(() => {
     preloadWorkspaceBackground(backgroundKey);
@@ -115,9 +122,11 @@ export default function WorkspaceShell({
       <div className="workspace-page__veil" aria-hidden="true" />
 
       <section className="workspace-shell" aria-label={`${title} workspace`}>
-        <StickyGlassHeader date={today} heroLogoRef={heroLogoRef} progress={progress} title={title} />
+        {!suppressStickyNavigation ? (
+          <StickyGlassHeader heroLogoRef={heroLogoRef} progress={progress} title={navigationTitle} />
+        ) : null}
 
-        <WorkspaceHero ref={heroLogoRef} action={heroAction} date={today} logoSrc={logo} title={title} />
+        <WorkspaceHero ref={heroLogoRef} action={heroActionNode} date={today} logoSrc={logo} title={title} />
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 

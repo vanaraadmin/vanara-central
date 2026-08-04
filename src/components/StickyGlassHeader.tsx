@@ -5,7 +5,6 @@ import "../styles/StickyGlassHeader.css";
 export type StickyGlassHeaderVariant = "default";
 
 export type StickyGlassHeaderProps = {
-  date: string;
   heroLogoRef: RefObject<HTMLImageElement | null>;
   progress: number;
   title: string;
@@ -73,14 +72,13 @@ function clampProgress(value: number): number {
  *
  * When NOT to use: local card actions, modals, or page-specific navigation.
  *
- * Expected children: none; logo target, page title, and date are controlled by
- * typed props.
+ * Expected children: none; logo target and page title are controlled by typed
+ * props.
  *
  * Accessibility notes: the button is keyboard reachable only while visible and
  * keeps a single accessible "Return to top" action.
  */
 export default function StickyGlassHeader({
-  date,
   heroLogoRef,
   progress,
   title,
@@ -171,8 +169,6 @@ export default function StickyGlassHeader({
         <span className="sticky-glass-nav-title sticky-glass-header__title">
           {title}
         </span>
-
-        <span className="sticky-glass-nav-date sticky-glass-header__date">{date}</span>
       </button>
     </div>
   );

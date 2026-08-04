@@ -173,7 +173,7 @@ export default function StaffPage() {
   const showWorkspaceSection = Boolean(workspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (
-    <WorkspaceShell title={title} workspace="staffHome" bodyClassName="staff-page">
+    <WorkspaceShell title={title} stickyNavigationTitle="Home" workspace="staffHome" bodyClassName="staff-page">
       <RecentBookings
         canViewBookingValue={canViewBookingValue}
         events={bookingEvents}

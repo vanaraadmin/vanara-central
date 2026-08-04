@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RoomCompactRow from "../components/rooms/RoomCompactRow";
@@ -23,20 +22,9 @@ function roomActionKey(prefix: string, roomId: number): string {
   return `rooms:${prefix}:${roomId}:${nonce}`;
 }
 
-function HomeIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
-      <path d="M4.75 11.1 12 5l7.25 6.1" />
-      <path d="M6.75 10.2v8.05h10.5V10.2" />
-      <path d="M10 18.25v-4.5h4v4.5" />
-    </svg>
-  );
-}
-
 export default function RoomsPage() {
   const [expandedRoomId, setExpandedRoomId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const rooms = useQuery({
     queryKey: ["rooms", "workspace"],
@@ -123,12 +111,6 @@ export default function RoomsPage() {
       title="Rooms"
       workspace="rooms"
       bodyClassName="rooms-page"
-      heroAction={(
-        <button className="vc-secondary-glass-action rooms-home-back-button" type="button" onClick={() => navigate("/staff")}>
-          <HomeIcon />
-          <span>Staff Home</span>
-        </button>
-      )}
     >
       {rooms.isLoading ? <PageLoading /> : null}
       {rooms.isError ? <PageError onRetry={() => void rooms.refetch()} /> : null}

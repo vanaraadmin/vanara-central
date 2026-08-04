@@ -142,6 +142,36 @@
   flex: 0 0 auto;
 }
 
+.vc-staff-home-action {
+  min-height: 44px;
+  display: inline-grid;
+  grid-template-columns: 18px auto;
+  align-items: center;
+  gap: 9px;
+  padding: 0 16px;
+  border-radius: var(--vc-radius-pill);
+  color: rgba(247, 244, 238, 0.94);
+  font-family: var(--vc-font-sans);
+  font-size: 0.76rem;
+  font-weight: var(--vc-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow:
+    0 0 0 1px rgba(247, 244, 238, 0.1),
+    0 12px 36px rgba(247, 244, 238, 0.08),
+    0 20px 48px rgba(3, 14, 10, 0.24);
+}
+
+.vc-staff-home-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .workspace-sticky-trigger {
   height: 1px;
   margin-top: -1px;

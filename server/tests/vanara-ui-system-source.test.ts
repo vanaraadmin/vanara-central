@@ -33,6 +33,7 @@ const vanaraComponents = [
   "src/components/vanara/VanaraGlassSheet.tsx",
   "src/components/vanara/VanaraInteractiveGlass.tsx",
   "src/components/vanara/VanaraSectionHeader.tsx",
+  "src/components/vanara/VanaraStaffHomeAction.tsx",
   "src/components/vanara/VanaraSummaryGrid.tsx",
 ];
 
@@ -129,22 +130,25 @@ test("Rooms and Staff Home consume shared presentation instead of page glass cop
   assert.match(readSource("src/components/rooms/RoomExpandedWorkspace.tsx"), /variant="elevated"/);
   assert.match(readSource("src/components/rooms/RoomHero.tsx"), /vc-sheet-identity/);
   assert.match(readSource("src/pages/StaffPage.tsx"), /variant="compact"/);
-  assert.match(readSource("src/pages/RoomsPage.tsx"), /vc-secondary-glass-action rooms-home-back-button/);
+  assert.match(readSource("src/components/WorkspaceShell.tsx"), /<VanaraStaffHomeAction \/>/);
+  assert.match(readSource("src/components/vanara/VanaraStaffHomeAction.tsx"), /vc-staff-home-action/);
+  assert.doesNotMatch(readSource("src/pages/RoomsPage.tsx"), /rooms-home-back-button|heroAction=\{/);
 });
 
 test("Vanara UI tap sound is removed from the active application path", () => {
   assert.equal(existsSync(new URL("../../src/utils/navigation-sound.ts", import.meta.url)), false);
   assert.equal(existsSync(new URL("../../src/hooks/useUiTapSound.ts", import.meta.url)), false);
   assert.equal(existsSync(new URL("../../src/services/uiSound.service.ts", import.meta.url)), false);
-  assert.equal(existsSync(new URL("../../public/audio/ui-tap-soft.mp3", import.meta.url)), false);
-  assert.equal(existsSync(new URL("../../src/assets/sounds/click.mp3", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../public/audio/", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../../src/assets/sounds/", import.meta.url)), false);
 
   assert.doesNotMatch(appSources, /useUiTapSound/);
   assert.doesNotMatch(appSources, /playUiTap/);
   assert.doesNotMatch(appSources, /new Audio\(/);
   assert.doesNotMatch(appSources, /\bAudio\(/);
   assert.doesNotMatch(appSources, /preload\s*=/);
-  assert.doesNotMatch(appSources, /\/audio\/ui-tap-soft\.mp3/);
-  assert.doesNotMatch(appSources, /assets\/sounds\/click\.mp3/);
+  assert.doesNotMatch(appSources, /\/audio\//);
+  assert.doesNotMatch(appSources, /assets\/sounds/);
+  assert.doesNotMatch(appSources, /\.(mp3|wav|ogg)/);
   assert.doesNotMatch(appRoot, /useUiTapSound\(\)/);
 });

@@ -261,8 +261,8 @@
   width: var(--vc-touch-min);
   height: var(--vc-touch-min);
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: 1px solid rgba(237, 241, 232, 0.22);
   border-radius: var(--vc-radius-pill);
@@ -270,10 +270,15 @@
   background: rgba(247, 244, 238, 0.1);
 }
 
-.reception-contact-trigger img {
+.reception-address-book-icon {
   width: 20px;
   height: 20px;
+  fill: none;
   opacity: 0.82;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .reception-guest {
@@ -592,6 +597,15 @@
   align-items: end;
 }
 
+.reception-details-sheet {
+  align-items: stretch;
+  padding:
+    var(--vc-safe-top)
+    var(--vc-safe-right)
+    var(--vc-safe-bottom)
+    var(--vc-safe-left);
+}
+
 .reception-sheet__scrim {
   position: absolute;
   inset: 0;
@@ -614,6 +628,21 @@
   padding: 14px var(--vc-space-5) calc(var(--vc-space-5) + var(--vc-safe-bottom));
   color: var(--workspace-cream);
   animation: reception-sheet-in var(--vc-duration-normal) var(--vc-ease-emphasized);
+}
+
+.reception-details-sheet__panel {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  align-self: stretch;
+  justify-self: stretch;
+  border-radius: 0;
+  padding:
+    max(var(--vc-space-4), calc(var(--vc-safe-top) + var(--vc-space-3)))
+    max(var(--vc-space-4), var(--vc-safe-right))
+    max(var(--vc-space-5), calc(var(--vc-safe-bottom) + var(--vc-space-4)))
+    max(var(--vc-space-4), var(--vc-safe-left));
 }
 
 .reception-sheet__handle {

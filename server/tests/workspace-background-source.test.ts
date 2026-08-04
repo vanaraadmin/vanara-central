@@ -70,7 +70,7 @@ test("typed workspace background configuration imports canonical source image as
 });
 
 test("Staff Home and WorkspaceShell consume backgrounds through the shared config", () => {
-  assert.match(staffPage, /<WorkspaceShell title=\{title\} workspace="staffHome" bodyClassName="staff-page">/);
+  assert.match(staffPage, /<WorkspaceShell[\s\S]*title=\{title\}[\s\S]*stickyNavigationTitle="Home"[\s\S]*workspace="staffHome"[\s\S]*bodyClassName="staff-page">/);
   assert.match(workspaceShell, /workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey>/);
   assert.match(workspaceShell, /staffHome: "staffHome"/);
   assert.match(workspaceShell, /reception: "reception"/);

@@ -13,13 +13,24 @@ const passportReview = await readFile(new URL("../../src/utils/passport-review.t
 const countryNationality = await readFile(new URL("../../src/utils/country-nationality.ts", import.meta.url), "utf8");
 const bookingPassportsMigration = await readFile(new URL("../migrations/0013_booking_passports.sql", import.meta.url), "utf8");
 
-test("booking details sheet reuses the existing reception sheet structure", () => {
+test("booking details sheet renders as a fullscreen glass sheet", () => {
   assert.match(receptionPage, /function BookingDetailsSheet/);
   assert.match(receptionPage, /useSheetScrollLock\(Boolean\(stay\)\)/);
   assert.match(receptionPage, /className="reception-sheet reception-details-sheet"/);
   assert.match(receptionPage, /className="reception-sheet__scrim"/);
   assert.match(receptionPage, /reception-details-sheet__panel/);
-  assert.match(receptionPage, /className="reception-sheet__handle"/);
+  const bookingDetailsSheet = receptionPage.match(/function BookingDetailsSheet[\s\S]*?export default function ReceptionPage/)?.[0] ?? "";
+  assert.doesNotMatch(bookingDetailsSheet, /reception-sheet__handle/);
+  assert.match(receptionCss, /\.reception-details-sheet\s*\{[\s\S]*align-items:\s*stretch;/);
+  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*border-radius:\s*0;/);
+});
+
+test("reception contact icon uses the current Design System color and centered trigger", () => {
+  assert.match(receptionPage, /function AddressBookIcon/);
+  assert.match(receptionPage, /<AddressBookIcon \/>/);
+  assert.doesNotMatch(receptionPage, /addressBookIcon|address-book-light/);
+  assert.match(receptionCss, /\.reception-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
+  assert.match(receptionCss, /\.reception-address-book-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
 });
 
 test("booking cards open booking details without replacing existing contact and completion actions", () => {
