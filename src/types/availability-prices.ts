@@ -2,6 +2,8 @@ export type AvailabilityStatus = "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
 
 export type PricingStatus = "AVAILABLE" | "MISSING";
 
+export type AvailabilityCacheStatus = "AVAILABLE" | "UNAVAILABLE";
+
 export interface AvailabilityPricesUnit {
   unitId: number;
   unitName: string;
@@ -38,6 +40,7 @@ export interface AvailabilityPricesResult {
   departureDate: string;
   nights: number;
   currency: "THB";
+  cacheStatus: AvailabilityCacheStatus;
   generatedAt: string;
   groups: AvailabilityPricesGroup[];
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import worker from "../src/index.ts";
@@ -348,6 +348,29 @@ test("pricing returns missing without zero or partial totals when a complete off
   assert.equal(mixedOffers.pricing.totalPrice, null);
 });
 
+test("empty cache returns a cache-unavailable contract instead of invented availability", async () => {
+  const empty = await getAvailabilityPrices(db(), { arrival: "2026-08-03", departure: "2026-08-04" });
+  assert.equal(empty.cacheStatus, "UNAVAILABLE");
+  assert.deepEqual(empty.groups, []);
+
+  const populated = await getAvailabilityPrices(db({
+    availability: [available(1, "2026-08-03", 0)],
+  }), { arrival: "2026-08-03", departure: "2026-08-04" });
+  assert.equal(populated.cacheStatus, "AVAILABLE");
+  assert.equal(populated.groups[0]!.availabilityStatus, "UNAVAILABLE");
+});
+
+test("missing price does not produce invented total for available accommodation", async () => {
+  const group = (await availabilityGroups(db({
+    availability: [available(1, "2026-08-03")],
+  }), "2026-08-03", "2026-08-04"))[0]!;
+
+  assert.equal(group.availableCount, 1);
+  assert.equal(group.pricing.status, "MISSING");
+  assert.equal(group.pricing.averageNightlyPrice, null);
+  assert.equal(group.pricing.totalPrice, null);
+});
+
 test("pricing chooses lowest complete total and then lowest Beds24 offer id", async () => {
   const lowestTotal = (await availabilityGroups(db({
     availability: [available(1, "2026-08-03"), available(1, "2026-08-04")],
@@ -427,6 +450,7 @@ test("endpoint validates auth, dates, sanitized failures, and performs no writes
   const body = await valid.json() as { success: boolean; data: { nights: number; groups: AvailabilityPricesGroup[] } };
   assert.equal(body.success, true);
   assert.equal(body.data.nights, 2);
+  assert.equal((body.data as { cacheStatus: string }).cacheStatus, "AVAILABLE");
   assert.equal(body.data.groups[0]!.availableCount, 1);
   assert.equal(validDb.writes, 0);
 
@@ -460,11 +484,61 @@ test("source guardrails prevent live provider calls, price1, reservation writes,
   assert.match(page, /useQuery/);
   assert.match(page, /loadAvailabilityPrices/);
   assert.match(page, /WorkspaceShell/);
-  assert.match(page, /stickyNavigationTitle="Availability"/);
-  assert.match(page, /Search Availability/);
+  assert.match(page, /title="Prices"/);
+  assert.match(page, /stickyNavigationTitle="Prices"/);
+  assert.match(page, /Search Prices/);
   assert.match(page, /Available rooms/);
   assert.doesNotMatch(page, /room_operational_availability|maintenance_tickets|housekeeping_tasks|room_housekeeping_state|bookings/i);
   assert.match(css, /\.availability-field input\s*\{[\s\S]*box-sizing:\s*border-box;/);
   assert.match(css, /\.availability-search__controls\s*\{[\s\S]*min-width:\s*0;/);
+  assert.match(css, /\.availability-field input\s*\{[\s\S]*max-width:\s*100%;/);
+  assert.match(css, /\.availability-search__action\s*\{[\s\S]*max-width:\s*100%;/);
   assert.match(css, /\.availability-card__summary/);
+});
+
+test("production sync orchestration populates availability through scheduled and bootstrap paths", () => {
+  const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const helper = index.match(/async function syncCommercialCaches[\s\S]*?\n}/)?.[0] ?? "";
+
+  assert.match(helper, /const offers = await syncOfferPrices\(env, \{ batchDays: 30, startOffset: 0 \}\);[\s\S]*const availability = await syncAvailabilityCache\(env, \{ batchDays: 30, startOffset: 0 \}\);/);
+  assert.match(helper, /return \{ offers, availability \};/);
+  assert.doesNotMatch(helper, /\btry\b|\bcatch\b/);
+  assert.match(index, /const \{ offers, availability \} = await syncCommercialCaches\(c\.env\);/);
+  assert.match(index, /return c\.json\(\{ ok: true, properties, bookings, offers, availability \}\);/);
+  assert.match(index, /controller\.cron === "2 \* \* \* \*"[\s\S]*ctx\.waitUntil\(syncCommercialCaches\(env\)\.then\(\(\) => undefined\)\);/);
+  assert.doesNotMatch(index, /function syncAvailabilityPrices|function availabilityCacheSync|duplicateAvailability/i);
+});
+
+test("Prices label guardrails keep route and API technical identifiers stable", () => {
+  const page = readFileSync(new URL("../../src/pages/AvailabilityPage.tsx", import.meta.url), "utf8");
+  const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
+  const navigation = readFileSync(new URL("../../src/config/navigation.tsx", import.meta.url), "utf8");
+  const en = readFileSync(new URL("../../src/i18n/en.ts", import.meta.url), "utf8");
+  const frontendService = readFileSync(new URL("../../src/services/availability-prices.service.ts", import.meta.url), "utf8");
+  const router = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
+  const visibleSources = [page, staffPage, navigation, en].join("\n");
+
+  assert.match(staffPage, /title:\s*"Prices"/);
+  assert.match(staffPage, /href:\s*"\/availability-prices"/);
+  assert.match(page, /<WorkspaceShell title="Prices" stickyNavigationTitle="Prices"/);
+  assert.match(navigation, /labelKey:\s*"prices", path:\s*"\/availability-prices"/);
+  assert.match(en, /prices:\s*"Prices"/);
+  assert.match(router, /path="availability-prices" element=\{<AvailabilityPage \/>}/);
+  assert.match(frontendService, /\/api\/availability-prices\?\$\{query\.toString\(\)\}/);
+  assert.doesNotMatch(visibleSources, /Availability & Prices|Availability and Prices|availability & prices|availability and prices/);
+  assert.ok(existsSync(new URL("../../src/pages/AvailabilityPage.tsx", import.meta.url)));
+  assert.ok(existsSync(new URL("../src/services/availability-prices.service.ts", import.meta.url)));
+});
+
+test("frontend source prevents invalid date ranges before submit without a custom date picker", () => {
+  const page = readFileSync(new URL("../../src/pages/AvailabilityPage.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/styles/AvailabilityPage.css", import.meta.url), "utf8");
+
+  assert.match(page, /min=\{defaultArrival\}/);
+  assert.match(page, /min=\{minimumDeparture\}/);
+  assert.match(page, /if \(departure <= nextArrival\) \{[\s\S]*setDeparture\(nextMinimumDeparture\);/);
+  assert.match(page, /isValidStayRange\(nextRange, defaultArrival\)/);
+  assert.doesNotMatch(page, /react-day-picker|DayPicker|from\s+["']react-day-picker/);
+  assert.doesNotMatch(page, /beds24Get|BEDS24_BASE_URL|BEDS24_LONG_LIFE_TOKEN|\bfetch\s*\(/);
+  assert.match(css, /@media \(max-width: 420px\)/);
 });

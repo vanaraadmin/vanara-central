@@ -1,6 +1,6 @@
-# Availability & Prices Architecture
+# Prices Architecture
 
-Sprint 00 audit document. This file maps the existing Vanara Central calendar, availability, and pricing architecture before implementing the future Availability & Prices workspace.
+Sprint 00 audit document. This file maps the existing Vanara Central calendar, availability, and pricing architecture before implementing the future Prices workspace.
 
 No product code, API, routing, schema, UI, or production behavior was changed for this audit.
 
@@ -26,7 +26,7 @@ No product code, API, routing, schema, UI, or production behavior was changed fo
 | Maintenance blocking | VERIFIED | `maintenance_tickets.out_of_service` and metadata drive blocking room state in Rooms. |
 | Seasonal closure | VERIFIED | Implemented as `room_operational_availability.status = 'NOT_OPERATING'` with seasonal metadata. |
 
-The repository has enough authoritative local data to build Availability & Prices as a read-only Staff Home workspace, but the combined read model does not exist yet. The next implementation should add one backend service that composes cached availability, pricing, active bookings, operational availability, and maintenance blocking without writing reservations or replacing Beds24.
+The repository has enough authoritative local data to build Prices as a read-only Staff Home workspace, but the combined read model does not exist yet. The next implementation should add one backend service that composes cached availability, pricing, active bookings, operational availability, and maintenance blocking without writing reservations or replacing Beds24.
 
 ## Existing Source Map
 
@@ -67,7 +67,7 @@ Current availability cache behavior:
 | One-night price persistence | VERIFIED | `server/src/services/offer-prices.service.ts`, `INSERT INTO offer_prices ... ON CONFLICT`. |
 | Stay total calculation | MISSING | No service currently sums `offer_prices.price` for `[arrival, departure)`. |
 | Price selection rule | MISSING | No approved service picks which Beds24 offer is the display offer when several offers exist. |
-| Frontend price display for Booking Pulse | PARTIAL | Booking Pulse displays booking value from existing booking data, not Availability & Prices quote logic. |
+| Frontend price display for Booking Pulse | PARTIAL | Booking Pulse displays booking value from existing booking data, not Prices quote logic. |
 
 Important verified rule from schema:
 
@@ -94,13 +94,13 @@ Rooms Workspace is already the authoritative operational read model for:
 - Season closed.
 - Current room identity and accommodation type.
 
-Availability & Prices should reuse this operational dimension only to explain whether a physically available room can be offered immediately. It must not change Beds24 reservation ownership.
+Prices should reuse this operational dimension only to explain whether a physically available room can be offered immediately. It must not change Beds24 reservation ownership.
 
 ## Source Of Truth Matrix
 
-| Dimension | Source of truth | Current implementation | Status | Notes for Availability & Prices |
+| Dimension | Source of truth | Current implementation | Status | Notes for Prices |
 | --- | --- | --- | --- | --- |
-| Reservation existence | Beds24, locally cached in `bookings` | `bookings-sync.service.ts` stores provider bookings and reconciles cancelled/provider-deleted records. | VERIFIED | Read only. Never write reservations from Availability & Prices. |
+| Reservation existence | Beds24, locally cached in `bookings` | `bookings-sync.service.ts` stores provider bookings and reconciles cancelled/provider-deleted records. | VERIFIED | Read only. Never write reservations from Prices. |
 | Unit assignment | Beds24, locally cached in `bookings.unit_id` and `units` | `property-sync.service.ts` maps `beds24_room_id` and `beds24_unit_id`; `bookings-sync.service.ts` maps booking room/unit/offer. | VERIFIED | Use local D1 state; do not call Beds24 from request path. |
 | Unit availability | Beds24 availability cache plus local bookings | `unit_availability_cache`, `availability-cache.service.ts`. | PARTIAL | Existing cache is daily per unit; future service must fold all nights in `[arrival, departure)`. |
 | Nightly price | Beds24 offers cache | `offer_prices.price`, one row per `room_type_id`, `beds24_offer_id`, arrival date, departure date. | VERIFIED | Use only `offer_prices`, never `room_calendar.price1`. |
@@ -253,7 +253,7 @@ Existing Staff Home implementation:
 
 Future recommendation:
 
-- Add a Staff Home module card labelled `Availability & Prices`.
+- Add a Staff Home module card labelled `Prices`.
 - Route to `/availability-prices`.
 - Keep it read-only.
 - Do not replace Rooms, Reception, or Booking Pulse.
@@ -342,7 +342,7 @@ Frontend/source tests:
 Integration smoke:
 
 - Login as Staff.
-- Open Availability & Prices from Staff Home.
+- Open Prices from Staff Home.
 - Search a one-night stay.
 - Search a multi-night stay.
 - Verify no POST/PATCH/DELETE reservation endpoints execute.
@@ -362,13 +362,13 @@ Integration smoke:
 1. Backend read model: add `availability-prices.service.ts` and `GET /api/availability-prices`.
 2. Server tests for date range, availability folding, operational exclusions, and price totals.
 3. Frontend route `/availability-prices` with date input and grouped results.
-4. Staff Home card entry labelled `Availability & Prices`.
+4. Staff Home card entry labelled `Prices`.
 5. Design System polish using existing Vanara UI System components.
 6. Production smoke with read-only Staff session.
 
 ## Final Architecture Recommendation
 
-Availability & Prices should be a read-only operational assistant built on local D1 read models:
+Prices should be a read-only operational assistant built on local D1 read models:
 
 - Beds24 remains source of truth for commercial availability and prices.
 - Vanara D1 remains the request-time source for staff.
@@ -382,5 +382,5 @@ Current readiness:
 
 - Calendar source-of-truth location: VERIFIED.
 - Offer/pricing source-of-truth location: VERIFIED.
-- Combined Availability & Prices workspace read model: MISSING.
+- Combined Prices workspace read model: MISSING.
 - Product route and offer selection decisions: PARTIAL / pending PO confirmation.

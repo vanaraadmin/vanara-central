@@ -31,14 +31,21 @@ function bangkokDate(offsetDays = 0): string {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
-function isValidStayRange(range: SearchRange): boolean {
+function addDateDays(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(Date.UTC(year, month - 1, day) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function isValidStayRange(range: SearchRange, minimumArrival: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(range.arrival)
     && /^\d{4}-\d{2}-\d{2}$/.test(range.departure)
+    && range.arrival >= minimumArrival
     && range.departure > range.arrival;
 }
 
 function formatPrice(value: number | null): string {
-  return value === null ? "Unavailable" : `${PRICE_FORMATTER.format(value)} THB`;
+  return value === null ? "Price missing" : `${PRICE_FORMATTER.format(value)} THB`;
 }
 
 function formatStayDate(value: string): string {
@@ -140,11 +147,30 @@ export default function AvailabilityPage() {
 
   const result = availability.data;
   const groups = result?.groups ?? [];
+  const minimumDeparture = addDateDays(arrival, 1);
+  const cacheUnavailable = Boolean(result && result.cacheStatus === "UNAVAILABLE");
+  const hasAvailableGroups = groups.some((group) => group.availableCount > 0);
+  const noAvailability = Boolean(result && !cacheUnavailable && groups.length > 0 && !hasAvailableGroups);
+  const missingPricingGroups = groups.filter((group) => group.availableCount > 0 && group.pricing.status === "MISSING");
+
+  const updateArrival = (nextArrival: string) => {
+    setArrival(nextArrival);
+    setSearchError(null);
+    const nextMinimumDeparture = addDateDays(nextArrival, 1);
+    if (departure <= nextArrival) {
+      setDeparture(nextMinimumDeparture);
+    }
+  };
+
+  const updateDeparture = (nextDeparture: string) => {
+    setDeparture(nextDeparture);
+    setSearchError(null);
+  };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextRange = { arrival, departure };
-    if (!isValidStayRange(nextRange)) {
+    if (!isValidStayRange(nextRange, defaultArrival)) {
       setSearchError("Choose a departure date after arrival.");
       return;
     }
@@ -164,23 +190,24 @@ export default function AvailabilityPage() {
   };
 
   return (
-    <WorkspaceShell title="Availability & Prices" stickyNavigationTitle="Availability" workspace="rooms" bodyClassName="availability-page">
+    <WorkspaceShell title="Prices" stickyNavigationTitle="Prices" workspace="rooms" bodyClassName="availability-page">
       <p className="availability-page__subtitle">
-        Check availability and pricing for a selected stay.
+        Check availability and verified prices for selected dates.
       </p>
 
       <VanaraGlassRegion className="availability-search" ariaLabelledBy="availability-search-title">
         <VanaraSectionHeader
-          eyebrow="Availability"
+          eyebrow="Beds24 cache"
           headingId="availability-search-title"
-          title="Availability Search"
+          title="Price Search"
         />
 
         <form className="availability-search__controls" onSubmit={submitSearch}>
           <label className="availability-field">
             <span>Arrival</span>
             <input
-              onChange={(event) => setArrival(event.target.value)}
+              min={defaultArrival}
+              onChange={(event) => updateArrival(event.target.value)}
               type="date"
               value={arrival}
             />
@@ -190,14 +217,15 @@ export default function AvailabilityPage() {
             <span>Departure</span>
             <input
               aria-invalid={Boolean(searchError)}
-              onChange={(event) => setDeparture(event.target.value)}
+              min={minimumDeparture}
+              onChange={(event) => updateDeparture(event.target.value)}
               type="date"
               value={departure}
             />
           </label>
 
           <button className="vc-primary-action availability-search__action" disabled={availability.isFetching} type="submit">
-            {availability.isFetching ? "Searching" : "Search Availability"}
+            {availability.isFetching ? "Searching" : "Search Prices"}
           </button>
         </form>
 
@@ -221,7 +249,7 @@ export default function AvailabilityPage() {
         {!submittedRange && !searchError ? (
           <div className="availability-results__empty" role="status">
             <strong>No search executed yet.</strong>
-            <p>Select arrival and departure to check availability and prices.</p>
+            <p>Select arrival and departure to check availability and verified prices.</p>
           </div>
         ) : null}
 
@@ -233,15 +261,32 @@ export default function AvailabilityPage() {
 
         {availability.isError ? (
           <div className="availability-results__error" role="alert">
-            <strong>Availability is unavailable.</strong>
+            <strong>Prices are unavailable.</strong>
             <p>The cached Beds24 result could not be loaded.</p>
             <button className="vc-secondary-action" onClick={() => void availability.refetch()} type="button">Retry</button>
           </div>
         ) : null}
 
         {result && !availability.isLoading && !availability.isError ? (
-          groups.length > 0 ? (
+          cacheUnavailable ? (
+            <div className="availability-results__empty" role="status">
+              <strong>Cache unavailable.</strong>
+              <p>Beds24 availability cache has not been populated for this stay range.</p>
+            </div>
+          ) : noAvailability ? (
+            <div className="availability-results__empty" role="status">
+              <strong>No accommodation available.</strong>
+              <p>Beds24 has no available units for this stay range.</p>
+            </div>
+          ) : groups.length > 0 ? (
             <div className="availability-results__list">
+              {missingPricingGroups.length > 0 ? (
+                <div className="availability-results__notice" role="status">
+                  <strong>Price missing.</strong>
+                  <p>Some available accommodation types are missing a complete verified price for every night.</p>
+                </div>
+              ) : null}
+
               {groups.map((group) => (
                 <AvailabilityResultCard
                   expanded={expandedGroups.has(group.roomTypeId)}
@@ -253,8 +298,8 @@ export default function AvailabilityPage() {
             </div>
           ) : (
             <div className="availability-results__empty" role="status">
-              <strong>No cached availability found.</strong>
-              <p>Beds24 has no cached room availability for this stay range.</p>
+              <strong>No accommodation available.</strong>
+              <p>Beds24 has no available units for this stay range.</p>
             </div>
           )
         ) : null}

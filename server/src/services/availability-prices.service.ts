@@ -7,6 +7,8 @@ export type AvailabilityStatus = "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
 
 export type PricingStatus = "AVAILABLE" | "MISSING";
 
+export type AvailabilityCacheStatus = "AVAILABLE" | "UNAVAILABLE";
+
 export type AvailabilityPricesUnit = {
   unitId: number;
   unitName: string;
@@ -45,6 +47,7 @@ export type AvailabilityPricesResult = {
   departureDate: string;
   nights: number;
   currency: "THB";
+  cacheStatus: AvailabilityCacheStatus;
   generatedAt: string;
   groups: AvailabilityPricesGroup[];
 };
@@ -412,6 +415,7 @@ export async function getAvailabilityPrices(
     departureDate: range.departureDate,
     nights: range.nights,
     currency: "THB",
+    cacheStatus: units.length > 0 ? "AVAILABLE" : "UNAVAILABLE",
     generatedAt: new Date().toISOString(),
     groups,
   };

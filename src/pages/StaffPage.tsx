@@ -42,8 +42,8 @@ const workspaceIcons: Record<StaffCardId, string> = {
 const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
   id: "availability",
   module: "rooms",
-  title: "Availability & Prices",
-  description: "Check stay availability and pricing.",
+  title: "Prices",
+  description: "Check availability and verified prices.",
   href: "/availability-prices",
   cta: "Open workspace",
   metrics: [],

@@ -282,6 +282,12 @@ async function owner(c: AppContext, action: "access" | "edit" = "access"): Promi
   return user;
 }
 
+async function syncCommercialCaches(env: Bindings) {
+  const offers = await syncOfferPrices(env, { batchDays: 30, startOffset: 0 });
+  const availability = await syncAvailabilityCache(env, { batchDays: 30, startOffset: 0 });
+  return { offers, availability };
+}
+
 async function healthHandler(c: AppContext) {
   let d1: { status: "ok" } | { status: "error"; message: string };
 
@@ -1719,8 +1725,8 @@ app.post("/sync/bootstrap", async (c) => {
     validateSyncConfig(c.env);
     const properties = await syncProperties(c.env);
     const bookings = await syncBookings(c.env);
-    const offers = await syncOfferPrices(c.env, { batchDays: 30, startOffset: 0 });
-    return c.json({ ok: true, properties, bookings, offers });
+    const { offers, availability } = await syncCommercialCaches(c.env);
+    return c.json({ ok: true, properties, bookings, offers, availability });
   } catch (error) {
     console.error("Bootstrap sync failed:", error);
     return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));
@@ -1824,7 +1830,7 @@ export default {
       return;
     }
     if (controller.cron === "2 * * * *") {
-      ctx.waitUntil(syncOfferPrices(env, { batchDays: 30, startOffset: 0 }).then(() => undefined));
+      ctx.waitUntil(syncCommercialCaches(env).then(() => undefined));
     }
   },
 };

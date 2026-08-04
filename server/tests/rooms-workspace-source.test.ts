@@ -46,7 +46,7 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Availability, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
+test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 

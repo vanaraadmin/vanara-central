@@ -8,6 +8,6 @@ export async function loadAvailabilityPrices(
 ): Promise<AvailabilityPricesResult> {
   const query = new URLSearchParams({ arrival, departure });
   const response = await requestJson<AvailabilityPricesResponse>(`/api/availability-prices?${query.toString()}`, signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Availability and prices are unavailable");
+  if (!response.success || !response.data) throw new Error(response.error ?? "Prices are unavailable");
   return response.data;
 }
