@@ -38,6 +38,9 @@ interface RoomWorkspaceRow {
   guest_name: string | null;
   country: string | null;
   country_code: string | null;
+  phone: string | null;
+  mobile: string | null;
+  email: string | null;
   arrival_date: string | null;
   departure_date: string | null;
   api_source: string | null;
@@ -45,6 +48,9 @@ interface RoomWorkspaceRow {
   reception_guest_name: string | null;
   reception_country: string | null;
   reception_country_code: string | null;
+  reception_phone: string | null;
+  reception_mobile: string | null;
+  reception_email: string | null;
   reception_api_source: string | null;
   reception_channel: string | null;
   active_task_count: number | null;
@@ -108,6 +114,8 @@ export interface RoomCurrentStaySummary {
   guestName: string;
   nationality: string | null;
   source: string | null;
+  phone: string | null;
+  email: string | null;
   arrivalDate: string;
   departureDate: string;
   stayNights: number | null;
@@ -388,6 +396,14 @@ function operationalNationality(row: RoomWorkspaceRow): string | null {
 
 function operationalSource(row: RoomWorkspaceRow): string | null {
   return row.reception_api_source || row.reception_channel || sourceLabel(row);
+}
+
+function operationalPhone(row: RoomWorkspaceRow): string | null {
+  return row.reception_mobile || row.reception_phone || row.mobile || row.phone || null;
+}
+
+function operationalEmail(row: RoomWorkspaceRow): string | null {
+  return row.reception_email || row.email || null;
 }
 
 function operationalArrival(row: RoomWorkspaceRow): string | null {
@@ -796,6 +812,8 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
           guestName,
           nationality: operationalNationality(row),
           source: staySource,
+          phone: operationalPhone(row),
+          email: operationalEmail(row),
           arrivalDate: arrival,
           departureDate: departure,
           stayNights: stayNights(arrival, departure),
@@ -853,6 +871,9 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       b.guest_name,
       b.country,
       b.country_code,
+      b.phone,
+      b.mobile,
+      b.email,
       b.arrival_date,
       b.departure_date,
       b.api_source,
@@ -873,6 +894,9 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       rb.guest_name AS reception_guest_name,
       rb.country AS reception_country,
       rb.country_code AS reception_country_code,
+      rb.phone AS reception_phone,
+      rb.mobile AS reception_mobile,
+      rb.email AS reception_email,
       rb.arrival_date AS reception_arrival_date,
       rb.departure_date AS reception_departure_date,
       rb.api_source AS reception_api_source,

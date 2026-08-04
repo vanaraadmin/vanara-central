@@ -94,6 +94,9 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     guest_name: null,
     country: null,
     country_code: null,
+    phone: null,
+    mobile: null,
+    email: null,
     arrival_date: null,
     departure_date: null,
     api_source: null,
@@ -101,6 +104,9 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     reception_guest_name: null,
     reception_country: null,
     reception_country_code: null,
+    reception_phone: null,
+    reception_mobile: null,
+    reception_email: null,
     reception_api_source: null,
     reception_channel: null,
     active_task_count: 0,
@@ -186,11 +192,15 @@ function defaultRooms() {
       guest_name: "Mali Guest",
       country: "Thailand",
       country_code: "TH",
+      phone: "+66 81 234 5678",
+      email: "mali@example.com",
       arrival_date: "2026-08-01",
       departure_date: "2026-08-07",
       api_source: "Direct",
       reception_booking_id: 301,
       reception_beds24_booking_id: 9301,
+      reception_phone: "+66 81 234 5678",
+      reception_email: "mali@example.com",
       reception_arrival_date: "2026-08-01",
       reception_departure_date: "2026-08-07",
       reception_guest_arrived: 1,
@@ -809,6 +819,8 @@ test("occupied rooms expose current guest and vacant rooms expose no guest", asy
     guestName: "Mali Guest",
     nationality: "Thailand",
     source: "Direct",
+    phone: "+66 81 234 5678",
+    email: "mali@example.com",
     arrivalDate: "2026-08-01",
     departureDate: "2026-08-07",
     stayNights: 6,
@@ -963,6 +975,8 @@ test("today arrival becomes occupied only after Reception check-in execution", a
     guestName: "Today Arrival",
     nationality: "Italian",
     source: "Direct",
+    phone: null,
+    email: null,
     arrivalDate: "2026-08-02",
     departureDate: "2026-08-07",
     stayNights: 5,
@@ -977,13 +991,13 @@ test("guest card read model follows arrived occupancy and does not expose recept
   assert.equal(occupied.currentStay.guestName, "Mali Guest");
   assert.equal(occupied.currentStay.nationality, "Thailand");
   assert.equal(occupied.currentStay.source, "Direct");
+  assert.equal(occupied.currentStay.phone, "+66 81 234 5678");
+  assert.equal(occupied.currentStay.email, "mali@example.com");
   assert.equal(occupied.currentStay.arrivalDate, "2026-08-01");
   assert.equal(occupied.currentStay.departureDate, "2026-08-07");
   assert.equal(occupied.currentStay.stayNights, 6);
   assert.equal("passport" in occupied.currentStay, false);
   assert.equal("deposit" in occupied.currentStay, false);
-  assert.equal("email" in occupied.currentStay, false);
-  assert.equal("phone" in occupied.currentStay, false);
 });
 
 test("occupied in-house rooms return Reception phase and quiet completed steps", async () => {

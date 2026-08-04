@@ -1,8 +1,13 @@
-import { useId } from "react";
+import { useId, type Ref } from "react";
+import VanaraGuestContactTrigger from "../vanara/VanaraGuestContactTrigger";
 import { formatNationalityText } from "../../utils/country-nationality";
+import type { VanaraGuestContact } from "../vanara/VanaraGuestContactSheet";
 import type { RoomCurrentStaySummary } from "../../types/rooms-workspace";
 
 type GuestCardProps = {
+  contact: VanaraGuestContact | null;
+  contactButtonRef?: Ref<HTMLButtonElement>;
+  onContactRequest: (contact: VanaraGuestContact) => void;
   stay: RoomCurrentStaySummary;
 };
 
@@ -21,13 +26,35 @@ function formatStay(value: number | null): string | null {
   return `${value} ${value === 1 ? "night" : "nights"}`;
 }
 
-function GuestIdentity({ headingId, stay }: { headingId: string; stay: RoomCurrentStaySummary }) {
+function GuestIdentity({
+  contact,
+  contactButtonRef,
+  headingId,
+  onContactRequest,
+  stay,
+}: {
+  contact: VanaraGuestContact | null;
+  contactButtonRef?: Ref<HTMLButtonElement>;
+  headingId: string;
+  onContactRequest: (contact: VanaraGuestContact) => void;
+  stay: RoomCurrentStaySummary;
+}) {
   return (
     <header className="room-expanded-section__header guest-card__identity">
       <div>
         <span className="room-expanded-section__eyebrow vc-section-eyebrow">Guest</span>
         <h3 className="room-expanded-section__title guest-card__name" id={headingId}>{stay.guestName}</h3>
       </div>
+      {contact ? (
+        <VanaraGuestContactTrigger
+          buttonRef={contactButtonRef}
+          contact={contact}
+          onClick={(event) => {
+            event.stopPropagation();
+            onContactRequest(contact);
+          }}
+        />
+      ) : null}
     </header>
   );
 }
@@ -73,12 +100,23 @@ function GuestStaySummary({ stay }: { stay: RoomCurrentStaySummary }) {
   );
 }
 
-export default function GuestCard({ stay }: GuestCardProps) {
+export default function GuestCard({
+  contact,
+  contactButtonRef,
+  onContactRequest,
+  stay,
+}: GuestCardProps) {
   const headingId = useId();
 
   return (
     <section className="room-expanded-section vc-glass-region guest-card" aria-labelledby={headingId}>
-      <GuestIdentity headingId={headingId} stay={stay} />
+      <GuestIdentity
+        contact={contact}
+        contactButtonRef={contactButtonRef}
+        headingId={headingId}
+        onContactRequest={onContactRequest}
+        stay={stay}
+      />
       <div className="room-expanded-section__content">
         <GuestBookingSummary stay={stay} />
         <GuestStaySummary stay={stay} />

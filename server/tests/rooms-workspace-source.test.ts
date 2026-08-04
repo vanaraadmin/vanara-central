@@ -6,6 +6,7 @@ const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.m
 const procurementPage = readFileSync(new URL("../../src/pages/ProcurementPage.tsx", import.meta.url), "utf8");
 const housekeepingV2Page = readFileSync(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
 const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8");
+const receptionPage = readFileSync(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8");
 const roomCompactRow = readFileSync(new URL("../../src/components/rooms/RoomCompactRow.tsx", import.meta.url), "utf8");
 const roomCompactSignals = readFileSync(new URL("../../src/components/rooms/RoomCompactSignals.tsx", import.meta.url), "utf8");
 const accommodationTypeIcon = readFileSync(new URL("../../src/components/rooms/AccommodationTypeIcon.tsx", import.meta.url), "utf8");
@@ -22,6 +23,9 @@ const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx",
 const statusPill = readFileSync(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
 const presentation = readFileSync(new URL("../../src/config/roomOperationalPresentation.ts", import.meta.url), "utf8");
 const roomsService = readFileSync(new URL("../../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
+const guestContactTrigger = readFileSync(new URL("../../src/components/vanara/VanaraGuestContactTrigger.tsx", import.meta.url), "utf8");
+const guestContactSheet = readFileSync(new URL("../../src/components/vanara/VanaraGuestContactSheet.tsx", import.meta.url), "utf8");
+const guestContactCss = readFileSync(new URL("../../src/styles/VanaraGuestContact.css", import.meta.url), "utf8");
 const staffService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
 const serverService = readFileSync(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../src/styles/RoomsPage.css", import.meta.url), "utf8");
@@ -116,7 +120,7 @@ test("Rooms rows are compact, expandable inline, and dismiss without navigation"
   assert.match(roomsPage, /useState<number \| null>\(null\)/);
   assert.match(roomsPage, /activeExpandedRoomId/);
   assert.match(roomsPage, /current === roomId \? null : roomId/);
-  assert.match(roomsPage, /useOutsidePointerDown\(containerRef, collapse, activeExpandedRoomId !== null\)/);
+  assert.match(roomsPage, /useOutsidePointerDown\(containerRef, collapse, activeExpandedRoomId !== null && !guestContactRequest\)/);
   assert.match(roomsPage, /event\.key === "Escape"/);
   assert.match(roomCompactRow, /className=\{className\}/);
   assert.match(roomCompactRow, /room-row/);
@@ -226,9 +230,10 @@ test("Expanded Room Workspace uses one forest glass sheet without large white ca
 });
 
 test("Expanded Rooms Workspace renders GuestCard only for occupied current stays", () => {
-  assert.match(roomExpandedWorkspace, /room\.currentStay \? <GuestCard stay=\{room\.currentStay\} \/> : null/);
+  assert.match(roomExpandedWorkspace, /room\.currentStay \? \(/);
+  assert.match(roomExpandedWorkspace, /<GuestCard[\s\S]*contact=\{contact\}[\s\S]*stay=\{room\.currentStay\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Guest"/);
-  assert.match(guestCard, /type GuestCardProps = \{\s*stay: RoomCurrentStaySummary;/);
+  assert.match(guestCard, /type GuestCardProps = \{[\s\S]*contact: VanaraGuestContact \| null;[\s\S]*stay: RoomCurrentStaySummary;/);
   assert.match(guestCard, /function GuestIdentity/);
   assert.match(guestCard, /function GuestBookingSummary/);
   assert.match(guestCard, /function GuestStaySummary/);
@@ -236,7 +241,34 @@ test("Expanded Rooms Workspace renders GuestCard only for occupied current stays
   assert.match(guestCard, /label="Arrived"/);
   assert.match(guestCard, /label="Leaving"/);
   assert.match(guestCard, /label="Stay"/);
-  assert.doesNotMatch(guestCard, /bookingId|Passport|Deposit|Email|Phone|payment|flag|countryCodeToFlag|UNKNOWN|N\/A/);
+  assert.doesNotMatch(guestCard, /bookingId|Passport|Deposit|payment|flag|countryCodeToFlag|UNKNOWN|N\/A/);
+});
+
+test("Rooms reuses the Reception guest contact trigger and sheet", () => {
+  assert.match(receptionPage, /VanaraGuestContactTrigger/);
+  assert.match(receptionPage, /VanaraGuestContactSheet/);
+  assert.match(roomsPage, /VanaraGuestContactSheet/);
+  assert.match(roomExpandedWorkspace, /VanaraGuestContact/);
+  assert.match(guestCard, /VanaraGuestContactTrigger/);
+  assert.match(guestCard, /contact \? \([\s\S]*<VanaraGuestContactTrigger/);
+  assert.match(roomExpandedWorkspace, /room\.operational\.occupancy\.state !== "OCCUPIED"/);
+  assert.match(roomExpandedWorkspace, /!room\.operational\.occupancy\.bookingId/);
+  assert.match(roomsPage, /suppressStickyNavigation=\{Boolean\(guestContactRequest\)\}/);
+  assert.match(roomsPage, /guestContactButtonRef\.current\?\.focus\(\)/);
+  assert.match(guestContactTrigger, /aria-label=\{`Contact \$\{contact\.guestName\}`\}/);
+  assert.match(guestContactTrigger, /className="vanara-guest-contact-trigger"/);
+  assert.match(guestContactTrigger, /export function AddressBookIcon/);
+  assert.match(guestContactSheet, /https:\/\/wa\.me\/\$\{whatsappPhone\}/);
+  assert.match(guestContactSheet, /window\.location\.href = `mailto:\$\{email\}`/);
+  assert.match(guestContactSheet, /Phone number unavailable/);
+  assert.match(guestContactSheet, /Email address unavailable/);
+  assert.match(guestContactSheet, /Phone number not available/);
+  assert.match(guestContactSheet, /Email not available/);
+  assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
+  assert.doesNotMatch(`${roomsPage}\n${roomExpandedWorkspace}\n${guestCard}`, /rooms-contact|address-book-light|function AddressBookIcon/);
+  assert.doesNotMatch(roomsService, /beds24|\/sync|\/api\/reception/);
 });
 
 test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead of ReceptionCard", () => {

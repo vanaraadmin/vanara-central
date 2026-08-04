@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import RoomCompactRow from "../components/rooms/RoomCompactRow";
 import RoomExpandedWorkspace from "../components/rooms/RoomExpandedWorkspace";
+import VanaraGuestContactSheet, { type VanaraGuestContact, type VanaraGuestContactFeedback } from "../components/vanara/VanaraGuestContactSheet";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 import { completeHousekeepingTask, startHousekeepingTask, type HousekeepingTaskCompletionPayload } from "../services/housekeeping-v2.service";
@@ -24,6 +25,9 @@ function roomActionKey(prefix: string, roomId: number): string {
 
 export default function RoomsPage() {
   const [expandedRoomId, setExpandedRoomId] = useState<number | null>(null);
+  const [guestContactRequest, setGuestContactRequest] = useState<VanaraGuestContact | null>(null);
+  const [guestContactFeedback, setGuestContactFeedback] = useState<VanaraGuestContactFeedback>(null);
+  const guestContactButtonRef = useRef<HTMLButtonElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const rooms = useQuery({
@@ -44,6 +48,16 @@ export default function RoomsPage() {
 
   const collapse = useCallback(() => {
     setExpandedRoomId(null);
+    setGuestContactRequest(null);
+    setGuestContactFeedback(null);
+  }, []);
+
+  const closeGuestContact = useCallback(() => {
+    setGuestContactRequest(null);
+    setGuestContactFeedback(null);
+    window.requestAnimationFrame(() => {
+      guestContactButtonRef.current?.focus();
+    });
   }, []);
 
   const toggleRoom = useCallback((roomId: number) => {
@@ -69,19 +83,21 @@ export default function RoomsPage() {
     runRoomAction(() => completeHousekeepingTask(taskId, version, completionPayload(mode)));
   }, [runRoomAction]);
 
-  useOutsidePointerDown(containerRef, collapse, activeExpandedRoomId !== null);
+  useOutsidePointerDown(containerRef, collapse, activeExpandedRoomId !== null && !guestContactRequest);
 
   useEffect(() => {
     if (expandedRoomId && !expandedRoomStillVisible) {
       const timer = window.setTimeout(() => {
         setExpandedRoomId(null);
+        setGuestContactRequest(null);
+        setGuestContactFeedback(null);
       }, 0);
       return () => window.clearTimeout(timer);
     }
   }, [expandedRoomId, expandedRoomStillVisible]);
 
   useEffect(() => {
-    if (!activeExpandedRoomId) return;
+    if (!activeExpandedRoomId || guestContactRequest) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -94,7 +110,7 @@ export default function RoomsPage() {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [activeExpandedRoomId]);
+  }, [activeExpandedRoomId, guestContactRequest]);
 
   const summaryItems = useMemo(() => {
     if (!rooms.data) return [];
@@ -111,6 +127,7 @@ export default function RoomsPage() {
       title="Rooms"
       workspace="rooms"
       bodyClassName="rooms-page"
+      suppressStickyNavigation={Boolean(guestContactRequest)}
     >
       {rooms.isLoading ? <PageLoading /> : null}
       {rooms.isError ? <PageError onRetry={() => void rooms.refetch()} /> : null}
@@ -141,10 +158,15 @@ export default function RoomsPage() {
                   {expanded ? (
                     <RoomExpandedWorkspace
                       actionPending={roomActionPending}
+                      guestContactButtonRef={guestContactButtonRef}
                       id={detailsId}
                       onCompleteHousekeepingTask={completeTask}
                       onCreateStandardCleaning={createStandardCleaning}
                       onCreateOnDemandCleaning={createOnDemandCleaning}
+                      onGuestContactRequest={(contact) => {
+                        setGuestContactFeedback(null);
+                        setGuestContactRequest(contact);
+                      }}
                       onStartHousekeepingTask={startTask}
                       room={room}
                     />
@@ -155,6 +177,13 @@ export default function RoomsPage() {
           </div>
         </section>
       ) : null}
+
+      <VanaraGuestContactSheet
+        contact={guestContactRequest}
+        feedback={guestContactFeedback}
+        onCancel={closeGuestContact}
+        onFeedback={setGuestContactFeedback}
+      />
     </WorkspaceShell>
   );
 }

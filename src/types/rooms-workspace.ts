@@ -44,6 +44,8 @@ export interface RoomCurrentStaySummary {
   guestName: string;
   nationality: string | null;
   source: string | null;
+  phone: string | null;
+  email: string | null;
   arrivalDate: string;
   departureDate: string;
   stayNights: number | null;

@@ -1,0 +1,224 @@
+.vanara-guest-contact-trigger {
+  width: var(--vc-touch-min);
+  min-width: var(--vc-touch-min);
+  height: var(--vc-touch-min);
+  min-height: var(--vc-touch-min);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(237, 241, 232, 0.22);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(247, 244, 238, 0.84);
+  background: rgba(247, 244, 238, 0.1);
+}
+
+.vanara-guest-contact-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  opacity: 0.82;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.vanara-guest-contact-sheet {
+  position: fixed;
+  z-index: var(--vc-z-overlay);
+  inset: 0;
+  display: grid;
+  align-items: end;
+}
+
+.vanara-guest-contact-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(6, 24, 17, 0.42);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.vanara-guest-contact-sheet__panel {
+  width: min(100%, 540px);
+  max-height: min(88dvh, 760px);
+  justify-self: center;
+  display: grid;
+  gap: var(--vc-space-5);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 30px 30px 0 0;
+  padding: 14px var(--vc-space-5) calc(var(--vc-space-5) + var(--vc-safe-bottom));
+  color: var(--workspace-cream);
+  animation: vanara-guest-contact-sheet-in var(--vc-duration-normal) var(--vc-ease-emphasized);
+}
+
+.vanara-guest-contact-sheet__handle {
+  width: 46px;
+  height: 5px;
+  justify-self: center;
+  border-radius: var(--vc-radius-pill);
+  background: rgba(244, 237, 223, 0.26);
+}
+
+.vanara-guest-contact-sheet__header {
+  display: flex !important;
+  align-items: center;
+  gap: var(--vc-space-4);
+}
+
+.vanara-guest-contact-sheet__header > div {
+  display: grid;
+  min-width: 0;
+  gap: var(--vc-space-1);
+}
+
+.vanara-guest-contact-sheet__header > div > span {
+  color: rgba(247, 244, 238, 0.62);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-semibold);
+  letter-spacing: 0.11em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.vanara-guest-contact-sheet__header h2 {
+  margin: 0;
+  color: rgba(250, 247, 238, 0.97);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-room-title);
+  font-weight: var(--vc-weight-regular);
+  line-height: 1.05;
+}
+
+.vanara-guest-contact-sheet__header p {
+  margin: 0;
+  color: rgba(244, 237, 223, 0.64);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body);
+  line-height: 1.4;
+}
+
+.vanara-guest-contact-sheet__header p strong {
+  color: rgba(250, 247, 238, 0.94);
+  font-weight: var(--vc-weight-semibold);
+}
+
+.vanara-guest-contact-sheet__actions {
+  display: grid;
+  gap: var(--vc-space-3);
+}
+
+.vanara-guest-contact-sheet__action {
+  width: 100%;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vc-space-4);
+  padding: var(--vc-space-3) var(--vc-space-4);
+  border: 1px solid rgba(235, 241, 233, 0.12);
+  border-radius: 20px;
+  color: var(--workspace-cream);
+  background: rgba(255, 255, 255, 0.055);
+  text-align: left;
+}
+
+.vanara-guest-contact-sheet__action-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--vc-space-1);
+}
+
+.vanara-guest-contact-sheet__action-icon,
+.vanara-guest-contact-sheet__header-icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.vanara-guest-contact-sheet__action-icon {
+  width: 44px;
+  height: 44px;
+}
+
+.vanara-guest-contact-sheet__header-icon {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+}
+
+.vanara-guest-contact-sheet__icon-img {
+  width: 24px;
+  height: 24px;
+  opacity: 0.76;
+}
+
+.vanara-guest-contact-sheet__action-copy strong {
+  color: rgba(250, 247, 238, 0.94);
+  font-family: var(--vc-font-display);
+  font-size: var(--vc-type-body);
+  font-weight: var(--vc-weight-regular);
+}
+
+.vanara-guest-contact-sheet__action-copy small {
+  display: block;
+  color: rgba(244, 237, 223, 0.58);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body-sm);
+}
+
+.vanara-guest-contact-sheet__action-arrow {
+  flex: 0 0 auto;
+  color: rgba(244, 237, 223, 0.38);
+  font-size: var(--vc-type-section-title);
+  line-height: 1;
+}
+
+.vanara-guest-contact-sheet__feedback {
+  margin: 0;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(210, 139, 126, 0.26);
+  border-radius: var(--vc-radius-lg);
+  color: rgba(255, 236, 232, 0.98) !important;
+  background: rgba(210, 139, 126, 0.12);
+}
+
+.vanara-guest-contact-sheet__footer {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  gap: var(--vc-space-2);
+  padding-bottom: max(0px, var(--vc-safe-bottom));
+}
+
+.vanara-guest-contact-sheet__footer button {
+  width: 100%;
+  max-width: none;
+}
+
+@keyframes vanara-guest-contact-sheet-in {
+  from {
+    opacity: 0.8;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .vanara-guest-contact-sheet__panel {
+    width: 100%;
+    max-height: 92dvh;
+    padding-inline: var(--vc-space-4);
+  }
+}

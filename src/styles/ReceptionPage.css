@@ -257,30 +257,6 @@
   letter-spacing: 0.08em;
 }
 
-.reception-contact-trigger {
-  width: var(--vc-touch-min);
-  height: var(--vc-touch-min);
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid rgba(237, 241, 232, 0.22);
-  border-radius: var(--vc-radius-pill);
-  color: rgba(247, 244, 238, 0.84);
-  background: rgba(247, 244, 238, 0.1);
-}
-
-.reception-address-book-icon {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  opacity: 0.82;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
 .reception-guest {
   gap: var(--vc-space-3);
 }
@@ -662,7 +638,6 @@
 }
 
 .reception-sheet__header span,
-.reception-contact-header > div > span,
 .passport-management header span,
 .passport-review header span,
 .reception-sheet__deposit > span {
@@ -676,7 +651,6 @@
 }
 
 .reception-sheet h2,
-.reception-contact-header h2,
 .passport-management header h3,
 .passport-review header h3 {
   margin: 0;
@@ -687,8 +661,7 @@
   line-height: 1.05;
 }
 
-.reception-sheet p,
-.reception-contact-header p {
+.reception-sheet p {
   margin: 0;
   color: rgba(244, 237, 223, 0.64);
   font-family: var(--vc-font-ui, var(--vc-font-sans));
@@ -696,15 +669,13 @@
   line-height: 1.4;
 }
 
-.reception-sheet p strong,
-.reception-contact-header p strong {
+.reception-sheet p strong {
   color: rgba(250, 247, 238, 0.94);
   font-weight: var(--vc-weight-semibold);
 }
 
 .reception-sheet__checks,
 .reception-details-checklist,
-.reception-contact-actions,
 .passport-management,
 .passport-review,
 .passport-management__list,
@@ -721,7 +692,6 @@
 }
 
 .reception-check-row,
-.reception-contact-action,
 .passport-management-card {
   min-height: 68px;
   display: flex;
@@ -743,8 +713,7 @@
   pointer-events: none;
 }
 
-.reception-check-row__content,
-.reception-contact-action__copy {
+.reception-check-row__content {
   display: grid;
   min-width: 0;
   gap: var(--vc-space-1);
@@ -756,9 +725,7 @@
   gap: var(--vc-space-3);
 }
 
-.reception-check-row__icon,
-.reception-contact-action__icon,
-.reception-contact-header__icon {
+.reception-check-row__icon {
   display: grid;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -766,16 +733,9 @@
   background: rgba(255, 255, 255, 0.07);
 }
 
-.reception-check-row__icon,
-.reception-contact-action__icon {
+.reception-check-row__icon {
   width: 44px;
   height: 44px;
-}
-
-.reception-contact-header__icon {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 auto;
 }
 
 .reception-sheet-icon {
@@ -785,7 +745,6 @@
 }
 
 .reception-check-row__label,
-.reception-contact-action__copy strong,
 .passport-management-card strong {
   color: rgba(250, 247, 238, 0.94);
   font-family: var(--vc-font-display);
@@ -794,7 +753,6 @@
 }
 
 .reception-check-row__label small,
-.reception-contact-action__copy small,
 .passport-management-card span,
 .passport-management-card dd {
   display: block;
@@ -868,39 +826,6 @@
   border-radius: var(--vc-radius-pill);
   color: rgba(232, 255, 236, 0.98);
   background: rgba(139, 196, 147, 0.15);
-}
-
-.reception-contact-header {
-  display: flex !important;
-  align-items: center;
-  gap: var(--vc-space-4);
-}
-
-.reception-contact-header > div {
-  display: grid;
-  min-width: 0;
-  gap: var(--vc-space-1);
-}
-
-.reception-contact-action {
-  width: 100%;
-  text-align: left;
-}
-
-.reception-contact-action__arrow {
-  flex: 0 0 auto;
-  color: rgba(244, 237, 223, 0.38);
-  font-size: var(--vc-type-section-title);
-  line-height: 1;
-}
-
-.reception-contact-feedback {
-  margin: 0;
-  padding: var(--vc-space-3);
-  border: 1px solid rgba(210, 139, 126, 0.26);
-  border-radius: var(--vc-radius-lg);
-  color: rgba(255, 236, 232, 0.98) !important;
-  background: rgba(210, 139, 126, 0.12);
 }
 
 .reception-details-facts {

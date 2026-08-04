@@ -2,18 +2,18 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import emailIcon from "../assets/img/envelope-light.svg";
 import depositIcon from "../assets/img/hand-coins-light.svg";
 import passportIcon from "../assets/img/identification-card-light.svg";
 import keysIcon from "../assets/img/key-light.svg";
 import roomInspectedIcon from "../assets/img/magnifying-glass-light.svg";
 import selectionBackground from "../assets/img/selection-background.svg";
-import whatsappIcon from "../assets/img/whatsapp-logo-light.svg";
 import { PageError } from "../components/AsyncState";
 import { PassportWorkflow } from "../components/passport/PassportWorkflow";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { RoomIcon, UserIcon } from "../components/OperationsIcons";
 import VanaraDataGrid from "../components/vanara/VanaraDataGrid";
+import VanaraGuestContactSheet, { type VanaraGuestContact, type VanaraGuestContactFeedback } from "../components/vanara/VanaraGuestContactSheet";
+import VanaraGuestContactTrigger from "../components/vanara/VanaraGuestContactTrigger";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
@@ -26,7 +26,6 @@ import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
 type CleaningStatus = "clean" | "in_progress" | "dirty";
-type ContactFeedback = "email" | "phone" | null;
 type CompletionDraft = {
   passportRegistrationCompleted: boolean;
   depositCollected: boolean;
@@ -103,22 +102,6 @@ function stayDuration(arrival: string, departure: string): string {
   return `${nights} ${nights === 1 ? "night" : "nights"}`;
 }
 
-function normalizeWhatsappPhone(phone: string | null): string | null {
-  const raw = phone?.trim() ?? "";
-  if (!raw) return null;
-
-  let digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-
-  // Beds24 may contain Thai local numbers such as 0812345678.
-  // WhatsApp requires the international format without "+" or spaces.
-  if (digits.startsWith("0") && digits.length >= 9 && digits.length <= 10) {
-    digits = `66${digits.slice(1)}`;
-  }
-
-  return digits.length >= 7 ? digits : null;
-}
-
 function hasCompletionPermission(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
   return Boolean(user?.actionPermissions?.some((permission) => permission.action === "can_complete_checkin_checkout" && permission.allowed));
 }
@@ -133,6 +116,15 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   if (value.includes("trip")) return "Trip.com";
   if (value.includes("direct")) return "Direct";
   return stay.bookingSource || "Direct";
+}
+
+function receptionStayContact(stay: ReceptionStay): VanaraGuestContact {
+  return {
+    guestName: stay.guestName,
+    unitName: stay.roomName,
+    phone: stay.phone,
+    email: stay.email,
+  };
 }
 
 function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
@@ -180,20 +172,6 @@ function MaintenanceBadge({ stay }: { stay: ReceptionStay }) {
 
 function SheetIcon({ alt = "", src }: { alt?: string; src: string }) {
   return <img alt={alt} className="reception-sheet-icon" src={src} />;
-}
-
-function AddressBookIcon() {
-  return (
-    <svg aria-hidden="true" className="reception-address-book-icon" viewBox="0 0 24 24" focusable="false">
-      <path d="M7.25 4.25h8.5a2.5 2.5 0 0 1 2.5 2.5v10.5a2.5 2.5 0 0 1-2.5 2.5h-8.5a2.5 2.5 0 0 1-2.5-2.5V6.75a2.5 2.5 0 0 1 2.5-2.5Z" />
-      <path d="M8.75 8.25h6.5" />
-      <path d="M8.75 12h6.5" />
-      <path d="M8.75 15.75H13" />
-      <path d="M4.75 8h-1.5" />
-      <path d="M4.75 12h-1.5" />
-      <path d="M4.75 16h-1.5" />
-    </svg>
-  );
 }
 
 function useSheetScrollLock(active: boolean) {
@@ -356,7 +334,7 @@ function StayCard({
 }: {
   canComplete: boolean;
   isToday: boolean;
-  onContactRequest: (stay: ReceptionStay) => void;
+  onContactRequest: (contact: VanaraGuestContact) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
   onDetailsRequest: (stay: ReceptionStay) => void;
   queryKey: readonly ["reception", string];
@@ -364,6 +342,7 @@ function StayCard({
   type: ReceptionCardType;
 }) {
   const nationality = formatNationalityText(stay.nationality);
+  const contact = receptionStayContact(stay);
 
   return (
     <article className={`reception-card reception-card--${type} reception-booking-row`} onClick={() => onDetailsRequest(stay)}>
@@ -382,17 +361,13 @@ function StayCard({
               Report Issue
             </Link>
           )}
-          <button
-            aria-label={`Contact ${stay.guestName}`}
-            className="reception-contact-trigger"
+          <VanaraGuestContactTrigger
+            contact={contact}
             onClick={(event) => {
               event.stopPropagation();
-              onContactRequest(stay);
+              onContactRequest(contact);
             }}
-            type="button"
-          >
-            <AddressBookIcon />
-          </button>
+          />
         </div>
       </div>
 
@@ -504,7 +479,7 @@ function ReceptionSection({
   empty: string;
   isToday: boolean;
   items: ReceptionStay[];
-  onContactRequest: (stay: ReceptionStay) => void;
+  onContactRequest: (contact: VanaraGuestContact) => void;
   onCompletionRequest: (stay: ReceptionStay, type: ReceptionCardType) => void;
   onDetailsRequest: (stay: ReceptionStay) => void;
   queryKey: readonly ["reception", string];
@@ -781,139 +756,6 @@ function CompletionModal({
           open={passportWorkflowOpen}
         />
       )}
-    </div>
-  );
-}
-
-function ContactSheet({
-  feedback,
-  onCancel,
-  onFeedback,
-  stay,
-}: {
-  feedback: ContactFeedback;
-  onCancel: () => void;
-  onFeedback: (feedback: ContactFeedback) => void;
-  stay: ReceptionStay | null;
-}) {
-  useSheetScrollLock(Boolean(stay));
-
-  if (!stay) return null;
-
-  const whatsappPhone = normalizeWhatsappPhone(stay.phone);
-  const email = stay.email?.trim() || null;
-
-  function openWhatsapp() {
-    if (!whatsappPhone) {
-      onFeedback("phone");
-      return;
-    }
-
-    onFeedback(null);
-    window.open(
-      `https://wa.me/${whatsappPhone}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-  }
-
-  function openEmail() {
-    if (!email) {
-      onFeedback("email");
-      return;
-    }
-
-    onFeedback(null);
-    window.location.href = `mailto:${email}`;
-  }
-
-  return (
-    <div
-      aria-labelledby="reception-contact-title"
-      aria-modal="true"
-      className="reception-sheet reception-contact-sheet"
-      role="dialog"
-    >
-      <button
-        aria-label="Close contact options"
-        className="reception-sheet__scrim"
-        onClick={onCancel}
-        type="button"
-      />
-
-      <VanaraGlassSheet className="reception-sheet__panel reception-contact-sheet__panel">
-        <div className="reception-sheet__handle" />
-
-        <header className="reception-contact-header">
-          <span className="reception-contact-header__icon" aria-hidden="true">
-            <AddressBookIcon />
-          </span>
-
-          <div>
-            <span>Guest Contact</span>
-            <h2 id="reception-contact-title">Contact Guest</h2>
-            <p>
-              <strong>{stay.guestName}</strong>
-              <span aria-hidden="true"> · </span>
-              {stay.roomName}
-            </p>
-          </div>
-        </header>
-
-        <div className="reception-contact-actions">
-          <button
-            className="reception-contact-action reception-contact-action--primary"
-            onClick={openWhatsapp}
-            type="button"
-          >
-            <span className="reception-contact-action__icon">
-              <SheetIcon src={whatsappIcon} />
-            </span>
-
-            <span className="reception-contact-action__copy">
-              <strong>WhatsApp</strong>
-              <small>{whatsappPhone ? "Open guest conversation" : "Phone number unavailable"}</small>
-            </span>
-
-            <span aria-hidden="true" className="reception-contact-action__arrow">›</span>
-          </button>
-
-          <button
-            className="reception-contact-action"
-            onClick={openEmail}
-            type="button"
-          >
-            <span className="reception-contact-action__icon">
-              <SheetIcon src={emailIcon} />
-            </span>
-
-            <span className="reception-contact-action__copy">
-              <strong>Email</strong>
-              <small>{email ? email : "Email address unavailable"}</small>
-            </span>
-
-            <span aria-hidden="true" className="reception-contact-action__arrow">›</span>
-          </button>
-        </div>
-
-        {feedback === "phone" && (
-          <p className="reception-contact-feedback" role="status">
-            Phone number not available
-          </p>
-        )}
-
-        {feedback === "email" && (
-          <p className="reception-contact-feedback" role="status">
-            Email not available
-          </p>
-        )}
-
-        <div className="reception-sheet__actions reception-sheet__actions--single">
-          <button className="vc-secondary-action" onClick={onCancel} type="button">
-            Cancel
-          </button>
-        </div>
-      </VanaraGlassSheet>
     </div>
   );
 }
@@ -1396,8 +1238,8 @@ export default function ReceptionPage() {
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
   const [completionDraft, setCompletionDraft] = useState<CompletionDraft>(emptyCompletionDraft);
   const [completionError, setCompletionError] = useState<string | null>(null);
-  const [contactRequest, setContactRequest] = useState<ReceptionStay | null>(null);
-  const [contactFeedback, setContactFeedback] = useState<ContactFeedback>(null);
+  const [contactRequest, setContactRequest] = useState<VanaraGuestContact | null>(null);
+  const [contactFeedback, setContactFeedback] = useState<VanaraGuestContactFeedback>(null);
   const [detailsRequest, setDetailsRequest] = useState<ReceptionStay | null>(null);
   const queryKey = ["reception", selectedDate] as const;
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal) });
@@ -1482,14 +1324,14 @@ export default function ReceptionPage() {
         onDraftChange={setCompletionDraft}
         request={completionRequest}
       />
-      <ContactSheet
+      <VanaraGuestContactSheet
+        contact={contactRequest}
         feedback={contactFeedback}
         onCancel={() => {
           setContactRequest(null);
           setContactFeedback(null);
         }}
         onFeedback={setContactFeedback}
-        stay={contactRequest}
       />
       <BookingDetailsSheet
         onCancel={() => setDetailsRequest(null)}

@@ -4,6 +4,9 @@ import test from "node:test";
 
 const receptionPage = await readFile(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8");
 const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css", import.meta.url), "utf8");
+const guestContactTrigger = await readFile(new URL("../../src/components/vanara/VanaraGuestContactTrigger.tsx", import.meta.url), "utf8");
+const guestContactSheet = await readFile(new URL("../../src/components/vanara/VanaraGuestContactSheet.tsx", import.meta.url), "utf8");
+const guestContactCss = await readFile(new URL("../../src/styles/VanaraGuestContact.css", import.meta.url), "utf8");
 const passportWorkflow = await readFile(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportWorkflowState = await readFile(new URL("../../src/utils/passport-workflow-state.ts", import.meta.url), "utf8");
 const receptionService = await readFile(new URL("../../src/services/reception.service.ts", import.meta.url), "utf8");
@@ -26,16 +29,20 @@ test("booking details sheet renders as a fullscreen glass sheet", () => {
 });
 
 test("reception contact icon uses the current Design System color and centered trigger", () => {
-  assert.match(receptionPage, /function AddressBookIcon/);
-  assert.match(receptionPage, /<AddressBookIcon \/>/);
+  assert.match(receptionPage, /VanaraGuestContactTrigger/);
+  assert.match(receptionPage, /VanaraGuestContactSheet/);
+  assert.match(guestContactTrigger, /export function AddressBookIcon/);
+  assert.match(guestContactTrigger, /<AddressBookIcon \/>/);
+  assert.match(guestContactSheet, /<AddressBookIcon \/>/);
   assert.doesNotMatch(receptionPage, /addressBookIcon|address-book-light/);
-  assert.match(receptionCss, /\.reception-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
-  assert.match(receptionCss, /\.reception-address-book-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
+  assert.doesNotMatch(receptionCss, /reception-contact-trigger|reception-address-book-icon/);
 });
 
 test("booking cards open booking details without replacing existing contact and completion actions", () => {
   assert.match(receptionPage, /onDetailsRequest\(stay\)/);
-  assert.match(receptionPage, /event\.stopPropagation\(\);\s*onContactRequest\(stay\)/);
+  assert.match(receptionPage, /event\.stopPropagation\(\);\s*onContactRequest\(contact\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onRequest\(stay, type\)/);
 });
 
