@@ -446,6 +446,23 @@ test("messages imported, linked and unlinked records are persisted with cursor u
   assert.equal(db.syncRuns.at(-1)?.status, "success");
 });
 
+test("message import does not copy booking language into the guest message language", async () => {
+  const db = new FakeMessagesDB({
+    bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Booking.com", api_source: "Booking.com", language_code: "it" }],
+  });
+  const message = guestMessage("msg-language", 9001, "We will arrive from Milan to Bangkok at around 11:00 in the morning.");
+  delete message.language;
+  const { fetcher } = messagesFetcher([message]);
+
+  await syncMessages(env(db) as never, {
+    now: NOW,
+    requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
+  });
+
+  assert.equal(db.messages.length, 1);
+  assert.equal(db.messages[0]!.language, null);
+});
+
 test("duplicate provider messages are ignored by provider_message_id", async () => {
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Direct", api_source: "Direct", language_code: null }],

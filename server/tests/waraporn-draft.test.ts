@@ -5,9 +5,11 @@ import worker from "../src/index.ts";
 import { getPromptChecksum } from "../src/services/message-prompt.service.ts";
 import {
   DEFAULT_WARAPORN_VECTOR_STORE_ID,
+  generatePendingWarapornDrafts,
   generateWarapornDraft,
   OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
   OPENAI_WARAPORN_DRAFT_MODEL,
+  WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
   WARAPORN_REQUIRED_RETRIEVAL_FILENAMES,
 } from "../src/services/waraporn-draft.service.ts";
 
@@ -247,6 +249,7 @@ class FakeWarapornDB {
       return {
         results: this.messages
           .filter((message) => !this.drafts.some((draft) => draft.message_id === message.message_id && draft.status === "READY"))
+          .filter((message) => sql.includes("m.state <> 'FAILED'") ? message.state !== "FAILED" : true)
           .map((message) => ({ message_id: message.message_id }))
           .slice(0, Number(params[0])) as T[],
       };
@@ -343,28 +346,41 @@ function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status });
 }
 
-function openAiFetcher(outputText = READY_DRAFT_TEXT): { fetcher: typeof fetch; bodies: Array<Record<string, unknown>> } {
+function openAiFileSearchPayload(id: string, outputText: string, filenames: readonly string[]): Record<string, unknown> {
+  return {
+    id,
+    output_text: outputText,
+    output: [{
+      id: `fs-${id}`,
+      type: "file_search_call",
+      status: "completed",
+      queries: ["Waraporn retrieval"],
+      results: filenames.map((filename, index) => ({
+        file_id: `file-${index + 1}`,
+        filename,
+        score: 0.9,
+        text: `Retrieved ${filename}`,
+      })),
+    }],
+  };
+}
+
+function openAiFetcher(
+  outputText = READY_DRAFT_TEXT,
+  decisionFilenames: readonly string[] = [],
+  foundationFilenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
+): { fetcher: typeof fetch; bodies: Array<Record<string, unknown>> } {
   const bodies: Array<Record<string, unknown>> = [];
+  let calls = 0;
   return {
     bodies,
     fetcher: async (_input, init) => {
+      calls += 1;
       bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-      return jsonResponse(200, {
-        id: "resp-test-1",
-        output_text: outputText,
-        output: [{
-          id: "fs-test-1",
-          type: "file_search_call",
-          status: "completed",
-          queries: ["Waraporn character identity"],
-          results: WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.map((filename, index) => ({
-            file_id: `file-${index + 1}`,
-            filename,
-            score: 0.9,
-            text: `Retrieved ${filename}`,
-          })),
-        }],
-      });
+      const payload = calls === 1
+        ? openAiFileSearchPayload("resp-foundation", "FOUNDATION_RETRIEVAL_COMPLETE", foundationFilenames)
+        : openAiFileSearchPayload("resp-decision", outputText, decisionFilenames);
+      return jsonResponse(200, payload);
     },
   };
 }
@@ -373,6 +389,51 @@ function requestText(body: Record<string, unknown>): string {
   const input = body.input as Array<{ content: Array<{ text: string }> }>;
   return input[0]!.content.map((item) => item.text).join("\n");
 }
+
+test("Waraporn foundation retrieval is limited to the six permanent reasoning documents", async () => {
+  const db = new FakeWarapornDB();
+  const { fetcher, bodies } = openAiFetcher();
+
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.deepEqual([...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES], [
+    "Waraporn_Conversation_Composer.md",
+    "Vanara_Hospitality_Behaviour.md",
+    "Guest_Information_Relevance_Filter.md",
+    "Waraporn_Conversational_Instincts.md",
+    "Seasonal_Advices.md",
+    "Thai Holidays_TrafficLogics_Koh_Chang.md",
+  ]);
+
+  const foundationBody = bodies[0]!;
+  const text = requestText(foundationBody);
+  for (const filename of WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES) assert.match(text, new RegExp(filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(text, /MOBILITY_REASONING_CONTRACT_v1\.md/);
+  assert.doesNotMatch(text, /Bailan_MASTER\.md/);
+  assert.deepEqual(foundationBody.tools, [{
+    type: "file_search",
+    vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
+    max_num_results: WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.length,
+  }]);
+});
+
+test("Waraporn decision retrieval is delegated to the frozen prompt without backend filename rules", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.guest_message = "Is it safe to rent a scooter if we normally drive motorbikes?";
+  const { fetcher, bodies } = openAiFetcher(READY_DRAFT_TEXT, ["MOBILITY_REASONING_CONTRACT_v1.md"]);
+
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  const decisionText = requestText(bodies[1]!);
+  assert.doesNotMatch(decisionText, /CURRENT DECISION REQUIRED RETRIEVAL FILENAMES/);
+  assert.doesNotMatch(decisionText, /RETRIEVAL RETRY REQUIRED FILENAMES/);
+  assert.doesNotMatch(decisionText, /FOUNDATION RETRIEVAL VERIFIED FILENAMES/);
+  assert.equal(bodies[1]!.previous_response_id, "resp-foundation");
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [
+    ...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
+    "MOBILITY_REASONING_CONTRACT_v1.md",
+  ]);
+});
 
 test("message generates one draft and stores it with the frozen prompt checksum", async () => {
   const db = new FakeWarapornDB();
@@ -389,7 +450,7 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
   assert.equal(db.conversations[0]!.state, "DRAFT_READY");
-  assert.equal(bodies.length, 1);
+  assert.equal(bodies.length, 2);
 });
 
 test("Waraporn draft request attaches the Make vector store at Responses API level", async () => {
@@ -398,16 +459,28 @@ test("Waraporn draft request attaches the Make vector store at Responses API lev
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const body = bodies[0]!;
-  assert.equal(body.model, OPENAI_WARAPORN_DRAFT_MODEL);
-  assert.equal(body.store, true);
-  assert.deepEqual(body.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
-  assert.deepEqual(body.tools, [{
+  const foundationBody = bodies[0]!;
+  assert.equal(foundationBody.model, OPENAI_WARAPORN_DRAFT_MODEL);
+  assert.equal(foundationBody.store, true);
+  assert.deepEqual(foundationBody.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
+  assert.deepEqual(foundationBody.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: 50,
+    max_num_results: WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.length,
   }]);
-  assert.equal(body.tool_choice, "required");
+  assert.equal(foundationBody.tool_choice, "required");
+
+  const decisionBody = bodies[1]!;
+  assert.equal(decisionBody.model, OPENAI_WARAPORN_DRAFT_MODEL);
+  assert.equal(decisionBody.previous_response_id, "resp-foundation");
+  assert.equal(decisionBody.store, true);
+  assert.deepEqual(decisionBody.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
+  assert.deepEqual(decisionBody.tools, [{
+    type: "file_search",
+    vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
+    max_num_results: 10,
+  }]);
+  assert.equal(decisionBody.tool_choice, "required");
 });
 
 test("Waraporn draft request carries the complete verified runtime envelope", async () => {
@@ -417,7 +490,7 @@ test("Waraporn draft request carries the complete verified runtime envelope", as
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const text = requestText(bodies[0]!);
+  const text = requestText(bodies[1]!);
   assert.match(text, /GUEST FIRST NAME\s+Daniel/);
   assert.match(text, /CHECK-IN DATE\s+2026-12-28/);
   assert.match(text, /CHECK-OUT DATE\s+2027-01-01/);
@@ -436,12 +509,25 @@ test("Waraporn draft request carries the complete verified runtime envelope", as
   assert.match(text, /VERIFIED AVAILABILITY AND PRICES STATUS\s+USED/);
   assert.match(text, /Beds24 verified commercial cache/);
   assert.match(text, /Bungalow: 1\/1 available/);
-  for (const filename of WARAPORN_REQUIRED_RETRIEVAL_FILENAMES) assert.match(text, new RegExp(filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-
   const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
   assert.equal(storedContext.currentBangkokDate, "2026-08-04");
   assert.equal(storedContext.travelPhase, "pre-arrival");
   assert.equal(storedContext.availabilityPricesStatus, "USED");
+});
+
+test("Waraporn reply language follows the current guest message, not booking language", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.language = "it";
+  db.bookings[0]!.language_code = "it";
+  db.messages[0]!.guest_message = "We will arrive from Milan to Bangkok at around 11:00 in the morning. We are 2 people.";
+  const { fetcher, bodies } = openAiFetcher();
+
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  const text = requestText(bodies[1]!);
+  assert.match(text, /GUEST LANGUAGE\s+en/);
+  const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
+  assert.equal(storedContext.language, "en");
 });
 
 test("availability and prices context is explicit when not applicable", async () => {
@@ -450,44 +536,32 @@ test("availability and prices context is explicit when not applicable", async ()
 
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
-  const text = requestText(bodies[0]!);
+  const text = requestText(bodies[1]!);
   assert.match(text, /VERIFIED AVAILABILITY AND PRICES STATUS\s+NOT_APPLICABLE/);
   assert.match(text, /Not applicable to the current guest message\./);
 });
 
-test("missing mandatory file search retrieval prevents a READY draft", async () => {
+test("missing foundation retrieval prevents a READY draft", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
   const fetcher: typeof fetch = async (_input, init) => {
     calls += 1;
     assert.deepEqual((JSON.parse(String(init.body)) as Record<string, unknown>).include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
     return jsonResponse(200, {
-      id: "resp-test-missing-retrieval",
-      output_text: READY_DRAFT_TEXT,
-      output: [{
-        id: "fs-test-1",
-        type: "file_search_call",
-        status: "completed",
-        results: [{
-          file_id: "file-other",
-          filename: "Other_File.md",
-          score: 0.5,
-          text: "Wrong file",
-        }],
-      }],
+      ...openAiFileSearchPayload("resp-test-missing-retrieval", "FOUNDATION_RETRIEVAL_COMPLETE", ["Other_File.md"]),
     });
   };
 
   await assert.rejects(
     generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
-    /retrieval verification failed/i,
+    /foundation retrieval verification failed/i,
   );
   assert.equal(db.drafts.length, 0);
   assert.equal(db.messages[0]!.state, "ASSOCIATED");
   assert.equal(calls, 3);
 });
 
-test("missing mandatory retrieval is retried with exact filenames before saving READY", async () => {
+test("missing foundation retrieval is retried with exact filenames before saving READY", async () => {
   const db = new FakeWarapornDB();
   const bodies: Array<Record<string, unknown>> = [];
   let calls = 0;
@@ -496,35 +570,29 @@ test("missing mandatory retrieval is retried with exact filenames before saving 
     bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
     const filenames = calls === 1
       ? WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.slice(0, 2)
-      : [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES];
+      : calls === 2
+        ? [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]
+        : [];
 
-    return jsonResponse(200, {
-      id: `resp-test-retry-${calls}`,
-      output_text: READY_DRAFT_TEXT,
-      output: [{
-        id: `fs-test-retry-${calls}`,
-        type: "file_search_call",
-        status: "completed",
-        results: filenames.map((filename, index) => ({
-          file_id: `file-${index + 1}`,
-          filename,
-          score: 0.9,
-          text: `Retrieved ${filename}`,
-        })),
-      }],
-    });
+    return jsonResponse(200, openAiFileSearchPayload(
+      `resp-test-retry-${calls}`,
+      calls === 3 ? READY_DRAFT_TEXT : "FOUNDATION_RETRIEVAL_COMPLETE",
+      filenames,
+    ));
   };
 
   const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
   assert.equal(draft.state, "READY");
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.equal(db.drafts.length, 1);
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_REQUIRED_RETRIEVAL_FILENAMES]);
   const retryText = requestText(bodies[1]!);
-  assert.match(retryText, /RETRIEVAL RETRY REQUIRED FILENAMES/);
+  assert.match(retryText, /FOUNDATION FILES TO RETRIEVE/);
   assert.match(retryText, /Guest_Information_Relevance_Filter\.md/);
   assert.match(retryText, /Waraporn_Conversational_Instincts\.md/);
+  assert.equal(bodies[1]!.previous_response_id, "resp-test-retry-1");
+  assert.equal(bodies[2]!.previous_response_id, "resp-test-retry-2");
 });
 
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {
@@ -537,7 +605,25 @@ test("second generate call reuses an existing READY draft without calling OpenAI
 
   assert.equal(first.draftId, replay.draftId);
   assert.equal(db.drafts.length, 1);
-  assert.equal(bodies.length, 1);
+  assert.equal(bodies.length, 2);
+});
+
+test("pending Waraporn generation ignores terminal failed messages without calling OpenAI", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.state = "FAILED";
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(500, { error: { message: "should not be called" } });
+  };
+
+  const result = await generatePendingWarapornDrafts(env(db, fetcher) as never, { now: NOW });
+
+  assert.equal(result.attempted, 0);
+  assert.equal(result.generated, 0);
+  assert.equal(result.reused, 0);
+  assert.equal(result.failed, 0);
+  assert.equal(calls, 0);
 });
 
 test("OpenAI failure is handled without storing a draft", async () => {
@@ -600,7 +686,7 @@ test("POST /api/messages/:messageId/generate creates and replays a READY draft",
   assert.equal(first.status, 200);
   assert.equal(replay.status, 200);
   assert.equal(db.drafts.length, 1);
-  assert.equal(bodies.length, 1);
+  assert.equal(bodies.length, 2);
   const firstBody = await first.json() as { data: { draftId: string; state: string } };
   const replayBody = await replay.json() as { data: { draftId: string; state: string } };
   assert.equal(firstBody.data.draftId, replayBody.data.draftId);

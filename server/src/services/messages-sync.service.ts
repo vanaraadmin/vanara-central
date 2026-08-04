@@ -388,7 +388,7 @@ async function insertMessage(
 ): Promise<"inserted" | "duplicate"> {
   const associationState: MessageAssociationState = booking ? "LINKED" : "UNLINKED";
   const channel = normalizeChannel(booking?.channel ?? booking?.api_source ?? message.channel);
-  const language = message.language ?? text(booking?.language_code);
+  const language = message.language;
   const state = booking ? "ASSOCIATED" : "UNLINKED";
   const result = await env.DB.prepare(`
     INSERT INTO messages (

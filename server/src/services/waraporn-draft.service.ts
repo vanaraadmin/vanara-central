@@ -57,15 +57,39 @@ export const OPENAI_WARAPORN_DRAFT_MODEL = "gpt-5.5";
 export const OPENAI_WARAPORN_DRAFT_TIMEOUT_MS = 60_000;
 export const DEFAULT_WARAPORN_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 export const OPENAI_RESPONSES_FILE_SEARCH_INCLUDE = ["file_search_call.results"] as const;
-export const WARAPORN_REQUIRED_RETRIEVAL_FILENAMES = [
+export const WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES = [
   "Waraporn_Conversation_Composer.md",
   "Vanara_Hospitality_Behaviour.md",
   "Guest_Information_Relevance_Filter.md",
   "Waraporn_Conversational_Instincts.md",
+  "Seasonal_Advices.md",
+  "Thai Holidays_TrafficLogics_Koh_Chang.md",
 ] as const;
+export const WARAPORN_REQUIRED_RETRIEVAL_FILENAMES = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES;
+const WARAPORN_FOUNDATION_RETRIEVAL_FILENAME_SET = new Set<string>(WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES);
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const WARAPORN_FILE_SEARCH_MAX_RESULTS = 50;
+const WARAPORN_DECISION_FILE_SEARCH_MAX_RESULTS = 10;
 const WARAPORN_RETRIEVAL_MAX_ATTEMPTS = 3;
+
+interface RetrievedFileSearchResult {
+  filename: string;
+  text: string | null;
+  score: number | null;
+}
+
+interface OpenAiResponsesResult {
+  text: string;
+  responseId: string | null;
+  retrievalFilenames: string[];
+  retrievalResults: RetrievedFileSearchResult[];
+  fileSearchCompleted: boolean;
+}
+
+interface FoundationRetrievalResult {
+  filenames: string[];
+  results: RetrievedFileSearchResult[];
+  responseId: string;
+}
 
 export class WarapornDraftError extends Error {
   constructor(
@@ -218,16 +242,101 @@ function retrievalFilenamesFrom(response: unknown): string[] {
   return [...new Set(filenames)];
 }
 
-function missingRequiredRetrievalFilenames(filenames: string[]): string[] {
-  const found = new Set(filenames);
-  return WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.filter((filename) => !found.has(filename));
+function pushUniqueFilename(target: string[], filename: string): void {
+  if (!target.includes(filename)) target.push(filename);
+}
+
+function isFoundationFilename(filename: string): boolean {
+  return WARAPORN_FOUNDATION_RETRIEVAL_FILENAME_SET.has(filename);
+}
+
+function retrievedFoundationFilenameSet(filenames: readonly string[]): Set<string> {
+  return new Set(filenames.filter(isFoundationFilename));
+}
+
+function missingFoundationRetrievalFilenames(filenames: readonly string[]): string[] {
+  const found = retrievedFoundationFilenameSet(filenames);
+  return WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.filter((filename) => !found.has(filename));
+}
+
+function fileSearchCompletedFrom(response: unknown): boolean {
+  if (!isRecord(response) || !Array.isArray(response.output)) return false;
+  return response.output.some((outputItem) => {
+    return isRecord(outputItem)
+      && outputItem.type === "file_search_call"
+      && (outputItem.status === undefined || outputItem.status === "completed");
+  });
+}
+
+function retrievalResultsFrom(response: unknown): RetrievedFileSearchResult[] {
+  if (!isRecord(response) || !Array.isArray(response.output)) return [];
+  const results: RetrievedFileSearchResult[] = [];
+
+  for (const outputItem of response.output) {
+    if (!isRecord(outputItem) || outputItem.type !== "file_search_call" || !Array.isArray(outputItem.results)) continue;
+    for (const result of outputItem.results) {
+      if (!isRecord(result) || typeof result.filename !== "string" || !result.filename.trim()) continue;
+      results.push({
+        filename: result.filename.trim(),
+        text: typeof result.text === "string" && result.text.trim() ? result.text.trim() : null,
+        score: typeof result.score === "number" && Number.isFinite(result.score) ? result.score : null,
+      });
+    }
+  }
+
+  return results;
+}
+
+function combinedRetrievalFilenames(foundation: FoundationRetrievalResult, decision: OpenAiResponsesResult): string[] {
+  const filenames: string[] = [];
+  for (const filename of foundation.filenames) pushUniqueFilename(filenames, filename);
+  for (const filename of decision.retrievalFilenames) pushUniqueFilename(filenames, filename);
+  return filenames;
+}
+
+export function buildWarapornFoundationRetrievalRequest(
+  storeId: string,
+  filenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
+  previousResponseId: string | null = null,
+): JsonRecord {
+  const request: JsonRecord = {
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    instructions: [
+      "Retrieve only the exact Vanara Waraporn foundation filenames requested by the user input.",
+      "Do not answer any guest question.",
+      "Do not retrieve destination, transport, room, activity, price, or area documents in this phase.",
+      "Return FOUNDATION_RETRIEVAL_COMPLETE after the file search call.",
+    ].join("\n"),
+    input: [{
+      role: "user",
+      content: [
+        ...inputPair("FOUNDATION FILES TO RETRIEVE", filenames.join("\n")),
+        ...inputPair("RETRIEVAL SCOPE", "Foundation contracts only. No decision-specific knowledge."),
+      ],
+    }],
+    include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
+    tools: [{
+      type: "file_search",
+      vector_store_ids: [storeId],
+      max_num_results: Math.max(filenames.length, 1),
+    }],
+    tool_choice: "required",
+    text: {
+      format: {
+        type: "text",
+      },
+    },
+    store: true,
+  };
+  if (previousResponseId) request.previous_response_id = previousResponseId;
+  return request;
 }
 
 export function buildWarapornResponsesRequest(
   promptText: string,
   context: VerifiedMessageContext,
   storeId: string,
-  retrievalFocusFilenames: readonly string[] = [],
+  foundation: FoundationRetrievalResult,
 ): JsonRecord {
   const content = [
     ...inputPair("GUEST FIRST NAME", context.guestFirstName),
@@ -249,21 +358,12 @@ export function buildWarapornResponsesRequest(
     ...inputPair("ROOM SUMMARY", context.roomSummary),
     ...inputPair("VERIFIED AVAILABILITY AND PRICES STATUS", context.availabilityPricesStatus),
     ...inputPair("VERIFIED AVAILABILITY AND PRICES", context.availabilityPricesContext),
-    ...inputPair("MANDATORY CHARACTER RETRIEVAL FILENAMES", WARAPORN_REQUIRED_RETRIEVAL_FILENAMES.join("\n")),
   ];
-
-  if (retrievalFocusFilenames.length > 0) {
-    content.push(
-      ...inputPair(
-        "RETRIEVAL RETRY REQUIRED FILENAMES",
-        `Search again by these exact filenames before composing:\n${retrievalFocusFilenames.join("\n")}`,
-      ),
-    );
-  }
 
   return {
     model: OPENAI_WARAPORN_DRAFT_MODEL,
     instructions: promptText,
+    previous_response_id: foundation.responseId,
     input: [{
       role: "user",
       content,
@@ -272,7 +372,7 @@ export function buildWarapornResponsesRequest(
     tools: [{
       type: "file_search",
       vector_store_ids: [storeId],
-      max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
+      max_num_results: WARAPORN_DECISION_FILE_SEARCH_MAX_RESULTS,
     }],
     tool_choice: "required",
     text: {
@@ -284,27 +384,90 @@ export function buildWarapornResponsesRequest(
   };
 }
 
+async function retrieveWarapornFoundation(
+  env: WarapornDraftBindings,
+  storeId: string,
+  options: GenerateWarapornDraftOptions,
+): Promise<FoundationRetrievalResult> {
+  let missing: string[] = [...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES];
+  const retrievedFilenames: string[] = [];
+  const retrievedResults: RetrievedFileSearchResult[] = [];
+  let previousResponseId: string | null = null;
+
+  for (let attempt = 1; attempt <= WARAPORN_RETRIEVAL_MAX_ATTEMPTS; attempt += 1) {
+    const requestBody = buildWarapornFoundationRetrievalRequest(storeId, missing, previousResponseId);
+    const generated = await callOpenAiResponses(env, requestBody, options);
+
+    if (!generated.fileSearchCompleted) {
+      throw new WarapornDraftError(
+        "Waraporn foundation retrieval did not complete.",
+        "retrieval_verification_failed",
+        502,
+      );
+    }
+    if (!generated.responseId) {
+      throw new WarapornDraftError(
+        "OpenAI foundation retrieval response did not include a response id.",
+        "openai_invalid_response",
+        502,
+      );
+    }
+    previousResponseId = generated.responseId;
+
+    for (const filename of generated.retrievalFilenames) {
+      if (isFoundationFilename(filename)) {
+        pushUniqueFilename(retrievedFilenames, filename);
+      }
+    }
+    for (const result of generated.retrievalResults) {
+      if (isFoundationFilename(result.filename)) {
+        retrievedResults.push(result);
+      }
+    }
+
+    missing = missingFoundationRetrievalFilenames(retrievedFilenames);
+    if (missing.length === 0) {
+      return {
+        filenames: [...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES],
+        results: retrievedResults,
+        responseId: previousResponseId,
+      };
+    }
+  }
+
+  throw new WarapornDraftError(
+    `Waraporn foundation retrieval verification failed. Missing: ${missing.join(", ")}`,
+    "retrieval_verification_failed",
+    502,
+  );
+}
+
 async function callOpenAiResponsesWithRetrievalVerification(
   env: WarapornDraftBindings,
   promptText: string,
   context: VerifiedMessageContext,
   storeId: string,
   options: GenerateWarapornDraftOptions,
-): Promise<{ text: string; responseId: string | null; retrievalFilenames: string[] }> {
-  let missing: string[] = [];
+): Promise<{ text: string; responseId: string | null; retrievalFilenames: string[]; foundationFilenames: string[]; decisionFilenames: string[] }> {
+  const foundation = await retrieveWarapornFoundation(env, storeId, options);
+  const requestBody = buildWarapornResponsesRequest(promptText, context, storeId, foundation);
+  const decision = await callOpenAiResponses(env, requestBody, options);
 
-  for (let attempt = 1; attempt <= WARAPORN_RETRIEVAL_MAX_ATTEMPTS; attempt += 1) {
-    const requestBody = buildWarapornResponsesRequest(promptText, context, storeId, missing);
-    const generated = await callOpenAiResponses(env, requestBody, options);
-    missing = missingRequiredRetrievalFilenames(generated.retrievalFilenames);
-    if (missing.length === 0) return generated;
+  if (!decision.fileSearchCompleted) {
+    throw new WarapornDraftError(
+      "Waraporn decision retrieval did not complete.",
+      "retrieval_verification_failed",
+      502,
+    );
   }
 
-  throw new WarapornDraftError(
-    `Waraporn retrieval verification failed. Missing: ${missing.join(", ")}`,
-    "retrieval_verification_failed",
-    502,
-  );
+  return {
+    text: decision.text,
+    responseId: decision.responseId,
+    foundationFilenames: foundation.filenames,
+    decisionFilenames: decision.retrievalFilenames,
+    retrievalFilenames: combinedRetrievalFilenames(foundation, decision),
+  };
 }
 
 function toDraft(row: DraftRow): Draft {
@@ -358,7 +521,7 @@ async function callOpenAiResponses(
   env: WarapornDraftBindings,
   requestBody: JsonRecord,
   options: GenerateWarapornDraftOptions,
-): Promise<{ text: string; responseId: string | null; retrievalFilenames: string[] }> {
+): Promise<OpenAiResponsesResult> {
   const apiKey = clean(env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new WarapornDraftError("OPENAI_API_KEY is missing.", "openai_request_failed", 502);
@@ -397,6 +560,8 @@ async function callOpenAiResponses(
     text: outputTextFrom(payload),
     responseId: openAiResponseId(payload),
     retrievalFilenames: retrievalFilenamesFrom(payload),
+    retrievalResults: retrievalResultsFrom(payload),
+    fileSearchCompleted: fileSearchCompletedFrom(payload),
   };
 }
 
@@ -494,6 +659,7 @@ export async function generatePendingWarapornDrafts(
       ON d.message_id = m.message_id
       AND d.status = 'READY'
     WHERE d.message_draft_id IS NULL
+      AND m.state <> 'FAILED'
     ORDER BY m.received_at ASC, m.message_id ASC
     LIMIT ?
   `).bind(limit).all<MessageDraftTargetRow>();

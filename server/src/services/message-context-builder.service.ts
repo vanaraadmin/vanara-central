@@ -52,6 +52,63 @@ function clean(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function countMatches(text: string, patterns: RegExp[]): number {
+  return patterns.reduce((total, pattern) => total + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function inferCurrentMessageLanguage(message: string): string | null {
+  const text = message.toLowerCase();
+  const englishScore = countMatches(text, [
+    /\bwe\b/,
+    /\byou\b/,
+    /\byour\b/,
+    /\bwill\b/,
+    /\bwould\b/,
+    /\balso\b/,
+    /\blike\b/,
+    /\barrive\b/,
+    /\bfrom\b/,
+    /\baround\b/,
+    /\bmorning\b/,
+    /\bpeople\b/,
+    /\bstay\b/,
+    /\bwhat\b/,
+    /\bwhen\b/,
+    /\bwhere\b/,
+    /\bhow\b/,
+    /\brecommend\b/,
+    /\bsafe\b/,
+  ]);
+  const italianScore = countMatches(text, [
+    /\bnoi\b/,
+    /\bvorremmo\b/,
+    /\barriviamo\b/,
+    /\barriveremo\b/,
+    /\bpartiamo\b/,
+    /\bsiamo\b/,
+    /\bpersone\b/,
+    /\bmattina\b/,
+    /\bsera\b/,
+    /\bsoggiorno\b/,
+    /\bconsigli\b/,
+    /\bsicuro\b/,
+    /\bpossiamo\b/,
+    /\bquanto\b/,
+    /\bdove\b/,
+    /\bcome\b/,
+  ]);
+
+  if (englishScore >= 2 && englishScore > italianScore) return "en";
+  if (italianScore >= 2 && italianScore > englishScore) return "it";
+  return null;
+}
+
+function replyLanguageFrom(row: Pick<MessageContextRow, "guest_message" | "language" | "booking_language_code">): string | null {
+  return inferCurrentMessageLanguage(row.guest_message)
+    ?? clean(row.language)
+    ?? clean(row.booking_language_code);
+}
+
 function firstNameFrom(row: Pick<MessageContextRow, "first_name" | "guest_name">): string | null {
   const explicit = clean(row.first_name);
   if (explicit) return explicit;
@@ -302,7 +359,7 @@ export async function buildMessageContext(
     accommodationType: accommodationTypeFrom(row),
     physicalUnit: clean(row.unit_name),
     roomSummary: roomSummaryFrom(row),
-    language: clean(row.language) ?? clean(row.booking_language_code),
+    language: replyLanguageFrom(row),
     provider: row.provider,
     channel: row.channel,
     currentBangkokDate: bangkok.date,
