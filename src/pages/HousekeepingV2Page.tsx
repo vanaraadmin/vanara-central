@@ -185,9 +185,6 @@ function WaterDeliveryControl({
       onClick={() => completeWaterRefill(action, card)}
       type="button"
     >
-      <span className="housekeeping-v2-water-delivery__check" aria-hidden="true">
-        {delivered ? <CheckIcon /> : null}
-      </span>
       <span>{delivered ? "Delivered" : action.isPending ? "Saving" : "Mark Delivered"}</span>
     </button>
   );
@@ -247,7 +244,6 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
     ) : null,
     card.taskType === "WATER_REFILL" && card.capabilities.canComplete ? (
       <button className="vc-primary-action" disabled={action.isPending} key="water-complete" onClick={() => completeWaterRefill(action, card)} type="button">
-        <CheckIcon />
         <span>Mark Delivered</span>
       </button>
     ) : null,

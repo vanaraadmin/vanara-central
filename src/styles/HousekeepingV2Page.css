@@ -197,13 +197,12 @@
 }
 
 .housekeeping-v2-water-delivery {
-  min-width: 44px;
+  min-width: min(100%, 148px);
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--vc-space-2);
-  padding: 0 var(--vc-space-3);
+  padding: 0 var(--vc-space-4);
   border: 1px solid rgba(235, 241, 233, 0.18);
   border-radius: var(--vc-radius-pill);
   color: rgba(247, 244, 238, 0.84);
@@ -227,31 +226,10 @@
   outline-offset: 3px;
 }
 
-.housekeeping-v2-water-delivery__check {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid rgba(235, 241, 233, 0.18);
-  border-radius: var(--vc-radius-pill);
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.housekeeping-v2-water-delivery__check svg {
-  width: 14px;
-  height: 14px;
-}
-
 .housekeeping-v2-water-delivery.is-delivered {
   border-color: rgba(139, 196, 147, 0.32);
   color: rgba(232, 255, 236, 0.98);
   background: rgba(139, 196, 147, 0.15);
-}
-
-.housekeeping-v2-water-delivery.is-delivered .housekeeping-v2-water-delivery__check {
-  border-color: rgba(139, 196, 147, 0.36);
-  background: rgba(139, 196, 147, 0.22);
 }
 
 .housekeeping-v2-task-expanded {

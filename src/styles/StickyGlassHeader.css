@@ -81,6 +81,8 @@
 }
 
 .sticky-glass-nav-logo-slot {
+  position: relative;
+  isolation: isolate;
   grid-column: 1;
   width: 72px;
   height: 100%;
@@ -91,8 +93,26 @@
   pointer-events: none;
 }
 
+.sticky-glass-nav-logo-slot::before {
+  content: "";
+  position: absolute;
+  inset: 9px 7px 7px;
+  z-index: 0;
+  border-radius: 999px;
+  opacity: 0.28;
+  background:
+    radial-gradient(
+      ellipse at 50% 60%,
+      rgba(255, 252, 236, 0.92) 0%,
+      rgba(244, 237, 223, 0.42) 42%,
+      rgba(255, 255, 255, 0) 74%
+    );
+  filter: blur(14px);
+}
+
 .sticky-glass-nav-logo-slot img {
-  position: static;
+  position: relative;
+  z-index: 1;
   width: 56px;
   height: 56px;
   max-width: 56px;

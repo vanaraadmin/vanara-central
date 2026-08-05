@@ -242,6 +242,7 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.match(deliveryControl, /onClick=\{\(\) => completeWaterRefill\(action, card\)\}/);
   assert.match(deliveryControl, /action\.isPending \? "Saving" : "Mark Delivered"/);
   assert.match(deliveryControl, /delivered \? "Delivered"/);
+  assert.doesNotMatch(deliveryControl, /housekeeping-v2-water-delivery__check|<CheckIcon/);
   assert.match(page, /void queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
   assert.match(page, /This task changed\. The list is refreshing\./);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{/);

@@ -314,14 +314,12 @@
 }
 
 .recent-bookings__event-detail {
-  overflow: hidden;
   color: rgba(235, 230, 215, 0.58);
   font-size: 0.67rem;
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .recent-bookings__event-time {

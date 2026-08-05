@@ -141,8 +141,10 @@ test("Floating navigation appears calmly without hero logo morphing", () => {
   assert.match(stickyGlassCss, /transform 200ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
   assert.match(stickyGlassCss, /\.sticky-glass-nav-home/);
   assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*radial-gradient/);
-  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*opacity:\s*0\.12/);
-  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*filter:\s*blur\(24px\)/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::before[\s\S]*opacity:\s*0\.34/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__logo-slot::after[\s\S]*filter:\s*blur\(16px\)/);
+  assert.match(stickyGlassCss, /\.sticky-glass-nav-logo-slot::before[\s\S]*radial-gradient/);
+  assert.match(stickyGlassCss, /\.sticky-glass-nav-logo-slot::before[\s\S]*filter:\s*blur\(14px\)/);
   assert.doesNotMatch(workspaceShellCss, /green glow|neon|pulse|animation:\s*.*logo/i);
 });
 

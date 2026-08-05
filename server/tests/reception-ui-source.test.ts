@@ -63,6 +63,20 @@ test("check-in and check-out cards render nationality text without flags", async
   assert.doesNotMatch(receptionCss, /\.reception-nationality-flag/);
 });
 
+test("Reception displays Direct source as Front Desk without changing the source contract", () => {
+  assert.match(receptionPage, /function bookingSourceLabel\(stay: ReceptionStay\): string/);
+  assert.match(receptionPage, /value\.includes\("direct"\)\) return "Front Desk"/);
+  assert.match(receptionPage, /return stay\.bookingSource \|\| "Front Desk"/);
+  assert.doesNotMatch(receptionPage, /return "Direct"|return stay\.bookingSource \|\| "Direct"/);
+});
+
+test("Reception suppresses floating navigation while operational overlays are open", () => {
+  assert.match(receptionPage, /suppressStickyNavigation=\{Boolean\(completionRequest \|\| contactRequest \|\| detailsRequest\)\}/);
+  assert.match(receptionPage, /<CompletionModal/);
+  assert.match(receptionPage, /<VanaraGuestContactSheet/);
+  assert.match(receptionPage, /<BookingDetailsSheet/);
+});
+
 test("check-in cards expose housekeeping-only cleaning labels", () => {
   assert.match(receptionPage, /ROOM CLEAN/);
   assert.match(receptionPage, /ROOM DIRTY/);

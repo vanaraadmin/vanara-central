@@ -9,7 +9,8 @@
 }
 
 .messages-inbox,
-.messages-context {
+.messages-context,
+.messages-selection-empty {
   display: grid;
   align-content: start;
   gap: var(--vc-space-4);
@@ -26,6 +27,10 @@
   gap: var(--vc-space-4);
   min-height: min(70dvh, 720px);
   padding: var(--vc-space-4);
+}
+
+.messages-selection-empty {
+  min-height: min(52dvh, 520px);
 }
 
 .messages-search {
@@ -575,6 +580,16 @@
   font-weight: var(--vc-weight-regular);
 }
 
+.messages-empty__mark {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(244, 237, 223, 0.18);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(244, 237, 223, 0.2), transparent 62%),
+    rgba(244, 237, 223, 0.06);
+}
+
 .messages-skeleton {
   display: grid;
   gap: var(--vc-space-3);
@@ -634,6 +649,10 @@
   .messages-context {
     order: 3;
   }
+
+  .messages-selection-empty {
+    order: 2;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -649,15 +668,19 @@
   }
 
   .messages-conversation {
-    order: 1;
+    order: 2;
   }
 
   .messages-inbox {
-    order: 2;
+    order: 1;
   }
 
   .messages-context {
     order: 3;
+  }
+
+  .messages-selection-empty {
+    order: 2;
   }
 }
 

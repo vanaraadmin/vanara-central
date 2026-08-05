@@ -17,11 +17,13 @@ test("Booking Pulse keeps the approved shell and Staff Home placement", () => {
   assert.doesNotMatch(component, /GenericCard|DashboardCard|booking-pulse-card/);
 });
 
-test("Booking Pulse collapsed rows keep guest room source status and timing visible", () => {
+test("Booking Pulse collapsed rows keep guest source dates status and timing visible", () => {
   assert.match(component, /booking-pulse__guest/);
   assert.match(component, /event\.guestName/);
-  assert.match(component, /event\.unitName/);
-  assert.match(component, /event\.source/);
+  assert.match(component, /bookingSourceLabel\(event\.source\)/);
+  assert.match(component, /formatDate\(event\.arrivalDate\)/);
+  assert.match(component, /formatDate\(event\.departureDate\)/);
+  assert.match(component, /const detail = \[source, stayDates\]/);
   assert.match(component, /formatArrival\(event\.arrivalDate\)/);
   assert.match(component, /formatRelativeEventTime\(event\.eventTimestamp\)/);
   assert.match(component, /EVENT_LABELS\[event\.eventType\]/);
@@ -79,6 +81,15 @@ test("Booking Pulse expanded details keep only the compact informational set", (
   }
   assert.match(component, /guestCount/);
   assert.match(component, /guest count/i);
+});
+
+test("Booking Pulse compact preview excludes room names and maps Direct to Front Desk", () => {
+  const row = component.match(/function BookingEventRow[\s\S]*?function RecentBookingsEmpty/)?.[0] ?? "";
+  assert.match(component, /function bookingSourceLabel/);
+  assert.match(component, /cleaned\.toLowerCase\(\) === "direct" \? "Front Desk" : cleaned/);
+  assert.match(row, /const stayDates = \[formatDate\(event\.arrivalDate\), formatDate\(event\.departureDate\)\]/);
+  assert.match(row, /const detail = \[source, stayDates\]/);
+  assert.doesNotMatch(row, /compactUnitLabel|event\.unitName/);
 });
 
 test("Booking Pulse booking value is gated by the server capability and rendered in THB", () => {

@@ -564,13 +564,18 @@ body :is(.vc-secondary-action, .vc-secondary-glass-action)[data-pressed="true"]:
 }
 
 .vc-summary-item__value {
+  margin: 0;
+  width: 100%;
   color: var(--vc-text-cream-strong);
   font-size: var(--vc-type-value);
+  font-variant-numeric: tabular-nums;
   font-weight: var(--vc-weight-semibold);
   line-height: 1;
+  text-align: center;
 }
 
 .vc-summary-item__label {
+  width: 100%;
   color: rgba(244, 237, 223, 0.7);
   font-family: var(--vc-font-ui, var(--vc-font-sans));
   font-size: var(--vc-type-utility-xs);
@@ -582,6 +587,7 @@ body :is(.vc-secondary-action, .vc-secondary-glass-action)[data-pressed="true"]:
 
 .vc-summary-item__unit {
   margin: 0;
+  width: 100%;
   color: rgba(244, 237, 223, 0.56);
   font-family: var(--vc-font-ui, var(--vc-font-sans));
   font-size: var(--vc-type-utility-xs);

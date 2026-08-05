@@ -114,8 +114,8 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   if (value.includes("agoda")) return "Agoda";
   if (value.includes("traveloka")) return "Traveloka";
   if (value.includes("trip")) return "Trip.com";
-  if (value.includes("direct")) return "Direct";
-  return stay.bookingSource || "Direct";
+  if (value.includes("direct")) return "Front Desk";
+  return stay.bookingSource || "Front Desk";
 }
 
 function receptionStayContact(stay: ReceptionStay): VanaraGuestContact {
@@ -1285,7 +1285,7 @@ export default function ReceptionPage() {
       title="Check-In / Out"
       workspace="reception"
       bodyClassName="reception-page"
-      suppressStickyNavigation={Boolean(contactRequest)}
+      suppressStickyNavigation={Boolean(completionRequest || contactRequest || detailsRequest)}
     >
       <div className="workspace-body-actions reception-date-actions">
         <button className="reception-today-chip vc-secondary-action" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">Today</button>

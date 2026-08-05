@@ -441,6 +441,12 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
   const page = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/messages.css", import.meta.url), "utf8");
 
+  assert.match(page, /return "";/);
+  assert.match(page, /enabled: Boolean\(activeConversationId\)/);
+  assert.match(page, /function ConversationSelectionEmpty/);
+  assert.match(page, /Select a conversation/);
+  assert.match(css, /\.messages-selection-empty/);
+  assert.match(css, /\.messages-inbox\s*\{[\s\S]*order:\s*1/);
   assert.match(page, /MessagesSkeleton/);
   assert.match(page, /messages-day-separator/);
   assert.match(page, /aria-current/);

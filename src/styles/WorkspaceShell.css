@@ -73,19 +73,35 @@
 .workspace-masthead__logo-slot::before {
   content: "";
   position: absolute;
-  inset: -18px;
+  inset: -22px -24px -18px;
   z-index: 0;
   pointer-events: none;
   border-radius: 999px;
-  opacity: 0.12;
+  opacity: 0.34;
   background:
     radial-gradient(
-      circle,
-      rgba(255, 255, 255, 0.92) 0%,
-      rgba(255, 255, 255, 0.42) 36%,
-      rgba(255, 255, 255, 0) 72%
+      ellipse at 50% 58%,
+      rgba(255, 252, 236, 0.95) 0%,
+      rgba(244, 237, 223, 0.58) 31%,
+      rgba(221, 201, 153, 0.2) 54%,
+      rgba(255, 255, 255, 0) 74%
     );
-  filter: blur(24px);
+  filter: blur(20px);
+}
+
+.workspace-masthead__logo-slot::after {
+  content: "";
+  position: absolute;
+  right: 7px;
+  bottom: 8px;
+  left: 7px;
+  z-index: 0;
+  height: 18px;
+  pointer-events: none;
+  border-radius: 999px;
+  opacity: 0.24;
+  background: rgba(255, 249, 226, 0.72);
+  filter: blur(16px);
 }
 
 .workspace-masthead__logo {

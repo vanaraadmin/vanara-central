@@ -115,6 +115,12 @@ function formatBookingValue(value?: number | null): string | null {
   return `${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })} THB`;
 }
 
+function bookingSourceLabel(value?: string | null): string | null {
+  const cleaned = value?.trim();
+  if (!cleaned) return null;
+  return cleaned.toLowerCase() === "direct" ? "Front Desk" : cleaned;
+}
+
 function safeDetailsId(eventId: string): string {
   return `booking-pulse-details-${eventId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
@@ -140,6 +146,7 @@ function BookingPulseDetails({
 }) {
   const bookingValue = canViewBookingValue ? formatBookingValue(item.totalPrice) : null;
   const roomQuantity = item.roomQuantity > 1 ? item.roomQuantity : null;
+  const source = bookingSourceLabel(item.source);
 
   return (
     <div
@@ -152,7 +159,7 @@ function BookingPulseDetails({
         <BookingPulseDetail label="Guest" value={item.guestName} />
         <BookingPulseDetail label="Room" value={item.unitName} />
         <BookingPulseDetail label="Room Quantity" value={roomQuantity} />
-        <BookingPulseDetail label="Source" value={item.source} />
+        <BookingPulseDetail label="Source" value={source} />
         <BookingPulseDetail label="Arrival" value={formatDate(item.arrivalDate)} />
         <BookingPulseDetail label="Departure" value={formatDate(item.departureDate)} />
         <BookingPulseDetail label="Stay" value={formatStay(item.stayNights)} />
@@ -177,7 +184,9 @@ function BookingEventRow({
   onToggle: () => void;
 }) {
   const tone = eventTone(event.eventType);
-  const detail = [event.compactUnitLabel || event.unitName, event.source].filter(Boolean).join(" / ");
+  const source = bookingSourceLabel(event.source);
+  const stayDates = [formatDate(event.arrivalDate), formatDate(event.departureDate)].filter(Boolean).join(" -> ");
+  const detail = [source, stayDates].filter(Boolean).join(" / ");
   const arrival = formatArrival(event.arrivalDate);
   const eventTime = formatRelativeEventTime(event.eventTimestamp);
   const timing = [arrival, eventTime].filter(Boolean).join(" / ");

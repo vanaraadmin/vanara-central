@@ -405,6 +405,18 @@ function ContextColumn({ context }: { context: GuestMessageBookingContext | null
   );
 }
 
+function ConversationSelectionEmpty() {
+  return (
+    <VanaraGlassRegion className="messages-selection-empty" ariaLabelledBy="messages-selection-empty-title">
+      <div className="messages-empty">
+        <span className="messages-empty__mark" aria-hidden="true" />
+        <h2 id="messages-selection-empty-title">Select a conversation</h2>
+        <p>Choose one inbox row to review the guest message and Waraporn draft.</p>
+      </div>
+    </VanaraGlassRegion>
+  );
+}
+
 export default function MessagesPage() {
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState("");
@@ -418,7 +430,7 @@ export default function MessagesPage() {
   const conversations = useMemo(() => inboxQuery.data?.conversations ?? [], [inboxQuery.data]);
   const activeConversationId = useMemo(() => {
     if (conversations.some((conversation) => conversation.conversationId === selectedConversationId)) return selectedConversationId;
-    return conversations[0]?.conversationId ?? "";
+    return "";
   }, [conversations, selectedConversationId]);
 
   const detailQuery = useQuery({
@@ -485,7 +497,7 @@ export default function MessagesPage() {
       wide
     >
       <div className="workspace-body-actions">
-        <span>{groupLabel(detailQuery.data?.conversation.group ?? "needsReply")}</span>
+        <span>{detailQuery.data ? groupLabel(detailQuery.data.conversation.group) : "Guest Messages"}</span>
         <button className="vc-secondary-action" type="button" onClick={retry}>
           Refresh
         </button>
@@ -501,14 +513,20 @@ export default function MessagesPage() {
           search={search}
         />
 
-        <ConversationColumn
-          actions={draftActions}
-          conversation={detailQuery.data?.timeline ?? []}
-          loading={detailQuery.isLoading}
-          onRetry={retry}
-        />
+        {activeConversationId ? (
+          <>
+            <ConversationColumn
+              actions={draftActions}
+              conversation={detailQuery.data?.timeline ?? []}
+              loading={detailQuery.isLoading}
+              onRetry={retry}
+            />
 
-        <ContextColumn context={detailQuery.data?.bookingContext ?? null} />
+            <ContextColumn context={detailQuery.data?.bookingContext ?? null} />
+          </>
+        ) : (
+          <ConversationSelectionEmpty />
+        )}
       </div>
     </WorkspaceShell>
   );
