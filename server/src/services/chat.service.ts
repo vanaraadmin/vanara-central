@@ -1,4 +1,5 @@
 import type { CurrentUser } from "./current-user.service.js";
+import { chatStickerById } from "./chat-stickers.service.js";
 
 export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
 export type ChatConversationKind = "GROUP" | "PRIVATE";
@@ -6,6 +7,7 @@ export type ChatLanguage = "en" | "th";
 
 export interface ChatBindings {
   DB: D1Database;
+  R2_STORAGE: R2Bucket;
 }
 
 export type CurrentChatUser = CurrentUser;
@@ -52,6 +54,14 @@ interface ChatMessageRow {
   reply_to_message_id?: number | null;
   reply_author_display_name?: string | null;
   reply_body?: string | null;
+  message_kind?: ChatMessageKind | null;
+  sticker_id?: string | null;
+  attachment_object_key?: string | null;
+  attachment_file_name?: string | null;
+  attachment_content_type?: string | null;
+  attachment_byte_size?: number | null;
+  attachment_expires_at?: string | null;
+  attachment_unavailable_at?: string | null;
   author_profile_photo_url?: string | null;
   created_at: string;
 }
@@ -114,6 +124,8 @@ export interface ChatAnnouncement {
 
 export type ChatReactionEmoji = "👍" | "😂" | "😍" | "🙏" | "👀" | "🔥";
 
+export type ChatMessageKind = "TEXT" | "STICKER" | "ATTACHMENT";
+
 export interface ChatMessageReaction {
   emoji: ChatReactionEmoji;
   count: number;
@@ -129,6 +141,7 @@ export interface ChatMessageReply {
 export interface ChatMessage {
   id: number;
   conversationId: string;
+  messageKind: ChatMessageKind;
   author: {
     id: string;
     displayName: string;
@@ -139,6 +152,8 @@ export interface ChatMessage {
   bodyLanguage: ChatLanguage;
   translatedBody: string | null;
   translatedLanguage: ChatLanguage | null;
+  stickerId: string | null;
+  attachment: ChatAttachment | null;
   replyTo: ChatMessageReply | null;
   reactions: ChatMessageReaction[];
   mentionUsernames: string[];
@@ -146,11 +161,34 @@ export interface ChatMessage {
 }
 
 export interface CreateChatMessageInput {
+  messageKind: ChatMessageKind;
   body: string;
   bodyLanguage?: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
   replyToMessageId?: number | null;
+  stickerId?: string | null;
+}
+
+export interface ChatAttachment {
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  expiresAt: string;
+  unavailableAt: string | null;
+  downloadUrl: string;
+  isImage: boolean;
+}
+
+export interface CreateChatAttachmentInput {
+  file: File;
+  replyToMessageId: number | null;
+}
+
+export interface ChatAttachmentDownload {
+  object: R2ObjectBody;
+  fileName: string;
+  contentType: string;
 }
 
 export interface CreateGroupChatInput {
@@ -172,6 +210,24 @@ export interface ChatUnreadSummary {
 }
 
 const MAIN_GROUP_CONVERSATION_ID = "general-operations";
+const CHAT_ATTACHMENT_RETENTION_DAYS = 45;
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+const BLOCKED_ATTACHMENT_EXTENSIONS = new Set(["exe", "bat", "cmd", "com", "js", "mjs", "vbs", "ps1", "sh", "html", "htm", "svg"]);
 
 function normalizeLanguage(value: unknown, fallback: ChatLanguage): ChatLanguage {
   return value === "th" || value === "en" ? value : fallback;
@@ -182,13 +238,17 @@ export function normalizeMessageInput(payload: unknown): CreateChatMessageInput 
     throw new Error("Message body is required.");
   }
 
-  const body = "body" in payload && typeof payload.body === "string" ? payload.body.trim() : "";
-  if (!body) {
-    throw new Error("Message body is required.");
+  const messageKind: ChatMessageKind = "messageKind" in payload && payload.messageKind === "STICKER" ? "STICKER" : "TEXT";
+  const stickerId = "stickerId" in payload && typeof payload.stickerId === "string" ? payload.stickerId.trim() : null;
+  const sticker = messageKind === "STICKER" && stickerId ? chatStickerById(stickerId) : null;
+  if (messageKind === "STICKER" && !sticker) {
+    throw new Error("Sticker is not supported.");
   }
-  if (body.length > 2000) {
-    throw new Error("Message body must be 2000 characters or less.");
-  }
+
+  const rawBody = "body" in payload && typeof payload.body === "string" ? payload.body.trim() : "";
+  const body = messageKind === "STICKER" ? `Sticker: ${sticker!.label}` : rawBody;
+  if (!body) throw new Error("Message body is required.");
+  if (body.length > 2000) throw new Error("Message body must be 2000 characters or less.");
 
   const translatedBody =
     "translatedBody" in payload && typeof payload.translatedBody === "string"
@@ -207,11 +267,30 @@ export function normalizeMessageInput(payload: unknown): CreateChatMessageInput 
   }
 
   return {
+    messageKind,
     body,
     bodyLanguage,
     translatedBody,
     translatedLanguage,
     replyToMessageId,
+    stickerId: messageKind === "STICKER" ? stickerId : null,
+  };
+}
+
+export function normalizeAttachmentReplyTarget(value: FormDataEntryValue | null): number | null {
+  if (value === null || typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("Reply target is invalid.");
+  return parsed;
+}
+
+export function normalizeChatAttachmentInput(formData: FormData): CreateChatAttachmentInput {
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("Attachment file is required.");
+  validateChatAttachmentFile(file);
+  return {
+    file,
+    replyToMessageId: normalizeAttachmentReplyTarget(formData.get("replyToMessageId")),
   };
 }
 
@@ -345,10 +424,30 @@ function previewText(value: string): string {
   return compact.length > 96 ? `${compact.slice(0, 93)}...` : compact;
 }
 
+function isImageContentType(value: string | null | undefined): boolean {
+  return Boolean(value?.startsWith("image/"));
+}
+
+function mapAttachment(row: ChatMessageRow): ChatAttachment | null {
+  if (!row.attachment_file_name || !row.attachment_content_type || !row.attachment_byte_size || !row.attachment_expires_at) {
+    return null;
+  }
+  return {
+    fileName: row.attachment_file_name,
+    contentType: row.attachment_content_type,
+    byteSize: row.attachment_byte_size,
+    expiresAt: row.attachment_expires_at,
+    unavailableAt: row.attachment_unavailable_at ?? null,
+    downloadUrl: `/api/chat/conversations/${row.conversation_id}/messages/${row.message_id}/attachment`,
+    isImage: isImageContentType(row.attachment_content_type),
+  };
+}
+
 function mapMessage(row: ChatMessageRow, reactions: ChatMessageReaction[] = []): ChatMessage {
   return {
     id: row.message_id,
     conversationId: row.conversation_id,
+    messageKind: row.message_kind ?? "TEXT",
     author: {
       id: row.author_id,
       displayName: row.author_display_name,
@@ -359,6 +458,8 @@ function mapMessage(row: ChatMessageRow, reactions: ChatMessageReaction[] = []):
     bodyLanguage: row.body_language,
     translatedBody: row.translated_body,
     translatedLanguage: row.translated_language,
+    stickerId: row.sticker_id ?? null,
+    attachment: mapAttachment(row),
     replyTo: row.reply_to_message_id
       ? {
         messageId: row.reply_to_message_id,
@@ -370,6 +471,40 @@ function mapMessage(row: ChatMessageRow, reactions: ChatMessageReaction[] = []):
     mentionUsernames: mentionedUsernames(row.body),
     createdAt: row.created_at,
   };
+}
+
+function fileExtension(fileName: string): string {
+  const match = fileName.toLowerCase().match(/\.([a-z0-9]{1,8})$/);
+  return match?.[1] ?? "";
+}
+
+function safeFileName(fileName: string): string {
+  return fileName.trim().replace(/[^\w .()[\]-]+/g, "_").replace(/\s+/g, " ").slice(0, 120) || "attachment";
+}
+
+function validateChatAttachmentFile(file: File): void {
+  if (file.size <= 0) throw new Error("Attachment file is empty.");
+  if (file.size > MAX_CHAT_ATTACHMENT_BYTES) throw new Error("Attachment file is too large.");
+  const extension = fileExtension(file.name);
+  if (BLOCKED_ATTACHMENT_EXTENSIONS.has(extension)) throw new Error("Attachment type is not supported.");
+  if (!ALLOWED_ATTACHMENT_TYPES.has(file.type)) throw new Error("Attachment type is not supported.");
+}
+
+function attachmentBody(file: File): string {
+  return `${isImageContentType(file.type) ? "Photo" : "File"}: ${safeFileName(file.name)}`;
+}
+
+function attachmentObjectKey(conversationId: string, file: File, now: Date): string {
+  const date = now.toISOString().slice(0, 10);
+  const extension = fileExtension(file.name);
+  const suffix = extension ? `.${extension}` : "";
+  return `chat/${date}/${conversationId}/${crypto.randomUUID()}${suffix}`;
+}
+
+function plusDays(date: Date, days: number): string {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString();
 }
 
 async function requireMessageInConversation(env: ChatBindings, conversationId: string, messageId: number): Promise<ChatMessageRow> {
@@ -711,8 +846,10 @@ export async function createChatMessage(
       translated_body,
       translated_language,
       reply_to_message_id,
+      message_kind,
+      sticker_id,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     conversationId,
     user.id,
@@ -723,6 +860,8 @@ export async function createChatMessage(
     input.translatedBody ?? null,
     input.translatedLanguage ?? null,
     input.replyToMessageId ?? null,
+    input.messageKind,
+    input.stickerId ?? null,
     now,
   ).run();
 
@@ -764,6 +903,163 @@ export async function createChatMessage(
   }
 
   return (await hydrateMessages(env, [row], user))[0]!;
+}
+
+export async function createChatAttachmentMessage(
+  env: ChatBindings,
+  conversationId: string,
+  user: CurrentChatUser,
+  input: CreateChatAttachmentInput,
+): Promise<ChatMessage> {
+  await requireParticipant(env, conversationId, user);
+  if (input.replyToMessageId) {
+    await requireMessageInConversation(env, conversationId, input.replyToMessageId);
+  }
+
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const expiresAt = plusDays(nowDate, CHAT_ATTACHMENT_RETENTION_DAYS);
+  const objectKey = attachmentObjectKey(conversationId, input.file, nowDate);
+  const fileName = safeFileName(input.file.name);
+  const body = attachmentBody(input.file);
+  const bytes = await input.file.arrayBuffer();
+
+  await env.R2_STORAGE.put(objectKey, bytes, {
+    httpMetadata: {
+      contentType: input.file.type,
+      contentDisposition: `inline; filename="${fileName.replace(/"/g, "")}"`,
+    },
+    customMetadata: {
+      conversationId,
+      retentionDays: String(CHAT_ATTACHMENT_RETENTION_DAYS),
+      expiresAt,
+    },
+  });
+
+  const result = await env.DB.prepare(`
+    INSERT INTO chat_messages (
+      conversation_id,
+      author_id,
+      author_display_name,
+      author_role,
+      body,
+      body_language,
+      translated_body,
+      translated_language,
+      reply_to_message_id,
+      message_kind,
+      sticker_id,
+      attachment_object_key,
+      attachment_file_name,
+      attachment_content_type,
+      attachment_byte_size,
+      attachment_expires_at,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, 'en', NULL, NULL, ?, 'ATTACHMENT', NULL, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    conversationId,
+    user.id,
+    user.displayName,
+    user.role,
+    body,
+    input.replyToMessageId ?? null,
+    objectKey,
+    fileName,
+    input.file.type,
+    input.file.size,
+    expiresAt,
+    now,
+  ).run();
+
+  const messageId = Number(result.meta.last_row_id);
+
+  await env.DB.prepare(`
+    UPDATE chat_conversations
+    SET updated_at = ?
+    WHERE conversation_id = ?
+  `).bind(now, conversationId).run();
+
+  await env.DB.prepare(`
+    UPDATE chat_conversation_participants
+    SET last_read_message_id = MAX(last_read_message_id, ?),
+        last_read_at = ?
+    WHERE conversation_id = ?
+      AND user_id = ?
+  `).bind(messageId, now, conversationId, user.id).run();
+
+  const row = await env.DB.prepare(`
+    SELECT
+      m.*,
+      u.profile_photo_url AS author_profile_photo_url,
+      reply.author_display_name AS reply_author_display_name,
+      reply.body AS reply_body
+    FROM chat_messages m
+    LEFT JOIN users u ON u.user_id = m.author_id
+    LEFT JOIN chat_messages reply
+      ON reply.message_id = m.reply_to_message_id
+      AND reply.conversation_id = m.conversation_id
+    WHERE m.message_id = ?
+  `).bind(messageId).first<ChatMessageRow>();
+
+  if (!row) throw new Error("Message was created but could not be loaded.");
+  return (await hydrateMessages(env, [row], user))[0]!;
+}
+
+export async function getChatAttachmentDownload(
+  env: ChatBindings,
+  conversationId: string,
+  messageId: number,
+  user: CurrentChatUser,
+): Promise<ChatAttachmentDownload> {
+  await requireParticipant(env, conversationId, user);
+  const row = await requireMessageInConversation(env, conversationId, messageId);
+  if (row.message_kind !== "ATTACHMENT" || !row.attachment_object_key || !row.attachment_file_name || !row.attachment_content_type || !row.attachment_expires_at) {
+    throw new Error("Attachment not found.");
+  }
+  const now = new Date().toISOString();
+  if (row.attachment_unavailable_at || row.attachment_expires_at <= now) {
+    throw new Error("attachment_unavailable");
+  }
+  const object = await env.R2_STORAGE.get(row.attachment_object_key);
+  if (!object) {
+    await env.DB.prepare(`
+      UPDATE chat_messages
+      SET attachment_unavailable_at = ?
+      WHERE conversation_id = ?
+        AND message_id = ?
+        AND attachment_unavailable_at IS NULL
+    `).bind(now, conversationId, messageId).run();
+    throw new Error("attachment_unavailable");
+  }
+  return {
+    object,
+    fileName: row.attachment_file_name,
+    contentType: row.attachment_content_type,
+  };
+}
+
+export async function cleanupExpiredChatAttachments(env: ChatBindings, now = new Date().toISOString()): Promise<number> {
+  const rows = await env.DB.prepare(`
+    SELECT message_id, attachment_object_key
+    FROM chat_messages
+    WHERE attachment_object_key IS NOT NULL
+      AND attachment_expires_at IS NOT NULL
+      AND attachment_expires_at <= ?
+      AND attachment_unavailable_at IS NULL
+    LIMIT 100
+  `).bind(now).all<{ message_id: number; attachment_object_key: string }>();
+
+  let cleaned = 0;
+  for (const row of rows.results ?? []) {
+    await env.R2_STORAGE.delete(row.attachment_object_key);
+    await env.DB.prepare(`
+      UPDATE chat_messages
+      SET attachment_unavailable_at = ?
+      WHERE message_id = ?
+    `).bind(now, row.message_id).run();
+    cleaned += 1;
+  }
+  return cleaned;
 }
 
 export async function toggleChatMessageReaction(

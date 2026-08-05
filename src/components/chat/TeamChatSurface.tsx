@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../AsyncState";
@@ -17,9 +17,11 @@ import {
   setChatAnnouncement,
   translateChatMessage,
   toggleChatMessageReaction,
+  uploadChatAttachment,
 } from "../../services/chat.service";
 import vanaraLogo from "../../assets/img/logo.png";
 import type { ChatConversation, ChatLanguage, ChatMessage, ChatMessageReply, ChatReactionEmoji, ChatUser } from "../../types/chat";
+import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStickers";
 import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
@@ -262,6 +264,21 @@ function chatPreview(value: string): string {
   return compact.length > 86 ? `${compact.slice(0, 83)}...` : compact;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isExpired(value: string): boolean {
+  return new Date(value).getTime() <= Date.now();
+}
+
+function stickerById(stickerId: string | null): ChatStickerDefinition | null {
+  if (!stickerId) return null;
+  return CHAT_STICKERS.find((sticker) => sticker.id === stickerId) ?? null;
+}
+
 async function copyText(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value);
@@ -452,6 +469,13 @@ function ChatMessageBubble({
   onReaction: (message: ChatMessage, emoji: ChatReactionEmoji) => void;
 }) {
   const outgoing = message.author.id === currentUserId;
+  const contextable = !outgoing && message.messageKind === "TEXT";
+  const sticker = stickerById(message.stickerId);
+  const attachmentUnavailable = Boolean(
+    message.attachment &&
+    (message.attachment.unavailableAt || isExpired(message.attachment.expiresAt))
+  );
+  const [attachmentFailed, setAttachmentFailed] = useState(false);
   const longPressTimer = useRef<number | null>(null);
 
   function clearLongPress() {
@@ -468,7 +492,7 @@ function ChatMessageBubble({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (outgoing) return;
+    if (!contextable) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
     const element = event.currentTarget;
@@ -477,7 +501,7 @@ function ChatMessageBubble({
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
     event.preventDefault();
-    if (outgoing) return;
+    if (!contextable) return;
     if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
     requestMenu(event.currentTarget);
   }
@@ -492,7 +516,7 @@ function ChatMessageBubble({
       <div className="chat-thread-message__content">
         {!outgoing && <span className="chat-thread-message__author">{message.author.displayName}</span>}
         <div
-          className="chat-thread-message__bubble"
+          className={`chat-thread-message__bubble chat-thread-message__bubble--${message.messageKind.toLowerCase()}`}
           onPointerDown={handlePointerDown}
           onPointerMove={clearLongPress}
           onPointerUp={clearLongPress}
@@ -505,7 +529,31 @@ function ChatMessageBubble({
               <span>{message.replyTo.bodyPreview}</span>
             </button>
           )}
-          <p lang={message.bodyLanguage}>{message.body}</p>
+          {message.messageKind === "STICKER" ? (
+            <div className={`chat-thread-message__sticker chat-thread-message__sticker--${sticker?.tone ?? "warm"}`} aria-label={sticker?.label ?? "Sticker"}>
+              <span>{sticker?.symbol ?? "✨"}</span>
+              <strong>{sticker?.label ?? message.body.replace(/^Sticker:\s*/i, "")}</strong>
+            </div>
+          ) : message.messageKind === "ATTACHMENT" && message.attachment ? (
+            attachmentUnavailable || attachmentFailed ? (
+              <div className="chat-thread-message__attachment chat-thread-message__attachment--missing">
+                <strong>File no longer available</strong>
+                <span>{message.attachment.fileName}</span>
+              </div>
+            ) : message.attachment.isImage ? (
+              <a className="chat-thread-message__attachment chat-thread-message__attachment--image" href={message.attachment.downloadUrl} target="_blank" rel="noreferrer">
+                <img src={message.attachment.downloadUrl} alt={message.attachment.fileName} draggable={false} onError={() => setAttachmentFailed(true)} />
+                <span>{message.attachment.fileName}</span>
+              </a>
+            ) : (
+              <a className="chat-thread-message__attachment chat-thread-message__attachment--file" href={message.attachment.downloadUrl} target="_blank" rel="noreferrer">
+                <strong>{message.attachment.fileName}</strong>
+                <span>{formatFileSize(message.attachment.byteSize)}</span>
+              </a>
+            )
+          ) : (
+            <p lang={message.bodyLanguage}>{message.body}</p>
+          )}
           {showTranslation && message.translatedBody && message.translatedLanguage && (
             <p className="chat-thread-message__translation" lang={message.translatedLanguage}>{message.translatedBody}</p>
           )}
@@ -545,10 +593,24 @@ function ChatComposer({
 }) {
   const [body, setBody] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [stickersOpen, setStickersOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  async function refreshChat() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["chat", "messages", conversationId] }),
+      queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] }),
+      queryClient.invalidateQueries({ queryKey: ["chat", "conversation", conversationId] }),
+      queryClient.invalidateQueries({ queryKey: ["chat", "summary"] }),
+    ]);
+  }
+
   const mutation = useMutation({
     mutationFn: () => createChatMessage(conversationId, {
+      messageKind: "TEXT",
       body,
       bodyLanguage: inferLanguage(body),
       replyToMessageId: replyTarget?.messageId ?? null,
@@ -556,12 +618,28 @@ function ChatComposer({
     onSuccess: async () => {
       setBody("");
       onCancelReply();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["chat", "messages", conversationId] }),
-        queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] }),
-        queryClient.invalidateQueries({ queryKey: ["chat", "conversation", conversationId] }),
-        queryClient.invalidateQueries({ queryKey: ["chat", "summary"] }),
-      ]);
+      await refreshChat();
+    },
+  });
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => uploadChatAttachment(conversationId, file, replyTarget?.messageId ?? null),
+    onSuccess: async () => {
+      onCancelReply();
+      await refreshChat();
+    },
+  });
+  const stickerMutation = useMutation({
+    mutationFn: (sticker: ChatStickerDefinition) => createChatMessage(conversationId, {
+      messageKind: "STICKER",
+      body: `Sticker: ${sticker.label}`,
+      bodyLanguage: "en",
+      stickerId: sticker.id,
+      replyToMessageId: replyTarget?.messageId ?? null,
+    }),
+    onSuccess: async () => {
+      setStickersOpen(false);
+      onCancelReply();
+      await refreshChat();
     },
   });
 
@@ -576,8 +654,35 @@ function ChatComposer({
     setIsFocused(false);
   }
 
+  function uploadSelectedFile(file: File | undefined | null) {
+    if (!file || uploadMutation.isPending) return;
+    uploadMutation.mutate(file);
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    uploadSelectedFile(event.target.files?.[0]);
+    event.target.value = "";
+  }
+
   return (
-    <form className={`chat-composer ${isFocused ? "is-focused" : ""}`} aria-label="Message composer" onSubmit={submit}>
+    <form className={`chat-composer ${isFocused ? "is-focused" : ""} ${stickersOpen ? "has-stickers" : ""}`} aria-label="Message composer" onSubmit={submit}>
+      {stickersOpen && (
+        <div className="chat-sticker-drawer" aria-label="Stickers">
+          {CHAT_STICKERS.map((sticker) => (
+            <button
+              key={sticker.id}
+              type="button"
+              className={`chat-sticker chat-sticker--${sticker.tone}`}
+              onClick={() => stickerMutation.mutate(sticker)}
+              disabled={stickerMutation.isPending}
+              aria-label={sticker.label}
+            >
+              <span>{sticker.symbol}</span>
+              <strong>{sticker.label}</strong>
+            </button>
+          ))}
+        </div>
+      )}
       {replyTarget && (
         <div className="chat-composer__reply-preview">
           <span>
@@ -590,10 +695,13 @@ function ChatComposer({
         </div>
       )}
       <div className="chat-composer__tools chat-composer__tools--left" aria-label="Message tools">
-        <button type="button" aria-label="Attach file" disabled><ChatToolIcon type="plus" /></button>
-        <button type="button" aria-label="Open camera" disabled><ChatToolIcon type="camera" /></button>
-        <button type="button" aria-label="Choose image" disabled><ChatToolIcon type="gallery" /></button>
+        <button type="button" aria-label="Attach file" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="plus" /></button>
+        <button type="button" aria-label="Open camera" onClick={() => cameraInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="camera" /></button>
+        <button type="button" aria-label="Choose image" onClick={() => galleryInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="gallery" /></button>
       </div>
+      <input ref={fileInputRef} className="chat-composer__file-input" type="file" onChange={handleFileChange} />
+      <input ref={cameraInputRef} className="chat-composer__file-input" type="file" accept="image/*" capture="environment" onChange={handleFileChange} />
+      <input ref={galleryInputRef} className="chat-composer__file-input" type="file" accept="image/*" onChange={handleFileChange} />
       <label className="chat-composer__field">
         <span className="vc-sr-only">Message</span>
         <input
@@ -607,7 +715,7 @@ function ChatComposer({
         />
       </label>
       <div className="chat-composer__tools chat-composer__tools--right">
-        <button type="button" aria-label="Open stickers" disabled><ChatToolIcon type="sticker" /></button>
+        <button type="button" aria-label="Open stickers" aria-expanded={stickersOpen} onClick={() => setStickersOpen((open) => !open)} disabled={stickerMutation.isPending}><ChatToolIcon type="sticker" /></button>
         {body.trim() && (
           <button className="chat-composer__send" type="submit" disabled={mutation.isPending} aria-label="Send message">
             <ChatToolIcon type="send" />
@@ -621,7 +729,7 @@ function ChatComposer({
           </button>
         </div>
       )}
-      {mutation.isError && <p className="chat-composer__error">Message was not saved. Please try again.</p>}
+      {(mutation.isError || uploadMutation.isError || stickerMutation.isError) && <p className="chat-composer__error">Message was not saved. Please try again.</p>}
     </form>
   );
 }

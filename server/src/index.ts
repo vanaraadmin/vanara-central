@@ -21,7 +21,7 @@ import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
-import { clearChatAnnouncement, createChatMessage, createGroupChat, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
+import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
@@ -1804,6 +1804,44 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
   }
 });
 
+app.post("/api/chat/conversations/:id/attachments", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const user = await chatMember(c);
+    const formData = await c.req.formData();
+    const input = normalizeChatAttachmentInput(formData);
+    const message = await createChatAttachmentMessage(c.env, conversationId, user, input);
+    return c.json({ success: true, data: message }, 201);
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Conversation not found." ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.get("/api/chat/conversations/:id/messages/:messageId/attachment", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const messageId = positiveIntegerParam(c.req.param("messageId"), "message id");
+    const user = await chatMember(c);
+    const download = await getChatAttachmentDownload(c.env, conversationId, messageId, user);
+    c.header("Cache-Control", "private, max-age=300");
+    c.header("Content-Type", download.contentType);
+    c.header("Content-Disposition", `inline; filename="${download.fileName.replace(/"/g, "")}"`);
+    return c.body(download.object.body);
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError
+      ? apiErrorStatus(error)
+      : message === "attachment_unavailable"
+        ? 410
+        : message === "Attachment not found." || message === "Message not found."
+          ? 404
+          : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
 app.post("/api/chat/conversations/:id/messages/:messageId/reactions", async (c) => {
   try {
     const conversationId = conversationIdParam(c.req.param("id"));
@@ -2130,7 +2168,10 @@ export default {
       return;
     }
     if (controller.cron === PASSPORT_RETENTION_CRON) {
-      ctx.waitUntil(cleanupExpiredPassports(env).then(() => undefined));
+      ctx.waitUntil(Promise.all([
+        cleanupExpiredPassports(env),
+        cleanupExpiredChatAttachments(env),
+      ]).then(() => undefined));
       return;
     }
     if (controller.cron === "*/5 * * * *") {

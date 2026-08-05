@@ -312,6 +312,119 @@
   user-select: none;
 }
 
+.chat-thread-message__bubble--sticker {
+  padding: 0.42rem;
+  border-radius: 1.45rem;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-thread-message.is-outgoing .chat-thread-message__bubble--sticker {
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-thread-message__sticker {
+  display: grid;
+  width: min(148px, 42vw);
+  min-height: 128px;
+  place-items: center;
+  gap: 0.18rem;
+  padding: 0.72rem;
+  border: 2px solid rgba(255, 253, 246, 0.76);
+  border-radius: 28px;
+  color: #173b2d;
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.9), transparent 34%),
+    linear-gradient(145deg, #fffdf6, #dcebd5);
+  box-shadow: 0 12px 28px rgba(23, 59, 45, 0.14);
+  text-align: center;
+}
+
+.chat-thread-message__sticker span {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.chat-thread-message__sticker strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread-message__sticker--urgent {
+  background: linear-gradient(145deg, #fff4dc, #ffd48a);
+}
+
+.chat-thread-message__sticker--food {
+  background: linear-gradient(145deg, #fff8df, #f3d99a);
+}
+
+.chat-thread-message__sticker--cute {
+  background: linear-gradient(145deg, #fff1f5, #dff0d8);
+}
+
+.chat-thread-message__attachment {
+  display: grid;
+  min-width: min(230px, 62vw);
+  max-width: min(280px, 70vw);
+  overflow: hidden;
+  border-radius: 18px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-thread-message__attachment--image {
+  gap: 0.38rem;
+}
+
+.chat-thread-message__attachment--image img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 16px;
+  -webkit-user-drag: none;
+}
+
+.chat-thread-message__attachment--image span,
+.chat-thread-message__attachment--file span,
+.chat-thread-message__attachment--missing span {
+  overflow: hidden;
+  font-size: 0.76rem;
+  opacity: 0.72;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread-message__attachment--file,
+.chat-thread-message__attachment--missing {
+  gap: 0.24rem;
+  padding: 0.72rem 0.86rem;
+  background: rgba(31, 106, 77, 0.08);
+}
+
+.chat-thread-message.is-outgoing .chat-thread-message__attachment--file,
+.chat-thread-message.is-outgoing .chat-thread-message__attachment--missing {
+  background: rgba(255, 253, 246, 0.14);
+}
+
+.chat-thread-message__attachment--file strong,
+.chat-thread-message__attachment--missing strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread-message__attachment--missing {
+  opacity: 0.72;
+}
+
 .chat-thread-message.is-highlighted .chat-thread-message__bubble {
   animation: chat-message-highlight 1300ms cubic-bezier(.22, 1, .36, 1);
 }
@@ -406,6 +519,83 @@
 
 .chat-composer.is-focused:has(.chat-composer__reply-preview) {
   grid-template-rows: auto auto auto;
+}
+
+.chat-composer.has-stickers {
+  grid-template-rows: auto auto;
+}
+
+.chat-composer.has-stickers.is-focused {
+  grid-template-rows: auto auto auto;
+}
+
+.chat-composer.has-stickers:has(.chat-composer__reply-preview) {
+  grid-template-rows: auto auto auto;
+}
+
+.chat-composer.has-stickers.is-focused:has(.chat-composer__reply-preview) {
+  grid-template-rows: auto auto auto auto;
+}
+
+.chat-sticker-drawer {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.42rem;
+  max-height: min(38dvh, 280px);
+  overflow: auto;
+  padding: 0.48rem;
+  border: 1px solid rgba(31, 106, 77, 0.1);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.88), transparent 16rem),
+    rgba(255, 253, 246, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  overscroll-behavior: contain;
+}
+
+.chat-sticker {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  place-items: center;
+  align-content: center;
+  gap: 0.18rem;
+  padding: 0.36rem;
+  border: 0;
+  border-radius: 18px;
+  color: #173b2d;
+  background: rgba(31, 106, 77, 0.07);
+}
+
+.chat-sticker:disabled {
+  opacity: 0.52;
+}
+
+.chat-sticker span {
+  font-size: 1.72rem;
+  line-height: 1;
+}
+
+.chat-sticker strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-sticker--urgent {
+  background: rgba(255, 205, 95, 0.28);
+}
+
+.chat-sticker--food {
+  background: rgba(237, 196, 105, 0.24);
+}
+
+.chat-sticker--cute {
+  background: rgba(218, 234, 205, 0.76);
 }
 
 .chat-composer__reply-preview {
@@ -618,6 +808,10 @@
   display: flex;
   align-items: center;
   gap: 0.12rem;
+}
+
+.chat-composer__file-input {
+  display: none;
 }
 
 .chat-composer__tools button,

@@ -90,6 +90,45 @@ export async function createChatMessage(
   return response.data;
 }
 
+export async function uploadChatAttachment(
+  id: string,
+  file: File,
+  replyToMessageId?: number | null,
+  signal?: AbortSignal,
+): Promise<ChatMessage> {
+  const formData = new FormData();
+  formData.set("file", file);
+  if (replyToMessageId) formData.set("replyToMessageId", String(replyToMessageId));
+
+  const response = await fetch(`/api/chat/conversations/${id}/attachments`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+    body: formData,
+    signal,
+  });
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError("The server returned an invalid response", response.status);
+  }
+
+  if (!response.ok) {
+    const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+      ? body.error
+      : "Attachment could not be uploaded";
+    throw new ApiError(message, response.status);
+  }
+
+  const parsed = body as { success: boolean; data?: ChatMessage; error?: string };
+  if (!parsed.success || !parsed.data) {
+    throw new Error(parsed.error ?? "Attachment could not be uploaded");
+  }
+  return parsed.data;
+}
+
 export async function loadChatUsers(signal?: AbortSignal): Promise<ChatUser[]> {
   const response = await requestJson<ChatUsersResponse>("/api/chat/users", signal);
   if (!response.success || !response.data) {

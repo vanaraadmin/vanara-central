@@ -1,6 +1,7 @@
 export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
 export type ChatConversationKind = "GROUP" | "PRIVATE";
 export type ChatLanguage = "en" | "th";
+export type ChatMessageKind = "TEXT" | "STICKER" | "ATTACHMENT";
 
 export interface ChatConversation {
   id: string;
@@ -51,6 +52,7 @@ export interface ChatMessageReply {
 export interface ChatMessage {
   id: number;
   conversationId: string;
+  messageKind: ChatMessageKind;
   author: {
     id: string;
     displayName: string;
@@ -61,10 +63,22 @@ export interface ChatMessage {
   bodyLanguage: ChatLanguage;
   translatedBody: string | null;
   translatedLanguage: ChatLanguage | null;
+  stickerId: string | null;
+  attachment: ChatAttachment | null;
   replyTo: ChatMessageReply | null;
   reactions: ChatMessageReaction[];
   mentionUsernames: string[];
   createdAt: string;
+}
+
+export interface ChatAttachment {
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  expiresAt: string;
+  unavailableAt: string | null;
+  downloadUrl: string;
+  isImage: boolean;
 }
 
 export interface ChatUser {
@@ -111,11 +125,13 @@ export interface ChatUnreadSummaryResponse {
 }
 
 export interface CreateChatMessagePayload {
+  messageKind?: ChatMessageKind;
   body: string;
   bodyLanguage: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
   replyToMessageId?: number | null;
+  stickerId?: string | null;
 }
 
 export interface OpenPrivateChatPayload {

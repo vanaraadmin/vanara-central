@@ -5,10 +5,12 @@ import test from "node:test";
 import {
   mentionedUsernames,
   normalizeAnnouncementInput,
+  normalizeChatAttachmentInput,
   normalizeGroupChatInput,
   normalizeMessageInput,
   normalizeReactionInput,
 } from "../src/services/chat.service.ts";
+import { CHAT_STICKERS } from "../src/services/chat-stickers.service.ts";
 
 test("chat message input requires non-empty body", () => {
   assert.throws(() => normalizeMessageInput({ body: "   " }), /Message body is required/);
@@ -23,27 +25,57 @@ test("chat message input keeps bilingual structure in one record", () => {
   });
 
   assert.deepEqual(input, {
+    messageKind: "TEXT",
     body: "Room 5 is ready.",
     bodyLanguage: "en",
     translatedBody: "ห้อง 5 พร้อมแล้วค่ะ",
     translatedLanguage: "th",
     replyToMessageId: null,
+    stickerId: null,
   });
 });
 
 test("chat message input accepts one reply target and validates message actions", () => {
   assert.deepEqual(normalizeMessageInput({ body: "On it", replyToMessageId: 42 }), {
+    messageKind: "TEXT",
     body: "On it",
     bodyLanguage: "en",
     translatedBody: null,
     translatedLanguage: null,
     replyToMessageId: 42,
+    stickerId: null,
   });
   assert.throws(() => normalizeMessageInput({ body: "On it", replyToMessageId: 0 }), /Reply target is invalid/);
   assert.deepEqual(normalizeReactionInput({ emoji: "🙏" }), { emoji: "🙏" });
   assert.throws(() => normalizeReactionInput({ emoji: "LINE" }), /Reaction is not supported/);
   assert.deepEqual(normalizeAnnouncementInput({ messageId: 9 }), { messageId: 9 });
   assert.throws(() => normalizeAnnouncementInput({ messageId: -1 }), /Announcement message is invalid/);
+});
+
+test("chat stickers and attachments normalize safely", () => {
+  const sticker = CHAT_STICKERS[0]!;
+  assert.ok(CHAT_STICKERS.length >= 50);
+  assert.deepEqual(normalizeMessageInput({ messageKind: "STICKER", stickerId: sticker.id }), {
+    messageKind: "STICKER",
+    body: `Sticker: ${sticker.label}`,
+    bodyLanguage: "en",
+    translatedBody: null,
+    translatedLanguage: null,
+    replyToMessageId: null,
+    stickerId: sticker.id,
+  });
+  assert.throws(() => normalizeMessageInput({ messageKind: "STICKER", stickerId: "line-logo" }), /Sticker is not supported/);
+
+  const okForm = new FormData();
+  okForm.set("file", new File(["hello"], "note.txt", { type: "text/plain" }));
+  okForm.set("replyToMessageId", "42");
+  const normalized = normalizeChatAttachmentInput(okForm);
+  assert.equal(normalized.file.name, "note.txt");
+  assert.equal(normalized.replyToMessageId, 42);
+
+  const badForm = new FormData();
+  badForm.set("file", new File(["alert"], "bad.js", { type: "text/javascript" }));
+  assert.throws(() => normalizeChatAttachmentInput(badForm), /Attachment type is not supported/);
 });
 
 test("chat group input requires a name and at least two selected team members", () => {
@@ -135,6 +167,7 @@ test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => 
 test("chat foundation is additive and separates group/private participants", () => {
   const migration = readFileSync(new URL("../migrations/0032_internal_chat_conversations.sql", import.meta.url), "utf8");
   const interactionsMigration = readFileSync(new URL("../migrations/0033_internal_chat_message_interactions.sql", import.meta.url), "utf8");
+  const attachmentsMigration = readFileSync(new URL("../migrations/0034_internal_chat_attachments.sql", import.meta.url), "utf8");
 
   assert.match(migration, /ALTER TABLE chat_conversations ADD COLUMN conversation_kind/);
   assert.match(migration, /CHECK \(conversation_kind IN \('GROUP', 'PRIVATE'\)\)/);
@@ -150,6 +183,13 @@ test("chat foundation is additive and separates group/private participants", () 
   assert.match(interactionsMigration, /PRIMARY KEY \(message_id, user_id\)/);
   assert.match(interactionsMigration, /CHECK \(emoji IN \('👍', '😂', '😍', '🙏', '👀', '🔥'\)\)/);
   assert.doesNotMatch(interactionsMigration, /\bDROP\s+TABLE\b|\bDELETE\s+FROM\s+chat_messages\b|\bDELETE\s+FROM\s+chat_conversations\b/i);
+  assert.match(attachmentsMigration, /ALTER TABLE chat_messages ADD COLUMN message_kind TEXT NOT NULL DEFAULT 'TEXT'/);
+  assert.match(attachmentsMigration, /CHECK \(message_kind IN \('TEXT', 'STICKER', 'ATTACHMENT'\)\)/);
+  assert.match(attachmentsMigration, /ALTER TABLE chat_messages ADD COLUMN sticker_id TEXT/);
+  assert.match(attachmentsMigration, /ALTER TABLE chat_messages ADD COLUMN attachment_object_key TEXT/);
+  assert.match(attachmentsMigration, /CREATE INDEX IF NOT EXISTS idx_chat_messages_attachment_expiry/);
+  assert.match(attachmentsMigration, /CREATE INDEX IF NOT EXISTS idx_chat_messages_attachment_object/);
+  assert.doesNotMatch(attachmentsMigration, /\bDROP\s+TABLE\b|\bDELETE\s+FROM\s+chat_messages\b|\bDELETE\s+FROM\s+chat_conversations\b/i);
 });
 
 test("chat service enforces participant privacy and no owner private bypass", () => {
@@ -177,6 +217,16 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(service, /clearChatAnnouncement/);
   assert.match(service, /translateChatMessage/);
   assert.match(service, /translation_unavailable/);
+  assert.match(service, /createChatAttachmentMessage/);
+  assert.match(service, /getChatAttachmentDownload/);
+  assert.match(service, /cleanupExpiredChatAttachments/);
+  assert.match(service, /requireParticipant\(env, conversationId, user\)/);
+  assert.match(service, /env\.R2_STORAGE\.put/);
+  assert.match(service, /env\.R2_STORAGE\.get/);
+  assert.match(service, /env\.R2_STORAGE\.delete/);
+  assert.match(service, /CHAT_ATTACHMENT_RETENTION_DAYS = 45/);
+  assert.match(service, /MAX_CHAT_ATTACHMENT_BYTES = 10 \* 1024 \* 1024/);
+  assert.match(service, /BLOCKED_ATTACHMENT_EXTENSIONS/);
   assert.doesNotMatch(service, /isOwner|Owner access|requireOwner/i);
   assert.match(server, /const user = await chatMember\(c\)/);
   assert.match(server, /openPrivateChat\(c\.env, user, targetUserId\)/);
@@ -185,6 +235,10 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(server, /\/api\/chat\/conversations\/:id\/messages\/:messageId\/reactions/);
   assert.match(server, /\/api\/chat\/conversations\/:id\/messages\/:messageId\/translate/);
   assert.match(server, /\/api\/chat\/conversations\/:id\/announcement/);
+  assert.match(server, /\/api\/chat\/conversations\/:id\/attachments/);
+  assert.match(server, /\/api\/chat\/conversations\/:id\/messages\/:messageId\/attachment/);
+  assert.match(server, /normalizeChatAttachmentInput/);
+  assert.match(server, /cleanupExpiredChatAttachments/);
   assert.match(server, /app\.delete\("\/api\/chat\/conversations\/:id\/announcement"/);
   assert.doesNotMatch(server, /authenticated\(c, "chat", "edit"\)/);
   assert.doesNotMatch(service + server, /translate\.googleapis|GOOGLE_TRANSLATE|DEEPL|Google Cloud Translation/i);
@@ -243,6 +297,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   const page = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/ChatPage.css", import.meta.url), "utf8");
   const service = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
+  const stickerCatalog = readFileSync(new URL("../../src/config/chatStickers.ts", import.meta.url), "utf8");
+  const serverStickerCatalog = readFileSync(new URL("../src/services/chat-stickers.service.ts", import.meta.url), "utf8");
 
   assert.match(page, /conversation\.kind === "GROUP" \? "Vanara Group Chat" : conversation\.title/);
   assert.match(page, /ChatToolIcon type="plus"/);
@@ -250,6 +306,20 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /ChatToolIcon type="gallery"/);
   assert.match(page, /ChatToolIcon type="sticker"/);
   assert.match(page, /ChatToolIcon type="send"/);
+  assert.match(page, /uploadChatAttachment/);
+  assert.match(page, /fileInputRef/);
+  assert.match(page, /cameraInputRef/);
+  assert.match(page, /galleryInputRef/);
+  assert.match(page, /type="file"/);
+  assert.match(page, /accept="image\/\*"/);
+  assert.match(page, /capture="environment"/);
+  assert.match(page, /CHAT_STICKERS\.map/);
+  assert.match(page, /message\.messageKind === "STICKER"/);
+  assert.match(page, /message\.messageKind === "ATTACHMENT"/);
+  assert.match(page, /File no longer available/);
+  assert.match(page, /message\.attachment\.downloadUrl/);
+  assert.match(page, /message\.messageKind === "TEXT"/);
+  assert.doesNotMatch(page, /aria-label="Attach file" disabled|aria-label="Open camera" disabled|aria-label="Choose image" disabled/);
   assert.match(page, /isFocused/);
   assert.match(page, /exitFocusMode/);
   assert.match(page, /aria-label="Exit writing mode"/);
@@ -264,7 +334,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /window\.getSelection\?\.\(\)\?\.removeAllRanges\(\)/);
   assert.match(page, /preventNativeChatContextMenu/);
   assert.match(page, /onContextMenu=\{preventNativeChatContextMenu\}/);
-  assert.match(page, /if \(outgoing\) return/);
+  assert.match(page, /const contextable = !outgoing && message\.messageKind === "TEXT"/);
+  assert.match(page, /if \(!contextable\) return/);
   assert.match(page, /window\.visualViewport/);
   assert.match(page, /window\.innerWidth/);
   assert.match(page, /window\.innerHeight/);
@@ -290,6 +361,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /Translation is not available yet/);
   assert.match(page, /chat-thread-message__reactions/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
+  assert.ok((stickerCatalog.match(/\bid:/g) ?? []).length >= 50);
+  assert.doesNotMatch(stickerCatalog + serverStickerCatalog, /LINE_New_App_Icon|Doraemon|line-logo|wechat-logo|whatsapp-logo/i);
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
   assert.match(css, /\.chat-composer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
@@ -302,6 +375,13 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-tool-icon--gallery/);
   assert.match(css, /\.chat-tool-icon--sticker/);
   assert.match(css, /\.chat-tool-icon--send/);
+  assert.match(css, /\.chat-sticker-drawer/);
+  assert.match(css, /\.chat-sticker\s*\{[^}]*min-height:\s*76px/);
+  assert.match(css, /\.chat-thread-message__bubble--sticker/);
+  assert.match(css, /\.chat-thread-message__sticker/);
+  assert.match(css, /\.chat-thread-message__attachment/);
+  assert.match(css, /\.chat-thread-message__attachment--missing/);
+  assert.match(css, /\.chat-composer__file-input\s*\{[^}]*display:\s*none/);
   assert.match(css, /\.chat-context-menu/);
   assert.match(css, /\.chat-context-menu\s*\{[^}]*box-sizing:\s*border-box[^}]*width:\s*min\(286px,\s*calc\(100vw - 24px\)\)[^}]*max-width:\s*calc\(100vw - 24px\)[^}]*overflow:\s*hidden/);
   assert.doesNotMatch(css, /width:\s*min\(220px,\s*calc\(100vw - 24px\)\)/);
@@ -320,6 +400,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-thread-message__translation--error/);
   assert.match(css, /\.chat-thread-message__reactions/);
   assert.doesNotMatch(page + service, /\/api\/messages|messages\.service|MessagesPage|guest-messages/i);
+  assert.match(service, /\/api\/chat\/conversations\/\$\{id\}\/attachments/);
+  assert.doesNotMatch(service, /R2|public bucket|\/api\/messages/i);
 });
 
 test("mentions are normalized by username for unread mention badges", () => {
