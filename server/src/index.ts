@@ -24,6 +24,7 @@ import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailab
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
+import { addPayrollEvent, finalizePayroll, generatePayrollStatementPdf, getPayrollOverview, getPayrollWorker, normalizePayrollEventInput, normalizePayrollMonth, normalizePayrollSettingsInput, savePayrollDraft, savePayrollSettings, type PayrollBindings } from "./services/payroll.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
 import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, SOCIAL_CAPTION_CRON, type SocialCaptionBindings } from "./services/social-caption.service.js";
 import { runSocialCommentAutomation, SOCIAL_COMMENT_CRON, type SocialCommentBindings } from "./services/social-comments.service.js";
@@ -68,7 +69,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -324,6 +325,13 @@ async function socialOwner(c: AppContext, action: "access" | "edit" = "access"):
   const user = await resolveCurrentUser(c);
   requireOwner(user);
   requireModulePermission(user, "social-automation", action);
+  return user;
+}
+
+async function payrollOwner(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  requireOwner(user);
+  requireModulePermission(user, "payroll", action);
   return user;
 }
 
@@ -1562,6 +1570,96 @@ app.get("/api/social/overview", async (c) => {
     await socialOwner(c, "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listSocialAutomationOverview(c.env) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/payroll/overview", async (c) => {
+  try {
+    await payrollOwner(c, "access");
+    c.header("Cache-Control", "no-store");
+    const month = normalizePayrollMonth(c.req.query("month"));
+    return c.json({ success: true, data: await getPayrollOverview(c.env, month) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/payroll/workers/:employeeId", async (c) => {
+  try {
+    await payrollOwner(c, "access");
+    c.header("Cache-Control", "no-store");
+    const month = normalizePayrollMonth(c.req.query("month"));
+    const worker = await getPayrollWorker(c.env, c.req.param("employeeId"), month);
+    if (!worker) return c.json({ success: false, error: "Payroll worker not found." }, 404);
+    return c.json({ success: true, data: worker });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.put("/api/payroll/workers/:employeeId/settings", async (c) => {
+  try {
+    const user = await payrollOwner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const settings = await savePayrollSettings(c.env, c.req.param("employeeId"), normalizePayrollSettingsInput(payload), user);
+    return c.json({ success: true, data: settings });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
+app.post("/api/payroll/workers/:employeeId/events", async (c) => {
+  try {
+    const user = await payrollOwner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const event = await addPayrollEvent(c.env, c.req.param("employeeId"), normalizePayrollEventInput(payload), user);
+    return c.json({ success: true, data: event }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
+app.post("/api/payroll/workers/:employeeId/draft", async (c) => {
+  try {
+    const user = await payrollOwner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    const month = normalizePayrollMonth(body.payrollMonth);
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 1000) || null : null;
+    return c.json({ success: true, data: await savePayrollDraft(c.env, c.req.param("employeeId"), month, user, notes) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
+app.post("/api/payroll/workers/:employeeId/finalize", async (c) => {
+  try {
+    const user = await payrollOwner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    const month = normalizePayrollMonth(body.payrollMonth);
+    const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 1000) || null : null;
+    return c.json({ success: true, data: await finalizePayroll(c.env, c.req.param("employeeId"), month, user, notes) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
+app.get("/api/payroll/workers/:employeeId/statement.pdf", async (c) => {
+  try {
+    await payrollOwner(c, "access");
+    const month = normalizePayrollMonth(c.req.query("month"));
+    const pdf = await generatePayrollStatementPdf(c.env, c.req.param("employeeId"), month);
+    const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
+    return new Response(body, {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="vanara-payroll-${month}.pdf"`,
+      },
+    });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
   }

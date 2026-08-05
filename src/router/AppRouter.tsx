@@ -15,6 +15,7 @@ import LoginPage from "../pages/LoginPage";
 import MovementsPage from "../pages/MovementsPage";
 import ProcurementDetailPage from "../pages/ProcurementDetailPage";
 import ProcurementPage from "../pages/ProcurementPage";
+import PayrollPage from "../pages/PayrollPage";
 import ReceptionPage from "../pages/ReceptionPage";
 import RoomsPage from "../pages/RoomsPage";
 import SupplyRequestPage from "../pages/SupplyRequestPage";
@@ -100,6 +101,7 @@ export default function AppRouter() {
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="procurement/new" element={<SupplyRequestPage />} />
           <Route path="procurement/:requestId" element={<ProcurementDetailPage />} />
+          <Route path="payroll" element={<PayrollPage />} />
           <Route path="social-automation" element={<SocialAutomationPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="chat/:conversationId" element={<ChatPage />} />

@@ -18,6 +18,8 @@ const maxPhotoBytes = 512 * 1024;
 
 function emptyForm(): SaveUserPayload {
   return {
+    firstName: "",
+    lastName: "",
     fullName: "",
     profilePhotoUrl: null,
     role: "Operations",
@@ -110,10 +112,14 @@ export default function SettingsPage() {
   const [photoError, setPhotoError] = useState<string | null>(null);
 
   const selected = useMemo(() => usersQuery.data?.find((user) => user.id === editingId) ?? null, [editingId, usersQuery.data]);
+  const payrollIdentityForm = useMemo(() => ({
+    ...form,
+    fullName: `${form.firstName} ${form.lastName}`.trim(),
+  }), [form]);
   const saveMutation = useMutation({
     mutationFn: () => editingId
-      ? updateUser(editingId, Object.fromEntries(Object.entries(form).filter(([key, value]) => key !== "password" || Boolean(value))) as Partial<SaveUserPayload>)
-      : createUser(form),
+      ? updateUser(editingId, Object.fromEntries(Object.entries(payrollIdentityForm).filter(([key, value]) => key !== "password" || Boolean(value))) as Partial<SaveUserPayload>)
+      : createUser(payrollIdentityForm),
     onSuccess: async () => {
       setEditingId(null);
       setForm(emptyForm());
@@ -130,6 +136,8 @@ export default function SettingsPage() {
   function edit(user: ManagedUser) {
     setEditingId(user.id);
     setForm({
+      firstName: user.firstName,
+      lastName: user.lastName,
       fullName: user.fullName,
       profilePhotoUrl: user.profilePhotoUrl,
       role: user.role,
@@ -198,7 +206,7 @@ export default function SettingsPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!form.fullName.trim() || !form.username.trim() || form.views.length === 0 || (!editingId && !form.password)) return;
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.username.trim() || form.views.length === 0 || (!editingId && !form.password)) return;
     saveMutation.mutate();
   }
 
@@ -242,7 +250,10 @@ export default function SettingsPage() {
 
         <form className="user-form" onSubmit={submit}>
           <h2>{selected ? `Edit ${selected.fullName}` : "Create user"}</h2>
-          <label><span>Full name</span><input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label>
+          <div className="form-row">
+            <label><span>First name</span><input value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value, fullName: `${event.target.value} ${form.lastName}`.trim() })} /></label>
+            <label><span>Last name</span><input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value, fullName: `${form.firstName} ${event.target.value}`.trim() })} /></label>
+          </div>
           <label><span>Username</span><input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
           <label><span>Email optional</span><input value={form.email ?? ""} onChange={(event) => setForm({ ...form, email: event.target.value || null })} /></label>
           <label><span>Password {editingId ? "optional" : "required"}</span><input type="password" value={form.password ?? ""} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>

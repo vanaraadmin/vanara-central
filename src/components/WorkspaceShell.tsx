@@ -21,6 +21,7 @@ const workspaceNumbers = {
   chat: "06",
   messages: "07",
   social: "08",
+  payroll: "09",
 } as const;
 
 type WorkspaceKey = keyof typeof workspaceNumbers;
@@ -35,6 +36,7 @@ const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
   chat: "chat",
   messages: "messages",
   social: "social",
+  payroll: "payroll",
 };
 
 interface WorkspaceShellProps {

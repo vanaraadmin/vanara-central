@@ -11,6 +11,7 @@ export type ModuleKey =
   | "messages"
   | "chat"
   | "social-automation"
+  | "payroll"
   | "owner-dashboard"
   | "settings";
 
@@ -29,6 +30,8 @@ export interface ActionPermission {
 
 export interface CurrentUserView {
   id: string;
+  firstName: string;
+  lastName: string;
   displayName: string;
   fullName: string;
   profilePhotoUrl: string | null;
@@ -55,6 +58,8 @@ export interface LoginPayload {
 }
 
 export interface SaveUserPayload {
+  firstName: string;
+  lastName: string;
   fullName: string;
   profilePhotoUrl: string | null;
   role: UserRole;
@@ -84,6 +89,7 @@ export const moduleKeys: ModuleKey[] = [
   "messages",
   "chat",
   "social-automation",
+  "payroll",
   "owner-dashboard",
   "settings",
 ];

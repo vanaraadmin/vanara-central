@@ -11,6 +11,7 @@ export type ModuleKey =
   | "messages"
   | "chat"
   | "social-automation"
+  | "payroll"
   | "owner-dashboard"
   | "settings";
 
@@ -29,6 +30,8 @@ export interface ActionPermission {
 
 export interface CurrentUser {
   id: string;
+  firstName: string;
+  lastName: string;
   displayName: string;
   fullName: string;
   profilePhotoUrl: string | null;
@@ -88,6 +91,7 @@ const MODULES: ModuleKey[] = [
   "messages",
   "chat",
   "social-automation",
+  "payroll",
   "owner-dashboard",
   "settings",
 ];
@@ -99,6 +103,8 @@ const ACTION_PERMISSIONS: ActionPermissionKey[] = ["can_complete_checkin_checkou
 
 interface UserRow {
   user_id: string;
+  first_name?: string | null;
+  last_name?: string | null;
   full_name: string;
   profile_photo_url: string | null;
   role: UserRole;
@@ -138,6 +144,8 @@ export interface LoginInput {
 }
 
 export interface CreateUserInput {
+  firstName: string;
+  lastName: string;
   fullName: string;
   profilePhotoUrl: string | null;
   role: UserRole;
@@ -155,6 +163,8 @@ export type UpdateUserInput = Partial<Omit<CreateUserInput, "password">> & { pas
 
 export interface PublicManagedUser {
   id: string;
+  firstName: string;
+  lastName: string;
   fullName: string;
   displayName: string;
   profilePhotoUrl: string | null;
@@ -231,6 +241,27 @@ function normalizeText(value: unknown, label: string, max: number): string {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) throw new ValidationError(`${label} is required.`);
   return text.slice(0, max);
+}
+
+function splitLegalName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0]!, lastName: "" };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
+}
+
+function normalizeLegalName(payload: object): { firstName: string; lastName: string; fullName: string } {
+  const explicitFullName = "fullName" in payload && typeof payload.fullName === "string" ? payload.fullName.trim() : "";
+  const fallback = explicitFullName ? splitLegalName(explicitFullName) : { firstName: "", lastName: "" };
+  const firstName = "firstName" in payload && typeof payload.firstName === "string" && payload.firstName.trim()
+    ? normalizeText(payload.firstName, "First name", 80)
+    : fallback.firstName;
+  const lastName = "lastName" in payload && typeof payload.lastName === "string" && payload.lastName.trim()
+    ? normalizeText(payload.lastName, "Last name", 120)
+    : fallback.lastName;
+  if (!firstName) throw new ValidationError("First name is required.");
+  const fullName = `${firstName} ${lastName}`.trim();
+  return { firstName, lastName, fullName };
 }
 
 function normalizeOptionalText(value: unknown, max: number): string | null {
@@ -312,8 +343,11 @@ export function normalizeLoginInput(payload: unknown): LoginInput {
 
 export function normalizeCreateUserInput(payload: unknown): CreateUserInput {
   if (!payload || typeof payload !== "object") throw new ValidationError("User payload is required.");
+  const legalName = normalizeLegalName(payload);
   return {
-    fullName: normalizeText("fullName" in payload ? payload.fullName : undefined, "Full name", 120),
+    firstName: legalName.firstName,
+    lastName: legalName.lastName,
+    fullName: legalName.fullName,
     profilePhotoUrl: normalizeProfilePhoto("profilePhotoUrl" in payload ? payload.profilePhotoUrl : undefined),
     role: normalizeEnum("role" in payload ? payload.role : undefined, ROLES, "Role"),
     preferredLanguage: normalizeEnum("preferredLanguage" in payload ? payload.preferredLanguage : undefined, LANGUAGES, "Preferred language"),
@@ -330,7 +364,12 @@ export function normalizeCreateUserInput(payload: unknown): CreateUserInput {
 export function normalizeUpdateUserInput(payload: unknown): UpdateUserInput {
   if (!payload || typeof payload !== "object") throw new ValidationError("User payload is required.");
   const input: UpdateUserInput = {};
-  if ("fullName" in payload) input.fullName = normalizeText(payload.fullName, "Full name", 120);
+  if ("fullName" in payload || "firstName" in payload || "lastName" in payload) {
+    const legalName = normalizeLegalName(payload);
+    input.firstName = legalName.firstName;
+    input.lastName = legalName.lastName;
+    input.fullName = legalName.fullName;
+  }
   if ("profilePhotoUrl" in payload) input.profilePhotoUrl = normalizeProfilePhoto(payload.profilePhotoUrl);
   if ("role" in payload) input.role = normalizeEnum(payload.role, ROLES, "Role");
   if ("preferredLanguage" in payload) input.preferredLanguage = normalizeEnum(payload.preferredLanguage, LANGUAGES, "Preferred language");
@@ -366,10 +405,16 @@ export function makeExpiredSessionCookie(secure: boolean): string {
 }
 
 function mapPublicUser(row: UserRow, views: UserView[], permissions: ModulePermission[], actionPermissions: ActionPermission[]): PublicManagedUser {
+  const fallback = splitLegalName(row.full_name);
+  const firstName = row.first_name?.trim() || fallback.firstName;
+  const lastName = row.last_name?.trim() || fallback.lastName;
+  const fullName = `${firstName} ${lastName}`.trim() || row.full_name;
   return {
     id: row.user_id,
-    fullName: row.full_name,
-    displayName: row.full_name,
+    firstName,
+    lastName,
+    fullName,
+    displayName: fullName,
     profilePhotoUrl: row.profile_photo_url,
     role: row.role,
     preferredLanguage: row.preferred_language,
@@ -421,6 +466,8 @@ async function loadPublicUser(env: AuthBindings, row: UserRow): Promise<PublicMa
 function toCurrentUser(user: PublicManagedUser): CurrentUser {
   return {
     id: user.id,
+    firstName: user.firstName,
+    lastName: user.lastName,
     displayName: user.displayName,
     fullName: user.fullName,
     profilePhotoUrl: user.profilePhotoUrl,
@@ -535,6 +582,8 @@ export function requireModulePermission(user: CurrentUser, module: ModuleKey, ac
 export function publicCurrentUser(user: CurrentUser) {
   return {
     id: user.id,
+    firstName: user.firstName,
+    lastName: user.lastName,
     displayName: user.displayName,
     fullName: user.fullName,
     profilePhotoUrl: user.profilePhotoUrl,
@@ -581,11 +630,13 @@ export async function createUser(env: AuthBindings, input: CreateUserInput): Pro
   const hashed = await passwordHash(input.password);
   await env.DB.prepare(`
     INSERT INTO users (
-      user_id, full_name, profile_photo_url, role, preferred_language, username, email,
+      user_id, first_name, last_name, full_name, profile_photo_url, role, preferred_language, username, email,
       password_hash, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
+    input.firstName,
+    input.lastName,
     input.fullName,
     input.profilePhotoUrl,
     input.role,
@@ -612,13 +663,15 @@ export async function createInitialOwner(env: AuthBindings, input: CreateUserInp
   const hashed = await passwordHash(input.password);
   const result = await env.DB.prepare(`
     INSERT INTO users (
-      user_id, full_name, profile_photo_url, role, preferred_language, username, email,
+      user_id, first_name, last_name, full_name, profile_photo_url, role, preferred_language, username, email,
       password_hash, status, created_at, updated_at
     )
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?
     WHERE NOT EXISTS (SELECT 1 FROM users)
   `).bind(
     id,
+    input.firstName,
+    input.lastName,
     input.fullName,
     input.profilePhotoUrl,
     input.role,
@@ -643,10 +696,12 @@ export async function updateUser(env: AuthBindings, userId: string, input: Updat
   const nextHash = input.password ? await passwordHash(input.password) : current.password_hash;
   await env.DB.prepare(`
     UPDATE users
-    SET full_name = ?, profile_photo_url = ?, role = ?, preferred_language = ?, username = ?, email = ?,
+    SET first_name = ?, last_name = ?, full_name = ?, profile_photo_url = ?, role = ?, preferred_language = ?, username = ?, email = ?,
         password_hash = ?, status = ?, updated_at = ?
     WHERE user_id = ?
   `).bind(
+    input.firstName ?? current.first_name ?? splitLegalName(current.full_name).firstName,
+    input.lastName ?? current.last_name ?? splitLegalName(current.full_name).lastName,
     input.fullName ?? current.full_name,
     input.profilePhotoUrl !== undefined ? input.profilePhotoUrl : current.profile_photo_url,
     input.role ?? current.role,

@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "social";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "social" | "payroll";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -53,6 +53,10 @@ function canViewBookingValue(user: CurrentUser): boolean {
 
 function canUseSocialAutomation(user: CurrentUser): boolean {
   return isOwner(user) && canAccess(user, "social-automation");
+}
+
+function canUsePayroll(user: CurrentUser): boolean {
+  return isOwner(user) && canAccess(user, "payroll");
 }
 
 function formatMetric(metric: StaffOverviewMetric | undefined): string | undefined {
@@ -205,6 +209,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Social",
       metrics: [],
       summaryLine1: "Photo queue",
+      summaryLine2: "Owner only",
+    }));
+  }
+
+  if (canUsePayroll(user)) {
+    cards.push(withSummaryLines({
+      id: "payroll",
+      module: "payroll",
+      title: "Payroll",
+      description: "Monthly staff salary calculations.",
+      href: "/payroll",
+      cta: "Open Payroll",
+      metrics: [],
+      summaryLine1: "Worker payroll",
       summaryLine2: "Owner only",
     }));
   }

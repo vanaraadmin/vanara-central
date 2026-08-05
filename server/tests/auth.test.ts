@@ -6,6 +6,8 @@ import type { ModuleKey } from "../src/services/current-user.service.ts";
 
 type UserRecord = {
   user_id: string;
+  first_name: string | null;
+  last_name: string | null;
   full_name: string;
   profile_photo_url: string | null;
   role: string;
@@ -93,10 +95,10 @@ class FakeAuthDB {
     }
     if (sql.includes("INSERT INTO users")) {
       const id = String(params[0]);
-      if ([...this.users.values()].some((user) => user.username === params[5] || (params[6] && user.email === params[6]))) {
+      if ([...this.users.values()].some((user) => user.username === params[7] || (params[8] && user.email === params[8]))) {
         throw new Error("UNIQUE constraint failed");
       }
-      this.users.set(id, this.userFromParams(params, String(params[8])));
+      this.users.set(id, this.userFromParams(params, String(params[10])));
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("INSERT INTO user_sessions")) {
@@ -154,18 +156,20 @@ class FakeAuthDB {
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("UPDATE users")) {
-      const userId = String(params[9]);
+      const userId = String(params[11]);
       const user = this.users.get(userId);
       if (!user) return { meta: { changes: 0, last_row_id: 0 } };
-      user.full_name = String(params[0]);
-      user.profile_photo_url = params[1] as string | null;
-      user.role = String(params[2]);
-      user.preferred_language = params[3] as "en" | "th";
-      user.username = String(params[4]);
-      user.email = params[5] as string | null;
-      user.password_hash = String(params[6]);
-      user.status = String(params[7]);
-      user.updated_at = String(params[8]);
+      user.first_name = String(params[0]);
+      user.last_name = String(params[1]);
+      user.full_name = String(params[2]);
+      user.profile_photo_url = params[3] as string | null;
+      user.role = String(params[4]);
+      user.preferred_language = params[5] as "en" | "th";
+      user.username = String(params[6]);
+      user.email = params[7] as string | null;
+      user.password_hash = String(params[8]);
+      user.status = String(params[9]);
+      user.updated_at = String(params[10]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     return { meta: { changes: 0, last_row_id: 0 } };
@@ -174,13 +178,15 @@ class FakeAuthDB {
   private userFromParams(params: unknown[], status: string): UserRecord {
     return {
       user_id: String(params[0]),
-      full_name: String(params[1]),
-      profile_photo_url: params[2] as string | null,
-      role: String(params[3]),
-      preferred_language: params[4] as "en" | "th",
-      username: String(params[5]),
-      email: params[6] as string | null,
-      password_hash: String(params[7]),
+      first_name: String(params[1]),
+      last_name: String(params[2]),
+      full_name: String(params[3]),
+      profile_photo_url: params[4] as string | null,
+      role: String(params[5]),
+      preferred_language: params[6] as "en" | "th",
+      username: String(params[7]),
+      email: params[8] as string | null,
+      password_hash: String(params[9]),
       status,
       created_at: String(params.at(-2)),
       updated_at: String(params.at(-1)),
