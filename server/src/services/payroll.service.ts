@@ -1,4 +1,5 @@
 import type { CurrentUser } from "./current-user.service.js";
+import { VANARA_LOGO_PDF_JPEG_BASE64, VANARA_LOGO_PDF_JPEG_HEIGHT, VANARA_LOGO_PDF_JPEG_WIDTH } from "../assets/images/vanara-logo-pdf.js";
 import { NOTO_SANS_THAI_REGULAR_BASE64 } from "../assets/fonts/noto-sans-thai-regular.js";
 
 export type PayrollStatus = "DRAFT" | "FINALIZED";
@@ -1056,6 +1057,8 @@ function wrapText(value: string, maxChars: number): string[] {
 function buildPdf(pages: string[][]): Uint8Array {
   const thaiFont = thaiFontMetrics();
   const thaiFontHex = bytesToHex(thaiFont.bytes);
+  const logoBytes = base64ToBytes(VANARA_LOGO_PDF_JPEG_BASE64);
+  const logoHex = bytesToHex(logoBytes);
   const toUnicode = toUnicodeCMap();
   const objects: Array<{ id: number; body: string }> = [
     { id: 1, body: "<< /Type /Catalog /Pages 2 0 R >>" },
@@ -1066,14 +1069,15 @@ function buildPdf(pages: string[][]): Uint8Array {
     { id: 7, body: `<< /Type /FontDescriptor /FontName /NotoSansThai-Regular /Flags 32 /FontBBox [${thaiFont.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${thaiFont.ascent} /Descent ${thaiFont.descent} /CapHeight ${thaiFont.ascent} /StemV 80 /FontFile2 9 0 R >>` },
     { id: 8, body: `<< /Length ${thaiFont.cidToGidHex.length + 1} /Filter /ASCIIHexDecode >>\nstream\n${thaiFont.cidToGidHex}>\nendstream` },
     { id: 9, body: `<< /Length ${thaiFontHex.length + 1} /Length1 ${thaiFont.bytes.length} /Filter /ASCIIHexDecode >>\nstream\n${thaiFontHex}>\nendstream` },
+    { id: 10, body: `<< /Type /XObject /Subtype /Image /Width ${VANARA_LOGO_PDF_JPEG_WIDTH} /Height ${VANARA_LOGO_PDF_JPEG_HEIGHT} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${logoHex.length + 1} >>\nstream\n${logoHex}>\nendstream` },
   ];
   const pageIds: number[] = [];
   pages.forEach((lines, index) => {
-    const contentId = 10 + index * 2;
+    const contentId = 20 + index * 2;
     const pageId = contentId + 1;
     const stream = lines.join("\n");
     objects.push({ id: contentId, body: `<< /Length ${new TextEncoder().encode(stream).length} >>\nstream\n${stream}\nendstream` });
-    objects.push({ id: pageId, body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>` });
+    objects.push({ id: pageId, body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /Logo 10 0 R >> >> /Contents ${contentId} 0 R >>` });
     pageIds.push(pageId);
   });
   objects.push({ id: 2, body: `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>` });
@@ -1103,8 +1107,9 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   const titleLines = wrapText(worker.fullName, 42);
   const pageOne: string[] = [
     "q 0.08 0.22 0.16 rg 0 760 595 82 re f Q",
-    textLine(44, 800, 26, "Vanara", "1 1 1"),
-    textLine(44, 780, 12, COMPANY_PROFILE.legalNameThai, "1 1 1", "F2"),
+    "q 58 0 0 58 44 776 cm /Logo Do Q",
+    textLine(116, 800, 26, "Vanara", "1 1 1"),
+    textLine(116, 780, 12, COMPANY_PROFILE.legalNameThai, "1 1 1", "F2"),
     textLine(350, 800, 18, "Payroll Statement", "1 1 1"),
     textLine(350, 780, 10, `Registration no. ${COMPANY_PROFILE.registrationNumber}`, "1 1 1"),
     textLine(44, 738, 10, `Payroll month: ${statementMonth}`),
@@ -1138,11 +1143,11 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
 
   const pageTwo: string[] = [
     "q 0.08 0.22 0.16 rg 0 792 595 50 re f Q",
-    textLine(44, 812, 16, "Event details", "1 1 1"),
-    textLine(180, 812, 14, "รายละเอียดรายการ", "1 1 1", "F2"),
+    textLine(44, 812, 16, "Payroll adjustments", "1 1 1"),
+    textLine(230, 812, 14, "รายละเอียดการปรับเงินเดือน", "1 1 1", "F2"),
     textLine(44, 762, 10, `Payroll month: ${statementMonth}`),
     textLine(44, 746, 10, `Employee: ${worker.fullName}`),
-    textLine(44, 720, 11, "English event log", "0.08 0.22 0.16"),
+    textLine(44, 720, 11, "Monthly payroll details", "0.08 0.22 0.16"),
   ];
   y = 700;
   const events = [...worker.events].sort((left, right) => left.eventDate.localeCompare(right.eventDate) || left.createdAt.localeCompare(right.createdAt));
@@ -1162,7 +1167,7 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
     }
   }
   y = Math.min(y, 410);
-  pageTwo.push(textLine(44, y, 11, "Thai event log", "0.08 0.22 0.16"));
+  pageTwo.push(textLine(44, y, 11, "รายละเอียดเงินเดือนประจำเดือน", "0.08 0.22 0.16", "F2"));
   y -= 20;
   if (events.length === 0) {
     pageTwo.push(textLine(54, y, 10, "ไม่มีรายการประจำเดือน", "0 0 0", "F2"));

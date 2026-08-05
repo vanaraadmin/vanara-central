@@ -417,8 +417,11 @@ test("payroll statement PDF includes core statement and dated event details", as
   const text = new TextDecoder().decode(pdf);
   assert.match(text, /^%PDF-1\.7/);
   assert.match(text, /Payroll Statement/);
+  assert.match(text, /\/Logo Do/);
+  assert.match(text, /\/Subtype \/Image/);
   assert.match(text, /Net Salary Payable/);
-  assert.match(text, /Event details/);
+  assert.match(text, /Payroll adjustments/);
+  assert.doesNotMatch(text, /Event log/i);
   assert.match(text, /22 May - Salary advance - 2,000\.00 THB/);
   assert.match(text, /0235564000381/);
 });
@@ -426,6 +429,7 @@ test("payroll statement PDF includes core statement and dated event details", as
 test("payroll source guardrails protect route, UI, owner permission, event dates and no AI exposure", () => {
   const migration = readFileSync(new URL("../migrations/0037_payroll_module.sql", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/payroll.service.ts", import.meta.url), "utf8");
+  const logo = readFileSync(new URL("../src/assets/images/vanara-logo-pdf.ts", import.meta.url), "utf8");
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const page = readFileSync(new URL("../../src/pages/PayrollPage.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/PayrollPage.css", import.meta.url), "utf8");
@@ -447,7 +451,11 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(page, /max=\{eventDateBounds\.max\}/);
   assert.match(page, /worker\.fullName/);
   assert.match(css, /overflow-wrap: anywhere/);
-  assert.match(service, /Event details/);
+  assert.match(service, /Payroll adjustments/);
+  assert.doesNotMatch(service, /event log/i);
+  assert.match(service, /\/Logo Do/);
+  assert.match(service, /VANARA_LOGO_PDF_JPEG_BASE64/);
+  assert.match(logo, /src\/assets\/img\/logo\.png/);
   assert.match(service, /Salary advance/);
   assert.match(service, /Bonuses \/ other additions/);
   assert.match(service, /lineItems/);
