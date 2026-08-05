@@ -283,7 +283,10 @@
   color: #173b2d;
   background: #fffdf6;
   box-shadow: 0 3px 10px rgba(23, 59, 45, 0.06);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
   touch-action: manipulation;
+  user-select: none;
 }
 
 .chat-thread-message.is-outgoing .chat-thread-message__bubble {
@@ -297,6 +300,8 @@
   font-size: 0.98rem;
   line-height: 1.42;
   white-space: pre-wrap;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .chat-thread-message.is-highlighted .chat-thread-message__bubble {

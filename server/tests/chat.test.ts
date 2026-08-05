@@ -256,9 +256,18 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /placeholder="Aa"/);
   assert.match(page, /ChatContextMenuState/);
   assert.match(page, /ChatMessageContextMenu/);
+  assert.match(page, /createPortal\(layer, document\.body\)/);
   assert.match(page, /onPointerDown=\{handlePointerDown\}/);
-  assert.match(page, /window\.setTimeout\(\(\) => requestMenu\(clientX, clientY\), 520\)/);
+  assert.match(page, /window\.setTimeout\(\(\) => requestMenu\(element\), 520\)/);
   assert.match(page, /onContextMenu=\{handleContextMenu\}/);
+  assert.match(page, /window\.getSelection\?\.\(\)\?\.removeAllRanges\(\)/);
+  assert.match(page, /window\.visualViewport/);
+  assert.match(page, /window\.innerWidth/);
+  assert.match(page, /window\.innerHeight/);
+  assert.match(page, /Math\.min\(Math\.max/);
+  assert.match(page, /getBoundingClientRect\(\)/);
+  assert.match(page, /event\.target\.closest\("button, a, input, textarea, select, \[contenteditable='true'\]"\)/);
+  assert.doesNotMatch(page, /calc\(100vw - 232px\)|left:\s*`min\(max/);
   assert.match(page, />Copia</);
   assert.match(page, />Rispondi</);
   assert.match(page, />Translate</);
@@ -285,6 +294,7 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-tool-icon--sticker/);
   assert.match(css, /\.chat-tool-icon--send/);
   assert.match(css, /\.chat-context-menu/);
+  assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*-webkit-touch-callout:\s*none[^}]*-webkit-user-select:\s*none[^}]*user-select:\s*none/);
   assert.match(css, /\.chat-context-menu__reactions/);
   assert.match(css, /\.chat-context-menu__actions/);
   assert.match(css, /\.chat-announcement/);

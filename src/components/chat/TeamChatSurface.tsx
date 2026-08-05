@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../AsyncState";
 import { loadCurrentUser } from "../../services/auth.service";
@@ -279,9 +280,75 @@ async function copyText(value: string): Promise<void> {
 
 interface ChatContextMenuState {
   message: ChatMessage;
-  x: number;
-  y: number;
+  anchorRect: ContextMenuAnchorRect;
+}
+
+interface ContextMenuAnchorRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+interface ContextMenuPosition {
+  left: number;
+  top: number;
   placement: "above" | "below";
+}
+
+function clearNativeSelection() {
+  window.getSelection?.()?.removeAllRanges();
+}
+
+function toAnchorRect(rect: DOMRect): ContextMenuAnchorRect {
+  return {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function viewportBox() {
+  const viewport = window.visualViewport;
+  return {
+    left: viewport?.offsetLeft ?? 0,
+    top: viewport?.offsetTop ?? 0,
+    width: viewport?.width ?? window.innerWidth,
+    height: viewport?.height ?? window.innerHeight,
+  };
+}
+
+function contextMenuPosition(anchorRect: ContextMenuAnchorRect, menuRect?: DOMRect | null): ContextMenuPosition {
+  const padding = 12;
+  const gap = 10;
+  const fallbackWidth = 220;
+  const fallbackHeight = 174;
+  const viewport = viewportBox();
+  const width = menuRect?.width ?? fallbackWidth;
+  const height = menuRect?.height ?? fallbackHeight;
+  const minLeft = viewport.left + padding;
+  const maxLeft = Math.max(minLeft, viewport.left + viewport.width - width - padding);
+  const minTop = viewport.top + padding;
+  const maxTop = Math.max(minTop, viewport.top + viewport.height - height - padding);
+  const centeredLeft = anchorRect.left + (anchorRect.width / 2) - (width / 2);
+  const left = clamp(centeredLeft, minLeft, maxLeft);
+  const belowTop = anchorRect.bottom + gap;
+  const aboveTop = anchorRect.top - height - gap;
+  const fitsBelow = belowTop + height <= viewport.top + viewport.height - padding;
+  const fitsAbove = aboveTop >= minTop;
+  if (fitsBelow || !fitsAbove) {
+    return { left, top: clamp(belowTop, minTop, maxTop), placement: "below" };
+  }
+  return { left, top: clamp(aboveTop, minTop, maxTop), placement: "above" };
 }
 
 function ChatMessageContextMenu({
@@ -303,15 +370,34 @@ function ChatMessageContextMenu({
   onAnnounce: (message: ChatMessage) => void;
   onReact: (message: ChatMessage, emoji: ChatReactionEmoji) => void;
 }) {
-  return (
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<ContextMenuPosition>(() => contextMenuPosition(state.anchorRect));
+
+  useLayoutEffect(() => {
+    function updatePosition() {
+      setPosition(contextMenuPosition(state.anchorRect, menuRef.current?.getBoundingClientRect()));
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("scroll", updatePosition);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [state.anchorRect]);
+
+  const layer = (
     <div className="chat-context-menu-layer" role="presentation">
       <button type="button" className="chat-context-menu__backdrop" onClick={onClose} aria-label="Close message actions" />
       <div
-        className={`chat-context-menu chat-context-menu--${state.placement}`}
+        ref={menuRef}
+        className={`chat-context-menu chat-context-menu--${position.placement}`}
         style={{
-          left: `min(max(${state.x}px, 12px), calc(100vw - 232px))`,
-          top: state.placement === "above" ? "auto" : `${state.y + 10}px`,
-          bottom: state.placement === "above" ? `max(12px, calc(100vh - ${state.y - 10}px))` : "auto",
+          left: `${position.left}px`,
+          top: `${position.top}px`,
         }}
       >
         <div className="chat-context-menu__reactions" aria-label="Quick reactions">
@@ -331,6 +417,7 @@ function ChatMessageContextMenu({
       </div>
     </div>
   );
+  return typeof document === "undefined" ? null : createPortal(layer, document.body);
 }
 
 function ChatMessageBubble({
@@ -350,7 +437,7 @@ function ChatMessageBubble({
   showTranslation: boolean;
   translationError: boolean;
   registerMessage: (messageId: number, element: HTMLElement | null) => void;
-  onContextRequest: (message: ChatMessage, x: number, y: number) => void;
+  onContextRequest: (message: ChatMessage, anchorRect: ContextMenuAnchorRect) => void;
   onJumpToMessage: (messageId: number) => void;
   onReaction: (message: ChatMessage, emoji: ChatReactionEmoji) => void;
 }) {
@@ -364,20 +451,23 @@ function ChatMessageBubble({
     }
   }
 
-  function requestMenu(x: number, y: number) {
+  function requestMenu(element: HTMLElement) {
     clearLongPress();
-    onContextRequest(message, x, y);
+    clearNativeSelection();
+    onContextRequest(message, toAnchorRect(element.getBoundingClientRect()));
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    const { clientX, clientY } = event;
-    longPressTimer.current = window.setTimeout(() => requestMenu(clientX, clientY), 520);
+    if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
+    const element = event.currentTarget;
+    longPressTimer.current = window.setTimeout(() => requestMenu(element), 520);
   }
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
     event.preventDefault();
-    requestMenu(event.clientX, event.clientY);
+    if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
+    requestMenu(event.currentTarget);
   }
 
   return (
@@ -593,13 +683,11 @@ function ChatThread({
     window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1300);
   }
 
-  function openContextMenu(message: ChatMessage, x: number, y: number) {
+  function openContextMenu(message: ChatMessage, anchorRect: ContextMenuAnchorRect) {
     setContextFeedback(null);
     setContextMenu({
       message,
-      x,
-      y,
-      placement: window.innerHeight - y < 230 ? "above" : "below",
+      anchorRect,
     });
   }
 
