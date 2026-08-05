@@ -1,8 +1,10 @@
-﻿export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
+export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
+export type ChatConversationKind = "GROUP" | "PRIVATE";
 export type ChatLanguage = "en" | "th";
 
 export interface ChatConversation {
   id: string;
+  kind: ChatConversationKind;
   contextType: ChatContextType;
   contextId: string | null;
   title: string;
@@ -13,7 +15,12 @@ export interface ChatConversation {
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
+  lastMessagePreview: string;
+  lastMessageAuthorId: string | null;
   messageCount: number;
+  unreadCount: number;
+  mentionCount: number;
+  avatarLabel: string;
 }
 
 export interface ChatMessage {
@@ -28,7 +35,21 @@ export interface ChatMessage {
   bodyLanguage: ChatLanguage;
   translatedBody: string | null;
   translatedLanguage: ChatLanguage | null;
+  mentionUsernames: string[];
   createdAt: string;
+}
+
+export interface ChatUser {
+  id: string;
+  displayName: string;
+  username: string;
+  role: string;
+  profilePhotoUrl: string | null;
+}
+
+export interface ChatUnreadSummary {
+  unreadCount: number;
+  mentionCount: number;
 }
 
 export interface ChatConversationResponse {
@@ -49,9 +70,25 @@ export interface ChatMessagesResponse {
   error?: string;
 }
 
+export interface ChatUsersResponse {
+  success: boolean;
+  data?: ChatUser[];
+  error?: string;
+}
+
+export interface ChatUnreadSummaryResponse {
+  success: boolean;
+  data?: ChatUnreadSummary;
+  error?: string;
+}
+
 export interface CreateChatMessagePayload {
   body: string;
   bodyLanguage: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
+}
+
+export interface OpenPrivateChatPayload {
+  userId: string;
 }

@@ -21,7 +21,7 @@ import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
-import { createChatMessage, getChatConversation, listChatConversations, listChatMessages, normalizeMessageInput, type ChatBindings } from "./services/chat.service.js";
+import { createChatMessage, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeChatUserId, normalizeMessageInput, openPrivateChat, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
@@ -43,6 +43,7 @@ import {
   createUser,
   disableUser,
   hasModulePermission,
+  isOwner,
   listUsers,
   login,
   logout,
@@ -263,6 +264,17 @@ async function authenticated(c: AppContext, module: ModuleKey, action: "access" 
   const user = await resolveCurrentUser(c);
   requireView(user, module === "settings" || module === "owner-dashboard" ? "owner" : "staff");
   requireModulePermission(user, module, action);
+  return user;
+}
+
+async function chatMember(c: AppContext): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  if (!user.views.includes("staff") && !user.views.includes("owner")) {
+    throw new ForbiddenError("Staff or Owner access is required.");
+  }
+  if (!isOwner(user) && !hasModulePermission(user, "chat", "access")) {
+    throw new ForbiddenError("Chat access is required.");
+  }
   return user;
 }
 
@@ -1683,9 +1695,9 @@ app.post("/api/maintenance/tickets/:id/photos", async (c) => {
 });
 app.get("/api/chat/conversations", async (c) => {
   try {
-    await authenticated(c, "chat", "access");
+    const user = await chatMember(c);
     c.header("Cache-Control", "no-store");
-    return c.json({ success: true, data: await listChatConversations(c.env) });
+    return c.json({ success: true, data: await listChatConversations(c.env, user) });
   } catch (error) {
     console.error(JSON.stringify({
       message: "Chat conversations request failed",
@@ -1699,12 +1711,44 @@ app.get("/api/chat/conversations", async (c) => {
   }
 });
 
+app.get("/api/chat/summary", async (c) => {
+  try {
+    const user = await chatMember(c);
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getChatUnreadSummary(c.env, user) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/chat/users", async (c) => {
+  try {
+    const user = await chatMember(c);
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listChatUsers(c.env, user) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/chat/private", async (c) => {
+  try {
+    const user = await chatMember(c);
+    const payload = await c.req.json().catch(() => null);
+    const targetUserId = normalizeChatUserId(payload);
+    const conversation = await openPrivateChat(c.env, user, targetUserId);
+    return c.json({ success: true, data: conversation }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
+  }
+});
+
 app.get("/api/chat/conversations/:id", async (c) => {
   try {
-    await authenticated(c, "chat", "access");
+    const user = await chatMember(c);
     c.header("Cache-Control", "no-store");
     const conversationId = conversationIdParam(c.req.param("id"));
-    const conversation = await getChatConversation(c.env, conversationId);
+    const conversation = await getChatConversation(c.env, conversationId, user);
 
     if (!conversation) {
       return c.json({ success: false, error: "Conversation not found" }, 404);
@@ -1718,16 +1762,16 @@ app.get("/api/chat/conversations/:id", async (c) => {
 
 app.get("/api/chat/conversations/:id/messages", async (c) => {
   try {
-    await authenticated(c, "chat", "access");
+    const user = await chatMember(c);
     c.header("Cache-Control", "no-store");
     const conversationId = conversationIdParam(c.req.param("id"));
-    const conversation = await getChatConversation(c.env, conversationId);
+    const conversation = await getChatConversation(c.env, conversationId, user);
 
     if (!conversation) {
       return c.json({ success: false, error: "Conversation not found" }, 404);
     }
 
-    return c.json({ success: true, data: await listChatMessages(c.env, conversationId) });
+    return c.json({ success: true, data: await listChatMessages(c.env, conversationId, user) });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
@@ -1738,12 +1782,25 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     const conversationId = conversationIdParam(c.req.param("id"));
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMessageInput(payload);
-    const user = await authenticated(c, "chat", "edit");
+    const user = await chatMember(c);
     const message = await createChatMessage(c.env, conversationId, user, input);
     return c.json({ success: true, data: message }, 201);
   } catch (error) {
     const message = errorMessage(error);
     const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Conversation not found." ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.post("/api/chat/conversations/:id/read", async (c) => {
+  try {
+    const user = await chatMember(c);
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const conversation = await markChatConversationRead(c.env, conversationId, user);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Chat conversation not found." ? 404 : 400;
     return c.json({ success: false, error: message }, status);
   }
 });

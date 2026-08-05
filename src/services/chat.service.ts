@@ -5,7 +5,12 @@ import type {
   ChatConversationsResponse,
   ChatMessage,
   ChatMessagesResponse,
+  ChatUnreadSummary,
+  ChatUnreadSummaryResponse,
+  ChatUser,
+  ChatUsersResponse,
   CreateChatMessagePayload,
+  OpenPrivateChatPayload,
 } from "../types/chat";
 
 async function sendJson<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
@@ -78,6 +83,41 @@ export async function createChatMessage(
   );
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Message could not be created");
+  }
+  return response.data;
+}
+
+export async function loadChatUsers(signal?: AbortSignal): Promise<ChatUser[]> {
+  const response = await requestJson<ChatUsersResponse>("/api/chat/users", signal);
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Team members are unavailable");
+  }
+  return response.data;
+}
+
+export async function openPrivateChat(
+  payload: OpenPrivateChatPayload,
+  signal?: AbortSignal,
+): Promise<ChatConversation> {
+  const response = await sendJson<ChatConversationResponse>("/api/chat/private", payload, signal);
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Private chat could not be opened");
+  }
+  return response.data;
+}
+
+export async function markChatConversationRead(id: string, signal?: AbortSignal): Promise<ChatConversation> {
+  const response = await sendJson<ChatConversationResponse>(`/api/chat/conversations/${id}/read`, {}, signal);
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Chat conversation could not be marked read");
+  }
+  return response.data;
+}
+
+export async function loadChatUnreadSummary(signal?: AbortSignal): Promise<ChatUnreadSummary> {
+  const response = await requestJson<ChatUnreadSummaryResponse>("/api/chat/summary", signal);
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Chat summary is unavailable");
   }
   return response.data;
 }
