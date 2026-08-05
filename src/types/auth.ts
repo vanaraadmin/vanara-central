@@ -10,6 +10,7 @@ export type ModuleKey =
   | "procurement"
   | "messages"
   | "chat"
+  | "social-automation"
   | "owner-dashboard"
   | "settings";
 
@@ -82,6 +83,7 @@ export const moduleKeys: ModuleKey[] = [
   "procurement",
   "messages",
   "chat",
+  "social-automation",
   "owner-dashboard",
   "settings",
 ];

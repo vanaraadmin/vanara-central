@@ -39,6 +39,10 @@ const mappings = {
     importName: "backgroundProcurement",
     fileName: "background_procurement.png",
   },
+  social: {
+    importName: "backgroundProcurement",
+    fileName: "background_procurement.png",
+  },
   messages: {
     importName: "backgroundRooms",
     fileName: "background_room.png",
@@ -82,6 +86,7 @@ test("Staff Home and WorkspaceShell consume backgrounds through the shared confi
   assert.match(workspaceShell, /housekeeping: "housekeeping"/);
   assert.match(workspaceShell, /maintenance: "maintenance"/);
   assert.match(workspaceShell, /procurement: "procurement"/);
+  assert.match(workspaceShell, /social: "social"/);
   assert.match(workspaceShell, /chat: "chat"/);
   assert.match(workspaceShell, /messages: "messages"/);
   assert.match(workspaceShell, /workspaceBackgroundStyle\(backgroundKey\)/);
@@ -100,6 +105,7 @@ test("implemented workspaces map to the correct shared shell background keys", (
   assert.match(readFileSync(new URL("../../src/pages/ProcurementPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
   assert.match(readFileSync(new URL("../../src/pages/ProcurementOwnerPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
   assert.match(readFileSync(new URL("../../src/pages/SupplyRequestPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
+  assert.match(readFileSync(new URL("../../src/pages/SocialAutomationPage.tsx", import.meta.url), "utf8"), /workspace="social"/);
   assert.match(readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8"), /workspace="chat"/);
   assert.match(readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8"), /workspace="messages"/);
 });

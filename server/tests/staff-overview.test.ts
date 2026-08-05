@@ -433,6 +433,7 @@ const roomsAccess: Permission = { module_key: "rooms", can_access: 1, can_edit: 
 const housekeepingAccess: Permission = { module_key: "housekeeping", can_access: 1, can_edit: 0 };
 const maintenanceAccess: Permission = { module_key: "maintenance", can_access: 1, can_edit: 0 };
 const procurementAccess: Permission = { module_key: "procurement", can_access: 1, can_edit: 0 };
+const socialAutomationAccess: Permission = { module_key: "social-automation", can_access: 1, can_edit: 1 };
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
 test("staff overview returns the complete operational workspace set for the Staff visual experience", async () => {
@@ -526,6 +527,25 @@ test("staff overview supports users with multiple permissions without owner data
   assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
   assert.equal(JSON.stringify(overview).includes("Dashboard Owner"), false);
+});
+
+test("staff overview exposes Social Automation only to owners with the social module", async () => {
+  const ownerOverview = await getStaffOverview(
+    env([socialAutomationAccess]),
+    currentUser([{ module: "social-automation", canAccess: true, canEdit: true }], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const ownerCard = ownerOverview.cards.find((card) => card.id === "social");
+  assert.ok(ownerCard);
+  assert.equal(ownerCard.title, "Social Automation");
+  assert.equal(ownerCard.href, "/social-automation");
+
+  const staffOverview = await getStaffOverview(
+    env([socialAutomationAccess]),
+    currentUser([{ module: "social-automation", canAccess: true, canEdit: true }], "Operations", ["staff"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  assert.equal(staffOverview.cards.some((card) => card.id === "social"), false);
 });
 
 test("staff overview does not return an empty operational home for active Staff users without explicit module grants", async () => {

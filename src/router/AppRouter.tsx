@@ -20,6 +20,7 @@ import RoomsPage from "../pages/RoomsPage";
 import SupplyRequestPage from "../pages/SupplyRequestPage";
 import RoomDetailPage from "../pages/RoomDetailPage";
 import SettingsPage from "../pages/SettingsPage";
+import SocialAutomationPage from "../pages/SocialAutomationPage";
 import StaffPage from "../pages/StaffPage";
 import { ApiError } from "../services/api.client";
 import { loadCurrentUser } from "../services/auth.service";
@@ -99,6 +100,7 @@ export default function AppRouter() {
           <Route path="procurement" element={<ProcurementPage />} />
           <Route path="procurement/new" element={<SupplyRequestPage />} />
           <Route path="procurement/:requestId" element={<ProcurementDetailPage />} />
+          <Route path="social-automation" element={<SocialAutomationPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="chat/:conversationId" element={<ChatPage />} />
           <Route path="notifications" element={<Placeholder titleKey="notifications" descriptionKey="notificationsPlaceholder" />} />

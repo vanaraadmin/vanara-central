@@ -4,6 +4,7 @@ import { type CSSProperties, useMemo } from "react";
 import airplaneLandingIcon from "../assets/img/airplane-landing-light.svg";
 import bedIcon from "../assets/img/bed-light.svg";
 import calendarCheckIcon from "../assets/img/calendar-check-light.svg";
+import envelopeIcon from "../assets/img/envelope-light.svg";
 import shoppingCartIcon from "../assets/img/shopping-cart-light.svg";
 import sprayBottleIcon from "../assets/img/spray-bottle-light.svg";
 import wrenchIcon from "../assets/img/wrench-light.svg";
@@ -27,6 +28,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "housekeeping",
   "maintenance",
   "procurement",
+  "social",
 ];
 
 const workspaceIcons: Record<StaffCardId, string> = {
@@ -37,6 +39,7 @@ const workspaceIcons: Record<StaffCardId, string> = {
   housekeeping: sprayBottleIcon,
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
+  social: envelopeIcon,
 };
 
 const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {

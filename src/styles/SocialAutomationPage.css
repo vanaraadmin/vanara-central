@@ -1,0 +1,201 @@
+.social-automation-page {
+  display: grid;
+  gap: var(--vc-space-5);
+  padding-bottom: calc(104px + var(--vc-safe-bottom));
+}
+
+.social-upload,
+.social-history {
+  display: grid;
+  gap: var(--vc-space-4);
+}
+
+.social-upload__form {
+  display: grid;
+  gap: var(--vc-space-3);
+}
+
+.social-dropzone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 132px;
+  gap: var(--vc-space-4);
+  padding: var(--vc-space-4);
+  color: var(--workspace-ink);
+  background: rgba(255, 253, 246, 0.12);
+  border: 1px dashed rgba(255, 253, 246, 0.42);
+  border-radius: var(--vc-radius-lg);
+  cursor: pointer;
+}
+
+.social-dropzone input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.social-dropzone__mark {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(255, 253, 246, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 253, 246, 0.32);
+}
+
+.social-dropzone__mark::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  background: currentColor;
+  mask: linear-gradient(#000 0 0) center / 4px 100% no-repeat,
+    linear-gradient(#000 0 0) center / 100% 4px no-repeat;
+  opacity: 0.9;
+}
+
+.social-dropzone__copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--vc-space-1);
+}
+
+.social-dropzone__copy strong {
+  overflow-wrap: anywhere;
+  font-size: var(--vc-text-xl);
+  line-height: var(--vc-line-tight);
+}
+
+.social-dropzone__copy small,
+.social-queue-item__main small {
+  color: var(--workspace-muted);
+  font-size: var(--vc-text-sm);
+}
+
+.social-upload__button {
+  justify-self: start;
+}
+
+.social-upload__notice,
+.social-upload__error {
+  margin: 0;
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.social-upload__notice {
+  color: var(--vc-color-success);
+}
+
+.social-upload__error {
+  color: var(--vc-color-danger);
+}
+
+.social-queue-list {
+  display: grid;
+  gap: var(--vc-space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.social-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--vc-space-3);
+  min-height: 74px;
+  padding: var(--vc-space-3);
+  background: rgba(8, 31, 25, 0.28);
+  border: 1px solid rgba(255, 253, 246, 0.18);
+  border-radius: var(--vc-radius-lg);
+}
+
+.social-queue-item__thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 253, 246, 0.24), rgba(255, 253, 246, 0.06)),
+    rgba(255, 253, 246, 0.08);
+}
+
+.social-queue-item__main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.social-queue-item__main strong {
+  overflow: hidden;
+  color: var(--workspace-ink);
+  font-size: var(--vc-text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.social-status {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--vc-space-3);
+  color: var(--vc-color-jungle-900);
+  background: rgba(255, 253, 246, 0.88);
+  border-radius: var(--vc-radius-pill);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-bold);
+  white-space: nowrap;
+}
+
+.social-queue-item--failed .social-status {
+  color: var(--vc-color-white);
+  background: var(--vc-color-danger);
+}
+
+.social-queue-item--posted .social-status {
+  color: var(--vc-color-white);
+  background: var(--vc-color-success);
+}
+
+.social-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  gap: var(--vc-space-2);
+  text-align: center;
+}
+
+.social-empty span {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: rgba(255, 253, 246, 0.18);
+}
+
+.social-empty h2,
+.social-empty p {
+  margin: 0;
+}
+
+.social-empty p {
+  max-width: 30ch;
+  color: var(--workspace-muted);
+}
+
+@media (max-width: 640px) {
+  .social-dropzone,
+  .social-queue-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .social-status,
+  .social-upload__button {
+    justify-self: stretch;
+  }
+}

@@ -2,7 +2,7 @@ import { getHousekeepingV2Overview, type HousekeepingV2Bindings, type Housekeepi
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./rooms-workspace.service.js";
 import { getReceptionOverview, type ReceptionBindings } from "./reception.service.js";
-import { hasModulePermission, type CurrentUser, type ModuleKey } from "./current-user.service.js";
+import { hasModulePermission, isOwner, type CurrentUser, type ModuleKey } from "./current-user.service.js";
 import { listRecentBookingEvents, type BookingEventsBindings, type BookingPulseItem } from "./booking-events.service.js";
 import { getBangkokDate } from "./today.service.js";
 
@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "social";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -49,6 +49,10 @@ function canAccess(user: CurrentUser, module: ModuleKey): boolean {
 
 function canViewBookingValue(user: CurrentUser): boolean {
   return user.role === "Owner" && user.views.includes("owner") && canAccess(user, "owner-dashboard");
+}
+
+function canUseSocialAutomation(user: CurrentUser): boolean {
+  return isOwner(user) && canAccess(user, "social-automation");
 }
 
 function formatMetric(metric: StaffOverviewMetric | undefined): string | undefined {
@@ -188,6 +192,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       href: "/procurement",
       cta: "Open Procurement",
       metrics: [],
+    }));
+  }
+
+  if (canUseSocialAutomation(user)) {
+    cards.push(withSummaryLines({
+      id: "social",
+      module: "social-automation",
+      title: "Social Automation",
+      description: "Queue resort photos for daily publishing.",
+      href: "/social-automation",
+      cta: "Open Social",
+      metrics: [],
+      summaryLine1: "Photo queue",
+      summaryLine2: "Owner only",
     }));
   }
 

@@ -1,0 +1,147 @@
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageLoading } from "../components/AsyncState";
+import WorkspaceShell from "../components/WorkspaceShell";
+import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
+import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
+import { loadSocialAutomationOverview, uploadSocialPhoto } from "../services/social.service";
+import type { SocialPostQueueItem, SocialPostStatus } from "../types/social";
+import "../styles/SocialAutomationPage.css";
+
+const statusLabels: Record<SocialPostStatus, string> = {
+  QUEUED: "Queued",
+  PREPARING_IMAGE: "Preparing image",
+  IMAGE_READY: "Image ready",
+  CAPTIONING: "Captioning",
+  READY_TO_POST: "Ready to post",
+  POSTING: "Posting",
+  POSTED: "Posted",
+  FAILED: "Failed",
+  CANCELLED: "Cancelled",
+};
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+function QueueItem({ item }: { item: SocialPostQueueItem }) {
+  return (
+    <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
+      <span className="social-queue-item__thumb" aria-hidden="true" />
+      <span className="social-queue-item__main">
+        <strong>{item.originalFileName}</strong>
+        <small>{formatDateTime(item.queuedAt)} - {formatSize(item.byteSize)}</small>
+      </span>
+      <span className="social-status">{statusLabels[item.status]}</span>
+    </li>
+  );
+}
+
+export default function SocialAutomationPage() {
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const overview = useQuery({
+    queryKey: ["social-automation", "overview"],
+    queryFn: ({ signal }) => loadSocialAutomationOverview(signal),
+    refetchInterval: 60_000,
+  });
+
+  const upload = useMutation({
+    mutationFn: (file: File) => uploadSocialPhoto(file),
+    onSuccess: async () => {
+      setSelectedFile(null);
+      setNotice("Queued");
+      if (inputRef.current) inputRef.current.value = "";
+      await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
+    },
+  });
+
+  const canUpload = Boolean(selectedFile && !upload.isPending);
+  const latest = overview.data?.latest ?? [];
+  const summary = overview.data?.summary;
+
+  return (
+    <WorkspaceShell title="Social Automation" stickyNavigationTitle="Social Automation" workspace="social" bodyClassName="social-automation-page">
+      <VanaraGlassRegion className="social-upload" ariaLabelledBy="social-upload-title">
+        <VanaraSectionHeader
+          eyebrow="Owner"
+          headingId="social-upload-title"
+          meta={summary ? `${summary.QUEUED} queued` : "Queue"}
+          title="Photo Upload"
+        />
+
+        <form
+          className="social-upload__form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (selectedFile) upload.mutate(selectedFile);
+          }}
+        >
+          <label className="social-dropzone">
+            <input
+              accept="image/jpeg,image/png,image/webp"
+              disabled={upload.isPending}
+              onChange={(event) => {
+                setNotice(null);
+                setSelectedFile(event.currentTarget.files?.[0] ?? null);
+              }}
+              ref={inputRef}
+              type="file"
+            />
+            <span className="social-dropzone__mark" aria-hidden="true" />
+            <span className="social-dropzone__copy">
+              <strong>{selectedFile ? selectedFile.name : "Choose photo"}</strong>
+              <small>{selectedFile ? `${formatSize(selectedFile.size)} - JPG, PNG or WebP only` : "JPG, PNG or WebP only. HEIC is not supported."}</small>
+            </span>
+          </label>
+
+          <button className="vc-primary-action social-upload__button" disabled={!canUpload} type="submit">
+            {upload.isPending ? "Queueing" : "Queue Photo"}
+          </button>
+        </form>
+
+        {notice ? <p className="social-upload__notice">{notice}</p> : null}
+        {upload.isError ? <p className="social-upload__error">{upload.error instanceof Error ? upload.error.message : "Photo could not be queued"}</p> : null}
+      </VanaraGlassRegion>
+
+      <VanaraGlassRegion className="social-history" ariaLabelledBy="social-history-title">
+        <VanaraSectionHeader
+          eyebrow="Status"
+          headingId="social-history-title"
+          meta={summary ? `${summary.POSTED} posted` : "Latest"}
+          title="Queue"
+        />
+
+        {overview.isLoading ? <PageLoading /> : null}
+        {overview.isError && !overview.data ? <PageError onRetry={() => void overview.refetch()} /> : null}
+        {overview.data && latest.length === 0 ? (
+          <section className="social-empty" aria-label="No queued photos">
+            <span aria-hidden="true" />
+            <h2>No photos queued</h2>
+            <p>Upload a resort photo to prepare the next social post.</p>
+          </section>
+        ) : null}
+        {latest.length > 0 ? (
+          <ul className="social-queue-list" aria-label="Latest queued photos">
+            {latest.map((item) => <QueueItem item={item} key={item.id} />)}
+          </ul>
+        ) : null}
+      </VanaraGlassRegion>
+    </WorkspaceShell>
+  );
+}
