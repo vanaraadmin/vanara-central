@@ -106,7 +106,7 @@ class FakeHousekeepingV2DB {
     if (sql.includes("FROM housekeeping_tasks ht") && sql.includes("rs.room_released = 1")) {
       const rows = this.tasks
         .filter((task) => task.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION" && task.operational_date === params[0])
-        .filter((task) => this.bookings.some((bookingRow) => bookingRow.booking_id === task.booking_id && bookingRow.room_released === 1))
+        .filter((task) => this.bookings.some((bookingRow) => bookingRow.room_released === 1 && (bookingRow.booking_id === task.booking_id || bookingRow.beds24_booking_id === task.stay_id)))
         .map((task) => ({ task_id: task.task_id, version: task.version }));
       return { results: rows as T[] };
     }
@@ -468,6 +468,35 @@ test("water refill is not generated on checkout day", async () => {
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.data.tasks.some((card) => card.taskType === "WATER_REFILL"), false);
   assert.equal(body.data.summary.waterDue, 0);
+});
+
+test("released turnover sync matches historical tasks linked by Beds24 stay id", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(301, 930301, 1, "Departing Guest", 2, 0), departure_date: "2026-08-03", room_released: 1 },
+  ];
+  db.tasks.push(storedTask({
+    task_id: 88,
+    task_type: "TURNOVER",
+    booking_id: null,
+    stay_id: 930301,
+    operational_date: "2026-08-03",
+    due_cycle_date: "2026-08-03",
+    status: "WAITING_FOR_RECEPTION",
+    priority: "URGENT",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-03", db);
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskStatus: string; currentQueue: string; capabilities: { canStart: boolean } }> }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(db.tasks.find((task) => task.task_id === 88)?.status, "AVAILABLE_FOR_CLAIM");
+  const priority = body.data.sections.find((section) => section.id === "priority-turnover");
+  assert.equal(priority?.cards.length, 1);
+  assert.equal(priority?.cards[0]?.taskId, 88);
+  assert.equal(priority?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(priority?.cards[0]?.currentQueue, "priority-turnover");
+  assert.equal(priority?.cards[0]?.capabilities.canStart, true);
 });
 
 test("arrival-day water task already stored is not published and the next full day generates water", async () => {

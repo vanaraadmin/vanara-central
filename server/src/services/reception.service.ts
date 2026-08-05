@@ -5,6 +5,7 @@ import { countryCodeFrom, countryFlagFrom, countryFlagUrlFrom } from "./country-
 import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 import { loadRoomHousekeepingStateForUnit } from "./room-housekeeping-state.service.js";
+import { ensureTurnoverReleasedForCheckout } from "./housekeeping-task-domain.service.js";
 
 export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings {
   DB: D1Database;
@@ -16,6 +17,7 @@ export type ReceptionCompletionType = "check-in" | "check-out";
 export type ReceptionAlertType = "passport_missing" | "deposit_pending";
 
 interface BookingRow {
+  booking_id: number;
   beds24_booking_id: number;
   guest_name: string | null;
   unit_id: number | null;
@@ -317,7 +319,7 @@ async function bookingExists(env: ReceptionBindings, bookingId: number): Promise
 
 async function loadBookingRow(env: ReceptionBindings, bookingId: number): Promise<BookingRow | null> {
   return env.DB.prepare(`
-    SELECT b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
+    SELECT b.booking_id, b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
            b.adults, b.children, b.arrival_date, b.departure_date, b.channel, b.api_source, b.api_reference,
            b.email, b.phone, b.mobile, b.country, b.country_code, b.status
     FROM bookings b
@@ -578,6 +580,12 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
       .bind(local.deposit_collected === 1 ? 1 : 0, now, bookingId)
       .run();
     await recordEvent(env, bookingId, "checkOutCompleted", "false", "true", user, now);
+    await ensureTurnoverReleasedForCheckout(env, {
+      bookingId: booking.booking_id,
+      beds24BookingId: booking.beds24_booking_id,
+      unitId: booking.unit_id,
+      departureDate: booking.departure_date,
+    }, user);
     if (local.deposit_collected !== 1) {
       await resolveReceptionAlert(env, bookingId, "deposit_pending", user, now);
     }
@@ -588,7 +596,7 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
 
 async function loadBookingRows(env: ReceptionBindings, where: string, params: string[]): Promise<BookingRow[]> {
   const rows = await env.DB.prepare(`
-    SELECT b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
+    SELECT b.booking_id, b.beds24_booking_id, b.guest_name, b.unit_id, u.unit_name, rt.room_type_name,
            b.adults, b.children, b.arrival_date, b.departure_date, b.channel, b.api_source, b.api_reference,
            b.email, b.phone, b.mobile, b.country, b.country_code, b.status
     FROM bookings b

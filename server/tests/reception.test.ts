@@ -14,6 +14,7 @@ import { createBookingPassport, listBookingPassports } from "../src/services/boo
 import { countryCodeFrom, countryFlagUrlFrom } from "../src/services/country-flags.service.ts";
 import { getBangkokDate } from "../src/services/today.service.ts";
 import type { ModuleKey } from "../src/services/current-user.service.ts";
+import type { HousekeepingTaskPriority, HousekeepingTaskSource, HousekeepingTaskStatus, HousekeepingTaskType } from "../src/services/housekeeping-task-domain.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
 type ActionPermission = { action_key: "can_complete_checkin_checkout"; allowed: number };
@@ -98,6 +99,34 @@ const BOOKING = {
   status: "Confirmed",
 };
 type TestBooking = typeof BOOKING;
+type HousekeepingTaskRow = {
+  task_id: number;
+  task_type: HousekeepingTaskType;
+  unit_id: number;
+  booking_id: number | null;
+  stay_id: number | null;
+  operational_date: string;
+  due_cycle_date: string | null;
+  status: HousekeepingTaskStatus;
+  priority: HousekeepingTaskPriority;
+  blocking_reason: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  claimed_at: string | null;
+  started_at: string | null;
+  checklist_completed_at: string | null;
+  ready_at: string | null;
+  completed_at: string | null;
+  skipped_at: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+  source: HousekeepingTaskSource;
+  on_demand_source: string | null;
+  idempotency_key: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
 
 class FakeStmt {
   private params: unknown[] = [];
@@ -117,6 +146,9 @@ class FakeReceptionDB {
   events: Array<Record<string, unknown>> = [];
   alerts: Array<Record<string, unknown>> = [];
   passports: Array<Record<string, unknown>> = [];
+  housekeepingTasks: HousekeepingTaskRow[] = [];
+  housekeepingEvents: Array<{ task_id: number; event_type: string; idempotency_key: string | null }> = [];
+  nextHousekeepingTaskId = 1;
   failPassportInsert = false;
 
   constructor(
@@ -149,6 +181,49 @@ class FakeReceptionDB {
     if (sql.includes("SELECT view_key FROM user_views")) return { results: this.views.map((view_key) => ({ view_key })) as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: this.actionPermissions as T[] };
+    if (sql.includes("COALESCE(roa.status, 'OPERATING') AS operational_availability_status")) {
+      return {
+        results: this.bookings.map((booking) => ({
+          unit_id: booking.unit_id,
+          unit_name: booking.unit_name,
+          unit_type: booking.room_type_name.toLowerCase().includes("villa") ? "villa" : "other",
+          room_type_name: booking.room_type_name,
+          room_name: booking.room_type_name,
+          operational_availability_status: "OPERATING",
+        })) as T[],
+      };
+    }
+    if (sql.includes("FROM bookings b") && sql.includes("JOIN units u ON u.unit_id = b.unit_id") && sql.includes("rs.guest_arrived")) {
+      return {
+        results: this.operationalBookings().map((booking) => {
+          const stay = this.stays.get(booking.beds24_booking_id);
+          return {
+            booking_id: booking.booking_id,
+            beds24_booking_id: booking.beds24_booking_id,
+            unit_id: booking.unit_id,
+            guest_name: booking.guest_name,
+            arrival_date: booking.arrival_date,
+            departure_date: booking.departure_date,
+            arrival_time: null,
+            channel: booking.channel,
+            api_source: booking.api_source,
+            status: booking.status,
+            guest_arrived: stay?.guest_arrived ?? 0,
+            room_released: stay?.room_released ?? 0,
+          };
+        }) as T[],
+      };
+    }
+    if (sql.includes("FROM housekeeping_tasks ht") && sql.includes("rs.room_released = 1")) {
+      const rows = this.housekeepingTasks
+        .filter((task) => task.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION" && task.operational_date === _params[0])
+        .filter((task) => this.operationalBookings().some((booking) => {
+          const stay = this.stays.get(booking.beds24_booking_id);
+          return stay?.room_released === 1 && (task.booking_id === booking.booking_id || task.stay_id === booking.beds24_booking_id);
+        }))
+        .map((task) => ({ task_id: task.task_id, version: task.version }));
+      return { results: rows as T[] };
+    }
     if (sql.includes("WITH latest_housekeeping")) {
       return {
         results: [{
@@ -170,6 +245,14 @@ class FakeReceptionDB {
         }] as T[],
       };
     }
+    if (sql.includes("FROM housekeeping_tasks ht")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_tasks")) {
+      const rows = sql.includes("WHERE unit_id = ?")
+        ? this.housekeepingTasks.filter((task) => task.unit_id === Number(_params[0]))
+        : this.housekeepingTasks;
+      return { results: [...rows] as T[] };
+    }
+    if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
     if (sql.includes("FROM bookings b") && sql.includes("ORDER BY u.position")) {
       return { results: this.operationalBookings() as T[] };
     }
@@ -185,6 +268,23 @@ class FakeReceptionDB {
       )) as T[] };
     }
     if (sql.includes("FROM maintenance_tickets") && sql.includes("WHERE room_id =")) return { results: [] as T[] };
+    if (sql.includes("FROM maintenance_tickets") && sql.includes("GROUP BY room_id")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_task_checklist_items")) return { results: [] as T[] };
+    if (sql.includes("FROM housekeeping_task_events")) {
+      return { results: this.housekeepingEvents.map((event, index) => ({
+        event_id: index + 1,
+        task_id: event.task_id,
+        event_type: event.event_type,
+        actor_name: ACTIVE_RECEPTION_USER.full_name,
+        previous_status: null,
+        new_status: "AVAILABLE_FOR_CLAIM",
+        reason: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+      })) as T[] };
+    }
+    if (sql.includes("FROM housekeeping_water_quantity_config")) {
+      return { results: [{ room_type: "Garden Villa", default_bottles: 4 }] as T[] };
+    }
     return { results: [] as T[] };
   }
 
@@ -204,6 +304,34 @@ class FakeReceptionDB {
     if (sql.includes("SELECT * FROM reception_stays WHERE beds24_booking_id")) {
       return (this.stays.get(Number(params[0])) ?? null) as T | null;
     }
+    if (sql.includes("FROM housekeeping_tasks WHERE idempotency_key")) {
+      return (this.housekeepingTasks.find((task) => task.idempotency_key === params[0]) as T) ?? null;
+    }
+    if (sql.includes("FROM housekeeping_task_events WHERE task_id")) {
+      const taskId = Number(params[0]);
+      const idempotencyKey = params[1] as string | null;
+      const event = this.housekeepingEvents.find((item) => item.task_id === taskId && item.idempotency_key === idempotencyKey);
+      return event ? ({ task_id: taskId } as T) : null;
+    }
+    if (sql.includes("FROM housekeeping_tasks WHERE task_id")) {
+      return (this.housekeepingTasks.find((task) => task.task_id === Number(params[0])) as T) ?? null;
+    }
+    if (sql.includes("FROM housekeeping_tasks") && sql.includes("task_type = 'TURNOVER'")) {
+      const unitId = Number(params[0]);
+      const operationalDate = String(params[1]);
+      const bookingId = Number(params[2]);
+      const stayId = Number(params[3]);
+      const row = this.housekeepingTasks
+        .filter((task) => task.task_type === "TURNOVER" && task.unit_id === unitId && task.operational_date === operationalDate && (task.booking_id === bookingId || task.stay_id === stayId))
+        .sort((left, right) => housekeepingStatusOrder(left.status) - housekeepingStatusOrder(right.status) || left.task_id - right.task_id)[0] ?? null;
+      return row as T | null;
+    }
+    if (sql.includes("SELECT rs.room_released")) {
+      const booking = this.operationalBookings().find((item) => item.booking_id === Number(params[0]));
+      const stay = booking ? this.stays.get(booking.beds24_booking_id) : null;
+      return stay ? ({ room_released: stay.room_released } as T) : null;
+    }
+    if (sql.includes("FROM housekeeping_room_counters")) return null;
     if (sql.includes("FROM bookings b") && sql.includes("WHERE b.beds24_booking_id")) {
       return (this.operationalBookings().find((item) => item.beds24_booking_id === Number(params[0])) ?? null) as T | null;
     }
@@ -337,6 +465,38 @@ class FakeReceptionDB {
       });
       return { meta: { changes: 1, last_row_id: event_id } };
     }
+    if (sql.includes("INSERT INTO housekeeping_tasks")) {
+      const existing = this.housekeepingTasks.find((task) => task.idempotency_key === params[10]);
+      if (existing) throw new Error("UNIQUE constraint failed: housekeeping_tasks.idempotency_key");
+      const task = housekeepingTaskFromParams(params, this.nextHousekeepingTaskId++);
+      this.housekeepingTasks.push(task);
+      return { meta: { changes: 1, last_row_id: task.task_id } };
+    }
+    if (sql.includes("UPDATE housekeeping_tasks SET")) {
+      const taskId = Number(params.at(-2));
+      const expectedVersion = Number(params.at(-1));
+      const task = this.housekeepingTasks.find((item) => item.task_id === taskId && item.version === expectedVersion);
+      if (!task) return { meta: { changes: 0, last_row_id: 0 } };
+      task.status = params[0] as HousekeepingTaskStatus;
+      task.updated_at = String(params[1]);
+      task.version += 1;
+      return { meta: { changes: 1, last_row_id: taskId } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO housekeeping_task_events")) {
+      const taskId = Number(params[0]);
+      const idempotencyKey = params[8] as string | null;
+      if (idempotencyKey && this.housekeepingEvents.some((event) => event.task_id === taskId && event.idempotency_key === idempotencyKey)) {
+        return { meta: { changes: 0, last_row_id: 0 } };
+      }
+      this.housekeepingEvents.push({ task_id: taskId, event_type: String(params[1]), idempotency_key: idempotencyKey });
+      return { meta: { changes: 1, last_row_id: this.housekeepingEvents.length } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO housekeeping_task_checklist_items")) {
+      return { meta: { changes: 1, last_row_id: 1 } };
+    }
+    if (sql.includes("INSERT INTO housekeeping_room_counters") || sql.includes("UPDATE housekeeping_room_counters SET")) {
+      return { meta: { changes: 1, last_row_id: 1 } };
+    }
     if (sql.includes("INSERT INTO reception_room_alerts")) {
       const existing = this.alerts.find((alert) => alert.beds24_booking_id === params[0] && alert.alert_type === params[2]);
       if (existing) {
@@ -407,6 +567,75 @@ class FakeReceptionDB {
   }
 }
 
+function housekeepingStatusOrder(status: HousekeepingTaskStatus): number {
+  if (status === "WAITING_FOR_RECEPTION") return 0;
+  if (!["COMPLETED", "SKIPPED", "CANCELLED"].includes(status)) return 1;
+  return 2;
+}
+
+function housekeepingTaskFromParams(params: unknown[], taskId: number): HousekeepingTaskRow {
+  return {
+    task_id: taskId,
+    task_type: params[0] as HousekeepingTaskType,
+    unit_id: Number(params[1]),
+    booking_id: params[2] as number | null,
+    stay_id: params[3] as number | null,
+    operational_date: String(params[4]),
+    due_cycle_date: params[5] as string | null,
+    status: params[6] as HousekeepingTaskStatus,
+    priority: params[7] as HousekeepingTaskPriority,
+    source: params[8] as HousekeepingTaskSource,
+    on_demand_source: params[9] as string | null,
+    idempotency_key: params[10] as string | null,
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    claimed_at: null,
+    started_at: null,
+    checklist_completed_at: null,
+    ready_at: null,
+    completed_at: null,
+    skipped_at: null,
+    cancelled_at: null,
+    cancellation_reason: null,
+    version: 1,
+    created_at: String(params[15]),
+    updated_at: String(params[16]),
+  };
+}
+
+function storedHousekeepingTask(overrides: Partial<HousekeepingTaskRow>): HousekeepingTaskRow {
+  return {
+    task_id: 500,
+    task_type: "TURNOVER",
+    unit_id: 1,
+    booking_id: 501,
+    stay_id: 9001,
+    operational_date: TODAY,
+    due_cycle_date: TODAY,
+    status: "WAITING_FOR_RECEPTION",
+    priority: "URGENT",
+    blocking_reason: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    claimed_at: null,
+    started_at: null,
+    checklist_completed_at: null,
+    ready_at: null,
+    completed_at: null,
+    skipped_at: null,
+    cancelled_at: null,
+    cancellation_reason: null,
+    source: "system",
+    on_demand_source: null,
+    idempotency_key: "housekeeping:v2:turnover:1:9001:stored",
+    version: 1,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 class FakePassportR2 {
   objects = new Map<string, { body: R2PutValue; options?: R2PutOptions }>();
   constructor(private failPut = false, private failDelete = false) {}
@@ -452,6 +681,7 @@ async function json(response: Response) {
 
 const movementsAccess: Permission = { module_key: "movements", can_access: 1, can_edit: 0 };
 const movementsEdit: Permission = { module_key: "movements", can_access: 1, can_edit: 1 };
+const housekeepingAccess: Permission = { module_key: "housekeeping", can_access: 1, can_edit: 0 };
 
 test("country flags normalize Beds24 country codes to image URLs", () => {
   assert.equal(countryCodeFrom("BE"), "BE");
@@ -1439,6 +1669,84 @@ test("staff operational access completes reception events and preserves actor au
   assert.equal(payload.checkOut.roomReleased, true);
   assert.equal(checkOutDb.events.at(-1)?.actor_id, ACTIVE_RECEPTION_USER.user_id);
   assert.equal(checkOutDb.events.at(-1)?.actor_name, ACTIVE_RECEPTION_USER.full_name);
+});
+
+test("completed checkout immediately creates released priority turnover work", async () => {
+  const data = env([movementsAccess, housekeepingAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const db = data.DB as unknown as FakeReceptionDB;
+
+  const checkout = await request("/api/reception/stays/9001/check-out-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true }),
+  }, data);
+  assert.equal(checkout.status, 200);
+
+  const tasks = await request(`/api/housekeeping/v2/tasks?date=${TODAY}`, {
+    method: "GET",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+  const body = await json(tasks) as {
+    success: boolean;
+    data?: {
+      summary: { toClean: number };
+      sections: Array<{ id: string; cards: Array<{ taskType: string; taskStatus: string; currentQueue: string; isBlocked: boolean; capabilities: { canStart: boolean } }> }>;
+    };
+  };
+
+  assert.equal(tasks.status, 200, JSON.stringify(body));
+  const priority = body.data?.sections.find((section) => section.id === "priority-turnover");
+  assert.equal(priority?.cards.length, 1);
+  const card = priority?.cards[0];
+  assert.equal(card?.taskType, "TURNOVER");
+  assert.equal(card?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(card?.currentQueue, "priority-turnover");
+  assert.equal(card?.isBlocked, false);
+  assert.equal(card?.capabilities.canStart, true);
+  assert.equal(body.data?.summary.toClean, 1);
+  assert.equal(db.housekeepingTasks.filter((task) => task.task_type === "TURNOVER").length, 1);
+
+  const secondRead = await request(`/api/housekeeping/v2/tasks?date=${TODAY}`, {
+    method: "GET",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+  assert.equal(secondRead.status, 200);
+  assert.equal(db.housekeepingTasks.filter((task) => task.task_type === "TURNOVER").length, 1);
+});
+
+test("completed checkout releases historical turnover linked only by Beds24 stay id", async () => {
+  const data = env([movementsAccess, housekeepingAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const db = data.DB as unknown as FakeReceptionDB;
+  db.housekeepingTasks.push(storedHousekeepingTask({
+    task_id: 700,
+    booking_id: null,
+    stay_id: 9001,
+    operational_date: TODAY,
+    due_cycle_date: TODAY,
+    status: "WAITING_FOR_RECEPTION",
+  }));
+
+  const checkout = await request("/api/reception/stays/9001/check-out-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true }),
+  }, data);
+  assert.equal(checkout.status, 200);
+
+  const task = db.housekeepingTasks.find((item) => item.task_id === 700);
+  assert.equal(task?.status, "AVAILABLE_FOR_CLAIM");
+  assert.equal(db.housekeepingTasks.filter((item) => item.task_type === "TURNOVER").length, 1);
+
+  const tasks = await request(`/api/housekeeping/v2/tasks?date=${TODAY}`, {
+    method: "GET",
+    headers: { cookie: "vanara_session=x" },
+  }, data);
+  const body = await json(tasks) as { data?: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskStatus: string }> }> } };
+  assert.equal(tasks.status, 200, JSON.stringify(body));
+  const priority = body.data?.sections.find((section) => section.id === "priority-turnover");
+  assert.equal(priority?.cards.length, 1);
+  assert.equal(priority?.cards[0]?.taskId, 700);
+  assert.equal(priority?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
 });
 
 test("complete check-in creates persistent room alerts and resolving them updates the stay", async () => {

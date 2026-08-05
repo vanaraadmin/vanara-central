@@ -1292,6 +1292,10 @@ export default function ReceptionPage() {
     ),
     onSuccess: (updated) => {
       queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
+      void queryClient.invalidateQueries({ queryKey: ["housekeeping-v2"] });
+      void queryClient.invalidateQueries({ queryKey: ["staff", "overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["rooms", "workspace"] });
+      void queryClient.invalidateQueries({ queryKey: ["room-detail"] });
       setCompletionRequest(null);
       setCompletionDraft(emptyCompletionDraft());
       setCompletionError(null);

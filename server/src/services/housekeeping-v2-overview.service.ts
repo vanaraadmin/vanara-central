@@ -247,7 +247,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
   let createdOrReused = 0;
 
   for (const booking of bookings) {
-    if (booking.departure_date === date && !hasTask(activeTasks, "TURNOVER", booking.unit_id, booking.booking_id, date)) {
+    if (booking.departure_date === date && !hasTask(activeTasks, "TURNOVER", booking.unit_id, booking.booking_id, booking.beds24_booking_id, date)) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "TURNOVER",
@@ -267,7 +267,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
 
     const counter = counterForActiveStay(counters.get(booking.unit_id) ?? null, booking);
     const dueCycleDate = standardCleaningDueCycle(booking, counter, date);
-    if (dueCycleDate && !hasTask(activeTasks, "STANDARD_CLEANING", booking.unit_id, booking.booking_id, dueCycleDate)) {
+    if (dueCycleDate && !hasTask(activeTasks, "STANDARD_CLEANING", booking.unit_id, booking.booking_id, booking.beds24_booking_id, dueCycleDate)) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "STANDARD_CLEANING",
@@ -283,7 +283,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
       createdOrReused += 1;
     }
 
-    if (counter?.linen_required_override === 1 && !hasTask(activeTasks, "LINEN_CHANGE", booking.unit_id, booking.booking_id, date)) {
+    if (counter?.linen_required_override === 1 && !hasTask(activeTasks, "LINEN_CHANGE", booking.unit_id, booking.booking_id, booking.beds24_booking_id, date)) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "LINEN_CHANGE",
@@ -303,7 +303,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
     if (!isWaterRefillEligible(booking, date)) continue;
 
     const completedWaterToday = activeTasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && task.operationalDate === date && (task.status === "COMPLETED" || task.status === "SKIPPED"));
-    if (!completedWaterToday && !hasTask(activeTasks, "WATER_REFILL", booking.unit_id, null, date)) {
+    if (!completedWaterToday && !hasTask(activeTasks, "WATER_REFILL", booking.unit_id, null, null, date)) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "WATER_REFILL",
@@ -324,10 +324,10 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
   return { attempted, createdOrReused };
 }
 
-function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unitId: number, bookingId: number | null, dateOrCycle: string): boolean {
+function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unitId: number, bookingId: number | null, stayId: number | null, dateOrCycle: string): boolean {
   return tasks.some((task) => {
     if (task.taskType !== taskType || task.unitId !== unitId) return false;
-    if (bookingId !== null && task.bookingId !== bookingId) return false;
+    if (bookingId !== null && task.bookingId !== bookingId && task.stayId !== stayId) return false;
     if (taskType === "STANDARD_CLEANING" || taskType === "LINEN_CHANGE") return task.dueCycleDate === dateOrCycle;
     return task.operationalDate === dateOrCycle;
   });

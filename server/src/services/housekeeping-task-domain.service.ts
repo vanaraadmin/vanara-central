@@ -110,6 +110,13 @@ export interface CreateHousekeepingTaskInput {
   creationMetadata?: Record<string, unknown>;
 }
 
+export interface CheckoutTurnoverReleaseInput {
+  bookingId: number;
+  beds24BookingId: number;
+  unitId: number | null;
+  departureDate: string;
+}
+
 export interface TransitionHousekeepingTaskInput {
   action: HousekeepingTransitionAction;
   expectedVersion: number;
@@ -237,7 +244,7 @@ export async function syncReleasedTurnoverTasks(env: HousekeepingTaskBindings, d
   const rows = await env.DB.prepare(`
     SELECT DISTINCT ht.task_id, ht.version
     FROM housekeeping_tasks ht
-    JOIN bookings b ON b.booking_id = ht.booking_id
+    JOIN bookings b ON b.booking_id = ht.booking_id OR b.beds24_booking_id = ht.stay_id
     JOIN reception_stays rs ON rs.beds24_booking_id = b.beds24_booking_id
     WHERE ht.task_type = 'TURNOVER'
       AND ht.status = 'WAITING_FOR_RECEPTION'
@@ -261,6 +268,56 @@ export async function syncReleasedTurnoverTasks(env: HousekeepingTaskBindings, d
       throw error;
     }
   }
+}
+
+export async function ensureTurnoverReleasedForCheckout(
+  env: HousekeepingTaskBindings,
+  checkout: CheckoutTurnoverReleaseInput,
+  actor?: HousekeepingActor | CurrentUser | null,
+): Promise<HousekeepingTask | null> {
+  if (!checkout.unitId) return null;
+
+  const existingRow = await env.DB.prepare(`
+    SELECT *
+    FROM housekeeping_tasks
+    WHERE task_type = 'TURNOVER'
+      AND unit_id = ?
+      AND operational_date = ?
+      AND (booking_id = ? OR stay_id = ?)
+    ORDER BY
+      CASE
+        WHEN status = 'WAITING_FOR_RECEPTION' THEN 0
+        WHEN status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED') THEN 1
+        ELSE 2
+      END,
+      task_id
+    LIMIT 1
+  `).bind(checkout.unitId, checkout.departureDate, checkout.bookingId, checkout.beds24BookingId).first<HousekeepingTaskRow>();
+
+  if (existingRow) {
+    const existing = mapTask(existingRow);
+    if (existing.status !== "WAITING_FOR_RECEPTION") return existing;
+    return transitionHousekeepingTask(env, existing.id, {
+      action: "release_from_reception",
+      expectedVersion: existing.version,
+      actor,
+      idempotencyKey: `housekeeping:v2:turnover-release:${checkout.unitId}:${checkout.beds24BookingId}:${checkout.departureDate}:${existing.id}:${existing.version}`,
+      metadata: { source: "reception_checkout" },
+    });
+  }
+
+  return createHousekeepingTask(env, {
+    taskType: "TURNOVER",
+    unitId: checkout.unitId,
+    bookingId: checkout.bookingId,
+    stayId: checkout.beds24BookingId,
+    operationalDate: checkout.departureDate,
+    dueCycleDate: checkout.departureDate,
+    priority: "URGENT",
+    source: "reception_release",
+    idempotencyKey: `housekeeping:v2:turnover:${checkout.unitId}:${checkout.beds24BookingId}:${checkout.departureDate}`,
+    receptionReleased: true,
+  }, actor);
 }
 
 export async function createHousekeepingTask(env: HousekeepingTaskBindings, input: CreateHousekeepingTaskInput, actor?: HousekeepingActor | CurrentUser | null): Promise<HousekeepingTask> {

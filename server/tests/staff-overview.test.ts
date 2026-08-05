@@ -120,7 +120,9 @@ class FakeStaffDB {
     }),
   ];
 
-  constructor(private permissions: Permission[], private options: { authenticated?: boolean; staffView?: boolean } = {}) {}
+  constructor(private permissions: Permission[], private options: { authenticated?: boolean; staffView?: boolean; housekeepingTasks?: TaskRow[] } = {}) {
+    if (options.housekeepingTasks) this.housekeepingTasks = options.housekeepingTasks;
+  }
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
@@ -227,6 +229,7 @@ class FakeStaffDB {
       };
     }
     if (sql.includes("FROM bookings b") && sql.includes("JOIN units u ON u.unit_id = b.unit_id") && sql.includes("rs.guest_arrived")) {
+      const hasReleasedTurnover = this.housekeepingTasks.some((task) => task.task_type === "TURNOVER" && task.operational_date === STAFF_OVERVIEW_TEST_DATE);
       return {
         results: [{
           booking_id: 101,
@@ -234,13 +237,13 @@ class FakeStaffDB {
           unit_id: 1,
           guest_name: "Mali Guest",
           arrival_date: "2026-08-01",
-          departure_date: "2026-08-06",
+          departure_date: hasReleasedTurnover ? STAFF_OVERVIEW_TEST_DATE : "2026-08-06",
           arrival_time: "14:00",
           channel: "Direct",
           api_source: "Beds24",
           status: "Confirmed",
           guest_arrived: 1,
-          room_released: 0,
+          room_released: hasReleasedTurnover ? 1 : 0,
         }] as T[],
       };
     }
@@ -408,7 +411,7 @@ function taskRow(overrides: Partial<TaskRow>): TaskRow {
   };
 }
 
-function env(permissions: Permission[], options?: { authenticated?: boolean; staffView?: boolean }) {
+function env(permissions: Permission[], options?: { authenticated?: boolean; staffView?: boolean; housekeepingTasks?: TaskRow[] }) {
   return {
     DB: new FakeStaffDB(permissions, options) as unknown as D1Database,
     BEDS24_BASE_URL: "https://api.beds24.com/v2",
@@ -454,6 +457,34 @@ test("staff overview housekeeping summary derives from the Housekeeping V2 task 
   assert.equal(card.metrics.some((metric) => metric.label === "Completed Today"), false);
   assert.equal(card.summaryLine1, "0 To Clean / 1 Cleaning In Progress");
   assert.equal(card.summaryLine2, "0 Completed Cleaning Today / 1 Water Due");
+});
+
+test("staff overview surfaces released priority turnover as actionable cleaning work", async () => {
+  const overview = await getStaffOverview(
+    env([housekeepingAccess], {
+      housekeepingTasks: [
+        taskRow({
+          task_id: 41,
+          task_type: "TURNOVER",
+          status: "AVAILABLE_FOR_CLAIM",
+          priority: "URGENT",
+          source: "reception_release",
+        }),
+        taskRow({
+          task_id: 42,
+          task_type: "WATER_REFILL",
+          status: "AVAILABLE_FOR_CLAIM",
+        }),
+      ],
+    }),
+    currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const card = overview.cards.find((item) => item.id === "housekeeping");
+  assert.ok(card);
+  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.value, 1);
+  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.tone, "attention");
+  assert.equal(card.summaryLine1, "1 To Clean / 0 Cleaning In Progress");
 });
 
 test("staff overview rooms summary exposes reconciled operating counters from the Rooms read model", async () => {
