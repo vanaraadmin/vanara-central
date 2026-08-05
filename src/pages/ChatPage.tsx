@@ -57,6 +57,10 @@ function ConversationAvatar({ label, photoUrl }: { label: string; photoUrl?: str
   );
 }
 
+function ChatToolIcon({ type }: { type: "plus" | "camera" | "gallery" | "sticker" | "send" | "close" }) {
+  return <span className={`chat-tool-icon chat-tool-icon--${type}`} aria-hidden="true"><span /></span>;
+}
+
 function ConversationRow({
   conversation,
   active,
@@ -108,7 +112,9 @@ function PrivateChatPicker({
       <div className="chat-picker__sheet">
         <header>
           <h2>New chat</h2>
-          <button type="button" onClick={onClose} aria-label="Close">Close</button>
+          <button type="button" className="chat-picker__close" onClick={onClose} aria-label="Close">
+            <ChatToolIcon type="close" />
+          </button>
         </header>
         <div className="chat-picker__list">
           {isLoading ? (
@@ -179,6 +185,11 @@ function ChatComposer({ conversationId }: { conversationId: string }) {
 
   return (
     <form className="chat-composer" aria-label="Message composer" onSubmit={submit}>
+      <div className="chat-composer__tools chat-composer__tools--left" aria-label="Message tools">
+        <button type="button" aria-label="Attach file" disabled><ChatToolIcon type="plus" /></button>
+        <button type="button" aria-label="Open camera" disabled><ChatToolIcon type="camera" /></button>
+        <button type="button" aria-label="Choose image" disabled><ChatToolIcon type="gallery" /></button>
+      </div>
       <label className="chat-composer__field">
         <span className="vc-sr-only">Message</span>
         <input
@@ -188,9 +199,14 @@ function ChatComposer({ conversationId }: { conversationId: string }) {
           maxLength={2000}
         />
       </label>
-      <button className="chat-composer__send" type="submit" disabled={!body.trim() || mutation.isPending} aria-label="Send message">
-        {mutation.isPending ? "..." : "Send"}
-      </button>
+      <div className="chat-composer__tools chat-composer__tools--right">
+        <button type="button" aria-label="Open stickers" disabled><ChatToolIcon type="sticker" /></button>
+        {body.trim() && (
+          <button className="chat-composer__send" type="submit" disabled={mutation.isPending} aria-label="Send message">
+            <ChatToolIcon type="send" />
+          </button>
+        )}
+      </div>
       {mutation.isError && <p className="chat-composer__error">Message was not saved. Please try again.</p>}
     </form>
   );
@@ -312,10 +328,11 @@ export default function ChatPage() {
         <aside className="chat-list" aria-label="Team conversations">
           <header className="chat-list__header">
             <div>
-              <span>Vanara</span>
               <h1>Chat</h1>
             </div>
-            <button type="button" onClick={() => setPickerOpen(true)}>New</button>
+            <button type="button" onClick={() => setPickerOpen(true)} aria-label="Start private chat">
+              <ChatToolIcon type="plus" />
+            </button>
           </header>
 
           <div className="chat-list__rows">
@@ -331,7 +348,7 @@ export default function ChatPage() {
             ) : (
               <div className="chat-list__empty">
                 <h2>No conversations</h2>
-                <p>The Vanara group chat will appear here after setup.</p>
+                <p>No team chats yet.</p>
               </div>
             )}
           </div>
@@ -343,7 +360,7 @@ export default function ChatPage() {
           <section className="chat-thread chat-thread--empty" aria-label="No conversation selected">
             <div className="chat-thread__empty">
               <h2>Select a chat</h2>
-              <p>Choose the group chat or open a private team conversation.</p>
+              <p>Pick a team thread.</p>
             </div>
           </section>
         )}

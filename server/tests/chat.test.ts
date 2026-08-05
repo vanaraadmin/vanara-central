@@ -109,6 +109,29 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(css, /\.chat-list-row__badge/);
 });
 
+test("chat thread and composer follow LINE-like message patterns without voice or guest-message coupling", () => {
+  const page = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/styles/ChatPage.css", import.meta.url), "utf8");
+  const service = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
+
+  assert.match(page, /conversation\.kind === "GROUP" \? "Vanara Group Chat" : conversation\.title/);
+  assert.match(page, /ChatToolIcon type="plus"/);
+  assert.match(page, /ChatToolIcon type="camera"/);
+  assert.match(page, /ChatToolIcon type="gallery"/);
+  assert.match(page, /ChatToolIcon type="sticker"/);
+  assert.match(page, /ChatToolIcon type="send"/);
+  assert.match(page, /placeholder="Aa"/);
+  assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
+  assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
+  assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
+  assert.match(css, /\.chat-composer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.chat-tool-icon--camera/);
+  assert.match(css, /\.chat-tool-icon--gallery/);
+  assert.match(css, /\.chat-tool-icon--sticker/);
+  assert.match(css, /\.chat-tool-icon--send/);
+  assert.doesNotMatch(page + service, /\/api\/messages|messages\.service|MessagesPage|guest-messages/i);
+});
+
 test("mentions are normalized by username for unread mention badges", () => {
   assert.deepEqual(mentionedUsernames("Nun please check @Nun and @stefano."), ["nun", "stefano"]);
   assert.deepEqual(mentionedUsernames("email@example.com is not a chat mention"), []);
