@@ -21,7 +21,7 @@ import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
-import { createChatMessage, createGroupChat, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, openPrivateChat, type ChatBindings } from "./services/chat.service.js";
+import { clearChatAnnouncement, createChatMessage, createGroupChat, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
@@ -1801,6 +1801,68 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     const message = errorMessage(error);
     const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Conversation not found." ? 404 : 400;
     return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.post("/api/chat/conversations/:id/messages/:messageId/reactions", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const messageId = positiveIntegerParam(c.req.param("messageId"), "message id");
+    const payload = await c.req.json().catch(() => null);
+    const input = normalizeReactionInput(payload);
+    const user = await chatMember(c);
+    const message = await toggleChatMessageReaction(c.env, conversationId, messageId, user, input);
+    return c.json({ success: true, data: message });
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Message not found." ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.post("/api/chat/conversations/:id/messages/:messageId/translate", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const messageId = positiveIntegerParam(c.req.param("messageId"), "message id");
+    const user = await chatMember(c);
+    const message = await translateChatMessage(c.env, conversationId, messageId, user);
+    return c.json({ success: true, data: message });
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError
+      ? apiErrorStatus(error)
+      : message === "Message not found."
+        ? 404
+        : message === "translation_unavailable"
+          ? 503
+          : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.post("/api/chat/conversations/:id/announcement", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const payload = await c.req.json().catch(() => null);
+    const input = normalizeAnnouncementInput(payload);
+    const user = await chatMember(c);
+    const conversation = await setChatAnnouncement(c.env, conversationId, user, input);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    const message = errorMessage(error);
+    const status = error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : message === "Message not found." ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+});
+
+app.delete("/api/chat/conversations/:id/announcement", async (c) => {
+  try {
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const user = await chatMember(c);
+    const conversation = await clearChatAnnouncement(c.env, conversationId, user);
+    return c.json({ success: true, data: conversation });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : 400);
   }
 });
 

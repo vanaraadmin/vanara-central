@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { mentionedUsernames, normalizeGroupChatInput, normalizeMessageInput } from "../src/services/chat.service.ts";
+import {
+  mentionedUsernames,
+  normalizeAnnouncementInput,
+  normalizeGroupChatInput,
+  normalizeMessageInput,
+  normalizeReactionInput,
+} from "../src/services/chat.service.ts";
 
 test("chat message input requires non-empty body", () => {
   assert.throws(() => normalizeMessageInput({ body: "   " }), /Message body is required/);
@@ -21,7 +27,23 @@ test("chat message input keeps bilingual structure in one record", () => {
     bodyLanguage: "en",
     translatedBody: "ห้อง 5 พร้อมแล้วค่ะ",
     translatedLanguage: "th",
+    replyToMessageId: null,
   });
+});
+
+test("chat message input accepts one reply target and validates message actions", () => {
+  assert.deepEqual(normalizeMessageInput({ body: "On it", replyToMessageId: 42 }), {
+    body: "On it",
+    bodyLanguage: "en",
+    translatedBody: null,
+    translatedLanguage: null,
+    replyToMessageId: 42,
+  });
+  assert.throws(() => normalizeMessageInput({ body: "On it", replyToMessageId: 0 }), /Reply target is invalid/);
+  assert.deepEqual(normalizeReactionInput({ emoji: "🙏" }), { emoji: "🙏" });
+  assert.throws(() => normalizeReactionInput({ emoji: "LINE" }), /Reaction is not supported/);
+  assert.deepEqual(normalizeAnnouncementInput({ messageId: 9 }), { messageId: 9 });
+  assert.throws(() => normalizeAnnouncementInput({ messageId: -1 }), /Announcement message is invalid/);
 });
 
 test("chat group input requires a name and at least two selected team members", () => {
@@ -112,6 +134,7 @@ test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => 
 
 test("chat foundation is additive and separates group/private participants", () => {
   const migration = readFileSync(new URL("../migrations/0032_internal_chat_conversations.sql", import.meta.url), "utf8");
+  const interactionsMigration = readFileSync(new URL("../migrations/0033_internal_chat_message_interactions.sql", import.meta.url), "utf8");
 
   assert.match(migration, /ALTER TABLE chat_conversations ADD COLUMN conversation_kind/);
   assert.match(migration, /CHECK \(conversation_kind IN \('GROUP', 'PRIVATE'\)\)/);
@@ -121,6 +144,12 @@ test("chat foundation is additive and separates group/private participants", () 
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_private_pair/);
   assert.match(migration, /WHERE conversation_kind = 'PRIVATE'/);
   assert.doesNotMatch(migration, /\bDROP\s+TABLE\b|\bDELETE\s+FROM\s+chat_messages\b|\bDELETE\s+FROM\s+chat_conversations\b/i);
+  assert.match(interactionsMigration, /ALTER TABLE chat_messages ADD COLUMN reply_to_message_id/);
+  assert.match(interactionsMigration, /ALTER TABLE chat_conversations ADD COLUMN announced_message_id/);
+  assert.match(interactionsMigration, /CREATE TABLE IF NOT EXISTS chat_message_reactions/);
+  assert.match(interactionsMigration, /PRIMARY KEY \(message_id, user_id\)/);
+  assert.match(interactionsMigration, /CHECK \(emoji IN \('👍', '😂', '😍', '🙏', '👀', '🔥'\)\)/);
+  assert.doesNotMatch(interactionsMigration, /\bDROP\s+TABLE\b|\bDELETE\s+FROM\s+chat_messages\b|\bDELETE\s+FROM\s+chat_conversations\b/i);
 });
 
 test("chat service enforces participant privacy and no owner private bypass", () => {
@@ -140,12 +169,25 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(service, /private_avatar_photo_url/);
   assert.match(service, /avatarPhotoUrl: kind === "PRIVATE" \? row\.private_avatar_photo_url \?\? null : null/);
   assert.match(service, /u\.profile_photo_url AS author_profile_photo_url/);
+  assert.match(service, /reply_to_message_id/);
+  assert.match(service, /requireMessageInConversation\(env, conversationId, input\.replyToMessageId\)/);
+  assert.match(service, /toggleChatMessageReaction/);
+  assert.match(service, /ON CONFLICT\(message_id, user_id\) DO UPDATE SET/);
+  assert.match(service, /setChatAnnouncement/);
+  assert.match(service, /clearChatAnnouncement/);
+  assert.match(service, /translateChatMessage/);
+  assert.match(service, /translation_unavailable/);
   assert.doesNotMatch(service, /isOwner|Owner access|requireOwner/i);
   assert.match(server, /const user = await chatMember\(c\)/);
   assert.match(server, /openPrivateChat\(c\.env, user, targetUserId\)/);
   assert.match(server, /app\.post\("\/api\/chat\/groups"/);
   assert.match(server, /createGroupChat\(c\.env, user, input\)/);
+  assert.match(server, /\/api\/chat\/conversations\/:id\/messages\/:messageId\/reactions/);
+  assert.match(server, /\/api\/chat\/conversations\/:id\/messages\/:messageId\/translate/);
+  assert.match(server, /\/api\/chat\/conversations\/:id\/announcement/);
+  assert.match(server, /app\.delete\("\/api\/chat\/conversations\/:id\/announcement"/);
   assert.doesNotMatch(server, /authenticated\(c, "chat", "edit"\)/);
+  assert.doesNotMatch(service + server, /translate\.googleapis|GOOGLE_TRANSLATE|DEEPL|Google Cloud Translation/i);
 });
 
 test("chat page renders LINE-like conversation list and private picker without corporate cards", () => {
@@ -180,6 +222,9 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(page, /photoUrl=\{message\.author\.profilePhotoUrl\}/);
   assert.match(page, /openPrivateChat/);
   assert.match(page, /markChatConversationRead/);
+  assert.match(page, /conversation\.announcement/);
+  assert.match(page, /chat-announcement/);
+  assert.match(page, /clearAnnouncementMutation/);
   assert.doesNotMatch(page, /ContextCard|Operational context|Open context/);
   assert.match(css, /\.chat-list-row/);
   assert.match(css, /\.chat-list-row\.has-unread \.chat-list-row__main strong/);
@@ -209,6 +254,26 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /aria-label="Exit writing mode"/);
   assert.match(page, /inputRef\.current\?\.blur\(\)/);
   assert.match(page, /placeholder="Aa"/);
+  assert.match(page, /ChatContextMenuState/);
+  assert.match(page, /ChatMessageContextMenu/);
+  assert.match(page, /onPointerDown=\{handlePointerDown\}/);
+  assert.match(page, /window\.setTimeout\(\(\) => requestMenu\(clientX, clientY\), 520\)/);
+  assert.match(page, /onContextMenu=\{handleContextMenu\}/);
+  assert.match(page, />Copia</);
+  assert.match(page, />Rispondi</);
+  assert.match(page, />Translate</);
+  assert.match(page, />Annuncia</);
+  assert.match(page, /QUICK_REACTIONS/);
+  assert.match(page, /navigator\.clipboard/);
+  assert.match(page, /replyTarget/);
+  assert.match(page, /replyToMessageId/);
+  assert.match(page, /chat-composer__reply-preview/);
+  assert.match(page, /data-chat-message-id/);
+  assert.match(page, /scrollIntoView/);
+  assert.match(page, /is-highlighted/);
+  assert.match(page, /translateMutation/);
+  assert.match(page, /Translation is not available yet/);
+  assert.match(page, /chat-thread-message__reactions/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
@@ -219,6 +284,14 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-tool-icon--gallery/);
   assert.match(css, /\.chat-tool-icon--sticker/);
   assert.match(css, /\.chat-tool-icon--send/);
+  assert.match(css, /\.chat-context-menu/);
+  assert.match(css, /\.chat-context-menu__reactions/);
+  assert.match(css, /\.chat-context-menu__actions/);
+  assert.match(css, /\.chat-announcement/);
+  assert.match(css, /\.chat-composer__reply-preview/);
+  assert.match(css, /\.chat-thread-message__quote/);
+  assert.match(css, /\.chat-thread-message__translation--error/);
+  assert.match(css, /\.chat-thread-message__reactions/);
   assert.doesNotMatch(page + service, /\/api\/messages|messages\.service|MessagesPage|guest-messages/i);
 });
 

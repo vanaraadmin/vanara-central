@@ -32,6 +32,11 @@ interface ChatConversationRow {
   private_avatar_photo_url?: string | null;
   unread_count?: number | null;
   mention_count?: number | null;
+  announced_message_id?: number | null;
+  announced_by_user_id?: string | null;
+  announced_at?: string | null;
+  announced_author_display_name?: string | null;
+  announced_body?: string | null;
 }
 
 interface ChatMessageRow {
@@ -44,8 +49,18 @@ interface ChatMessageRow {
   body_language: ChatLanguage;
   translated_body: string | null;
   translated_language: ChatLanguage | null;
+  reply_to_message_id?: number | null;
+  reply_author_display_name?: string | null;
+  reply_body?: string | null;
   author_profile_photo_url?: string | null;
   created_at: string;
+}
+
+interface ChatReactionRow {
+  message_id: number;
+  emoji: ChatReactionEmoji;
+  total: number;
+  reacted_by_me: number;
 }
 
 interface ChatUserRow {
@@ -86,6 +101,29 @@ export interface ChatConversation {
   mentionCount: number;
   avatarLabel: string;
   avatarPhotoUrl: string | null;
+  announcement: ChatAnnouncement | null;
+}
+
+export interface ChatAnnouncement {
+  messageId: number;
+  authorDisplayName: string;
+  bodyPreview: string;
+  announcedByUserId: string | null;
+  announcedAt: string;
+}
+
+export type ChatReactionEmoji = "👍" | "😂" | "😍" | "🙏" | "👀" | "🔥";
+
+export interface ChatMessageReaction {
+  emoji: ChatReactionEmoji;
+  count: number;
+  reactedByMe: boolean;
+}
+
+export interface ChatMessageReply {
+  messageId: number;
+  authorDisplayName: string;
+  bodyPreview: string;
 }
 
 export interface ChatMessage {
@@ -101,6 +139,8 @@ export interface ChatMessage {
   bodyLanguage: ChatLanguage;
   translatedBody: string | null;
   translatedLanguage: ChatLanguage | null;
+  replyTo: ChatMessageReply | null;
+  reactions: ChatMessageReaction[];
   mentionUsernames: string[];
   createdAt: string;
 }
@@ -110,11 +150,20 @@ export interface CreateChatMessageInput {
   bodyLanguage?: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
+  replyToMessageId?: number | null;
 }
 
 export interface CreateGroupChatInput {
   title: string;
   participantIds: string[];
+}
+
+export interface ChatReactionInput {
+  emoji: ChatReactionEmoji;
+}
+
+export interface ChatAnnouncementInput {
+  messageId: number;
 }
 
 export interface ChatUnreadSummary {
@@ -150,13 +199,41 @@ export function normalizeMessageInput(payload: unknown): CreateChatMessageInput 
   const translatedLanguage = translatedBody
     ? normalizeLanguage("translatedLanguage" in payload ? payload.translatedLanguage : undefined, bodyLanguage === "en" ? "th" : "en")
     : null;
+  const replyToMessageId = "replyToMessageId" in payload && payload.replyToMessageId !== null && payload.replyToMessageId !== undefined
+    ? Number(payload.replyToMessageId)
+    : null;
+  if (replyToMessageId !== null && (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0)) {
+    throw new Error("Reply target is invalid.");
+  }
 
   return {
     body,
     bodyLanguage,
     translatedBody,
     translatedLanguage,
+    replyToMessageId,
   };
+}
+
+export function normalizeReactionInput(payload: unknown): ChatReactionInput {
+  if (!payload || typeof payload !== "object" || !("emoji" in payload) || typeof payload.emoji !== "string") {
+    throw new Error("Reaction is required.");
+  }
+  if (!["👍", "😂", "😍", "🙏", "👀", "🔥"].includes(payload.emoji)) {
+    throw new Error("Reaction is not supported.");
+  }
+  return { emoji: payload.emoji as ChatReactionEmoji };
+}
+
+export function normalizeAnnouncementInput(payload: unknown): ChatAnnouncementInput {
+  if (!payload || typeof payload !== "object" || !("messageId" in payload)) {
+    throw new Error("Announcement message is required.");
+  }
+  const messageId = Number(payload.messageId);
+  if (!Number.isInteger(messageId) || messageId <= 0) {
+    throw new Error("Announcement message is invalid.");
+  }
+  return { messageId };
 }
 
 export function normalizeChatUserId(payload: unknown): string {
@@ -251,10 +328,24 @@ function mapConversation(row: ChatConversationRow): ChatConversation {
     mentionCount: row.mention_count ?? 0,
     avatarLabel: avatarLabel(title),
     avatarPhotoUrl: kind === "PRIVATE" ? row.private_avatar_photo_url ?? null : null,
+    announcement: row.announced_message_id && row.announced_at
+      ? {
+        messageId: row.announced_message_id,
+        authorDisplayName: row.announced_author_display_name ?? "Team",
+        bodyPreview: previewText(row.announced_body ?? ""),
+        announcedByUserId: row.announced_by_user_id ?? null,
+        announcedAt: row.announced_at,
+      }
+      : null,
   };
 }
 
-function mapMessage(row: ChatMessageRow): ChatMessage {
+function previewText(value: string): string {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact.length > 96 ? `${compact.slice(0, 93)}...` : compact;
+}
+
+function mapMessage(row: ChatMessageRow, reactions: ChatMessageReaction[] = []): ChatMessage {
   return {
     id: row.message_id,
     conversationId: row.conversation_id,
@@ -268,9 +359,57 @@ function mapMessage(row: ChatMessageRow): ChatMessage {
     bodyLanguage: row.body_language,
     translatedBody: row.translated_body,
     translatedLanguage: row.translated_language,
+    replyTo: row.reply_to_message_id
+      ? {
+        messageId: row.reply_to_message_id,
+        authorDisplayName: row.reply_author_display_name ?? "Team",
+        bodyPreview: previewText(row.reply_body ?? ""),
+      }
+      : null,
+    reactions,
     mentionUsernames: mentionedUsernames(row.body),
     createdAt: row.created_at,
   };
+}
+
+async function requireMessageInConversation(env: ChatBindings, conversationId: string, messageId: number): Promise<ChatMessageRow> {
+  const row = await env.DB.prepare(`
+    SELECT *
+    FROM chat_messages
+    WHERE conversation_id = ?
+      AND message_id = ?
+    LIMIT 1
+  `).bind(conversationId, messageId).first<ChatMessageRow>();
+  if (!row) throw new Error("Message not found.");
+  return row;
+}
+
+async function hydrateMessages(env: ChatBindings, rows: ChatMessageRow[], user: CurrentChatUser): Promise<ChatMessage[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.message_id);
+  const placeholders = ids.map(() => "?").join(", ");
+  const reactions = await env.DB.prepare(`
+    SELECT
+      message_id,
+      emoji,
+      COUNT(*) AS total,
+      MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS reacted_by_me
+    FROM chat_message_reactions
+    WHERE message_id IN (${placeholders})
+    GROUP BY message_id, emoji
+    ORDER BY message_id ASC, emoji ASC
+  `).bind(user.id, ...ids).all<ChatReactionRow>();
+  const reactionMap = new Map<number, ChatMessageReaction[]>();
+  for (const reaction of reactions.results ?? []) {
+    const list = reactionMap.get(reaction.message_id) ?? [];
+    list.push({
+      emoji: reaction.emoji,
+      count: reaction.total,
+      reactedByMe: reaction.reacted_by_me > 0,
+    });
+    reactionMap.set(reaction.message_id, list);
+  }
+  return rows.map((row) => mapMessage(row, reactionMap.get(row.message_id) ?? []));
 }
 
 async function ensureMainGroupChat(env: ChatBindings, now = new Date().toISOString()): Promise<void> {
@@ -472,7 +611,21 @@ export async function listChatConversations(env: ChatBindings, user: CurrentChat
           AND cp.user_id <> ?
         ORDER BY cp.display_name ASC
         LIMIT 1
-      ) AS private_avatar_photo_url
+      ) AS private_avatar_photo_url,
+      (
+        SELECT m.author_display_name
+        FROM chat_messages m
+        WHERE m.message_id = c.announced_message_id
+          AND m.conversation_id = c.conversation_id
+        LIMIT 1
+      ) AS announced_author_display_name,
+      (
+        SELECT m.body
+        FROM chat_messages m
+        WHERE m.message_id = c.announced_message_id
+          AND m.conversation_id = c.conversation_id
+        LIMIT 1
+      ) AS announced_body
     FROM chat_conversation_participants p
     INNER JOIN chat_conversations c ON c.conversation_id = p.conversation_id
     WHERE p.user_id = ?
@@ -493,15 +646,20 @@ export async function listChatMessages(env: ChatBindings, conversationId: string
   const rows = await env.DB.prepare(`
     SELECT
       m.*,
-      u.profile_photo_url AS author_profile_photo_url
+      u.profile_photo_url AS author_profile_photo_url,
+      reply.author_display_name AS reply_author_display_name,
+      reply.body AS reply_body
     FROM chat_messages m
     LEFT JOIN users u ON u.user_id = m.author_id
+    LEFT JOIN chat_messages reply
+      ON reply.message_id = m.reply_to_message_id
+      AND reply.conversation_id = m.conversation_id
     WHERE m.conversation_id = ?
     ORDER BY m.created_at ASC, m.message_id ASC
     LIMIT 200
   `).bind(conversationId).all<ChatMessageRow>();
 
-  return (rows.results ?? []).map(mapMessage);
+  return hydrateMessages(env, rows.results ?? [], user);
 }
 
 async function persistMentions(env: ChatBindings, conversationId: string, messageId: number, authorId: string, body: string, now: string): Promise<void> {
@@ -537,6 +695,9 @@ export async function createChatMessage(
   input: CreateChatMessageInput,
 ): Promise<ChatMessage> {
   await requireParticipant(env, conversationId, user);
+  if (input.replyToMessageId) {
+    await requireMessageInConversation(env, conversationId, input.replyToMessageId);
+  }
 
   const now = new Date().toISOString();
   const result = await env.DB.prepare(`
@@ -549,8 +710,9 @@ export async function createChatMessage(
       body_language,
       translated_body,
       translated_language,
+      reply_to_message_id,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     conversationId,
     user.id,
@@ -560,6 +722,7 @@ export async function createChatMessage(
     input.bodyLanguage ?? "en",
     input.translatedBody ?? null,
     input.translatedLanguage ?? null,
+    input.replyToMessageId ?? null,
     now,
   ).run();
 
@@ -580,7 +743,19 @@ export async function createChatMessage(
       AND user_id = ?
   `).bind(messageId, now, conversationId, user.id).run();
 
-  const row = await env.DB.prepare("SELECT * FROM chat_messages WHERE message_id = ?")
+  const row = await env.DB.prepare(`
+    SELECT
+      m.*,
+      u.profile_photo_url AS author_profile_photo_url,
+      reply.author_display_name AS reply_author_display_name,
+      reply.body AS reply_body
+    FROM chat_messages m
+    LEFT JOIN users u ON u.user_id = m.author_id
+    LEFT JOIN chat_messages reply
+      ON reply.message_id = m.reply_to_message_id
+      AND reply.conversation_id = m.conversation_id
+    WHERE m.message_id = ?
+  `)
     .bind(messageId)
     .first<ChatMessageRow>();
 
@@ -588,7 +763,137 @@ export async function createChatMessage(
     throw new Error("Message was created but could not be loaded.");
   }
 
-  return mapMessage(row);
+  return (await hydrateMessages(env, [row], user))[0]!;
+}
+
+export async function toggleChatMessageReaction(
+  env: ChatBindings,
+  conversationId: string,
+  messageId: number,
+  user: CurrentChatUser,
+  input: ChatReactionInput,
+): Promise<ChatMessage> {
+  await requireParticipant(env, conversationId, user);
+  await requireMessageInConversation(env, conversationId, messageId);
+
+  const existing = await env.DB.prepare(`
+    SELECT emoji
+    FROM chat_message_reactions
+    WHERE message_id = ?
+      AND user_id = ?
+    LIMIT 1
+  `).bind(messageId, user.id).first<{ emoji: ChatReactionEmoji }>();
+  const now = new Date().toISOString();
+
+  if (existing?.emoji === input.emoji) {
+    await env.DB.prepare(`
+      DELETE FROM chat_message_reactions
+      WHERE message_id = ?
+        AND user_id = ?
+    `).bind(messageId, user.id).run();
+  } else {
+    await env.DB.prepare(`
+      INSERT INTO chat_message_reactions (
+        message_id,
+        conversation_id,
+        user_id,
+        emoji,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(message_id, user_id) DO UPDATE SET
+        emoji = excluded.emoji,
+        updated_at = excluded.updated_at
+    `).bind(messageId, conversationId, user.id, input.emoji, now, now).run();
+  }
+
+  const row = await env.DB.prepare(`
+    SELECT
+      m.*,
+      u.profile_photo_url AS author_profile_photo_url,
+      reply.author_display_name AS reply_author_display_name,
+      reply.body AS reply_body
+    FROM chat_messages m
+    LEFT JOIN users u ON u.user_id = m.author_id
+    LEFT JOIN chat_messages reply
+      ON reply.message_id = m.reply_to_message_id
+      AND reply.conversation_id = m.conversation_id
+    WHERE m.conversation_id = ?
+      AND m.message_id = ?
+  `).bind(conversationId, messageId).first<ChatMessageRow>();
+  if (!row) throw new Error("Message not found.");
+  return (await hydrateMessages(env, [row], user))[0]!;
+}
+
+export async function setChatAnnouncement(
+  env: ChatBindings,
+  conversationId: string,
+  user: CurrentChatUser,
+  input: ChatAnnouncementInput,
+): Promise<ChatConversation> {
+  await requireParticipant(env, conversationId, user);
+  await requireMessageInConversation(env, conversationId, input.messageId);
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    UPDATE chat_conversations
+    SET announced_message_id = ?,
+        announced_by_user_id = ?,
+        announced_at = ?,
+        updated_at = ?
+    WHERE conversation_id = ?
+  `).bind(input.messageId, user.id, now, now, conversationId).run();
+  const conversation = await getChatConversation(env, conversationId, user);
+  if (!conversation) throw new Error("Chat conversation not found.");
+  return conversation;
+}
+
+export async function clearChatAnnouncement(
+  env: ChatBindings,
+  conversationId: string,
+  user: CurrentChatUser,
+): Promise<ChatConversation> {
+  await requireParticipant(env, conversationId, user);
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    UPDATE chat_conversations
+    SET announced_message_id = NULL,
+        announced_by_user_id = NULL,
+        announced_at = NULL,
+        updated_at = ?
+    WHERE conversation_id = ?
+  `).bind(now, conversationId).run();
+  const conversation = await getChatConversation(env, conversationId, user);
+  if (!conversation) throw new Error("Chat conversation not found.");
+  return conversation;
+}
+
+export async function translateChatMessage(
+  env: ChatBindings,
+  conversationId: string,
+  messageId: number,
+  user: CurrentChatUser,
+): Promise<ChatMessage> {
+  await requireParticipant(env, conversationId, user);
+  const row = await env.DB.prepare(`
+    SELECT
+      m.*,
+      u.profile_photo_url AS author_profile_photo_url,
+      reply.author_display_name AS reply_author_display_name,
+      reply.body AS reply_body
+    FROM chat_messages m
+    LEFT JOIN users u ON u.user_id = m.author_id
+    LEFT JOIN chat_messages reply
+      ON reply.message_id = m.reply_to_message_id
+      AND reply.conversation_id = m.conversation_id
+    WHERE m.conversation_id = ?
+      AND m.message_id = ?
+    LIMIT 1
+  `).bind(conversationId, messageId).first<ChatMessageRow>();
+  if (!row) throw new Error("Message not found.");
+  if (!row.translated_body || !row.translated_language) {
+    throw new Error("translation_unavailable");
+  }
+  return (await hydrateMessages(env, [row], user))[0]!;
 }
 
 export async function openPrivateChat(env: ChatBindings, user: CurrentChatUser, targetUserId: string): Promise<ChatConversation> {

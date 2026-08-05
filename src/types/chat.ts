@@ -23,6 +23,29 @@ export interface ChatConversation {
   mentionCount: number;
   avatarLabel: string;
   avatarPhotoUrl: string | null;
+  announcement: ChatAnnouncement | null;
+}
+
+export interface ChatAnnouncement {
+  messageId: number;
+  authorDisplayName: string;
+  bodyPreview: string;
+  announcedByUserId: string | null;
+  announcedAt: string;
+}
+
+export type ChatReactionEmoji = "👍" | "😂" | "😍" | "🙏" | "👀" | "🔥";
+
+export interface ChatMessageReaction {
+  emoji: ChatReactionEmoji;
+  count: number;
+  reactedByMe: boolean;
+}
+
+export interface ChatMessageReply {
+  messageId: number;
+  authorDisplayName: string;
+  bodyPreview: string;
 }
 
 export interface ChatMessage {
@@ -38,6 +61,8 @@ export interface ChatMessage {
   bodyLanguage: ChatLanguage;
   translatedBody: string | null;
   translatedLanguage: ChatLanguage | null;
+  replyTo: ChatMessageReply | null;
+  reactions: ChatMessageReaction[];
   mentionUsernames: string[];
   createdAt: string;
 }
@@ -90,6 +115,7 @@ export interface CreateChatMessagePayload {
   bodyLanguage: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
+  replyToMessageId?: number | null;
 }
 
 export interface OpenPrivateChatPayload {
@@ -99,4 +125,12 @@ export interface OpenPrivateChatPayload {
 export interface OpenGroupChatPayload {
   title: string;
   participantIds: string[];
+}
+
+export interface ChatReactionPayload {
+  emoji: ChatReactionEmoji;
+}
+
+export interface ChatAnnouncementPayload {
+  messageId: number;
 }
