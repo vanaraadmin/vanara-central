@@ -76,7 +76,7 @@ function ConversationAvatar({
 }) {
   return (
     <span className={`chat-avatar ${variant === "vanara" ? "chat-avatar--vanara" : variant === "group" ? "chat-avatar--group" : ""}`} aria-hidden="true">
-      {variant === "vanara" ? <img src={vanaraLogo} alt="" /> : photoUrl ? <img src={photoUrl} alt="" /> : <span>{label}</span>}
+      {variant === "vanara" ? <img src={vanaraLogo} alt="" draggable={false} /> : photoUrl ? <img src={photoUrl} alt="" draggable={false} /> : <span>{label}</span>}
     </span>
   );
 }
@@ -302,6 +302,16 @@ function clearNativeSelection() {
   window.getSelection?.()?.removeAllRanges();
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function preventNativeChatContextMenu(event: ReactMouseEvent<HTMLElement>) {
+  if (isEditableTarget(event.target)) return;
+  event.preventDefault();
+  clearNativeSelection();
+}
+
 function toAnchorRect(rect: DOMRect): ContextMenuAnchorRect {
   return {
     left: rect.left,
@@ -458,6 +468,7 @@ function ChatMessageBubble({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (outgoing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
     const element = event.currentTarget;
@@ -466,6 +477,7 @@ function ChatMessageBubble({
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
     event.preventDefault();
+    if (outgoing) return;
     if (event.target instanceof HTMLElement && event.target.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
     requestMenu(event.currentTarget);
   }
@@ -595,11 +607,6 @@ function ChatComposer({
         />
       </label>
       <div className="chat-composer__tools chat-composer__tools--right">
-        {isFocused && (
-          <button type="button" className="chat-composer__cancel-focus" onMouseDown={(event) => event.preventDefault()} onClick={exitFocusMode} aria-label="Exit writing mode">
-            <ChatToolIcon type="close" />
-          </button>
-        )}
         <button type="button" aria-label="Open stickers" disabled><ChatToolIcon type="sticker" /></button>
         {body.trim() && (
           <button className="chat-composer__send" type="submit" disabled={mutation.isPending} aria-label="Send message">
@@ -607,6 +614,13 @@ function ChatComposer({
           </button>
         )}
       </div>
+      {isFocused && (
+        <div className="chat-composer__focus-row">
+          <button type="button" className="chat-composer__cancel-focus" onMouseDown={(event) => event.preventDefault()} onClick={exitFocusMode} aria-label="Exit writing mode">
+            <ChatToolIcon type="close" />
+          </button>
+        </div>
+      )}
       {mutation.isError && <p className="chat-composer__error">Message was not saved. Please try again.</p>}
     </form>
   );
@@ -901,7 +915,11 @@ export default function TeamChatSurface({
 
   return (
     <>
-      <div className={`chat-app chat-app--${mode} chat-app--mobile-${currentMobileView}`} data-internal-chat="team">
+      <div
+        className={`chat-app chat-app--${mode} chat-app--mobile-${currentMobileView}`}
+        data-internal-chat="team"
+        onContextMenu={preventNativeChatContextMenu}
+      >
         <aside className="chat-list" aria-label="Team conversations">
           <header className="chat-list__header">
             <div>

@@ -220,6 +220,7 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(page, /conversation\.isMainGroup/);
   assert.match(page, /photoUrl=\{conversation\.avatarPhotoUrl\}/);
   assert.match(page, /photoUrl=\{message\.author\.profilePhotoUrl\}/);
+  assert.match(page, /draggable=\{false\}/);
   assert.match(page, /openPrivateChat/);
   assert.match(page, /markChatConversationRead/);
   assert.match(page, /conversation\.announcement/);
@@ -261,6 +262,9 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /window\.setTimeout\(\(\) => requestMenu\(element\), 520\)/);
   assert.match(page, /onContextMenu=\{handleContextMenu\}/);
   assert.match(page, /window\.getSelection\?\.\(\)\?\.removeAllRanges\(\)/);
+  assert.match(page, /preventNativeChatContextMenu/);
+  assert.match(page, /onContextMenu=\{preventNativeChatContextMenu\}/);
+  assert.match(page, /if \(outgoing\) return/);
   assert.match(page, /window\.visualViewport/);
   assert.match(page, /window\.innerWidth/);
   assert.match(page, /window\.innerHeight/);
@@ -277,6 +281,7 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /replyTarget/);
   assert.match(page, /replyToMessageId/);
   assert.match(page, /chat-composer__reply-preview/);
+  assert.match(page, /chat-composer__focus-row/);
   assert.match(page, /data-chat-message-id/);
   assert.match(page, /scrollIntoView/);
   assert.match(page, /is-highlighted/);
@@ -287,6 +292,9 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
   assert.match(css, /\.chat-composer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.chat-composer\.is-focused\s*\{[^}]*grid-template-rows:\s*auto auto/);
+  assert.match(css, /\.chat-composer__focus-row\s*\{[^}]*grid-column:\s*2 \/ -1/);
+  assert.match(css, /\.chat-composer__field input\s*\{[^}]*-webkit-user-select:\s*text[^}]*user-select:\s*text/);
   assert.match(css, /\.chat-composer__tools button,\s*\.chat-composer__send\s*\{[^}]*width:\s*46px[^}]*height:\s*46px/);
   assert.match(css, /\.chat-tool-icon\s*\{[^}]*width:\s*26px[^}]*height:\s*26px/);
   assert.match(css, /\.chat-tool-icon--camera/);
@@ -294,6 +302,9 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-tool-icon--sticker/);
   assert.match(css, /\.chat-tool-icon--send/);
   assert.match(css, /\.chat-context-menu/);
+  assert.match(css, /\.chat-app\s*\{[^}]*-webkit-touch-callout:\s*none[^}]*-webkit-user-select:\s*none[^}]*user-select:\s*none/);
+  assert.match(css, /\.chat-thread\s*\{[^}]*-webkit-touch-callout:\s*none[^}]*-webkit-user-select:\s*none[^}]*user-select:\s*none/);
+  assert.match(css, /\.chat-avatar img\s*\{[^}]*-webkit-user-drag:\s*none/);
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*-webkit-touch-callout:\s*none[^}]*-webkit-user-select:\s*none[^}]*user-select:\s*none/);
   assert.match(css, /\.chat-context-menu__reactions/);
   assert.match(css, /\.chat-context-menu__actions/);
