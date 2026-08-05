@@ -26,6 +26,7 @@ import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, creat
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
 import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, SOCIAL_CAPTION_CRON, type SocialCaptionBindings } from "./services/social-caption.service.js";
+import { runSocialCommentAutomation, SOCIAL_COMMENT_CRON, type SocialCommentBindings } from "./services/social-comments.service.js";
 import { prepareSocialImage, SocialImagePreparationError, SOCIAL_IMAGE_PREPARE_CRON, type SocialImagePreparationBindings } from "./services/social-image-preparation.service.js";
 import { getSocialPublishAsset, publishNextSocialPost, publishSocialPost, SocialPublishError, SOCIAL_PUBLISH_CRON, type SocialPublishBindings } from "./services/social-publish.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
@@ -67,7 +68,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -2231,6 +2232,10 @@ app.notFound((c) => c.json({ success: false, error: "Not found" }, 404));
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    if (controller.cron === SOCIAL_COMMENT_CRON) {
+      ctx.waitUntil(runSocialCommentAutomation(env).then(() => undefined));
+      return;
+    }
     if (controller.cron === SOCIAL_PUBLISH_CRON) {
       ctx.waitUntil(publishNextSocialPost(env).then(() => undefined));
       return;
