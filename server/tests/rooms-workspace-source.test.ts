@@ -109,7 +109,8 @@ test("Rooms summaries expose reconciled operational counters from the shared rea
 
 test("Staff Home Housekeeping summary consumes the V2 operational task engine", () => {
   assert.match(staffService, /getHousekeepingV2Overview/);
-  assert.match(staffService, /staffHousekeepingMetrics/);
+  assert.match(staffService, /staffHousekeepingPresentation/);
+  assert.match(staffService, /Priority Turnover/);
   assert.match(staffService, /Water Due/);
   assert.match(staffService, /Completed Cleaning Today/);
   assert.match(staffService, /Cleaning In Progress/);

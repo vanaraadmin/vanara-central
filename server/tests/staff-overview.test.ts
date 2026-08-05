@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test, { mock } from "node:test";
 
 import worker from "../src/index.ts";
@@ -482,9 +483,21 @@ test("staff overview surfaces released priority turnover as actionable cleaning 
   );
   const card = overview.cards.find((item) => item.id === "housekeeping");
   assert.ok(card);
-  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.value, 1);
-  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.tone, "attention");
-  assert.equal(card.summaryLine1, "1 To Clean / 0 Cleaning In Progress");
+  assert.equal(card.metrics.find((metric) => metric.label === "Priority Turnover")?.value, 1);
+  assert.equal(card.metrics.find((metric) => metric.label === "Priority Turnover")?.tone, "urgent");
+  assert.equal(card.metrics.find((metric) => metric.label === "Normal To Clean")?.value, 0);
+  assert.equal(card.metrics.some((metric) => metric.label === "To Clean"), false);
+  assert.equal(card.summaryLine1, "1 Priority Turnover / 0 Normal To Clean");
+  assert.equal(card.summaryLine1.includes("1 Priority Turnover"), true);
+  assert.equal(card.summaryLine2, "0 Cleaning In Progress / 0 Water Due");
+});
+
+test("staff overview priority turnover presentation does not own checkout release behavior", () => {
+  const source = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
+  assert.equal(source.includes("ensureTurnoverReleasedForCheckout"), false);
+  assert.equal(source.includes("release_from_reception"), false);
+  assert.equal(source.includes("completeReceptionEvent"), false);
+  assert.equal(source.includes("reception_stays"), false);
 });
 
 test("staff overview rooms summary exposes reconciled operating counters from the Rooms read model", async () => {

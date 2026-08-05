@@ -64,13 +64,41 @@ function withSummaryLines(card: StaffOverviewCard): StaffOverviewCard {
   };
 }
 
-function staffHousekeepingMetrics(overview: HousekeepingV2Overview): StaffOverviewMetric[] {
-  return [
+const TERMINAL_HOUSEKEEPING_STATUSES = new Set(["COMPLETED", "SKIPPED", "CANCELLED"]);
+
+function staffHousekeepingPresentation(overview: HousekeepingV2Overview): { metrics: StaffOverviewMetric[]; summaryLine1: string; summaryLine2: string } {
+  const priorityTurnover = overview.tasks.filter((task) => (
+    task.currentQueue === "priority-turnover"
+    && task.taskType === "TURNOVER"
+    && !task.isBlocked
+    && !TERMINAL_HOUSEKEEPING_STATUSES.has(task.taskStatus)
+  )).length;
+
+  if (priorityTurnover > 0) {
+    const normalToClean = Math.max(overview.summary.toClean - priorityTurnover, 0);
+    return {
+      metrics: [
+        { label: "Priority Turnover", value: priorityTurnover, tone: "urgent" },
+        { label: "Normal To Clean", value: normalToClean, tone: normalToClean > 0 ? "attention" : "good" },
+        { label: "Cleaning In Progress", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
+        { label: "Water Due", value: overview.summary.waterDue, tone: overview.summary.waterDue > 0 ? "attention" : "good" },
+      ],
+      summaryLine1: `${priorityTurnover} Priority Turnover / ${normalToClean} Normal To Clean`,
+      summaryLine2: `${overview.summary.cleaningInProgress} Cleaning In Progress / ${overview.summary.waterDue} Water Due`,
+    };
+  }
+
+  const metrics: StaffOverviewMetric[] = [
     { label: "To Clean", value: overview.summary.toClean, tone: overview.summary.toClean > 0 ? "attention" : "good" },
     { label: "Cleaning In Progress", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
     { label: "Completed Cleaning Today", value: overview.summary.completedCleaningToday, tone: "good" },
     { label: "Water Due", value: overview.summary.waterDue, tone: overview.summary.waterDue > 0 ? "attention" : "good" },
   ];
+  return {
+    metrics,
+    summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Cleaning In Progress`,
+    summaryLine2: `${metrics[2].value} Completed Cleaning Today / ${metrics[3].value} Water Due`,
+  };
 }
 
 export async function getStaffOverview(env: StaffOverviewBindings, user: CurrentUser, date = getBangkokDate()): Promise<StaffOverview> {
@@ -118,7 +146,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
 
   if (canAccess(user, "housekeeping")) {
     const overview = await getHousekeepingV2Overview(env, user, date);
-    const metrics = staffHousekeepingMetrics(overview);
+    const housekeeping = staffHousekeepingPresentation(overview);
     cards.push(withSummaryLines({
       id: "housekeeping",
       module: "housekeeping",
@@ -126,9 +154,9 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       description: "Clean rooms in operational priority.",
       href: "/housekeeping",
       cta: "Open Housekeeping",
-      metrics,
-      summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Cleaning In Progress`,
-      summaryLine2: `${metrics[2].value} Completed Cleaning Today / ${metrics[3].value} Water Due`,
+      metrics: housekeeping.metrics,
+      summaryLine1: housekeeping.summaryLine1,
+      summaryLine2: housekeeping.summaryLine2,
     }));
   }
 
