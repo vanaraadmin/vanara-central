@@ -44,6 +44,18 @@ export default function FloatingTeamChat() {
 
   useEffect(() => {
     if (!isOpen) return;
+    const root = document.documentElement;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const previousBodyPosition = body.style.position;
+    const previousBodyTop = body.style.top;
+    const previousBodyWidth = body.style.width;
+    const previousBodyOverflow = body.style.overflow;
+
+    const updateViewportHeight = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      root.style.setProperty("--vc-chat-viewport-height", `${viewportHeight}px`);
+    };
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -51,8 +63,30 @@ export default function FloatingTeamChat() {
       }
     };
 
+    root.classList.add("vc-chat-overlay-open");
+    body.classList.add("vc-chat-overlay-open");
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    updateViewportHeight();
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.visualViewport?.addEventListener("resize", updateViewportHeight);
+    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
+
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
+      root.classList.remove("vc-chat-overlay-open");
+      body.classList.remove("vc-chat-overlay-open");
+      root.style.removeProperty("--vc-chat-viewport-height");
+      body.style.position = previousBodyPosition;
+      body.style.top = previousBodyTop;
+      body.style.width = previousBodyWidth;
+      body.style.overflow = previousBodyOverflow;
+      window.scrollTo(0, scrollY);
+    };
   }, [isOpen]);
 
   function closeOverlay() {

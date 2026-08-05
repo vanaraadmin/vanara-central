@@ -68,6 +68,7 @@ export interface ChatUser {
 export interface ChatConversation {
   id: string;
   kind: ChatConversationKind;
+  isMainGroup: boolean;
   contextType: ChatContextType;
   contextId: string | null;
   title: string;
@@ -109,6 +110,11 @@ export interface CreateChatMessageInput {
   bodyLanguage?: ChatLanguage;
   translatedBody?: string | null;
   translatedLanguage?: ChatLanguage | null;
+}
+
+export interface CreateGroupChatInput {
+  title: string;
+  participantIds: string[];
 }
 
 export interface ChatUnreadSummary {
@@ -162,6 +168,34 @@ export function normalizeChatUserId(payload: unknown): string {
   return userId;
 }
 
+export function normalizeGroupChatInput(payload: unknown): CreateGroupChatInput {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Group chat details are required.");
+  }
+
+  const title = "title" in payload && typeof payload.title === "string" ? payload.title.trim() : "";
+  if (title.length < 2 || title.length > 80) {
+    throw new Error("Group chat name must be 2 to 80 characters.");
+  }
+
+  const rawParticipantIds = "participantIds" in payload && Array.isArray(payload.participantIds)
+    ? payload.participantIds
+    : [];
+  const participantIds = [...new Set(rawParticipantIds
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean))];
+
+  if (participantIds.length < 2) {
+    throw new Error("Choose at least two team members.");
+  }
+  if (participantIds.length > 30 || participantIds.some((value) => value.length > 120)) {
+    throw new Error("Group chat participants are invalid.");
+  }
+
+  return { title, participantIds };
+}
+
 export function mentionedUsernames(body: string): string[] {
   const usernames = new Set<string>();
   for (const match of body.matchAll(/(^|[\s([{@])@([a-z0-9._-]{2,40})/gi)) {
@@ -199,6 +233,7 @@ function mapConversation(row: ChatConversationRow): ChatConversation {
   return {
     id: row.conversation_id,
     kind,
+    isMainGroup: row.conversation_id === MAIN_GROUP_CONVERSATION_ID,
     contextType: row.context_type,
     contextId: row.context_id,
     title,
@@ -639,6 +674,93 @@ export async function openPrivateChat(env: ChatBindings, user: CurrentChatUser, 
 
   const conversation = await getChatConversation(env, stored.conversation_id, user);
   if (!conversation) throw new Error("Private chat could not be loaded.");
+  return conversation;
+}
+
+export async function createGroupChat(env: ChatBindings, user: CurrentChatUser, input: CreateGroupChatInput): Promise<ChatConversation> {
+  await ensureMainGroupChat(env);
+
+  const otherParticipantIds = input.participantIds.filter((participantId) => participantId !== user.id);
+  if (otherParticipantIds.length < 2) {
+    throw new Error("Choose at least two team members.");
+  }
+
+  const placeholders = otherParticipantIds.map(() => "?").join(", ");
+  const targets = await env.DB.prepare(`
+    SELECT
+      u.user_id,
+      u.full_name AS display_name,
+      u.username,
+      u.role,
+      u.profile_photo_url
+    FROM users u
+    WHERE u.user_id IN (${placeholders})
+      AND u.status = 'active'
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM user_views v
+          WHERE v.user_id = u.user_id
+            AND v.view_key IN ('staff', 'owner')
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM user_module_permissions p
+          WHERE p.user_id = u.user_id
+            AND p.module_key = 'chat'
+            AND p.can_access = 1
+        )
+      )
+    ORDER BY u.full_name ASC, u.username ASC
+  `).bind(...otherParticipantIds).all<ChatUserRow>();
+  const targetRows = targets.results ?? [];
+  if (targetRows.length !== otherParticipantIds.length) {
+    throw new Error("One or more team members are unavailable.");
+  }
+
+  const now = new Date().toISOString();
+  const conversationId = `group-${crypto.randomUUID()}`;
+  const participants = [
+    { id: user.id, displayName: user.displayName, username: user.username, role: user.role },
+    ...targetRows.map((target) => ({
+      id: target.user_id,
+      displayName: target.display_name ?? target.username,
+      username: target.username,
+      role: target.role,
+    })),
+  ];
+
+  await env.DB.prepare(`
+    INSERT INTO chat_conversations (
+      conversation_id,
+      conversation_kind,
+      context_type,
+      context_id,
+      title,
+      subtitle,
+      status,
+      priority,
+      participant_count,
+      created_at,
+      updated_at
+    ) VALUES (?, 'GROUP', 'general', NULL, ?, 'Group chat', 'open', 'normal', ?, ?, ?)
+  `).bind(conversationId, input.title, participants.length, now, now).run();
+
+  for (const participant of participants) {
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO chat_conversation_participants (
+        conversation_id,
+        user_id,
+        display_name,
+        username,
+        role,
+        joined_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(conversationId, participant.id, participant.displayName, participant.username, participant.role, now).run();
+  }
+
+  const conversation = await getChatConversation(env, conversationId, user);
+  if (!conversation) throw new Error("Group chat could not be loaded.");
   return conversation;
 }
 

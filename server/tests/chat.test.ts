@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { mentionedUsernames, normalizeMessageInput } from "../src/services/chat.service.ts";
+import { mentionedUsernames, normalizeGroupChatInput, normalizeMessageInput } from "../src/services/chat.service.ts";
 
 test("chat message input requires non-empty body", () => {
   assert.throws(() => normalizeMessageInput({ body: "   " }), /Message body is required/);
@@ -24,6 +24,18 @@ test("chat message input keeps bilingual structure in one record", () => {
   });
 });
 
+test("chat group input requires a name and at least two selected team members", () => {
+  assert.deepEqual(normalizeGroupChatInput({
+    title: " Chat Ristorante ",
+    participantIds: ["u2", "u3", "u2"],
+  }), {
+    title: "Chat Ristorante",
+    participantIds: ["u2", "u3"],
+  });
+  assert.throws(() => normalizeGroupChatInput({ title: "A", participantIds: ["u2", "u3"] }), /2 to 80/);
+  assert.throws(() => normalizeGroupChatInput({ title: "Team", participantIds: ["u2"] }), /at least two/);
+});
+
 test("internal Chat stays separated from Guest Messages and remains the global bubble entrypoint", () => {
   const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
   const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
@@ -42,6 +54,7 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   assert.match(floatingTeamChat, /loadChatUnreadSummary/);
   assert.match(chatService, /\/api\/chat\/conversations/);
   assert.match(chatService, /\/api\/chat\/private/);
+  assert.match(chatService, /\/api\/chat\/groups/);
   assert.match(chatService, /\/api\/chat\/summary/);
   assert.match(appRouter, /<Route path="chat" element=\{<ChatPage \/>\}/);
   assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\}/);
@@ -65,12 +78,17 @@ test("floating chat bubble opens direct app overlay with drag-down close", () =>
   assert.match(floatingTeamChat, /setPointerCapture/);
   assert.match(floatingTeamChat, /dragOffset > 92/);
   assert.match(floatingTeamChat, /window\.addEventListener\("keydown", closeOnEscape\)/);
+  assert.match(floatingTeamChat, /vc-chat-overlay-open/);
+  assert.match(floatingTeamChat, /visualViewport/);
+  assert.match(floatingTeamChat, /body\.style\.position = "fixed"/);
   assert.match(floatingTeamChat, /\{!isOpen && \(/);
   assert.match(floatingTeamChat, /<TeamChatSurface mode="overlay" \/>/);
   assert.doesNotMatch(floatingTeamChat, /to="\/chat"|Team chat is ready|Open chat/);
-  assert.match(floatingTeamChatCss, /\.staff-chat-overlay__sheet\s*\{[^}]*top:\s*calc\(env\(safe-area-inset-top\) \+ 18px\)/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-overlay__sheet\s*\{[^}]*--vc-chat-top-gap:\s*calc\(env\(safe-area-inset-top\) \+ 18px\)[^}]*top:\s*var\(--vc-chat-top-gap\)/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay__grab-zone\s*\{[^}]*min-height:\s*58px/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay \.chat-app\s*\{[^}]*height:\s*100%/);
+  assert.match(floatingTeamChatCss, /:root\.vc-chat-overlay-open,\s*body\.vc-chat-overlay-open\s*\{[^}]*overflow:\s*hidden[^}]*overscroll-behavior:\s*none/);
+  assert.match(floatingTeamChatCss, /--vc-chat-viewport-height/);
 });
 
 test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => {
@@ -111,6 +129,8 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(service, /chat_conversation_participants p/);
   assert.match(service, /WHERE p\.user_id = \?/);
   assert.match(service, /openPrivateChat\(env: ChatBindings, user: CurrentChatUser, targetUserId: string\)/);
+  assert.match(service, /createGroupChat\(env: ChatBindings, user: CurrentChatUser, input: CreateGroupChatInput\)/);
+  assert.match(service, /INSERT INTO chat_conversations \([\s\S]*conversation_kind[\s\S]*\) VALUES \(\?, 'GROUP'/);
   assert.match(service, /INSERT OR IGNORE INTO chat_conversation_participants/);
   assert.match(service, /private_avatar_photo_url/);
   assert.match(service, /avatarPhotoUrl: kind === "PRIVATE" \? row\.private_avatar_photo_url \?\? null : null/);
@@ -118,6 +138,8 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.doesNotMatch(service, /isOwner|Owner access|requireOwner/i);
   assert.match(server, /const user = await chatMember\(c\)/);
   assert.match(server, /openPrivateChat\(c\.env, user, targetUserId\)/);
+  assert.match(server, /app\.post\("\/api\/chat\/groups"/);
+  assert.match(server, /createGroupChat\(c\.env, user, input\)/);
   assert.doesNotMatch(server, /authenticated\(c, "chat", "edit"\)/);
 });
 
@@ -130,19 +152,31 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(page, /lastMessagePreview/);
   assert.match(page, /unreadCount/);
   assert.match(page, /mentionCount/);
+  assert.match(page, /hasUnread/);
+  assert.match(page, /chat-app--mobile-\$\{mobileView\}/);
+  assert.match(page, /setMobileView\("thread"\)/);
+  assert.match(page, /onBack=\{\(\) => setMobileView\("list"\)\}/);
+  assert.match(page, /Back to chat list/);
+  assert.match(page, />New Chat</);
+  assert.match(page, /openGroupChat/);
+  assert.match(page, /Create Group/);
   assert.match(page, /Vanara Group Chat/);
   assert.match(page, /vanaraLogo/);
-  assert.match(page, /variant=\{conversation\.kind === "GROUP" \? "group" : "user"\}/);
+  assert.match(page, /conversation\.isMainGroup/);
   assert.match(page, /photoUrl=\{conversation\.avatarPhotoUrl\}/);
   assert.match(page, /photoUrl=\{message\.author\.profilePhotoUrl\}/);
   assert.match(page, /openPrivateChat/);
   assert.match(page, /markChatConversationRead/);
   assert.doesNotMatch(page, /ContextCard|Operational context|Open context/);
   assert.match(css, /\.chat-list-row/);
+  assert.match(css, /\.chat-list-row\.has-unread \.chat-list-row__main strong/);
   assert.match(css, /\.chat-avatar/);
+  assert.match(css, /\.chat-avatar--vanara/);
   assert.match(css, /\.chat-avatar--group/);
   assert.match(css, /\.chat-thread-message\.is-outgoing/);
   assert.match(css, /\.chat-list-row__badge/);
+  assert.match(css, /\.chat-app--mobile-list \.chat-thread,\s*\.chat-app--mobile-thread \.chat-list\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\.chat-thread__back/);
 });
 
 test("chat thread and composer follow LINE-like message patterns without voice or guest-message coupling", () => {
@@ -156,6 +190,10 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /ChatToolIcon type="gallery"/);
   assert.match(page, /ChatToolIcon type="sticker"/);
   assert.match(page, /ChatToolIcon type="send"/);
+  assert.match(page, /isFocused/);
+  assert.match(page, /exitFocusMode/);
+  assert.match(page, /aria-label="Exit writing mode"/);
+  assert.match(page, /inputRef\.current\?\.blur\(\)/);
   assert.match(page, /placeholder="Aa"/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);

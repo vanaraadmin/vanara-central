@@ -10,6 +10,7 @@ import type {
   ChatUser,
   ChatUsersResponse,
   CreateChatMessagePayload,
+  OpenGroupChatPayload,
   OpenPrivateChatPayload,
 } from "../types/chat";
 
@@ -102,6 +103,17 @@ export async function openPrivateChat(
   const response = await sendJson<ChatConversationResponse>("/api/chat/private", payload, signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Private chat could not be opened");
+  }
+  return response.data;
+}
+
+export async function openGroupChat(
+  payload: OpenGroupChatPayload,
+  signal?: AbortSignal,
+): Promise<ChatConversation> {
+  const response = await sendJson<ChatConversationResponse>("/api/chat/groups", payload, signal);
+  if (!response.success || !response.data) {
+    throw new Error(response.error ?? "Group chat could not be created");
   }
   return response.data;
 }

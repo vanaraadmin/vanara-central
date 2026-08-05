@@ -5,6 +5,7 @@ export type ChatLanguage = "en" | "th";
 export interface ChatConversation {
   id: string;
   kind: ChatConversationKind;
+  isMainGroup: boolean;
   contextType: ChatContextType;
   contextId: string | null;
   title: string;
@@ -93,4 +94,9 @@ export interface CreateChatMessagePayload {
 
 export interface OpenPrivateChatPayload {
   userId: string;
+}
+
+export interface OpenGroupChatPayload {
+  title: string;
+  participantIds: string[];
 }
