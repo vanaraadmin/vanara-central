@@ -21,6 +21,7 @@ export interface PayrollSettings {
   monthlyDayDivisor: number;
   normalHoursPerDay: number;
   socialSecurityApplicable: boolean;
+  mealAllowanceApplicable: boolean;
   socialSecurityRate: number;
   socialSecurityWageCeiling: number;
   overtimeMultiplier: number;
@@ -127,6 +128,7 @@ interface SettingsRow {
   monthly_day_divisor: number;
   normal_hours_per_day: number;
   social_security_applicable: number;
+  meal_allowance_applicable?: number | null;
   social_security_rate: number;
   social_security_wage_ceiling: number;
   overtime_multiplier: number;
@@ -159,6 +161,7 @@ interface RecordRow {
   monthly_day_divisor: number;
   normal_hours_per_day: number;
   social_security_applicable: number;
+  meal_allowance_applicable?: number | null;
   social_security_rate: number;
   social_security_wage_ceiling: number;
   overtime_multiplier: number;
@@ -205,6 +208,7 @@ const DEFAULT_SETTINGS: PayrollSettings = {
   monthlyDayDivisor: 30,
   normalHoursPerDay: 8,
   socialSecurityApplicable: true,
+  mealAllowanceApplicable: true,
   socialSecurityRate: 0.05,
   socialSecurityWageCeiling: 17500,
   overtimeMultiplier: 1.5,
@@ -342,6 +346,7 @@ export function normalizePayrollSettingsInput(payload: unknown): PayrollSettings
     monthlyDayDivisor: positive(source.monthlyDayDivisor ?? DEFAULT_SETTINGS.monthlyDayDivisor, "Monthly day divisor"),
     normalHoursPerDay: positive(source.normalHoursPerDay ?? DEFAULT_SETTINGS.normalHoursPerDay, "Normal hours per day"),
     socialSecurityApplicable: source.socialSecurityApplicable === undefined ? true : Boolean(source.socialSecurityApplicable),
+    mealAllowanceApplicable: source.mealAllowanceApplicable === undefined ? true : Boolean(source.mealAllowanceApplicable),
     socialSecurityRate: nonNegative(source.socialSecurityRate ?? DEFAULT_SETTINGS.socialSecurityRate, "Social Security rate"),
     socialSecurityWageCeiling: nonNegative(source.socialSecurityWageCeiling ?? DEFAULT_SETTINGS.socialSecurityWageCeiling, "Social Security wage ceiling"),
     overtimeMultiplier: nonNegative(source.overtimeMultiplier ?? DEFAULT_SETTINGS.overtimeMultiplier, "Overtime multiplier"),
@@ -372,6 +377,7 @@ function settingsFromRow(row: SettingsRow | null | undefined): PayrollSettings {
     monthlyDayDivisor: Number(row.monthly_day_divisor),
     normalHoursPerDay: Number(row.normal_hours_per_day),
     socialSecurityApplicable: row.social_security_applicable === 1,
+    mealAllowanceApplicable: row.meal_allowance_applicable === undefined || row.meal_allowance_applicable === null ? true : row.meal_allowance_applicable === 1,
     socialSecurityRate: Number(row.social_security_rate),
     socialSecurityWageCeiling: Number(row.social_security_wage_ceiling),
     overtimeMultiplier: Number(row.overtime_multiplier),
@@ -429,7 +435,7 @@ export function calculatePayroll(settings: PayrollSettings, events: PayrollEvent
   const employeeSocialSecurity = roundMoney(safeSettings.socialSecurityApplicable ? Math.min(safeSettings.monthlyGrossSalary, safeSettings.socialSecurityWageCeiling) * safeSettings.socialSecurityRate : 0);
   const absenceDeduction = roundMoney(aggregates.unpaidAbsenceDays * dailyPay + aggregates.unpaidAbsenceHours * hourlyPay);
   const overtimeCompensation = roundMoney(aggregates.totalOvertimeHours * hourlyPay * safeSettings.overtimeMultiplier);
-  const mealAllowanceAdvance = roundMoney(followingMonthDays * safeSettings.dailyMealAllowanceAdvance);
+  const mealAllowanceAdvance = safeSettings.mealAllowanceApplicable ? roundMoney(followingMonthDays * safeSettings.dailyMealAllowanceAdvance) : 0;
   const netSalaryPayable = roundMoney(
     safeSettings.monthlyGrossSalary
     - employeeSocialSecurity
@@ -485,9 +491,9 @@ export function calculatePayroll(settings: PayrollSettings, events: PayrollEvent
       label: "Following-month meal allowance advance",
       amount: mealAllowanceAdvance,
       tone: "addition",
-      explanation: `${followingMonthDays} days x ${money(safeSettings.dailyMealAllowanceAdvance)}`,
+      explanation: safeSettings.mealAllowanceApplicable ? `${followingMonthDays} days x ${money(safeSettings.dailyMealAllowanceAdvance)}` : "Not applied for this payroll month",
       thaiLabel: "ค่าอาหารล่วงหน้าเดือนถัดไป",
-      thaiExplanation: "ค่าอาหารล่วงหน้าตามจำนวนวันเดือนถัดไป",
+      thaiExplanation: safeSettings.mealAllowanceApplicable ? "ค่าอาหารล่วงหน้าตามจำนวนวันเดือนถัดไป" : "ไม่ได้ใช้สำหรับเดือนเงินเดือนนี้",
     },
     {
       label: "Bonuses / other additions",
@@ -534,7 +540,7 @@ async function getActiveWorkers(env: PayrollBindings): Promise<UserRow[]> {
   const rows = await env.DB.prepare(`
     SELECT user_id, first_name, last_name, full_name, profile_photo_url, role, username, status
     FROM users
-    WHERE status = 'active'
+    WHERE status = 'active' AND role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
     ORDER BY full_name
   `).all<UserRow>();
   return rows.results ?? [];
@@ -544,7 +550,7 @@ async function getWorker(env: PayrollBindings, employeeUserId: string): Promise<
   return env.DB.prepare(`
     SELECT user_id, first_name, last_name, full_name, profile_photo_url, role, username, status
     FROM users
-    WHERE user_id = ? AND status = 'active'
+    WHERE user_id = ? AND status = 'active' AND role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
   `).bind(employeeUserId).first<UserRow>();
 }
 
@@ -585,6 +591,7 @@ function recordFromRow(row: RecordRow | null): PayrollRecord | null {
         monthlyDayDivisor: row.monthly_day_divisor,
         normalHoursPerDay: row.normal_hours_per_day,
         socialSecurityApplicable: row.social_security_applicable === 1,
+        mealAllowanceApplicable: row.meal_allowance_applicable === undefined || row.meal_allowance_applicable === null ? true : row.meal_allowance_applicable === 1,
         socialSecurityRate: row.social_security_rate,
         socialSecurityWageCeiling: row.social_security_wage_ceiling,
         overtimeMultiplier: row.overtime_multiplier,
@@ -667,8 +674,8 @@ export async function savePayrollSettings(env: PayrollBindings, employeeUserId: 
     INSERT INTO payroll_worker_settings (
       employee_user_id, monthly_gross_salary, monthly_day_divisor, normal_hours_per_day,
       social_security_applicable, social_security_rate, social_security_wage_ceiling,
-      overtime_multiplier, daily_meal_allowance_advance, notes, created_at, updated_at, updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      overtime_multiplier, daily_meal_allowance_advance, meal_allowance_applicable, notes, created_at, updated_at, updated_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(employee_user_id) DO UPDATE SET
       monthly_gross_salary = excluded.monthly_gross_salary,
       monthly_day_divisor = excluded.monthly_day_divisor,
@@ -678,6 +685,7 @@ export async function savePayrollSettings(env: PayrollBindings, employeeUserId: 
       social_security_wage_ceiling = excluded.social_security_wage_ceiling,
       overtime_multiplier = excluded.overtime_multiplier,
       daily_meal_allowance_advance = excluded.daily_meal_allowance_advance,
+      meal_allowance_applicable = excluded.meal_allowance_applicable,
       notes = excluded.notes,
       updated_at = excluded.updated_at,
       updated_by = excluded.updated_by
@@ -691,6 +699,7 @@ export async function savePayrollSettings(env: PayrollBindings, employeeUserId: 
     settings.socialSecurityWageCeiling,
     settings.overtimeMultiplier,
     settings.dailyMealAllowanceAdvance,
+    settings.mealAllowanceApplicable ? 1 : 0,
     settings.notes,
     now,
     now,
@@ -733,7 +742,7 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       SET status = ?,
           monthly_gross_salary = ?, monthly_day_divisor = ?, normal_hours_per_day = ?,
           social_security_applicable = ?, social_security_rate = ?, social_security_wage_ceiling = ?,
-          overtime_multiplier = ?, daily_meal_allowance_advance = ?, days_in_following_month = ?,
+          overtime_multiplier = ?, daily_meal_allowance_advance = ?, meal_allowance_applicable = ?, days_in_following_month = ?,
           unpaid_absence_days = ?, unpaid_absence_hours = ?, overtime_hours = ?, extra_worked_days = ?,
           total_overtime_hours = ?, salary_advances_received = ?, bonuses_additions = ?, authorized_deductions = ?,
           notes = ?, daily_pay = ?, hourly_pay = ?, employee_social_security = ?, absence_deduction = ?,
@@ -751,6 +760,7 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       calculation.settings.socialSecurityWageCeiling,
       calculation.settings.overtimeMultiplier,
       calculation.settings.dailyMealAllowanceAdvance,
+      calculation.settings.mealAllowanceApplicable ? 1 : 0,
       calculation.daysInFollowingMonth,
       calculation.aggregates.unpaidAbsenceDays,
       calculation.aggregates.unpaidAbsenceHours,
@@ -784,14 +794,14 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
         employee_user_id, employee_name_snapshot, payroll_month, status,
         monthly_gross_salary, monthly_day_divisor, normal_hours_per_day,
         social_security_applicable, social_security_rate, social_security_wage_ceiling,
-        overtime_multiplier, daily_meal_allowance_advance, days_in_following_month,
+        overtime_multiplier, daily_meal_allowance_advance, meal_allowance_applicable, days_in_following_month,
         unpaid_absence_days, unpaid_absence_hours, overtime_hours, extra_worked_days,
         total_overtime_hours, salary_advances_received, bonuses_additions, authorized_deductions,
         notes, daily_pay, hourly_pay, employee_social_security, absence_deduction,
         overtime_compensation, meal_allowance_advance, net_salary_payable,
         line_items_json, explanations_json, event_snapshot_json,
         created_at, updated_at, created_by, updated_by, finalized_at, finalized_by, finalized_by_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       worker.id,
       worker.fullName,
@@ -805,6 +815,7 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       calculation.settings.socialSecurityWageCeiling,
       calculation.settings.overtimeMultiplier,
       calculation.settings.dailyMealAllowanceAdvance,
+      calculation.settings.mealAllowanceApplicable ? 1 : 0,
       calculation.daysInFollowingMonth,
       calculation.aggregates.unpaidAbsenceDays,
       calculation.aggregates.unpaidAbsenceHours,

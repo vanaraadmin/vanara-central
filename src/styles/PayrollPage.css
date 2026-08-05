@@ -18,6 +18,7 @@
 .payroll-field {
   display: grid;
   gap: 7px;
+  max-width: 100%;
   min-width: 0;
   color: var(--vc-text-cream-muted);
   font-family: var(--vc-font-sans);
@@ -31,6 +32,7 @@
 .payroll-field select,
 .payroll-field textarea {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   min-height: 44px;
   color: var(--workspace-ink);
@@ -40,6 +42,12 @@
   padding: 10px 12px;
   font: 700 0.94rem var(--vc-font-sans);
   box-sizing: border-box;
+}
+
+.payroll-month input[type="month"],
+.payroll-field input[type="date"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .payroll-field textarea {

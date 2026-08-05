@@ -87,7 +87,7 @@ function calculate(settings: PayrollSettings, events: PayrollEvent[], payrollMon
   const employeeSocialSecurity = roundMoney(settings.socialSecurityApplicable ? Math.min(settings.monthlyGrossSalary, settings.socialSecurityWageCeiling) * settings.socialSecurityRate : 0);
   const absenceDeduction = roundMoney(unpaidAbsenceDays * dailyPay + unpaidAbsenceHours * hourlyPay);
   const overtimeCompensation = roundMoney(totalOvertimeHours * hourlyPay * settings.overtimeMultiplier);
-  const mealAllowanceAdvance = roundMoney(followingDays * settings.dailyMealAllowanceAdvance);
+  const mealAllowanceAdvance = settings.mealAllowanceApplicable ? roundMoney(followingDays * settings.dailyMealAllowanceAdvance) : 0;
   const netSalaryPayable = roundMoney(settings.monthlyGrossSalary - employeeSocialSecurity - absenceDeduction + overtimeCompensation - salaryAdvancesReceived + mealAllowanceAdvance + bonusesAdditions - authorizedDeductions);
   const lineItems = [
     { label: "Monthly gross salary", amount: settings.monthlyGrossSalary, tone: "addition" as const, explanation: `Monthly salary: ${money(settings.monthlyGrossSalary)}`, thaiLabel: "เงินเดือนรวมรายเดือน", thaiExplanation: `เงินเดือนรายเดือน ${money(settings.monthlyGrossSalary)}` },
@@ -95,7 +95,7 @@ function calculate(settings: PayrollSettings, events: PayrollEvent[], payrollMon
     { label: "Unpaid absences", amount: -absenceDeduction, tone: "deduction" as const, explanation: `${unpaidAbsenceDays.toFixed(2)} days x ${money(dailyPay)} + ${unpaidAbsenceHours.toFixed(2)} hours x ${money(hourlyPay)}`, thaiLabel: "หักขาดงานไม่รับค่าจ้าง", thaiExplanation: "คำนวณจากวันและชั่วโมงที่ไม่ได้รับค่าจ้าง" },
     { label: "Overtime compensation", amount: overtimeCompensation, tone: "addition" as const, explanation: `${totalOvertimeHours.toFixed(2)} hours x ${money(hourlyPay)} x ${settings.overtimeMultiplier.toFixed(2)}`, thaiLabel: "ค่าล่วงเวลา", thaiExplanation: "รวมชั่วโมงโอทีและวันทำงานพิเศษ" },
     { label: "Salary advances already received", amount: -salaryAdvancesReceived, tone: "deduction" as const, explanation: "Advances already paid during the month", thaiLabel: "หักเงินล่วงหน้า", thaiExplanation: "เงินล่วงหน้าที่ได้รับแล้ว" },
-    { label: "Following-month meal allowance advance", amount: mealAllowanceAdvance, tone: "addition" as const, explanation: `${followingDays} days x ${money(settings.dailyMealAllowanceAdvance)}`, thaiLabel: "ค่าอาหารล่วงหน้าเดือนถัดไป", thaiExplanation: "คำนวณตามจำนวนวันของเดือนถัดไป" },
+    { label: "Following-month meal allowance advance", amount: mealAllowanceAdvance, tone: "addition" as const, explanation: settings.mealAllowanceApplicable ? `${followingDays} days x ${money(settings.dailyMealAllowanceAdvance)}` : "Not applied for this payroll month", thaiLabel: "ค่าอาหารล่วงหน้าเดือนถัดไป", thaiExplanation: settings.mealAllowanceApplicable ? "คำนวณตามจำนวนวันของเดือนถัดไป" : "ไม่ได้ใช้สำหรับเดือนเงินเดือนนี้" },
     { label: "Bonuses / other additions", amount: bonusesAdditions, tone: "addition" as const, explanation: "Authorized additions recorded for this payroll month", thaiLabel: "โบนัส / รายการเพิ่มอื่น", thaiExplanation: "รายการเพิ่มที่ได้รับอนุมัติ" },
     { label: "Other authorized deductions", amount: -authorizedDeductions, tone: "deduction" as const, explanation: "Authorized deductions recorded for this payroll month", thaiLabel: "รายการหักอื่นที่ได้รับอนุมัติ", thaiExplanation: "รายการหักที่ได้รับอนุมัติ" },
     { label: "Net salary payable", amount: netSalaryPayable, tone: "total" as const, explanation: "Final amount payable", thaiLabel: "เงินเดือนสุทธิที่ต้องจ่าย", thaiExplanation: "จำนวนเงินสุดท้ายที่ต้องจ่าย" },
@@ -115,11 +115,30 @@ function calculate(settings: PayrollSettings, events: PayrollEvent[], payrollMon
   };
 }
 
-function NumberField({ disabled, label, onChange, step = "0.01", value }: { disabled?: boolean; label: string; onChange(value: number): void; step?: string; value: number }) {
+function NumberField({ commitEmptyAsZero, disabled, label, onChange, step = "0.01", value }: { commitEmptyAsZero?: boolean; disabled?: boolean; label: string; onChange(value: number): void; step?: string; value: number }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const displayValue = draft !== null ? draft : Number.isFinite(value) ? String(value) : "";
   return (
     <label className="payroll-field">
       <span>{label}</span>
-      <input disabled={disabled} min="0" step={step} type="number" value={Number.isFinite(value) ? value : 0} onChange={(event) => onChange(Math.max(0, Number(event.target.value)))} />
+      <input
+        disabled={disabled}
+        min="0"
+        step={step}
+        type="number"
+        value={displayValue}
+        onBlur={() => setDraft(null)}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          if (next === "") {
+            if (commitEmptyAsZero) onChange(0);
+            return;
+          }
+          const parsed = Number(next);
+          if (Number.isFinite(parsed) && parsed >= 0) onChange(parsed);
+        }}
+      />
     </label>
   );
 }
@@ -133,7 +152,7 @@ function WorkerCard({ active, onSelect, worker }: { active: boolean; onSelect():
       <span className="payroll-worker__main">
         <strong>{worker.fullName}</strong>
         <small>@{worker.username} - {worker.role}</small>
-        <span>{money(worker.settings.monthlyGrossSalary)} base - SS {worker.settings.socialSecurityApplicable ? "Yes" : "No"}</span>
+        <span>{money(worker.settings.monthlyGrossSalary)} base - SS {worker.settings.socialSecurityApplicable ? "Yes" : "No"} - Meal {worker.settings.mealAllowanceApplicable ? "On" : "Off"}</span>
       </span>
       <span className="payroll-worker__meta">
         <strong>{money(calculation.netSalaryPayable)}</strong>
@@ -258,16 +277,14 @@ export default function PayrollPage() {
             <section className="payroll-settings" aria-label="Worker payroll settings">
               <h3>Worker settings</h3>
               <div className="payroll-form-grid">
-                <NumberField label="Monthly gross salary" onChange={(value) => setSettingsDraft({ ...settingsDraft, monthlyGrossSalary: value })} value={settingsDraft.monthlyGrossSalary} />
-                <NumberField label="Monthly day divisor" onChange={(value) => setSettingsDraft({ ...settingsDraft, monthlyDayDivisor: value || 30 })} value={settingsDraft.monthlyDayDivisor} />
-                <NumberField label="Normal hours / day" onChange={(value) => setSettingsDraft({ ...settingsDraft, normalHoursPerDay: value || 8 })} value={settingsDraft.normalHoursPerDay} />
-                <NumberField label="SS rate" onChange={(value) => setSettingsDraft({ ...settingsDraft, socialSecurityRate: value })} step="0.001" value={settingsDraft.socialSecurityRate} />
-                <NumberField label="SS wage ceiling" onChange={(value) => setSettingsDraft({ ...settingsDraft, socialSecurityWageCeiling: value })} value={settingsDraft.socialSecurityWageCeiling} />
-                <NumberField label="Overtime multiplier" onChange={(value) => setSettingsDraft({ ...settingsDraft, overtimeMultiplier: value })} value={settingsDraft.overtimeMultiplier} />
-                <NumberField label="Meal / day advance" onChange={(value) => setSettingsDraft({ ...settingsDraft, dailyMealAllowanceAdvance: value })} value={settingsDraft.dailyMealAllowanceAdvance} />
+                <NumberField label="Base salary" onChange={(value) => setSettingsDraft({ ...settingsDraft, monthlyGrossSalary: value })} value={settingsDraft.monthlyGrossSalary} />
                 <label className="payroll-field payroll-field--check">
                   <span>Social Security</span>
                   <input checked={settingsDraft.socialSecurityApplicable} type="checkbox" onChange={(event) => setSettingsDraft({ ...settingsDraft, socialSecurityApplicable: event.target.checked })} />
+                </label>
+                <label className="payroll-field payroll-field--check">
+                  <span>Meal allowance</span>
+                  <input checked={settingsDraft.mealAllowanceApplicable} type="checkbox" onChange={(event) => setSettingsDraft({ ...settingsDraft, mealAllowanceApplicable: event.target.checked })} />
                 </label>
               </div>
               {locked ? <p className="payroll-lock-note">This month is finalized. Settings remain editable for future payroll, but this finalized snapshot will not change.</p> : null}
@@ -287,7 +304,7 @@ export default function PayrollPage() {
                     {eventOptions.map((type) => <option key={type} value={type}>{eventLabels[type]}</option>)}
                   </select>
                 </label>
-                <NumberField disabled={locked} label={eventType === "SALARY_ADVANCE" || eventType === "BONUS_ADDITION" || eventType === "AUTHORIZED_DEDUCTION" ? "Amount THB" : "Quantity"} onChange={setEventValue} value={eventValue} />
+                <NumberField commitEmptyAsZero disabled={locked} label={eventType === "SALARY_ADVANCE" || eventType === "BONUS_ADDITION" || eventType === "AUTHORIZED_DEDUCTION" ? "Amount THB" : "Quantity"} onChange={setEventValue} value={eventValue} />
                 <label className="payroll-field payroll-field--wide"><span>Note</span><input disabled={locked} value={eventNote} onChange={(event) => setEventNote(event.target.value)} /></label>
                 <button className="payroll-action" disabled={locked || eventMutation.isPending || eventValue <= 0} type="submit">{eventMutation.isPending ? "Adding" : "Add event"}</button>
               </form>

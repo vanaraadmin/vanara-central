@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: PayrollSettings = {
   monthlyDayDivisor: 30,
   normalHoursPerDay: 8,
   socialSecurityApplicable: true,
+  mealAllowanceApplicable: true,
   socialSecurityRate: 0.05,
   socialSecurityWageCeiling: 17500,
   overtimeMultiplier: 1.5,
@@ -90,6 +91,22 @@ class FakePayrollDB {
   permissions: Array<{ module_key: ModuleKey; can_access: number; can_edit: number }> = [{ module_key: "payroll", can_access: 1, can_edit: 1 }];
 
   constructor() {
+    this.users.set("owner-hidden", {
+      user_id: "owner-hidden",
+      first_name: "Hidden",
+      last_name: "Owner",
+      full_name: "Hidden Owner",
+      profile_photo_url: null,
+      role: "Owner",
+      preferred_language: "en",
+      username: "guest",
+      email: null,
+      password_hash: "hash",
+      status: "active",
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+      last_login_at: null,
+    });
     this.users.set("staff-1", {
       user_id: "staff-1",
       first_name: "Nuntana",
@@ -118,7 +135,10 @@ class FakePayrollDB {
     }
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
-    if (sql.includes("FROM users") && sql.includes("WHERE status = 'active'")) return { results: [...this.users.values()] as T[] };
+    if (sql.includes("FROM users") && sql.includes("WHERE status = 'active'")) {
+      const rows = [...this.users.values()].filter((user) => !sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role));
+      return { results: rows as T[] };
+    }
     if (sql.includes("FROM payroll_events")) {
       const employeeId = String(params[0]);
       const month = String(params[1]);
@@ -152,7 +172,10 @@ class FakePayrollDB {
         last_login_at: null,
       } as T;
     }
-    if (sql.includes("FROM users") && sql.includes("WHERE user_id = ?")) return (this.users.get(String(params[0])) ?? null) as T | null;
+    if (sql.includes("FROM users") && sql.includes("WHERE user_id = ?")) {
+      const user = this.users.get(String(params[0]));
+      return (user && (!sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role)) ? user : null) as T | null;
+    }
     if (sql.includes("FROM payroll_worker_settings")) return (this.settings.get(String(params[0])) ? this.settingsRow(String(params[0])) : null) as T | null;
     if (sql.includes("FROM payroll_records")) {
       const record = this.records.get(this.key(String(params[0]), String(params[1])));
@@ -179,7 +202,8 @@ class FakePayrollDB {
         socialSecurityWageCeiling: Number(params[6]),
         overtimeMultiplier: Number(params[7]),
         dailyMealAllowanceAdvance: Number(params[8]),
-        notes: params[9] === null ? null : String(params[9]),
+        mealAllowanceApplicable: Number(params[9]) === 1,
+        notes: params[10] === null ? null : String(params[10]),
       });
       return { meta: { changes: 1, last_row_id: 0 } };
     }
@@ -205,7 +229,7 @@ class FakePayrollDB {
       return { meta: { changes: 1, last_row_id: record.id } };
     }
     if (sql.includes("UPDATE payroll_records")) {
-      const id = Number(params[34]);
+      const id = Number(params[35]);
       const existing = [...this.records.values()].find((record) => record.id === id && record.status === "DRAFT");
       if (existing) this.records.set(this.key(existing.employeeUserId, existing.payrollMonth), this.recordFromParams(params, id, existing.employeeUserId, existing.employeeNameSnapshot, existing.payrollMonth, existing.createdAt));
       return { meta: { changes: existing ? 1 : 0, last_row_id: id } };
@@ -244,6 +268,7 @@ class FakePayrollDB {
       monthly_day_divisor: settings.monthlyDayDivisor,
       normal_hours_per_day: settings.normalHoursPerDay,
       social_security_applicable: settings.socialSecurityApplicable ? 1 : 0,
+      meal_allowance_applicable: settings.mealAllowanceApplicable ? 1 : 0,
       social_security_rate: settings.socialSecurityRate,
       social_security_wage_ceiling: settings.socialSecurityWageCeiling,
       overtime_multiplier: settings.overtimeMultiplier,
@@ -252,30 +277,34 @@ class FakePayrollDB {
     };
   }
 
-  recordFromParams(params: unknown[], id: number, employeeId = String(params[0]), employeeName = String(params[1]), month = String(params[2]), createdAt = String(params[32])): PayrollRecord {
+  recordFromParams(params: unknown[], id: number, employeeId = String(params[0]), employeeName = String(params[1]), month = String(params[2]), createdAt = String(params[33])): PayrollRecord {
+    const update = employeeId !== String(params[0]);
+    const offset = update ? -3 : 0;
+    const notesIndex = update ? 19 : 22;
     return {
       id,
       employeeUserId: employeeId,
       employeeNameSnapshot: employeeName,
       payrollMonth: month,
-      status: params[3] as PayrollRecord["status"],
-      notes: params[21] === null ? null : String(params[21]),
+      status: params[update ? 0 : 3] as PayrollRecord["status"],
+      notes: params[notesIndex] === null ? null : String(params[notesIndex]),
       calculation: calculatePayroll({
-        monthlyGrossSalary: Number(params[4]),
-        monthlyDayDivisor: Number(params[5]),
-        normalHoursPerDay: Number(params[6]),
-        socialSecurityApplicable: Number(params[7]) === 1,
-        socialSecurityRate: Number(params[8]),
-        socialSecurityWageCeiling: Number(params[9]),
-        overtimeMultiplier: Number(params[10]),
-        dailyMealAllowanceAdvance: Number(params[11]),
-        notes: params[21] === null ? null : String(params[21]),
+        monthlyGrossSalary: Number(params[4 + offset]),
+        monthlyDayDivisor: Number(params[5 + offset]),
+        normalHoursPerDay: Number(params[6 + offset]),
+        socialSecurityApplicable: Number(params[7 + offset]) === 1,
+        socialSecurityRate: Number(params[8 + offset]),
+        socialSecurityWageCeiling: Number(params[9 + offset]),
+        overtimeMultiplier: Number(params[10 + offset]),
+        dailyMealAllowanceAdvance: Number(params[11 + offset]),
+        mealAllowanceApplicable: Number(params[12 + offset]) === 1,
+        notes: params[notesIndex] === null ? null : String(params[notesIndex]),
       }, this.events.filter((event) => event.employeeUserId === employeeId && event.payrollMonth === month), month),
       createdAt,
-      updatedAt: String(params[33]),
-      finalizedAt: params[36] === null ? null : String(params[36]),
-      finalizedBy: params[37] === null ? null : String(params[37]),
-      finalizedByName: params[38] === null ? null : String(params[38]),
+      updatedAt: String(params[update ? 30 : 34]),
+      finalizedAt: params[update ? 32 : 37] === null ? null : String(params[update ? 32 : 37]),
+      finalizedBy: params[update ? 33 : 38] === null ? null : String(params[update ? 33 : 38]),
+      finalizedByName: params[update ? 34 : 39] === null ? null : String(params[update ? 34 : 39]),
     };
   }
 
@@ -291,6 +320,7 @@ class FakePayrollDB {
       monthly_day_divisor: calculation.settings.monthlyDayDivisor,
       normal_hours_per_day: calculation.settings.normalHoursPerDay,
       social_security_applicable: calculation.settings.socialSecurityApplicable ? 1 : 0,
+      meal_allowance_applicable: calculation.settings.mealAllowanceApplicable ? 1 : 0,
       social_security_rate: calculation.settings.socialSecurityRate,
       social_security_wage_ceiling: calculation.settings.socialSecurityWageCeiling,
       overtime_multiplier: calculation.settings.overtimeMultiplier,
@@ -335,6 +365,13 @@ test("payroll formulas match the corrected workbook defaults", () => {
   assert.equal(calculation.netSalaryPayable, 15750);
 });
 
+test("payroll meal allowance can be disabled for low season", () => {
+  const calculation = calculatePayroll({ ...DEFAULT_SETTINGS, mealAllowanceApplicable: false }, [], "2026-05");
+  assert.equal(calculation.mealAllowanceAdvance, 0);
+  assert.equal(calculation.netSalaryPayable, 14250);
+  assert.match(calculation.lineItems.find((item) => item.label === "Following-month meal allowance advance")?.explanation ?? "", /Not applied for this payroll month/);
+});
+
 test("payroll social security cap and toggle match workbook behavior", () => {
   assert.equal(calculatePayroll({ ...DEFAULT_SETTINGS, monthlyGrossSalary: 30000 }, [], "2026-05").employeeSocialSecurity, 875);
   assert.equal(calculatePayroll({ ...DEFAULT_SETTINGS, socialSecurityApplicable: false }, [], "2026-05").employeeSocialSecurity, 0);
@@ -374,8 +411,10 @@ test("payroll worker list uses legal first and last names rather than username",
   const db = new FakePayrollDB();
   await savePayrollSettings(env(db), "staff-1", DEFAULT_SETTINGS, OWNER);
   const overview = await getPayrollOverview(env(db), "2026-05");
+  assert.deepEqual(overview.workers.map((worker) => worker.id), ["staff-1"]);
   assert.equal(overview.workers[0]?.fullName, "Nuntana Srisawat Long Legal Operational Name");
   assert.notEqual(overview.workers[0]?.fullName, "nun");
+  assert.equal(await getPayrollWorker(env(db), "owner-hidden", "2026-05"), null);
 });
 
 test("payroll can be generated before month end using current month events", async () => {
@@ -392,9 +431,11 @@ test("payroll finalized snapshot is locked while worker settings stay live", asy
   await savePayrollSettings(env(db), "staff-1", DEFAULT_SETTINGS, OWNER);
   const finalized = await finalizePayroll(env(db), "staff-1", "2026-05", OWNER, null, "2026-05-22T04:00:00.000Z");
   assert.equal(finalized.calculation.settings.monthlyGrossSalary, 15000);
+  assert.equal(finalized.calculation.settings.mealAllowanceApplicable, true);
   await savePayrollSettings(env(db), "staff-1", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 15500 }, OWNER);
   const historical = await getPayrollWorker(env(db), "staff-1", "2026-05");
   assert.equal(historical?.calculation.settings.monthlyGrossSalary, 15000);
+  assert.equal(historical?.calculation.settings.mealAllowanceApplicable, true);
   const future = await getPayrollWorker(env(db), "staff-1", "2026-06");
   assert.equal(future?.calculation.settings.monthlyGrossSalary, 15500);
 });
@@ -426,6 +467,15 @@ test("payroll statement PDF includes core statement and dated event details", as
   assert.match(text, /0235564000381/);
 });
 
+test("payroll statement PDF explains disabled meal allowance", async () => {
+  const db = new FakePayrollDB();
+  await savePayrollSettings(env(db), "staff-1", { ...DEFAULT_SETTINGS, mealAllowanceApplicable: false }, OWNER);
+  const pdf = await generatePayrollStatementPdf(env(db), "staff-1", "2026-05");
+  const text = new TextDecoder().decode(pdf);
+  assert.match(text, /Following-month meal allowance advance/);
+  assert.match(text, /Not applied for this payroll month/);
+});
+
 test("payroll source guardrails protect route, UI, owner permission, event dates and no AI exposure", () => {
   const migration = readFileSync(new URL("../migrations/0037_payroll_module.sql", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/payroll.service.ts", import.meta.url), "utf8");
@@ -440,18 +490,28 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(migration, /first_name TEXT/);
   assert.match(migration, /last_name TEXT/);
   assert.match(migration, /event_date TEXT NOT NULL/);
+  assert.match(readFileSync(new URL("../migrations/0038_payroll_meal_allowance_toggle.sql", import.meta.url), "utf8"), /meal_allowance_applicable INTEGER NOT NULL DEFAULT 1/);
   assert.match(index, /function payrollOwner/);
   assert.match(index, /requireOwner\(user\)/);
   assert.match(index, /requireModulePermission\(user, "payroll", action\)/);
   assert.match(router, /path="payroll"/);
   assert.match(page, /Net Salary Payable/);
   assert.match(page, /Generate PDF/);
+  assert.match(page, /Base salary/);
+  assert.match(page, /Meal allowance/);
+  assert.match(page, /mealAllowanceApplicable/);
+  assert.match(page, /commitEmptyAsZero/);
+  assert.doesNotMatch(page, /Monthly day divisor|Normal hours \/ day|SS rate|SS wage ceiling|Overtime multiplier|Meal \/ day advance/);
   assert.match(page, /Event date/);
   assert.match(page, /min=\{eventDateBounds\.min\}/);
   assert.match(page, /max=\{eventDateBounds\.max\}/);
   assert.match(page, /worker\.fullName/);
+  assert.match(css, /max-width: 100%/);
+  assert.match(css, /input\[type="month"\]/);
+  assert.match(css, /input\[type="date"\]/);
   assert.match(css, /overflow-wrap: anywhere/);
   assert.match(service, /Payroll adjustments/);
+  assert.match(service, /ไม่ได้ใช้สำหรับเดือนเงินเดือนนี้/);
   assert.doesNotMatch(service, /event log/i);
   assert.match(service, /\/Logo Do/);
   assert.match(service, /VANARA_LOGO_PDF_JPEG_BASE64/);

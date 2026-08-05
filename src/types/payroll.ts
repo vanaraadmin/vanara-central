@@ -13,6 +13,7 @@ export interface PayrollSettings {
   monthlyDayDivisor: number;
   normalHoursPerDay: number;
   socialSecurityApplicable: boolean;
+  mealAllowanceApplicable: boolean;
   socialSecurityRate: number;
   socialSecurityWageCeiling: number;
   overtimeMultiplier: number;
