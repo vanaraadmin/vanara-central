@@ -340,7 +340,7 @@ function viewportBox() {
 function contextMenuPosition(anchorRect: ContextMenuAnchorRect, menuRect?: DOMRect | null): ContextMenuPosition {
   const padding = 12;
   const gap = 10;
-  const fallbackWidth = 220;
+  const fallbackWidth = 286;
   const fallbackHeight = 174;
   const viewport = viewportBox();
   const width = menuRect?.width ?? fallbackWidth;
