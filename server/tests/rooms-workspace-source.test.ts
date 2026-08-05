@@ -169,13 +169,18 @@ test("Compact row type mark uses local monochrome accommodation icons", () => {
 
 test("Compact row CSS keeps operational alerts readable without uncontrolled status-pill clouds", () => {
   const roomRowCss = sourceBlockBetween(css, ".room-row {", ".rooms-home__item:last-child .room-row");
+  const roomNameCss = sourceBlockBetween(css, ".room-row__name {", ".room-row__guest");
 
   assert.match(css, /\.room-row/);
-  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*360px\)\s+18px/);
+  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(9rem,\s*1fr\)\s+minmax\(0,\s*240px\)\s+18px/);
   assert.match(css, /min-height:\s*96px/);
   assert.match(css, /padding:\s*17px 18px/);
   assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1\.125rem/);
   assert.match(css, /\.room-row__name[\s\S]*font-weight:\s*650/);
+  assert.match(css, /\.room-row__identity[\s\S]*min-width:\s*9rem/);
+  assert.match(roomNameCss, /overflow:\s*visible/);
+  assert.match(roomNameCss, /white-space:\s*normal/);
+  assert.doesNotMatch(roomNameCss, /display:\s*none|visibility:\s*hidden|(?<!min-)width:\s*0|text-overflow:\s*ellipsis/);
   assert.match(css, /\.room-row__guest[\s\S]*font-size:\s*0\.78rem/);
   assert.match(css, /\.room-signals__primary/);
   assert.match(css, /\.room-signals__secondary/);
@@ -186,6 +191,8 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
   assert.doesNotMatch(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)[\s\S]*display:\s*none/);
   assert.doesNotMatch(css, /\.room-signal\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.doesNotMatch(css, /\.room-terminal-state__label\s*\{[^}]*text-overflow:\s*ellipsis/);
+  assert.match(css, /grid-template-areas:\s*\n\s*"icon identity chevron"\s*\n\s*"icon signals chevron"/);
+  assert.match(css, /\.room-signals\s*\{[\s\S]*grid-area:\s*signals/);
   assert.match(roomRowCss, /box-shadow:\s*none/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });

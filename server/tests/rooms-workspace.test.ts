@@ -422,7 +422,7 @@ test("Housekeeping domain summary exposes work and one primary action without ch
   });
 });
 
-test("Rooms Workspace uses central finish capability for in-progress turnover ownership", async () => {
+test("Rooms Workspace uses central finish capability for operational staff in-progress turnover completion", async () => {
   const rooms = [roomRow({
     unit_id: 8,
     unit_name: "Bungalow 8",
@@ -446,12 +446,15 @@ test("Rooms Workspace uses central finish capability for in-progress turnover ow
 
   assert.equal(assigned.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
   assert.equal(assigned.housekeeping.primaryAction?.label, "Finish Cleaning");
-  assert.equal(other.housekeeping.primaryAction, null);
+  assert.equal(assigned.housekeeping.detail, "Assigned: Rooms Operator");
+  assert.equal(other.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(other.housekeeping.primaryAction?.label, "Finish Cleaning");
+  assert.equal(other.housekeeping.detail, "Assigned: Rooms Operator");
   assert.equal(owner.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
   assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
 });
 
-test("Room-owned previous-day on-demand cleaning remains visible and completable only by assignee or Owner", async () => {
+test("Room-owned previous-day on-demand cleaning remains visible and completable by operational staff", async () => {
   const rooms = [roomRow({
     unit_id: 23,
     unit_name: "Room 2",
@@ -494,7 +497,9 @@ test("Room-owned previous-day on-demand cleaning remains visible and completable
   assert.equal(assigned.housekeeping.primaryStatus, "Cleaning In Progress");
   assert.equal(assigned.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
   assert.equal(assigned.housekeeping.primaryAction?.label, "Finish Cleaning");
-  assert.equal(other.housekeeping.primaryAction, null);
+  assert.equal(other.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
+  assert.equal(other.housekeeping.primaryAction?.label, "Finish Cleaning");
+  assert.equal(other.housekeeping.detail, "Assigned: Nun");
   assert.equal(owner.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
   assert.equal(owner.housekeeping.primaryAction?.label, "Finish Cleaning");
 });

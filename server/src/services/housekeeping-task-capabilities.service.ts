@@ -27,6 +27,15 @@ export interface HousekeepingOperationalTaskCapabilities {
 
 const terminalStatuses = new Set(["COMPLETED", "SKIPPED", "CANCELLED"]);
 
+function canUseOperationalCleaning(user: CurrentUser): boolean {
+  if (isOwner(user)) return true;
+  if (user.status !== "active" || !user.views.includes("staff")) return false;
+  return user.permissions.some((permission) => (
+    (permission.module === "housekeeping" || permission.module === "rooms")
+    && permission.canAccess
+  ));
+}
+
 export function housekeepingOperationalTaskCapabilities(
   task: CapabilityTask,
   user: CurrentUser,
@@ -37,17 +46,18 @@ export function housekeepingOperationalTaskCapabilities(
   const manager = user.role === "Manager";
   const assigned = task.assignedUserId === user.id;
   const unassigned = task.assignedUserId === null;
+  const operationalStaff = canUseOperationalCleaning(user);
   const active = !terminalStatuses.has(task.status);
   const waitingForReception = options.waitingForReception ?? (task.taskType === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION");
   const maintenanceBlocked = options.maintenanceBlocked === true;
   const availableForCleaning = !waitingForReception && !maintenanceBlocked;
-  const canActorUseAssignedTask = assigned || owner;
+  const canActorUseAssignedTask = assigned || owner || operationalStaff;
   const canActorCompleteTask = canActorUseAssignedTask || (task.taskType === "WATER_REFILL" && unassigned);
 
   return {
     canClaim: task.taskType !== "WATER_REFILL" && base.canClaim && availableForCleaning,
     canReleaseClaim: task.status === "CLAIMED" && (assigned || owner || manager) && !maintenanceBlocked,
-    canStartCleaning: base.canStart && availableForCleaning && (unassigned || assigned || owner),
+    canStartCleaning: base.canStart && availableForCleaning && (unassigned || assigned || owner || operationalStaff),
     canFinishCleaning: task.taskType !== "WATER_REFILL" && housekeepingTaskCanFinishOperationally(task) && availableForCleaning && canActorUseAssignedTask,
     canCompleteTask: housekeepingTaskCanFinishOperationally(task) && availableForCleaning && canActorCompleteTask,
     canSkip: base.canSkip && (assigned || owner || manager),

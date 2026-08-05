@@ -66,7 +66,7 @@
   width: 100%;
   min-height: 96px;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 360px) 18px;
+  grid-template-columns: 40px minmax(9rem, 1fr) minmax(0, 240px) 18px;
   align-items: start;
   column-gap: 14px;
   padding: 17px 18px;
@@ -131,7 +131,7 @@
 
 .room-row__identity {
   align-self: center;
-  min-width: 0;
+  min-width: 9rem;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -139,13 +139,13 @@
 
 .room-row__name {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   color: rgba(250, 247, 238, 0.96);
   font-size: 1.125rem;
   font-weight: 650;
   line-height: 1.18;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .room-row__guest {
@@ -164,7 +164,7 @@
 .room-signals {
   align-self: center;
   justify-self: end;
-  width: min(58vw, 360px);
+  width: min(36vw, 240px);
   max-width: 100%;
   display: grid;
   min-width: 0;
@@ -232,7 +232,7 @@
 
 .room-terminal-state {
   justify-self: end;
-  width: min(58vw, 360px);
+  width: min(36vw, 240px);
   max-width: 100%;
   min-width: 0;
   display: grid;
@@ -893,14 +893,23 @@ button.room-domain-card__primary-action {
 
 @media (max-width: 420px) {
   .room-row {
-    grid-template-columns: 32px minmax(0, 1fr) minmax(0, 52vw) 16px;
+    grid-template-columns: 32px minmax(0, 1fr) 16px;
+    grid-template-areas:
+      "icon identity chevron"
+      "icon signals chevron";
     gap: 10px;
     padding: 13px 14px;
   }
 
   .room-row__type-mark {
+    grid-area: icon;
     width: 30px;
     height: 30px;
+  }
+
+  .room-row__identity {
+    grid-area: identity;
+    min-width: 0;
   }
 
   .room-row__icon {
@@ -913,11 +922,26 @@ button.room-domain-card__primary-action {
   }
 
   .room-signals {
-    width: 52vw;
+    grid-area: signals;
+    justify-self: stretch;
+    width: 100%;
+    text-align: left;
+  }
+
+  .room-signals__primary,
+  .room-signals__secondary {
+    justify-content: flex-start;
   }
 
   .room-terminal-state {
-    width: 52vw;
+    grid-area: signals;
+    justify-self: stretch;
+    width: 100%;
+    text-align: left;
+  }
+
+  .room-row__chevron {
+    grid-area: chevron;
   }
 }
 

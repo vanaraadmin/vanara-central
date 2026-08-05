@@ -1141,7 +1141,7 @@ test("in-progress turnover finish capability is identical for Housekeeping queue
   assert.deepEqual(await capabilitiesForCurrentUser(), [true, true]);
 
   useSessionUser(db, { user_id: "other-housekeeping", full_name: "Other Housekeeping", username: "other-housekeeping" });
-  assert.deepEqual(await capabilitiesForCurrentUser(), [false, false]);
+  assert.deepEqual(await capabilitiesForCurrentUser(), [true, true]);
 
   useSessionUser(db, { user_id: "owner-user", full_name: "Owner User", username: "owner", role: "Owner" }, ["owner", "staff"]);
   assert.deepEqual(await capabilitiesForCurrentUser(), [true, true]);
