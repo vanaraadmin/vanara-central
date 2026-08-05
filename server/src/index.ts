@@ -25,6 +25,7 @@ import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachm
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
+import { prepareSocialImage, SocialImagePreparationError, SOCIAL_IMAGE_PREPARE_CRON, type SocialImagePreparationBindings } from "./services/social-image-preparation.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
 import { classifyPassportImageWithTiming, decidePassportClassification, PassportClassificationError, type PassportClassificationBindings } from "./services/passport-classification.service.js";
 import { isPassportLivePreflightReady, PassportLivePreflightError, runPassportLivePreflight, type PassportLivePreflightBindings } from "./services/passport-live-preflight.service.js";
@@ -64,7 +65,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -1573,6 +1574,17 @@ app.post("/api/social/posts", async (c) => {
   }
 });
 
+app.post("/api/social/posts/:id/prepare-image", async (c) => {
+  try {
+    await socialOwner(c, "edit");
+    const postId = positiveIntegerParam(c.req.param("id"), "social post id");
+    return c.json({ success: true, data: await prepareSocialImage(c.env, postId) });
+  } catch (error) {
+    const status = error instanceof SocialImagePreparationError ? error.status : protectedErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
+  }
+});
+
 app.get("/api/maintenance/tickets", async (c) => {
   try {
     await authenticated(c, "maintenance", "access");
@@ -2192,6 +2204,10 @@ app.notFound((c) => c.json({ success: false, error: "Not found" }, 404));
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    if (controller.cron === SOCIAL_IMAGE_PREPARE_CRON) {
+      ctx.waitUntil(prepareSocialImage(env).then(() => undefined));
+      return;
+    }
     if (controller.cron === "15 3 1 * *") {
       ctx.waitUntil(syncProperties(env).then(() => undefined));
       return;

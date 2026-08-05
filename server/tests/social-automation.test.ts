@@ -11,6 +11,14 @@ import {
   type SocialPostQueueItem,
   type SocialPostStatus,
 } from "../src/services/social-automation.service.ts";
+import {
+  buildSocialImagePrepareRequest,
+  DEFAULT_SOCIAL_CAPTION_MODEL,
+  DEFAULT_SOCIAL_IMAGE_PREP_MODEL,
+  prepareNextQueuedSocialImage,
+  prepareSocialImage,
+  SOCIAL_IMAGE_PREPARE_CRON,
+} from "../src/services/social-image-preparation.service.ts";
 
 type PermissionRow = { module_key: ModuleKey; can_access: number; can_edit: number };
 type SocialRow = {
@@ -77,9 +85,41 @@ class FakeSocialDB {
     views?: UserView[];
     permissions?: PermissionRow[];
     failInsert?: boolean;
+    failImageReadyUpdate?: boolean;
   } = {}) {}
 
   prepare(sql: string) { return new FakeSocialStmt(this, sql); }
+
+  seed(overrides: Partial<SocialRow> = {}): SocialRow {
+    const now = overrides.queued_at ?? "2026-08-05T00:00:00.000Z";
+    const row: SocialRow = {
+      social_post_id: overrides.social_post_id ?? this.nextId,
+      original_object_key: overrides.original_object_key ?? `social/uploads/2026-08-05/${crypto.randomUUID()}.jpg`,
+      processed_object_key: overrides.processed_object_key ?? null,
+      original_file_name: overrides.original_file_name ?? "photo.jpg",
+      content_type: overrides.content_type ?? "image/jpeg",
+      byte_size: overrides.byte_size ?? 4,
+      uploaded_by: overrides.uploaded_by ?? OWNER_ROW.user_id,
+      uploaded_by_name: overrides.uploaded_by_name ?? OWNER_ROW.full_name,
+      status: overrides.status ?? "QUEUED",
+      queued_at: now,
+      processing_started_at: overrides.processing_started_at ?? null,
+      image_prepared_at: overrides.image_prepared_at ?? null,
+      caption_prepared_at: overrides.caption_prepared_at ?? null,
+      scheduled_publish_at: overrides.scheduled_publish_at ?? null,
+      posted_at: overrides.posted_at ?? null,
+      failed_at: overrides.failed_at ?? null,
+      updated_at: overrides.updated_at ?? now,
+      attempt_count: overrides.attempt_count ?? 0,
+      failure_code: overrides.failure_code ?? null,
+      failure_message: overrides.failure_message ?? null,
+      openai_request_count: overrides.openai_request_count ?? 0,
+      estimated_cost_usd: overrides.estimated_cost_usd ?? 0,
+    };
+    this.nextId = Math.max(this.nextId, row.social_post_id + 1);
+    this.rows.push(row);
+    return row;
+  }
 
   async all<T>(sql: string, params: unknown[]) {
     void params;
@@ -102,6 +142,21 @@ class FakeSocialDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("UPDATE social_post_queue") && sql.includes("RETURNING *")) {
+      const targetId = params.length >= 3 ? Number(params[2]) : null;
+      const candidates = this.rows
+        .filter((row) => row.status === "QUEUED" && (targetId === null || row.social_post_id === targetId))
+        .sort((left, right) => left.queued_at.localeCompare(right.queued_at) || left.social_post_id - right.social_post_id);
+      const row = candidates[0];
+      if (!row) return null;
+      row.status = "PREPARING_IMAGE";
+      row.processing_started_at = String(params[0]);
+      row.updated_at = String(params[1]);
+      row.attempt_count += 1;
+      row.failure_code = null;
+      row.failure_message = null;
+      return { ...row } as T;
+    }
     if (sql.includes("SELECT s.session_id")) {
       if (this.options.authenticated === false) return null;
       return {
@@ -113,6 +168,9 @@ class FakeSocialDB {
     }
     if (sql.includes("WHERE original_object_key = ?")) {
       return (this.rows.find((row) => row.original_object_key === params[0]) ?? null) as T | null;
+    }
+    if (sql.includes("WHERE social_post_id = ?")) {
+      return (this.rows.find((row) => row.social_post_id === Number(params[0])) ?? null) as T | null;
     }
     return null;
   }
@@ -147,6 +205,34 @@ class FakeSocialDB {
       this.nextId += 1;
       return { meta: { changes: 1, last_row_id: this.nextId - 1 } };
     }
+    if (sql.includes("SET status = 'IMAGE_READY'")) {
+      if (this.options.failImageReadyUpdate) return { meta: { changes: 0, last_row_id: 0 } };
+      const row = this.rows.find((item) => item.social_post_id === Number(params[14]));
+      if (!row || row.status !== "PREPARING_IMAGE") return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "IMAGE_READY";
+      row.processed_object_key = String(params[0]);
+      row.image_prepared_at = String(params[1]);
+      row.updated_at = String(params[2]);
+      row.openai_request_count = 1;
+      row.estimated_cost_usd = Number(params[13]);
+      row.failure_code = null;
+      row.failure_message = null;
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET status = 'FAILED'")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[20]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "FAILED";
+      row.failed_at = String(params[0]);
+      row.updated_at = String(params[1]);
+      row.failure_code = String(params[2]);
+      row.failure_message = String(params[3]);
+      if (params[5] !== null) {
+        row.openai_request_count = 1;
+        row.estimated_cost_usd = Number(params[19]);
+      }
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     return { meta: { changes: 0, last_row_id: 0 } };
   }
 }
@@ -156,9 +242,26 @@ class FakeR2Storage {
   deleted: string[] = [];
 
   async put(key: string, body: ArrayBuffer | ArrayBufferView | string | null | ReadableStream, options?: R2PutOptions) {
-    assert.ok(body instanceof ArrayBuffer);
-    this.objects.set(key, { body, contentType: options?.httpMetadata?.contentType });
+    let buffer: ArrayBuffer;
+    if (body instanceof ArrayBuffer) {
+      buffer = body;
+    } else if (ArrayBuffer.isView(body)) {
+      buffer = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
+    } else if (typeof body === "string") {
+      buffer = new TextEncoder().encode(body).buffer;
+    } else {
+      throw new Error("Unsupported fake R2 body");
+    }
+    this.objects.set(key, { body: buffer, contentType: options?.httpMetadata?.contentType });
     return null;
+  }
+
+  async get(key: string) {
+    const object = this.objects.get(key);
+    if (!object) return null;
+    return {
+      arrayBuffer: async () => object.body,
+    } as R2ObjectBody;
   }
 
   async delete(key: string) {
@@ -167,7 +270,7 @@ class FakeR2Storage {
   }
 }
 
-function env(db = new FakeSocialDB(), r2 = new FakeR2Storage()) {
+function env(db = new FakeSocialDB(), r2 = new FakeR2Storage(), fetcher?: typeof fetch) {
   return {
     DB: db as unknown as D1Database,
     R2_STORAGE: r2 as unknown as R2Bucket,
@@ -176,6 +279,9 @@ function env(db = new FakeSocialDB(), r2 = new FakeR2Storage()) {
     VANARA_DATABASE_ENVIRONMENT: "test",
     VANARA_DATABASE_NAME: "vanara-test",
     WARAPORN_KB_ARCHIVE: r2 as unknown as R2Bucket,
+    OPENAI_API_KEY: "test-openai",
+    SOCIAL_VECTOR_STORE_ID: "vs_social_test",
+    fetcher,
   };
 }
 
@@ -203,6 +309,68 @@ async function request(path: string, init: RequestInit, data: ReturnType<typeof 
 
 async function json(response: Response) {
   return response.json() as Promise<{ success: boolean; data?: unknown; error?: string }>;
+}
+
+function fakeJpegBuffer(): ArrayBuffer {
+  return new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer;
+}
+
+function successfulOpenAiFetcher(calls: Array<{ input: string; init: RequestInit; body: unknown }>): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as unknown;
+    calls.push({ input: String(input), init: init ?? {}, body });
+    return new Response(JSON.stringify({
+      id: "resp_social_image_1",
+      output: [
+        { type: "file_search_call", results: [{ filename: "Vanara_Social_Style.md" }] },
+        { type: "image_generation_call", result: Buffer.from("processed-jpeg").toString("base64") },
+        {
+          type: "message",
+          content: [{
+            type: "output_text",
+            text: JSON.stringify({
+              visual_subject: "Villa terrace",
+              visible_details: ["morning light", "wood texture"],
+              visual_evidence: ["wood terrace surface", "green leaves near the frame", "warm light on the room edge"],
+              caption_anchors: ["wood terrace surface", "green leaves near the frame"],
+              story_angles: ["room atmosphere", "garden detail"],
+              guest_experience_link: "The terrace detail can connect softly to slowing down at Vanara.",
+              do_not_claim: ["sea view", "sunset"],
+              avoid_claims: ["sea view", "sunset"],
+              confidence_by_detail: { "wood terrace surface": "certain", "green leaves near the frame": "certain" },
+              location_context: { resort: "Vanara", island: "Koh Chang", country: "Thailand", source: "app_default" },
+              local_context: { resort: "Vanara", island: "Koh Chang", country: "Thailand", source: "app_default", confidence: "declared_context" },
+              seasonal_context: { date: "2026-08-05T20:00:00.000Z", likely_season: "green_season", kb_notes: ["green season context"], confidence: "calendar_context_only" },
+              caption_context_notes: ["Use the wood terrace and leaves as visual anchors."],
+              tone_hints: ["calm", "grounded", "observant"],
+              instagram_hint: "Open with a concrete visual detail, not a generic travel hook.",
+              facebook_hint: "Preserve a calm narrative around the terrace and leaves.",
+              recommended_hashtag_categories: ["rooms", "nature"],
+              location_guess: "Vanara Retreat",
+              location_source: "owner_upload",
+              location_confidence: 0.72,
+              mood: "calm",
+              colors: ["green", "warm wood"],
+              natural_elements: ["leaves"],
+              architectural_or_material_details: ["wood"],
+              time_of_day_guess: "morning",
+              detected_entities: ["terrace"],
+              editing_summary: "Natural exposure and colour refinement.",
+              risk_notes: "No invented elements.",
+              conservative_enhancement_note: "Conservative enhancement used to preserve the original scene.",
+            }),
+          }],
+        },
+      ],
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 20 },
+        output_tokens: 30,
+        output_tokens_details: { reasoning_tokens: 4 },
+        total_tokens: 130,
+      },
+    }), { status: 200, headers: { "x-request-id": "req_social_image_1" } });
+  }) as typeof fetch;
 }
 
 test("social photo upload accepts JPG, PNG and WebP only and rejects HEIC clearly", () => {
@@ -269,6 +437,123 @@ test("social automation overview summarizes the queue without processing jobs", 
   assert.equal(overview.latest[0]?.status, "QUEUED");
 });
 
+test("social image preparation processes one queued photo FIFO with one OpenAI request", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const older = db.seed({
+    social_post_id: 10,
+    original_object_key: "social/uploads/2026-08-05/older.jpg",
+    queued_at: "2026-08-05T01:00:00.000Z",
+  });
+  const newer = db.seed({
+    social_post_id: 11,
+    original_object_key: "social/uploads/2026-08-05/newer.jpg",
+    queued_at: "2026-08-05T02:00:00.000Z",
+  });
+  r2.objects.set(older.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(newer.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const result = await prepareNextQueuedSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), {
+    now: "2026-08-05T20:00:00.000Z",
+  });
+
+  assert.equal(result.processed, true);
+  assert.equal(result.item?.id, older.social_post_id);
+  assert.equal(result.item?.status, "IMAGE_READY");
+  assert.equal(result.item?.openaiRequestCount, 1);
+  assert.equal(db.rows.find((row) => row.social_post_id === newer.social_post_id)?.status, "QUEUED");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.input, "https://api.openai.com/v1/responses");
+
+  const requestBody = calls[0]?.body as ReturnType<typeof buildSocialImagePrepareRequest>;
+  assert.equal(DEFAULT_SOCIAL_IMAGE_PREP_MODEL, "gpt-5.6-terra");
+  assert.equal(DEFAULT_SOCIAL_CAPTION_MODEL, "gpt-5.6-terra");
+  assert.equal(requestBody.model, DEFAULT_SOCIAL_IMAGE_PREP_MODEL);
+  assert.equal(requestBody.max_tool_calls, 2);
+  assert.equal((requestBody.reasoning as { effort?: string } | undefined)?.effort, "low");
+  assert.match(JSON.stringify(requestBody.tools), /file_search/);
+  assert.match(JSON.stringify(requestBody.tools), /image_generation/);
+  assert.match(JSON.stringify(requestBody.tools), /max_num_results":6/);
+  assert.match(JSON.stringify(requestBody), /data:image\/jpeg;base64/);
+  assert.match(JSON.stringify(requestBody), /Vanara/);
+  assert.match(JSON.stringify(requestBody), /Koh Chang/);
+  assert.match(JSON.stringify(requestBody), /green_season/);
+  assert.match(JSON.stringify(requestBody), /upload_date/);
+  assert.match(JSON.stringify(requestBody), /image_capture_date/);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith("social/processed/2026-08-05/") && key.endsWith(".jpg")), true);
+});
+
+test("social image preparation fails unsupported image types without conversion or OpenAI", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({ content_type: "image/heic", original_object_key: "social/uploads/2026-08-05/iphone.heic" });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/heic" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const result = await prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), row.social_post_id, {
+    now: "2026-08-05T20:00:00.000Z",
+  });
+
+  assert.equal(result.processed, false);
+  assert.equal(result.item?.status, "FAILED");
+  assert.equal(result.item?.failureCode, "unsupported_image_type");
+  assert.equal(calls.length, 0);
+});
+
+test("social image preparation fails missing original images without OpenAI", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({ original_object_key: "social/uploads/2026-08-05/missing.jpg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const result = await prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), row.social_post_id, {
+    now: "2026-08-05T20:00:00.000Z",
+  });
+
+  assert.equal(result.processed, false);
+  assert.equal(result.item?.status, "FAILED");
+  assert.equal(result.item?.failureCode, "original_image_missing");
+  assert.equal(calls.length, 0);
+});
+
+test("social image preparation fails malformed OpenAI responses", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({ original_object_key: "social/uploads/2026-08-05/photo.jpg" });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const fetcher = (async () => new Response(JSON.stringify({
+    id: "resp_bad",
+    output: [{ type: "file_search_call", results: [] }],
+    output_text: JSON.stringify({ visual_subject: "pool" }),
+  }), { status: 200 })) as typeof fetch;
+
+  const result = await prepareSocialImage(env(db, r2, fetcher), row.social_post_id, {
+    now: "2026-08-05T20:00:00.000Z",
+  });
+
+  assert.equal(result.processed, false);
+  assert.equal(result.item?.status, "FAILED");
+  assert.equal(result.item?.failureCode, "openai_invalid_response");
+});
+
+test("social image preparation rolls back processed R2 image when D1 update fails", async () => {
+  const db = new FakeSocialDB({ failImageReadyUpdate: true });
+  const r2 = new FakeR2Storage();
+  const row = db.seed({ original_object_key: "social/uploads/2026-08-05/photo.jpg" });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const result = await prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), row.social_post_id, {
+    now: "2026-08-05T20:00:00.000Z",
+  });
+
+  assert.equal(result.processed, false);
+  assert.equal(result.item?.status, "FAILED");
+  assert.equal(result.item?.failureCode, "processed_image_persistence_failed");
+  assert.equal(r2.deleted.some((key) => key.startsWith("social/processed/")), true);
+});
+
 test("social automation endpoints are owner-only and use the dedicated social permission", async () => {
   const unauthenticated = await request("/api/social/overview", { method: "GET" }, env(new FakeSocialDB({ authenticated: false })));
   assert.equal(unauthenticated.status, 401);
@@ -291,6 +576,9 @@ test("social automation endpoints are owner-only and use the dedicated social pe
   const readonlyResponse = await request("/api/social/posts", { method: "POST", headers: { cookie: "vanara_session=x" }, body: readonlyUpload }, env(readonlyOwner));
   assert.equal(readonlyResponse.status, 403);
 
+  const readonlyPrepare = await request("/api/social/posts/1/prepare-image", { method: "POST", headers: { cookie: "vanara_session=x" } }, env(readonlyOwner));
+  assert.equal(readonlyPrepare.status, 403);
+
   const db = new FakeSocialDB();
   const r2 = new FakeR2Storage();
   const upload = new FormData();
@@ -304,10 +592,33 @@ test("social automation endpoints are owner-only and use the dedicated social pe
   assert.equal(r2.objects.size, 1);
 });
 
+test("social image preparation endpoint requires owner edit permission and prepares a queued photo", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({ social_post_id: 1, original_object_key: "social/uploads/2026-08-05/photo.jpg" });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const response = await request(
+    "/api/social/posts/1/prepare-image",
+    { method: "POST", headers: { cookie: "vanara_session=x" } },
+    env(db, r2, successfulOpenAiFetcher(calls)),
+  );
+  assert.equal(response.status, 200);
+  const body = await json(response);
+  assert.equal(body.success, true);
+  assert.equal((body.data as { processed: boolean }).processed, true);
+  assert.equal(db.rows[0]?.status, "IMAGE_READY");
+  assert.equal(calls.length, 1);
+});
+
 test("social automation foundation is additive, staged, and avoids external publishing calls", () => {
   const migration = readFileSync(new URL("../migrations/0035_social_automation_foundation.sql", import.meta.url), "utf8");
   const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/social-automation.service.ts", import.meta.url), "utf8");
+  const imageService = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
+  const imagePrompt = readFileSync(new URL("../src/assets/prompts/social-image-prepare-v1.prompt.ts", import.meta.url), "utf8");
+  const wrangler = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
   const page = readFileSync(new URL("../../src/pages/SocialAutomationPage.tsx", import.meta.url), "utf8");
   const frontendService = readFileSync(new URL("../../src/services/social.service.ts", import.meta.url), "utf8");
   const authTypes = readFileSync(new URL("../../src/types/auth.ts", import.meta.url), "utf8");
@@ -328,6 +639,10 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(server, /requireModulePermission\(user, "social-automation", action\)/);
   assert.match(server, /app\.get\("\/api\/social\/overview"/);
   assert.match(server, /app\.post\("\/api\/social\/posts"/);
+  assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/prepare-image"/);
+  assert.match(server, /controller\.cron === SOCIAL_IMAGE_PREPARE_CRON/);
+  assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "0 20 * * *");
+  assert.match(wrangler, /"0 20 \* \* \*"/);
   assert.match(service, /const SOCIAL_UPLOAD_PREFIX = "social\/uploads"/);
   assert.match(service, /"image\/jpeg": "jpg"/);
   assert.match(service, /"image\/png": "png"/);
@@ -335,11 +650,49 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(service, /image\/heic|image\/heif/);
   assert.match(page, /accept="image\/jpeg,image\/png,image\/webp"/);
   assert.match(page, /JPG, PNG or WebP only\. HEIC is not supported\./);
+  assert.match(page, /Prepare Image/);
   assert.match(frontendService, /\/api\/social\/overview/);
   assert.match(frontendService, /\/api\/social\/posts/);
+  assert.match(frontendService, /\/api\/social\/posts\/\$\{postId\}\/prepare-image/);
+  assert.match(imageService, /max_tool_calls: SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS/);
+  assert.match(imageService, /SOCIAL_IMAGE_PREP_MODEL/);
+  assert.match(imageService, /SOCIAL_CAPTION_MODEL/);
+  assert.match(imageService, /DEFAULT_SOCIAL_IMAGE_PREP_MODEL = "gpt-5\.6-terra"/);
+  assert.doesNotMatch(imageService, /OPENAI_SOCIAL_IMAGE_MODEL = "gpt-5\.5"|model: "gpt-5\.5"/);
+  assert.match(imageService, /source_metadata_json/);
+  assert.match(imageService, /0x9003/);
+  assert.match(imageService, /0x0002/);
+  assert.match(imageService, /const SOCIAL_FILE_SEARCH_MAX_RESULTS = 6/);
+  assert.match(imageService, /reasoning: \{ effort: "low" \}/);
+  assert.match(imageService, /type: "file_search"/);
+  assert.match(imageService, /type: "image_generation"/);
+  assert.match(imageService, /openai_request_count = 1/);
+  assert.match(imageService, /unsupported_image_type/);
+  assert.match(imagePrompt, /Preserve the source photo as the same recognisable scene/);
+  assert.match(imagePrompt, /Do not invent elements that are not visible in the original photo/);
+  assert.match(imagePrompt, /Do not add text, watermark, graphics, borders, frames, or overlays/);
+  assert.match(imagePrompt, /Do not write Facebook captions/);
+  assert.match(imagePrompt, /Do not write Instagram captions/);
+  assert.match(imagePrompt, /social-ready image, not competition-perfect retouching/);
+  assert.match(imagePrompt, /one natural, pleasing image pass is enough/);
+  assert.match(imagePrompt, /Treat the uploaded photo as the primary source of truth/);
+  assert.match(imagePrompt, /visual_evidence/);
+  assert.match(imagePrompt, /caption_anchors/);
+  assert.match(imagePrompt, /story_angles/);
+  assert.match(imagePrompt, /guest_experience_link/);
+  assert.match(imagePrompt, /do_not_claim/);
+  assert.match(imagePrompt, /avoid_claims/);
+  assert.match(imagePrompt, /location_context/);
+  assert.match(imagePrompt, /local_context/);
+  assert.match(imagePrompt, /seasonal_context/);
+  assert.match(imagePrompt, /instagram_hint/);
+  assert.match(imagePrompt, /facebook_hint/);
+  assert.match(imagePrompt, /recommended_hashtag_categories/);
+  assert.match(imagePrompt, /visible image evidence separate from KB context|uploaded photo as the primary source of truth/);
+  assert.match(imagePrompt, /visible_details/);
   assert.match(authTypes, /"social-automation"/);
   assert.match(currentUserService, /"social-automation"/);
   assert.match(router, /path="social-automation"/);
-  assert.doesNotMatch(service + page + frontendService, /api\.openai\.com|graph\.facebook\.com|instagram\.com|cloudinary|Google Drive|access_token|APP_SECRET/i);
-  assert.doesNotMatch(service + page + frontendService, /messages\.service|MessagesPage|\/api\/messages|\/sync\/messages/i);
+  assert.doesNotMatch(service + imageService + page + frontendService, /graph\.facebook\.com|instagram\.com|cloudinary|google-drive|Google Drive|access_token|APP_SECRET/i);
+  assert.doesNotMatch(service + imageService + page + frontendService, /messages\.service|MessagesPage|\/api\/messages|\/sync\/messages/i);
 });

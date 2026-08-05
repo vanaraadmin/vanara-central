@@ -50,3 +50,14 @@ export interface SocialPostQueueItemResponse {
   data?: SocialPostQueueItem;
   error?: string;
 }
+
+export interface PrepareSocialImageResult {
+  processed: boolean;
+  item: SocialPostQueueItem | null;
+}
+
+export interface PrepareSocialImageResponse {
+  success: boolean;
+  data?: PrepareSocialImageResult;
+  error?: string;
+}

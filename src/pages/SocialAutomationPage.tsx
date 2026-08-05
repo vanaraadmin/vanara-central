@@ -4,7 +4,7 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
-import { loadSocialAutomationOverview, uploadSocialPhoto } from "../services/social.service";
+import { loadSocialAutomationOverview, prepareSocialImage, uploadSocialPhoto } from "../services/social.service";
 import type { SocialPostQueueItem, SocialPostStatus } from "../types/social";
 import "../styles/SocialAutomationPage.css";
 
@@ -36,7 +36,16 @@ function formatSize(bytes: number): string {
   return `${bytes} B`;
 }
 
-function QueueItem({ item }: { item: SocialPostQueueItem }) {
+function QueueItem({
+  item,
+  onPrepare,
+  preparing,
+}: {
+  item: SocialPostQueueItem;
+  onPrepare(item: SocialPostQueueItem): void;
+  preparing: boolean;
+}) {
+  const canPrepare = item.status === "QUEUED";
   return (
     <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
       <span className="social-queue-item__thumb" aria-hidden="true" />
@@ -44,7 +53,19 @@ function QueueItem({ item }: { item: SocialPostQueueItem }) {
         <strong>{item.originalFileName}</strong>
         <small>{formatDateTime(item.queuedAt)} - {formatSize(item.byteSize)}</small>
       </span>
-      <span className="social-status">{statusLabels[item.status]}</span>
+      <span className="social-queue-item__actions">
+        <span className="social-status">{statusLabels[item.status]}</span>
+        {canPrepare ? (
+          <button
+            className="social-queue-item__prepare"
+            disabled={preparing}
+            onClick={() => onPrepare(item)}
+            type="button"
+          >
+            {preparing ? "Preparing" : "Prepare Image"}
+          </button>
+        ) : null}
+      </span>
     </li>
   );
 }
@@ -67,6 +88,14 @@ export default function SocialAutomationPage() {
       setSelectedFile(null);
       setNotice("Queued");
       if (inputRef.current) inputRef.current.value = "";
+      await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
+    },
+  });
+
+  const prepare = useMutation({
+    mutationFn: (item: SocialPostQueueItem) => prepareSocialImage(item.id),
+    onSuccess: async () => {
+      setNotice("Image ready");
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -138,9 +167,17 @@ export default function SocialAutomationPage() {
         ) : null}
         {latest.length > 0 ? (
           <ul className="social-queue-list" aria-label="Latest queued photos">
-            {latest.map((item) => <QueueItem item={item} key={item.id} />)}
+            {latest.map((item) => (
+              <QueueItem
+                item={item}
+                key={item.id}
+                onPrepare={(queuedItem) => prepare.mutate(queuedItem)}
+                preparing={prepare.isPending && prepare.variables?.id === item.id}
+              />
+            ))}
           </ul>
         ) : null}
+        {prepare.isError ? <p className="social-upload__error">{prepare.error instanceof Error ? prepare.error.message : "Image could not be prepared"}</p> : null}
       </VanaraGlassRegion>
     </WorkspaceShell>
   );
