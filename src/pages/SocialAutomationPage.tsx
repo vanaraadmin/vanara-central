@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
@@ -36,6 +36,33 @@ function formatSize(bytes: number): string {
   return `${bytes} B`;
 }
 
+function formatContentType(value: string): string {
+  if (value === "image/jpeg") return "JPG";
+  if (value === "image/png") return "PNG";
+  if (value === "image/webp") return "WebP";
+  return "Image";
+}
+
+function SummaryStrip({ summary }: { summary?: Partial<Record<SocialPostStatus, number>> }) {
+  const stats = [
+    { label: "Queued", value: summary?.QUEUED ?? 0, tone: "queued" },
+    { label: "Image ready", value: summary?.IMAGE_READY ?? 0, tone: "ready" },
+    { label: "Posted", value: summary?.POSTED ?? 0, tone: "posted" },
+    { label: "Failed", value: summary?.FAILED ?? 0, tone: "failed" },
+  ];
+
+  return (
+    <dl className="social-summary-strip" aria-label="Social queue summary">
+      {stats.map((stat) => (
+        <div className={`social-summary-strip__item social-summary-strip__item--${stat.tone}`} key={stat.label}>
+          <dt>{stat.label}</dt>
+          <dd>{stat.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function QueueItem({
   item,
   onPrepare,
@@ -50,13 +77,21 @@ function QueueItem({
     <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
       <span className="social-queue-item__thumb" aria-hidden="true" />
       <span className="social-queue-item__main">
-        <strong>{item.originalFileName}</strong>
-        <small>{formatDateTime(item.queuedAt)} - {formatSize(item.byteSize)}</small>
+        <strong className="social-queue-item__filename" title={item.originalFileName}>
+          {item.originalFileName}
+        </strong>
+        <small className="social-queue-item__meta">
+          {formatDateTime(item.queuedAt)} - {formatSize(item.byteSize)} - {formatContentType(item.contentType)}
+        </small>
+        {item.status === "FAILED" && item.failureMessage ? (
+          <span className="social-queue-item__failure">{item.failureMessage}</span>
+        ) : null}
       </span>
       <span className="social-queue-item__actions">
         <span className="social-status">{statusLabels[item.status]}</span>
         {canPrepare ? (
           <button
+            aria-label={`Prepare image for ${item.originalFileName}`}
             className="social-queue-item__prepare"
             disabled={preparing}
             onClick={() => onPrepare(item)}
@@ -73,8 +108,22 @@ function QueueItem({
 export default function SocialAutomationPage() {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedPreviewUrl, setSelectedPreviewUrl] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const replaceSelectedFile = (file: File | null) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const nextPreviewUrl = file ? URL.createObjectURL(file) : null;
+    previewUrlRef.current = nextPreviewUrl;
+    setSelectedFile(file);
+    setSelectedPreviewUrl(nextPreviewUrl);
+  };
+
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   const overview = useQuery({
     queryKey: ["social-automation", "overview"],
@@ -85,7 +134,7 @@ export default function SocialAutomationPage() {
   const upload = useMutation({
     mutationFn: (file: File) => uploadSocialPhoto(file),
     onSuccess: async () => {
-      setSelectedFile(null);
+      replaceSelectedFile(null);
       setNotice("Queued");
       if (inputRef.current) inputRef.current.value = "";
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
@@ -105,13 +154,13 @@ export default function SocialAutomationPage() {
   const summary = overview.data?.summary;
 
   return (
-    <WorkspaceShell title="Social Automation" stickyNavigationTitle="Social Automation" workspace="social" bodyClassName="social-automation-page">
+    <WorkspaceShell title="Social Automation" stickyNavigationTitle="Social Automation" workspace="social" bodyClassName="social-automation-page" wide>
       <VanaraGlassRegion className="social-upload" ariaLabelledBy="social-upload-title">
         <VanaraSectionHeader
           eyebrow="Owner"
           headingId="social-upload-title"
           meta={summary ? `${summary.QUEUED} queued` : "Queue"}
-          title="Photo Upload"
+          title="Next Social Photo"
         />
 
         <form
@@ -127,15 +176,17 @@ export default function SocialAutomationPage() {
               disabled={upload.isPending}
               onChange={(event) => {
                 setNotice(null);
-                setSelectedFile(event.currentTarget.files?.[0] ?? null);
+                replaceSelectedFile(event.currentTarget.files?.[0] ?? null);
               }}
               ref={inputRef}
               type="file"
             />
-            <span className="social-dropzone__mark" aria-hidden="true" />
+            <span className={selectedPreviewUrl ? "social-dropzone__mark social-dropzone__mark--preview" : "social-dropzone__mark"} aria-hidden="true">
+              {selectedPreviewUrl ? <img alt="" src={selectedPreviewUrl} /> : null}
+            </span>
             <span className="social-dropzone__copy">
-              <strong>{selectedFile ? selectedFile.name : "Choose photo"}</strong>
-              <small>{selectedFile ? `${formatSize(selectedFile.size)} - JPG, PNG or WebP only` : "JPG, PNG or WebP only. HEIC is not supported."}</small>
+              <strong title={selectedFile?.name}>{selectedFile ? selectedFile.name : "Choose photo"}</strong>
+              <small>{selectedFile ? `${formatSize(selectedFile.size)} - ${formatContentType(selectedFile.type)}` : "JPG, PNG or WebP. HEIC is not supported."}</small>
             </span>
           </label>
 
@@ -153,16 +204,17 @@ export default function SocialAutomationPage() {
           eyebrow="Status"
           headingId="social-history-title"
           meta={summary ? `${summary.POSTED} posted` : "Latest"}
-          title="Queue"
+          title="Publishing Queue"
         />
+        <SummaryStrip summary={summary} />
 
         {overview.isLoading ? <PageLoading /> : null}
         {overview.isError && !overview.data ? <PageError onRetry={() => void overview.refetch()} /> : null}
         {overview.data && latest.length === 0 ? (
           <section className="social-empty" aria-label="No queued photos">
             <span aria-hidden="true" />
-            <h2>No photos queued</h2>
-            <p>Upload a resort photo to prepare the next social post.</p>
+            <h2>No photos waiting</h2>
+            <p>Add one resort photo for the next post.</p>
           </section>
         ) : null}
         {latest.length > 0 ? (
