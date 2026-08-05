@@ -17,16 +17,16 @@ test("Booking Pulse keeps the approved shell and Staff Home placement", () => {
   assert.doesNotMatch(component, /GenericCard|DashboardCard|booking-pulse-card/);
 });
 
-test("Booking Pulse collapsed rows keep guest source dates status and timing visible", () => {
+test("Booking Pulse collapsed rows keep guest source status and event timing visible", () => {
   assert.match(component, /booking-pulse__guest/);
   assert.match(component, /event\.guestName/);
   assert.match(component, /bookingSourceLabel\(event\.source\)/);
-  assert.match(component, /formatDate\(event\.arrivalDate\)/);
-  assert.match(component, /formatDate\(event\.departureDate\)/);
-  assert.match(component, /const detail = \[source, stayDates\]/);
-  assert.match(component, /formatArrival\(event\.arrivalDate\)/);
+  assert.match(component, /const detail = source/);
   assert.match(component, /formatRelativeEventTime\(event\.eventTimestamp\)/);
+  assert.match(component, /const timing = eventTime/);
   assert.match(component, /EVENT_LABELS\[event\.eventType\]/);
+  assert.doesNotMatch(component, /formatArrival\(event\.arrivalDate\)/);
+  assert.doesNotMatch(component, /const detail = \[source, stayDates\]/);
 });
 
 test("Booking Pulse status treatments are distinct local accents", () => {
@@ -87,8 +87,9 @@ test("Booking Pulse compact preview excludes room names and maps Direct to Front
   const row = component.match(/function BookingEventRow[\s\S]*?function RecentBookingsEmpty/)?.[0] ?? "";
   assert.match(component, /function bookingSourceLabel/);
   assert.match(component, /cleaned\.toLowerCase\(\) === "direct" \? "Front Desk" : cleaned/);
-  assert.match(row, /const stayDates = \[formatDate\(event\.arrivalDate\), formatDate\(event\.departureDate\)\]/);
-  assert.match(row, /const detail = \[source, stayDates\]/);
+  assert.match(row, /const detail = source/);
+  assert.match(row, /const timing = eventTime/);
+  assert.doesNotMatch(row, /stayDates|formatArrival|Arrives today|Arrives tomorrow/);
   assert.doesNotMatch(row, /compactUnitLabel|event\.unitName/);
 });
 

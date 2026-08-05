@@ -50,22 +50,6 @@ function bangkokDateKey(value: Date): string {
   }).format(value);
 }
 
-function dateKeyOffset(dateKey: string, offsetDays: number): string {
-  const date = new Date(`${dateKey}T12:00:00+07:00`);
-  date.setUTCDate(date.getUTCDate() + offsetDays);
-  return bangkokDateKey(date);
-}
-
-function formatArrival(value?: string | null): string | null {
-  if (!value) return null;
-  const now = new Date();
-  const today = bangkokDateKey(now);
-  if (value === today) return "Arrives today";
-  if (value === dateKeyOffset(today, 1)) return "Arrives tomorrow";
-  const formatted = formatDate(value);
-  return formatted ? `Arrives ${formatted}` : null;
-}
-
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -185,11 +169,9 @@ function BookingEventRow({
 }) {
   const tone = eventTone(event.eventType);
   const source = bookingSourceLabel(event.source);
-  const stayDates = [formatDate(event.arrivalDate), formatDate(event.departureDate)].filter(Boolean).join(" -> ");
-  const detail = [source, stayDates].filter(Boolean).join(" / ");
-  const arrival = formatArrival(event.arrivalDate);
+  const detail = source;
   const eventTime = formatRelativeEventTime(event.eventTimestamp);
-  const timing = [arrival, eventTime].filter(Boolean).join(" / ");
+  const timing = eventTime;
   const detailsId = safeDetailsId(event.eventId);
   const flag = countryCodeToFlag(event.countryCode);
 
