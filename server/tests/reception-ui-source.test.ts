@@ -41,6 +41,9 @@ test("reception contact icon uses the current Design System color and centered t
 });
 
 test("actionable today booking cards start completion while details remain secondary or fallback", () => {
+  assert.match(receptionPage, /function canCompleteReception/);
+  assert.match(receptionPage, /user\?\.isOwner[\s\S]*user\?\.views\.includes\("staff"\)[\s\S]*permission\.module === "movements"/);
+  assert.doesNotMatch(receptionPage, /function hasCompletionPermission/);
   assert.match(receptionPage, /const completed = type === "arrival"[\s\S]*stay\.checkOut\.guestLeft \|\| stay\.checkOut\.roomReleased/);
   assert.match(receptionPage, /const canStartCompletion = isToday && canComplete && !completed/);
   assert.match(receptionPage, /if \(canStartCompletion\) \{[\s\S]*onCompletionRequest\(stay, type\);[\s\S]*return;[\s\S]*\}[\s\S]*onDetailsRequest\(stay\);/);

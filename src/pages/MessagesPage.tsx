@@ -309,11 +309,13 @@ function ConversationColumn({
   actions,
   conversation,
   loading,
+  onClose,
   onRetry,
 }: {
   actions: DraftActionHandlers;
   conversation: GuestMessageTimelineItem[];
   loading: boolean;
+  onClose: () => void;
   onRetry: () => void;
 }) {
   const hasReadyDraft = conversation.some((item) => item.kind === "draft" && item.status === "READY");
@@ -348,7 +350,12 @@ function ConversationColumn({
     <VanaraGlassSheet className="messages-conversation" ariaLabel="Conversation timeline" variant="elevated">
       <div className="messages-conversation__header">
         <span>Conversation</span>
-        <strong>{hasReadyDraft ? "Draft Ready" : "Read Only"}</strong>
+        <div className="messages-conversation__header-actions">
+          <strong>{hasReadyDraft ? "Draft Ready" : "Read Only"}</strong>
+          <button className="vc-secondary-action" type="button" onClick={onClose}>
+            Compact
+          </button>
+        </div>
       </div>
       <div className="messages-timeline">
         {conversation.map((item, index) => {
@@ -387,7 +394,7 @@ function ContextColumn({ context }: { context: GuestMessageBookingContext | null
         title="Booking Context"
       />
       {context ? (
-        <details className="messages-context__details" open>
+        <details className="messages-context__details">
           <summary>Booking details</summary>
           <dl className="messages-context__grid">
             {rows.map(([label, value]) => (
@@ -509,7 +516,9 @@ export default function MessagesPage() {
           conversationsByGroup={inboxQuery.data?.groups ?? { needsReply: [], waitingGuest: [], closed: [] }}
           loading={inboxQuery.isFetching}
           onSearch={setSearch}
-          onSelect={setSelectedConversationId}
+          onSelect={(conversationId) => {
+            setSelectedConversationId((current) => (current === conversationId ? "" : conversationId));
+          }}
           search={search}
         />
 
@@ -519,6 +528,7 @@ export default function MessagesPage() {
               actions={draftActions}
               conversation={detailQuery.data?.timeline ?? []}
               loading={detailQuery.isLoading}
+              onClose={() => setSelectedConversationId("")}
               onRetry={retry}
             />
 

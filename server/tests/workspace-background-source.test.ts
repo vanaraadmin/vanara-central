@@ -39,6 +39,10 @@ const mappings = {
     importName: "backgroundProcurement",
     fileName: "background_procurement.png",
   },
+  messages: {
+    importName: "backgroundRooms",
+    fileName: "background_room.png",
+  },
   chat: {
     importName: "backgroundChat",
     fileName: "background_chat.png",
@@ -79,7 +83,7 @@ test("Staff Home and WorkspaceShell consume backgrounds through the shared confi
   assert.match(workspaceShell, /maintenance: "maintenance"/);
   assert.match(workspaceShell, /procurement: "procurement"/);
   assert.match(workspaceShell, /chat: "chat"/);
-  assert.match(workspaceShell, /messages: "chat"/);
+  assert.match(workspaceShell, /messages: "messages"/);
   assert.match(workspaceShell, /workspaceBackgroundStyle\(backgroundKey\)/);
   assert.match(workspaceShell, /preloadWorkspaceBackground\(backgroundKey\)/);
 });

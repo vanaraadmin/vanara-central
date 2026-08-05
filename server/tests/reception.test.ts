@@ -119,7 +119,13 @@ class FakeReceptionDB {
   passports: Array<Record<string, unknown>> = [];
   failPassportInsert = false;
 
-  constructor(private permissions: Permission[], private authenticated = true, private actionPermissions: ActionPermission[] = [], private bookingInput: TestBooking | TestBooking[] = BOOKING) {}
+  constructor(
+    private permissions: Permission[],
+    private authenticated = true,
+    private actionPermissions: ActionPermission[] = [],
+    private bookingInput: TestBooking | TestBooking[] = BOOKING,
+    private views: string[] = ["staff"],
+  ) {}
 
   private get bookings() {
     return Array.isArray(this.bookingInput) ? this.bookingInput : [this.bookingInput];
@@ -140,7 +146,7 @@ class FakeReceptionDB {
 
   async all<T>(sql: string, _params: unknown[]) {
     void _params;
-    if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
+    if (sql.includes("SELECT view_key FROM user_views")) return { results: this.views.map((view_key) => ({ view_key })) as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: this.actionPermissions as T[] };
     if (sql.includes("WITH latest_housekeeping")) {
@@ -426,9 +432,9 @@ class FakePassportR2 {
   }
 }
 
-function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking: TestBooking | TestBooking[] = BOOKING, r2 = new FakePassportR2()) {
+function env(permissions: Permission[], authenticated = true, actionPermissions: ActionPermission[] = [], booking: TestBooking | TestBooking[] = BOOKING, r2 = new FakePassportR2(), views: string[] = ["staff"]) {
   return {
-    DB: new FakeReceptionDB(permissions, authenticated, actionPermissions, booking) as unknown as D1Database,
+    DB: new FakeReceptionDB(permissions, authenticated, actionPermissions, booking, views) as unknown as D1Database,
     R2_STORAGE: r2 as unknown as R2Bucket,
     OPENAI_API_KEY: "test-openai-key",
     BEDS24_BASE_URL: "https://api.beds24.com/v2",
@@ -446,7 +452,6 @@ async function json(response: Response) {
 
 const movementsAccess: Permission = { module_key: "movements", can_access: 1, can_edit: 0 };
 const movementsEdit: Permission = { module_key: "movements", can_access: 1, can_edit: 1 };
-const receptionCompletion: ActionPermission = { action_key: "can_complete_checkin_checkout", allowed: 1 };
 
 test("country flags normalize Beds24 country codes to image URLs", () => {
   assert.equal(countryCodeFrom("BE"), "BE");
@@ -1388,16 +1393,22 @@ test("booking scoped passport OCR endpoint rolls back R2 after persistence failu
   assert.equal(db.passports.length, 0);
 });
 
-test("reception completion endpoints require dedicated action permission", async () => {
-  const response = await request("/api/reception/stays/9001/check-in-completed", {
+test("reception completion endpoints require authentication and staff operational access", async () => {
+  const unauthenticated = await request("/api/reception/stays/9001/check-in-completed", {
+    method: "POST",
+  }, env([movementsAccess], false));
+  assert.equal(unauthenticated.status, 401);
+
+  const forbidden = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },
-  }, env([movementsEdit]));
-  assert.equal(response.status, 403);
+  }, env([], true, [], BOOKING, new FakePassportR2(), []));
+  assert.equal(forbidden.status, 403);
 });
 
-test("reception completion endpoints persist irreversible today's operational events", async () => {
-  const data = env([movementsAccess], true, [receptionCompletion]);
+test("staff operational access completes reception events and preserves actor audit", async () => {
+  const data = env([movementsAccess]);
+  const db = data.DB as unknown as FakeReceptionDB;
   const checkIn = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },
@@ -1411,7 +1422,12 @@ test("reception completion endpoints persist irreversible today's operational ev
   }, data);
   assert.equal(duplicate.status, 409);
 
-  const checkOutData = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  assert.equal(db.events.at(-1)?.action, "checkInCompleted");
+  assert.equal(db.events.at(-1)?.actor_id, ACTIVE_RECEPTION_USER.user_id);
+  assert.equal(db.events.at(-1)?.actor_name, ACTIVE_RECEPTION_USER.full_name);
+
+  const checkOutData = env([movementsAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const checkOutDb = checkOutData.DB as unknown as FakeReceptionDB;
   const checkOut = await request("/api/reception/stays/9001/check-out-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x", "content-type": "application/json" },
@@ -1421,10 +1437,12 @@ test("reception completion endpoints persist irreversible today's operational ev
   const payload = (await json(checkOut)).data as { checkOut: { guestLeft: boolean; roomReleased: boolean } };
   assert.equal(payload.checkOut.guestLeft, true);
   assert.equal(payload.checkOut.roomReleased, true);
+  assert.equal(checkOutDb.events.at(-1)?.actor_id, ACTIVE_RECEPTION_USER.user_id);
+  assert.equal(checkOutDb.events.at(-1)?.actor_name, ACTIVE_RECEPTION_USER.full_name);
 });
 
 test("complete check-in creates persistent room alerts and resolving them updates the stay", async () => {
-  const data = env([movementsAccess], true, [receptionCompletion]);
+  const data = env([movementsAccess]);
   const db = data.DB as unknown as FakeReceptionDB;
   const checkIn = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
@@ -1458,7 +1476,7 @@ test("complete check-in creates persistent room alerts and resolving them update
 });
 
 test("complete check-out enforces inspection keys and collected deposit return", async () => {
-  const data = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const data = env([movementsAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
   const db = data.DB as unknown as FakeReceptionDB;
   db.stays.set(9001, {
     beds24_booking_id: 9001,
@@ -1496,7 +1514,7 @@ test("complete check-out enforces inspection keys and collected deposit return",
 });
 
 test("reception completion rejects future booking dates server-side", async () => {
-  const data = env([movementsAccess], true, [receptionCompletion], { ...BOOKING, arrival_date: TOMORROW, departure_date: addDateOnlyDays(TOMORROW, 2) });
+  const data = env([movementsAccess], true, [], { ...BOOKING, arrival_date: TOMORROW, departure_date: addDateOnlyDays(TOMORROW, 2) });
   const response = await request("/api/reception/stays/9001/check-in-completed", {
     method: "POST",
     headers: { cookie: "vanara_session=x" },

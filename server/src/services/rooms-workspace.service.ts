@@ -2,7 +2,7 @@ import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import { type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getBangkokDate } from "./today.service.js";
-import { hasActionPermission, hasModulePermission, type CurrentUser } from "./current-user.service.js";
+import { canCompleteReception, hasModulePermission, type CurrentUser } from "./current-user.service.js";
 
 export interface RoomsWorkspaceBindings {
   DB: D1Database;
@@ -439,7 +439,7 @@ function receptionPhase(row: RoomWorkspaceRow, date: string): ReceptionStayPhase
 }
 
 function canUseReceptionActions(user?: CurrentUser): boolean {
-  return Boolean(user && hasModulePermission(user, "movements", "access") && hasActionPermission(user, "can_complete_checkin_checkout"));
+  return Boolean(user && canCompleteReception(user));
 }
 
 function receptionPrimaryAction(summary: Omit<RoomReceptionSummary, "primaryAction">, canAct: boolean): RoomReceptionPrimaryAction | null {

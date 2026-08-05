@@ -32,7 +32,7 @@ const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
   procurement: "procurement",
   rooms: "rooms",
   chat: "chat",
-  messages: "chat",
+  messages: "messages",
 };
 
 interface WorkspaceShellProps {

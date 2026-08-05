@@ -102,8 +102,12 @@ function stayDuration(arrival: string, departure: string): string {
   return `${nights} ${nights === 1 ? "night" : "nights"}`;
 }
 
-function hasCompletionPermission(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
-  return Boolean(user?.actionPermissions?.some((permission) => permission.action === "can_complete_checkin_checkout" && permission.allowed));
+function canCompleteReception(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
+  return Boolean(
+    user?.isOwner
+    || user?.views.includes("staff")
+    || user?.permissions.some((permission) => permission.module === "movements" && permission.canAccess),
+  );
 }
 
 function bookingSourceLabel(stay: ReceptionStay): string {
@@ -1296,7 +1300,7 @@ export default function ReceptionPage() {
       setCompletionError(error instanceof Error ? error.message : "Completion could not be saved.");
     },
   });
-  const canComplete = hasCompletionPermission(currentUser.data);
+  const canComplete = canCompleteReception(currentUser.data);
   const isToday = selectedDate === today;
   const summary = reception.data?.summary ?? { arrivals: 0, departures: 0, inHouse: 0 };
   const arrivalTitle = isToday ? "Today's Check-Ins" : "Check-Ins";

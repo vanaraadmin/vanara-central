@@ -38,6 +38,7 @@ import {
   AuthenticationError,
   ForbiddenError,
   authOptions,
+  canCompleteReception,
   createInitialOwner,
   createUser,
   disableUser,
@@ -51,7 +52,6 @@ import {
   normalizeLoginInput,
   normalizeUpdateUserInput,
   publicCurrentUser,
-  requireActionPermission,
   requireModulePermission,
   requireOwner,
   requireView,
@@ -1152,7 +1152,7 @@ app.patch("/api/reception/stays/:bookingId/check-in", async (c) => {
 app.post("/api/reception/stays/:bookingId/check-in-completed", async (c) => {
   try {
     const user = await authenticated(c, "movements", "access");
-    requireActionPermission(user, "can_complete_checkin_checkout");
+    if (!canCompleteReception(user)) throw new ForbiddenError();
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const payload = await c.req.json().catch(() => ({}));
     const stay = await completeReceptionEvent(c.env, bookingId, "check-in", user, normalizeCompleteReceptionCheckInInput(payload));
@@ -1179,7 +1179,7 @@ app.patch("/api/reception/stays/:bookingId/check-out", async (c) => {
 app.post("/api/reception/stays/:bookingId/check-out-completed", async (c) => {
   try {
     const user = await authenticated(c, "movements", "access");
-    requireActionPermission(user, "can_complete_checkin_checkout");
+    if (!canCompleteReception(user)) throw new ForbiddenError();
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const payload = await c.req.json().catch(() => ({}));
     const stay = await completeReceptionEvent(c.env, bookingId, "check-out", user, normalizeCompleteReceptionCheckOutInput(payload));
@@ -1193,7 +1193,7 @@ app.post("/api/reception/stays/:bookingId/check-out-completed", async (c) => {
 app.post("/api/reception/stays/:bookingId/alerts/:type/resolve", async (c) => {
   try {
     const user = await authenticated(c, "movements", "access");
-    requireActionPermission(user, "can_complete_checkin_checkout");
+    if (!canCompleteReception(user)) throw new ForbiddenError();
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const type = c.req.param("type") as ReceptionAlertType;
     if (type !== "passport_missing" && type !== "deposit_pending") throw new Error("Reception alert type is invalid.");

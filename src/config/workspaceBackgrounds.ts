@@ -14,6 +14,7 @@ export type WorkspaceBackgroundKey =
   | "housekeeping"
   | "maintenance"
   | "procurement"
+  | "messages"
   | "chat";
 
 export const WORKSPACE_BACKGROUNDS = {
@@ -23,6 +24,7 @@ export const WORKSPACE_BACKGROUNDS = {
   housekeeping: backgroundHousekeeping,
   maintenance: backgroundMaintenance,
   procurement: backgroundProcurement,
+  messages: backgroundRooms,
   chat: backgroundChat,
 } satisfies Record<WorkspaceBackgroundKey, string>;
 

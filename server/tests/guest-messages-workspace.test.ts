@@ -443,6 +443,10 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
 
   assert.match(page, /return "";/);
   assert.match(page, /enabled: Boolean\(activeConversationId\)/);
+  assert.match(page, /current === conversationId \? "" : conversationId/);
+  assert.match(page, /onClose=\{\(\) => setSelectedConversationId\(""\)\}/);
+  assert.match(page, />\s*Compact\s*<\/button>/);
+  assert.doesNotMatch(page, /<details className="messages-context__details" open>/);
   assert.match(page, /function ConversationSelectionEmpty/);
   assert.match(page, /Select a conversation/);
   assert.match(css, /\.messages-selection-empty/);
@@ -459,4 +463,6 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
   assert.match(css, /scrollbar-width:\s*thin/);
   assert.match(css, /\.messages-inbox,[\s\S]*\.messages-context,[\s\S]*\.messages-selection-empty\s*\{[\s\S]*rgba\(5, 24, 17, 0\.72\)/);
   assert.match(css, /\.messages-conversation\s*\{[\s\S]*rgba\(4, 22, 16, 0\.78\)/);
+  assert.match(css, /\.messages-inbox-row__provider\s*\{[\s\S]*color:\s*var\(--vc-text-cream-strong\);[\s\S]*rgba\(4, 22, 16, 0\.78\)/);
+  assert.doesNotMatch(css, /\.messages-inbox-row__provider\s*\{[\s\S]*var\(--vc-color-sand-100\)/);
 });

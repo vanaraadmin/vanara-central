@@ -8,7 +8,6 @@ import { getRoomsWorkspaceTurnover } from "../../src/config/turnoverPresentation
 import type { CurrentUser, ModuleKey } from "../src/services/current-user.service.ts";
 
 type Permission = { module_key: ModuleKey; can_access: number; can_edit: number };
-type ActionPermission = { action_key: "can_complete_checkin_checkout"; allowed: number };
 type FakeRoomRow = Record<string, unknown>;
 type FakeReceptionAlertRow = {
   alert_id: number;
@@ -46,7 +45,7 @@ class FakeStmt {
 }
 
 class FakeRoomsDB {
-  constructor(private permissions: Permission[], private actionPermissions: ActionPermission[] = [], private options: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = {}) {}
+  constructor(private permissions: Permission[], private options: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = {}) {}
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
@@ -54,7 +53,7 @@ class FakeRoomsDB {
     void _params;
     if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
-    if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: this.actionPermissions as T[] };
+    if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: (this.options.alerts ?? []).filter((alert) => alert.status === "active") as T[] };
     if (sql.includes("FROM units u") && sql.includes("LEFT JOIN room_operational_availability") && sql.includes("LEFT JOIN room_housekeeping_state")) {
       return { results: (this.options.rooms ?? defaultRooms()) as T[] };
@@ -251,13 +250,10 @@ function defaultRooms() {
 
 function env(
   permissions: Permission[],
-  actionPermissionsOrOptions: ActionPermission[] | { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = [],
-  options?: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] },
+  options: { authenticated?: boolean; rooms?: FakeRoomRow[]; alerts?: FakeReceptionAlertRow[] } = {},
 ) {
-  const actionPermissions = Array.isArray(actionPermissionsOrOptions) ? actionPermissionsOrOptions : [];
-  const resolvedOptions = Array.isArray(actionPermissionsOrOptions) ? options : actionPermissionsOrOptions;
   return {
-    DB: new FakeRoomsDB(permissions, actionPermissions, resolvedOptions) as unknown as D1Database,
+    DB: new FakeRoomsDB(permissions, options) as unknown as D1Database,
   };
 }
 
@@ -271,7 +267,6 @@ async function json(response: Response) {
 
 const roomsAccess: Permission = { module_key: "rooms", can_access: 1, can_edit: 0 };
 const movementsAccess: Permission = { module_key: "movements", can_access: 1, can_edit: 0 };
-const receptionCompletion: ActionPermission = { action_key: "can_complete_checkin_checkout", allowed: 1 };
 
 function currentUser(permissions: CurrentUser["permissions"], actionPermissions: CurrentUser["actionPermissions"] = []): CurrentUser {
   return {
@@ -1074,17 +1069,21 @@ test("arrival due rooms expose pending Reception steps and capability-gated acti
     }),
   ];
 
-  const readOnly = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", roomsUser);
+  const staffOperational = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", roomsUser);
   const actionable = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
 
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.phase, "ARRIVAL_DUE");
-  assert.deepEqual(byName(readOnly.rooms, "Bungalow 8").reception.today, { checkIn: true, checkOut: false });
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.passport.state, "PENDING");
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.deposit.state, "PENDING");
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkIn.state, "PENDING");
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.checkOut.state, "NOT_REQUIRED");
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").reception.primaryAction, null);
-  assert.equal(byName(readOnly.rooms, "Bungalow 8").alertSummary, "Guest arriving today");
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").reception.phase, "ARRIVAL_DUE");
+  assert.deepEqual(byName(staffOperational.rooms, "Bungalow 8").reception.today, { checkIn: true, checkOut: false });
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").reception.passport.state, "PENDING");
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").reception.deposit.state, "PENDING");
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").reception.checkIn.state, "PENDING");
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").reception.checkOut.state, "NOT_REQUIRED");
+  assert.deepEqual(byName(staffOperational.rooms, "Bungalow 8").reception.primaryAction, {
+    type: "COLLECT_PASSPORT",
+    label: "Collect Passport",
+    target: "/reception",
+  });
+  assert.equal(byName(staffOperational.rooms, "Bungalow 8").alertSummary, "Guest arriving today");
   assert.deepEqual(byName(actionable.rooms, "Bungalow 8").reception.primaryAction, {
     type: "COLLECT_PASSPORT",
     label: "Collect Passport",
@@ -1225,7 +1224,7 @@ test("past checkout dates do not create Reception alerts or cleaning state chang
   assert.equal(room.reception.phase, "NONE");
 });
 
-test("Reception primary actions require the existing Reception action capability", async () => {
+test("Reception primary actions use staff operational access without the legacy action capability", async () => {
   const today = todayBangkok();
   const rooms = [
     roomRow({
@@ -1238,24 +1237,28 @@ test("Reception primary actions require the existing Reception action capability
     }),
   ];
 
-  const withoutAction = await request(
+  const withoutMovements = await request(
     "/api/rooms",
     { method: "GET", headers: { cookie: "vanara_session=x" } },
-    env([roomsAccess, movementsAccess], [], { rooms }),
+    env([roomsAccess], { rooms }),
   );
-  const withAction = await request(
+  const withStaffOperationalAccess = await request(
     "/api/rooms",
     { method: "GET", headers: { cookie: "vanara_session=x" } },
-    env([roomsAccess, movementsAccess], [receptionCompletion], { rooms }),
+    env([roomsAccess, movementsAccess], { rooms }),
   );
-  const withoutBody = await json(withoutAction);
-  const withBody = await json(withAction);
+  const withoutBody = await json(withoutMovements);
+  const withBody = await json(withStaffOperationalAccess);
   const withoutRoom = byName((withoutBody.data as { rooms: Array<{ roomName: string; reception: { primaryAction: unknown } }> }).rooms, "Bungalow 11");
   const withRoom = byName((withBody.data as { rooms: Array<{ roomName: string; reception: { primaryAction: unknown } }> }).rooms, "Bungalow 11");
 
-  assert.equal(withoutAction.status, 200);
-  assert.equal(withAction.status, 200);
-  assert.equal(withoutRoom.reception.primaryAction, null);
+  assert.equal(withoutMovements.status, 200);
+  assert.equal(withStaffOperationalAccess.status, 200);
+  assert.deepEqual(withoutRoom.reception.primaryAction, {
+    type: "COLLECT_PASSPORT",
+    label: "Collect Passport",
+    target: "/reception",
+  });
   assert.deepEqual(withRoom.reception.primaryAction, {
     type: "COLLECT_PASSPORT",
     label: "Collect Passport",

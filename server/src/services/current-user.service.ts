@@ -510,6 +510,10 @@ export function hasActionPermission(user: CurrentUser, action: ActionPermissionK
   return user.actionPermissions.some((permission) => permission.action === action && permission.allowed);
 }
 
+export function canCompleteReception(user: CurrentUser): boolean {
+  return isOwner(user) || (user.views.includes("staff") && hasModulePermission(user, "movements", "access"));
+}
+
 export function requireActionPermission(user: CurrentUser, action: ActionPermissionKey): void {
   if (!hasActionPermission(user, action)) throw new ForbiddenError();
 }

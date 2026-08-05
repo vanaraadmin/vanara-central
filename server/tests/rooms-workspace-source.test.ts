@@ -384,8 +384,7 @@ test("Rooms backend read model keeps all operational dimensions independent", ()
   assert.match(serverService, /reception_stays rrs/);
   assert.match(serverService, /reception_room_alerts/);
   assert.match(serverService, /RoomReceptionSummary/);
-  assert.match(serverService, /hasActionPermission\(user, "can_complete_checkin_checkout"\)/);
-  assert.match(serverService, /hasModulePermission\(user, "movements", "access"\)/);
+  assert.match(serverService, /canCompleteReception\(user\)/);
   assert.doesNotMatch(serverService, /getReceptionOverview/);
 });
 
