@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "chat";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -188,20 +188,6 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       href: "/procurement",
       cta: "Open Procurement",
       metrics: [],
-    }));
-  }
-
-  if (canAccess(user, "chat")) {
-    cards.push(withSummaryLines({
-      id: "chat",
-      module: "chat",
-      title: "Chat",
-      description: "Open team communication.",
-      href: "/chat",
-      cta: "Open Chat",
-      metrics: [],
-      summaryLine1: "Team communication",
-      summaryLine2: "Operational conversations",
     }));
   }
 

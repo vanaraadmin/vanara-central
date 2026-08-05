@@ -27,7 +27,6 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "housekeeping",
   "maintenance",
   "procurement",
-  "chat",
 ];
 
 const workspaceIcons: Record<StaffCardId, string> = {
@@ -38,7 +37,6 @@ const workspaceIcons: Record<StaffCardId, string> = {
   housekeeping: sprayBottleIcon,
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
-  chat: chatIcon,
 };
 
 const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {

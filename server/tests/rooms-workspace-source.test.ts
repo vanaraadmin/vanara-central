@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
+const appLayout = readFileSync(new URL("../../src/layouts/AppLayout.tsx", import.meta.url), "utf8");
+const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
 const procurementPage = readFileSync(new URL("../../src/pages/ProcurementPage.tsx", import.meta.url), "utf8");
 const housekeepingV2Page = readFileSync(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
 const roomsPage = readFileSync(new URL("../../src/pages/RoomsPage.tsx", import.meta.url), "utf8");
@@ -46,22 +48,30 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Messages, Check-In, Housekeeping, Maintenance, Procurement, and Chat", () => {
+test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Messages, Check-In, Housekeeping, Maintenance, and Procurement", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"messages",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"chat",/);
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"messages",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*\]/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
   assert.match(staffPage, /href:\s*"\/messages"/);
+  assert.doesNotMatch(staffPage, /href:\s*"\/chat"/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
   assert.ok(recentBookingsIndex < workspacesIndex);
   assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);
 });
 
+test("Internal Chat is a persistent bubble and not a Staff Home workspace card", () => {
+  assert.match(appLayout, /<FloatingTeamChat \/>/);
+  assert.match(floatingTeamChat, /to="\/chat"/);
+  assert.match(floatingTeamChat, /user\.data\.views\.includes\("staff"\)/);
+  assert.match(floatingTeamChat, /module === "chat" && permission\.canAccess/);
+  assert.doesNotMatch(staffPage, /id:\s*"chat"|chat:\s*chatIcon|"chat",/);
+  assert.doesNotMatch(staffService, /id:\s*"chat"|href:\s*"\/chat"|Open Chat/);
+});
+
 test("Staff Owner UI model keeps one visual component tree and gates only capabilities", () => {
   assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY/);
-  assert.match(staffPage, /chatIcon/);
-  assert.match(staffService, /id:\s*"chat"/);
   assert.doesNotMatch(staffService, /id:\s*"availability"/);
   assert.match(procurementPage, /<WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">[\s\S]*<SupplyRequestPage embedded \/>[\s\S]*<ProcurementOwnerPage embedded \/>/);
   assert.doesNotMatch(procurementPage, /return user\.data\.isOwner \?/);

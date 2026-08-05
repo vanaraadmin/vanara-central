@@ -84,6 +84,15 @@ export default function WorkspaceShell({
   }, [backgroundKey]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("vc-floating-ui-suppressed", suppressStickyNavigation);
+
+    return () => {
+      root.classList.remove("vc-floating-ui-suppressed");
+    };
+  }, [suppressStickyNavigation]);
+
+  useEffect(() => {
     let frame = 0;
 
     const updateProgress = () => {
