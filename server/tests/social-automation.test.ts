@@ -685,6 +685,7 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(pageCss, /\.social-queue-item__prepare\s*\{[\s\S]*min-height: var\(--vc-touch-min\)/);
   assert.match(pageCss, /\.social-status\s*\{[\s\S]*max-width: 100%/);
   assert.match(pageCss, /@media \(max-width: 640px\)[\s\S]*\.social-queue-item__actions\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.doesNotMatch(pageCss, /--workspace-muted/);
   assert.doesNotMatch(page, /analysis_json|openai_request_count|model|token/i);
   assert.match(frontendService, /\/api\/social\/overview/);
   assert.match(frontendService, /\/api\/social\/posts/);

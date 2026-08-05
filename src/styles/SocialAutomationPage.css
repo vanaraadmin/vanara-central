@@ -111,7 +111,7 @@
 
 .social-dropzone__copy small,
 .social-queue-item__main small {
-  color: var(--workspace-muted);
+  color: var(--vc-text-cream-muted);
   font-size: var(--vc-text-sm);
 }
 
@@ -370,7 +370,7 @@
 
 .social-empty p {
   max-width: 30ch;
-  color: var(--workspace-muted);
+  color: var(--vc-text-cream-muted);
 }
 
 @media (max-width: 980px) {
