@@ -89,6 +89,7 @@ interface RoomWorkspaceRow {
 
 interface ReceptionAlertRow {
   alert_id: number;
+  beds24_booking_id: number | null;
   unit_id: number;
   alert_type: "passport_missing" | "deposit_pending";
   title: string;
@@ -160,6 +161,8 @@ export interface RoomReceptionAlertSummary {
   label: string;
   tone: "warning" | "danger" | "info";
 }
+
+type MappedReceptionAlertSummary = RoomReceptionAlertSummary & { bookingId: number | null };
 
 export interface RoomReceptionPrimaryAction {
   type: ReceptionPrimaryActionType;
@@ -538,12 +541,13 @@ function compactAlertSummary(row: RoomWorkspaceRow, reception: RoomReceptionSumm
   return labels.length > 2 ? `${visible} · +${labels.length - 2}` : visible;
 }
 
-function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, RoomReceptionAlertSummary[]> {
-  const alerts = new Map<number, RoomReceptionAlertSummary[]>();
+function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, MappedReceptionAlertSummary[]> {
+  const alerts = new Map<number, MappedReceptionAlertSummary[]>();
   for (const row of rows) {
     const current = alerts.get(row.unit_id) ?? [];
     current.push({
       id: row.alert_id,
+      bookingId: row.beds24_booking_id,
       type: row.alert_type,
       label: alertLabel(row.alert_type, row.title),
       tone: "warning",
@@ -553,9 +557,9 @@ function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, RoomReceptio
   return alerts;
 }
 
-async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<number, RoomReceptionAlertSummary[]>> {
+async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<number, MappedReceptionAlertSummary[]>> {
   const rows = await env.DB.prepare(`
-    SELECT alert_id, unit_id, alert_type, title
+    SELECT alert_id, beds24_booking_id, unit_id, alert_type, title
     FROM reception_room_alerts
     WHERE status = 'active'
     ORDER BY created_at ASC, alert_id ASC
@@ -788,7 +792,7 @@ function mapMaintenanceSummary(row: RoomWorkspaceRow, user?: CurrentUser): RoomM
   };
 }
 
-function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
+function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
   const group = roomFamily(row);
   const occupancyState = roomOccupancyState(row, date);
   const guestName = operationalGuestName(row);
@@ -796,7 +800,15 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: RoomReceptionAlertSumma
   const arrival = operationalArrival(row);
   const departure = operationalDeparture(row);
   const bookingId = operationalBookingId(row);
-  const reception = mapReceptionSummary(row, receptionAlerts, date, user);
+  const visibleReceptionAlerts = row.reception_beds24_booking_id
+    ? receptionAlerts.filter((alert) => alert.bookingId === row.reception_beds24_booking_id)
+    : [];
+  const reception = mapReceptionSummary(row, visibleReceptionAlerts.map((alert) => ({
+    id: alert.id,
+    type: alert.type,
+    label: alert.label,
+    tone: alert.tone,
+  })), date, user);
 
   return {
     unitId: row.unit_id,
@@ -911,9 +923,11 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       (
         SELECT COUNT(*)
         FROM bookings b_departure
+        LEFT JOIN reception_stays rs_departure ON rs_departure.beds24_booking_id = b_departure.beds24_booking_id
         WHERE b_departure.unit_id = u.unit_id
           AND b_departure.departure_date = ?1
           AND ${operationalBookingStatusSql("b_departure.status")}
+          AND NOT (COALESCE(rs_departure.guest_left, 0) = 1 AND COALESCE(rs_departure.room_released, 0) = 1)
       ) AS reception_departure_today_count,
       COALESCE(rrs.guest_arrived, 0) AS reception_guest_arrived,
       COALESCE(rrs.passport_collected, 0) AS reception_passport_collected,
@@ -981,13 +995,13 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
           )
           OR (
             b2.departure_date = ?1
-            AND COALESCE(rs2.guest_left, 0) = 1
-            AND COALESCE(rs2.room_released, 0) = 1
+            AND COALESCE(rs2.guest_arrived, 0) = 1
+            AND NOT (COALESCE(rs2.guest_left, 0) = 1 AND COALESCE(rs2.room_released, 0) = 1)
           )
         )
       ORDER BY
         CASE
-          WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 AND COALESCE(rs2.room_released, 0) = 0 THEN 1
+          WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 AND NOT (COALESCE(rs2.guest_left, 0) = 1 AND COALESCE(rs2.room_released, 0) = 1) THEN 1
           WHEN b2.arrival_date = ?1 AND COALESCE(rs2.guest_arrived, 0) = 0 THEN 2
           WHEN b2.arrival_date <= ?1 AND b2.departure_date > ?1 AND COALESCE(rs2.guest_arrived, 0) = 1 THEN 3
           WHEN b2.departure_date = ?1 AND COALESCE(rs2.guest_left, 0) = 1 AND COALESCE(rs2.room_released, 0) = 1 THEN 4

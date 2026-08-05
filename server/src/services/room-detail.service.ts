@@ -385,9 +385,16 @@ async function loadTodayTurnoverStay(env: RoomDetailBindings, unitId: number, to
     SELECT b.booking_id, b.beds24_booking_id, b.guest_name, b.arrival_date, b.departure_date, b.adults, b.children,
            b.api_source, b.channel, b.api_reference, b.reference
     FROM bookings b
+    LEFT JOIN reception_stays rs_turnover ON rs_turnover.beds24_booking_id = b.beds24_booking_id
     WHERE b.unit_id = ?1
       AND ${operationalBookingStatusSql("b.status")}
-      AND (b.arrival_date = ?2 OR b.departure_date = ?2)
+      AND (
+        b.arrival_date = ?2
+        OR (
+          b.departure_date = ?2
+          AND NOT (COALESCE(rs_turnover.guest_left, 0) = 1 AND COALESCE(rs_turnover.room_released, 0) = 1)
+        )
+      )
     ORDER BY
       CASE
         WHEN b.departure_date = ?2 THEN 1
@@ -787,6 +794,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
   const roomScopedActiveTasks = activeTasks.filter((task) => roomTaskBelongsToCurrentStay(task, currentStay));
   const receptionStay = turnoverStay ?? currentStay;
   const reception = receptionStay ? await getReceptionStay(env, receptionStay.beds24BookingId) : null;
+  const visibleReceptionAlerts = receptionStay ? receptionAlerts.filter((alert) => alert.bookingId === receptionStay.beds24BookingId) : [];
   const operations = roomOperationsForStay(
     housekeepingOverview.rooms.find((room) => room.unitId === unit.unit_id) ?? operationalFallback(unit, currentStay),
     currentStay,
@@ -841,7 +849,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
       checkOutStatus: reception ? `${Object.values(reception.checkOut).filter(Boolean).length}/4` : "Not Available",
       passportStatus: reception ? reception.checkIn.passportCollected ? "Recorded" : "Missing" : "Not Available",
       depositStatus: reception ? reception.checkIn.depositCollected ? reception.checkOut.depositReturned ? "Returned" : "Collected" : "Pending" : "Not Available",
-      alerts: receptionAlerts,
+      alerts: visibleReceptionAlerts,
       notes: reception ? [reception.specialNotes, ...reception.notes.slice(0, 3).map((note) => note.body)].filter((note): note is string => Boolean(note)) : [],
     },
     notes,

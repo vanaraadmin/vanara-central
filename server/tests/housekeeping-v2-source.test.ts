@@ -186,6 +186,7 @@ test("v2 task actions render the next server-authorized step only", () => {
   assert.match(page, /card\.capabilities\.canComplete && card\.taskType === "STANDARD_CLEANING"/);
   assert.match(page, /card\.capabilities\.canComplete && card\.taskType !== "STANDARD_CLEANING" && card\.taskType !== "WATER_REFILL"/);
   assert.match(page, /waterRefillCompleted: true/);
+  assert.match(page, /card\.taskType === "TURNOVER"[\s\S]*standardCleaningCompleted: true[\s\S]*linenChangeCompleted: true/);
   assert.doesNotMatch(page, /card\.taskType === "ON_DEMAND_CLEANING"\)/);
   assert.match(page, /<span>Mark Delivered<\/span>/);
   assert.match(page, /onSettled: \(\) =>/);
@@ -200,6 +201,7 @@ test("v2 page uses intervention wording and informational help instead of checkl
   assert.match(page, /Please also check room amenities before completion\./);
   assert.match(page, /Finish Cleaning/);
   assert.match(page, /Finish Full Cleaning/);
+  assert.doesNotMatch(page, /card\.taskType === "STANDARD_CLEANING"[\s\S]*finish-full-cleaning/);
 });
 
 test("summary counters render centered count and subordinate room unit", () => {

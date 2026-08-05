@@ -636,14 +636,7 @@ export async function forceHousekeepingV2RoomRelease(env: HousekeepingV2RoomBind
 }
 
 async function completeHousekeepingTaskWithRules(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, input: ActionInput): Promise<void> {
-  if (task.taskType !== "TURNOVER") {
-    await transitionHousekeepingTask(env, task.id, transitionInput("complete", task, user, input));
-    return;
-  }
-  let current = task;
-  if (current.status === "IN_PROGRESS") current = await transitionHousekeepingTask(env, current.id, transitionInput("checklist_complete", current, user, input));
-  if (current.status === "CHECKLIST_COMPLETE") current = await transitionHousekeepingTask(env, current.id, transitionInput("mark_ready", current, user, { ...input, expectedVersion: current.version }));
-  if (current.status === "READY") await transitionHousekeepingTask(env, current.id, transitionInput("complete", current, user, { ...input, expectedVersion: current.version }));
+  await transitionHousekeepingTask(env, task.id, transitionInput("complete", task, user, input));
 }
 
 async function reopenTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, reason: string): Promise<void> {
@@ -681,7 +674,10 @@ function transitionInput(action: HousekeepingTransitionAction, task: Housekeepin
 
 function completionForTask(task: HousekeepingTask, input: ActionInput): HousekeepingCompletionInput {
   const completion = input.completion ?? {};
-  if (task.taskType === "TURNOVER" || task.taskType === "STANDARD_CLEANING") {
+  if (task.taskType === "TURNOVER") {
+    return { ...completion, standardCleaningCompleted: true, linenChangeCompleted: true };
+  }
+  if (task.taskType === "STANDARD_CLEANING") {
     return { ...completion, standardCleaningCompleted: true };
   }
   if (task.taskType === "LINEN_CHANGE") {

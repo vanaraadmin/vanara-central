@@ -1096,6 +1096,9 @@ test("released turnover can start from Housekeeping Priority without opening roo
   });
   assert.equal(completed.status, 200, await completed.text());
   assert.equal(db.tasks.find((task) => task.task_id === turnover.taskId)?.status, "COMPLETED");
+  assert.equal(db.events.some((event) => event.task_id === turnover.taskId && event.event_type === "checklist_complete"), false);
+  assert.equal(db.events.some((event) => event.task_id === turnover.taskId && event.event_type === "mark_ready"), false);
+  assert.equal(db.events.some((event) => event.task_id === turnover.taskId && event.event_type === "complete"), true);
 });
 
 test("in-progress turnover finish capability is identical for Housekeeping queue and room task detail", async () => {

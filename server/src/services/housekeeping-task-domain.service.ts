@@ -439,7 +439,7 @@ async function markRoomReadyAfterCompletion(env: HousekeepingTaskBindings, task:
 export async function applyCompletionCounters(env: HousekeepingTaskBindings, task: HousekeepingTask, completion: HousekeepingCompletionInput, now = new Date().toISOString()): Promise<void> {
   const completedAt = completion.completedAt ?? task.completedAt ?? now;
   const updateStandard = task.taskType === "STANDARD_CLEANING" || task.taskType === "TURNOVER" ? completion.standardCleaningCompleted !== false : completion.standardCleaningCompleted === true;
-  const updateLinen = task.taskType === "LINEN_CHANGE" || completion.linenChangeCompleted === true;
+  const updateLinen = task.taskType === "TURNOVER" || task.taskType === "LINEN_CHANGE" || completion.linenChangeCompleted === true;
 
   if (!updateStandard && !updateLinen) return;
 
@@ -536,7 +536,7 @@ function nextTransitionState(task: HousekeepingTask, input: TransitionHousekeepi
 }
 
 function canCompleteStatus(taskType: HousekeepingTaskType, status: HousekeepingTaskStatus): boolean {
-  if (taskType === "TURNOVER") return status === "READY";
+  if (taskType === "TURNOVER") return status === "IN_PROGRESS" || status === "CHECKLIST_COMPLETE" || status === "READY";
   if (taskType === "WATER_REFILL") return status === "AVAILABLE_FOR_CLAIM" || status === "CLAIMED" || status === "IN_PROGRESS";
   return status === "IN_PROGRESS";
 }

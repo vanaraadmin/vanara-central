@@ -86,6 +86,10 @@ test("Owner Force Room Released updates Reception release and records audit with
 });
 
 test("task detail uses intervention help and trust completion instead of detailed checklists", () => {
+  const roomTaskActions = roomWorkspace.slice(
+    roomWorkspace.indexOf("function RoomTaskActions"),
+    roomWorkspace.indexOf("function useRoomTaskAction"),
+  );
   assert.doesNotMatch(roomService, /TURNOVER_CHECKLIST|STANDARD_CLEANING_CHECKLIST|LINEN_CHANGE_CHECKLIST/);
   assert.doesNotMatch(roomService, /INSERT OR IGNORE INTO housekeeping_task_checklist_items/);
   assert.doesNotMatch(roomService, /missingChecklistItems|Checklist incomplete:/);
@@ -93,7 +97,10 @@ test("task detail uses intervention help and trust completion instead of detaile
   assert.match(roomService, /canEditChecklist: false/);
   assert.match(roomWorkspace, /Finish Cleaning/);
   assert.match(roomWorkspace, /Finish Full Cleaning/);
-  assert.match(roomWorkspace, /task\.capabilities\.canComplete && task\.taskType === "STANDARD_CLEANING"/);
+  assert.match(roomTaskActions, /task\.capabilities\.canComplete && task\.taskType === "ON_DEMAND_CLEANING"/);
+  assert.match(roomTaskActions, /task\.taskType === "TURNOVER" \? "Finish Turnover"/);
+  assert.doesNotMatch(roomTaskActions, /task\.taskType === "STANDARD_CLEANING"[\s\S]*Finish Full Cleaning/);
+  assert.match(roomWorkspace, /if \(task\.taskType === "TURNOVER"\) return \[\]/);
   assert.doesNotMatch(roomWorkspace, /function Checklist|updateHousekeepingTaskChecklist|Complete checklist/);
   assert.doesNotMatch(client, /updateHousekeepingTaskChecklist/);
 });

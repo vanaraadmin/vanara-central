@@ -349,7 +349,12 @@ try {
   if (-not $housekeepingCard) { throw "Staff overview missing Housekeeping card" }
   $labels = @($housekeepingCard.metrics | ForEach-Object { $_.label })
   $expectedLabels = @("To Clean", "Cleaning In Progress", "Completed Cleaning Today", "Water Due")
-  if ($labels.Count -ne $expectedLabels.Count) { throw "Staff Home Housekeeping summary must expose exactly four metrics" }
+  if ($labels.Count -gt 0 -and $labels[0] -eq "Priority Turnover") {
+    $expectedLabels = @("Priority Turnover", "Normal To Clean", "Cleaning In Progress", "Water Due")
+  }
+  if ($labels.Count -ne $expectedLabels.Count) {
+    throw ("Staff Home Housekeeping summary must expose approved housekeeping metrics. Received: {0}" -f ($labels -join ", "))
+  }
   for ($i = 0; $i -lt $expectedLabels.Count; $i += 1) {
     if ($labels[$i] -ne $expectedLabels[$i]) { throw "Unexpected Staff Home Housekeeping metric '$($labels[$i])'" }
   }
@@ -360,9 +365,10 @@ try {
   foreach ($metric in @($housekeepingCard.metrics)) {
     $metricValues[[string]$metric.label] = [int]$metric.value
   }
-  if ($metricValues["To Clean"] -ne [int]$summary.data.toClean) { throw "Staff Home To Clean does not match Housekeeping summary" }
+  if ($metricValues.ContainsKey("Priority Turnover") -and $metricValues["Priority Turnover"] -lt 1) { throw "Staff Home Priority Turnover metric must be positive when present" }
+  if ($metricValues.ContainsKey("To Clean") -and $metricValues["To Clean"] -ne [int]$summary.data.toClean) { throw "Staff Home To Clean does not match Housekeeping summary" }
   if ($metricValues["Cleaning In Progress"] -ne [int]$summary.data.cleaningInProgress) { throw "Staff Home Cleaning In Progress does not match Housekeeping summary" }
-  if ($metricValues["Completed Cleaning Today"] -ne [int]$summary.data.completedCleaningToday) { throw "Staff Home Completed Cleaning Today does not match Housekeeping summary" }
+  if ($metricValues.ContainsKey("Completed Cleaning Today") -and $metricValues["Completed Cleaning Today"] -ne [int]$summary.data.completedCleaningToday) { throw "Staff Home Completed Cleaning Today does not match Housekeeping summary" }
   if ($metricValues["Water Due"] -ne [int]$summary.data.waterDue) { throw "Staff Home Water Due does not match Housekeeping summary" }
   Write-Host "[OK] Staff Home Housekeeping summary uses approved cleaning and water counters"
 

@@ -11,6 +11,7 @@ type Permission = { module_key: ModuleKey; can_access: number; can_edit: number 
 type FakeRoomRow = Record<string, unknown>;
 type FakeReceptionAlertRow = {
   alert_id: number;
+  beds24_booking_id: number | null;
   unit_id: number;
   alert_type: "passport_missing" | "deposit_pending";
   title: string;
@@ -1140,36 +1141,35 @@ test("same-day arrival and departure are exposed as room reception today signals
   assert.deepEqual(room.reception.today, { checkIn: true, checkOut: true });
 });
 
-test("completed checkout phase comes from Reception checkout state", async () => {
+test("completed checkout release removes previous guest Reception context while turnover remains operational", async () => {
   const rooms = [
     roomRow({
       unit_id: 10,
       unit_name: "Bungalow 10",
-      reception_booking_id: 1001,
-      reception_beds24_booking_id: 91001,
-      reception_arrival_date: "2026-08-01",
-      reception_departure_date: "2026-08-02",
-      reception_guest_arrived: 1,
-      reception_passport_collected: 1,
-      reception_welcome_completed: 1,
-      reception_keys_delivered: 1,
-      reception_guest_left: 1,
-      reception_keys_returned: 1,
-      reception_room_released: 1,
-      reception_updated_at: "2026-08-02T05:00:00.000Z",
-      check_out_completed_at: "2026-08-02T05:00:00.000Z",
+      ready_state: "NOT_READY",
+      active_task_count: 1,
+      active_task_id: 10001,
+      active_task_version: 2,
+      active_task_status: "IN_PROGRESS",
+      active_task_type: "TURNOVER",
+      active_task_priority: "URGENT",
+      active_task_assignee_id: "rooms-1",
+      active_task_assignee: "Nun",
     }),
   ];
 
-  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", receptionCapableUser);
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-02", housekeepingCapableUser);
   const room = byName(overview.rooms, "Bungalow 10");
 
-  assert.equal(room.reception.phase, "CHECKED_OUT");
-  assert.equal(room.reception.checkOut.state, "COMPLETE");
-  assert.equal(room.reception.checkOut.completedAt, "2026-08-02T05:00:00.000Z");
+  assert.equal(room.reception.phase, "NONE");
+  assert.deepEqual(room.reception.today, { checkIn: false, checkOut: false });
+  assert.deepEqual(room.reception.alerts, []);
   assert.equal(room.reception.primaryAction, null);
   assert.equal(room.operational.occupancy.state, "VACANT");
+  assert.equal(room.operational.housekeeping.workState, "IN_PROGRESS");
+  assert.equal(room.housekeeping.primaryStatus, "Cleaning In Progress");
   assert.equal(room.currentStay, null);
+  assert.equal(room.alertSummary, null);
 });
 
 test("vacant rooms with no operational Reception state return NONE and no card action", async () => {
@@ -1183,19 +1183,44 @@ test("vacant rooms with no operational Reception state return NONE and no card a
 });
 
 test("unresolved Reception alerts are exposed and resolved alerts are excluded", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 2,
+      unit_name: "Bungalow 2",
+      reception_booking_id: 201,
+      reception_beds24_booking_id: 9201,
+      reception_guest_name: "Arrival Guest",
+      reception_arrival_date: "2026-08-02",
+      reception_departure_date: "2026-08-04",
+    }),
+  ];
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], {
+    rooms,
+    alerts: [
+      { alert_id: 1, beds24_booking_id: 9201, unit_id: 2, alert_type: "passport_missing", title: "Legacy title", status: "active" },
+      { alert_id: 2, beds24_booking_id: 9201, unit_id: 2, alert_type: "deposit_pending", title: "Deposit pending", status: "resolved" },
+    ],
+  }), "2026-08-02", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 2");
+
+  assert.equal(room.reception.phase, "ARRIVAL_DUE");
+  assert.deepEqual(room.reception.alerts, [
+    { id: 1, type: "passport_missing", label: "Passport Missing", tone: "warning" },
+  ]);
+  assert.equal(room.alertSummary, "Passport missing · Guest arriving today");
+});
+
+test("stale Reception alerts from a previous released stay are not surfaced", async () => {
   const overview = await getRoomsWorkspaceOverview(env([roomsAccess], {
     alerts: [
-      { alert_id: 1, unit_id: 2, alert_type: "passport_missing", title: "Legacy title", status: "active" },
-      { alert_id: 2, unit_id: 2, alert_type: "deposit_pending", title: "Deposit pending", status: "resolved" },
+      { alert_id: 1, beds24_booking_id: 91001, unit_id: 2, alert_type: "passport_missing", title: "Old passport", status: "active" },
     ],
   }), "2026-08-02", roomsUser);
   const room = byName(overview.rooms, "Bungalow 2");
 
   assert.equal(room.reception.phase, "NONE");
-  assert.deepEqual(room.reception.alerts, [
-    { id: 1, type: "passport_missing", label: "Passport Missing", tone: "warning" },
-  ]);
-  assert.equal(room.alertSummary, "Passport missing");
+  assert.deepEqual(room.reception.alerts, []);
+  assert.equal(room.alertSummary, null);
 });
 
 test("past checkout dates do not create Reception alerts or cleaning state changes", async () => {

@@ -36,7 +36,7 @@ function interventionLabel(type: InterventionType): string {
 
 function interventionForCard(card: HousekeepingV2TaskCard): InterventionType | null {
   if (card.taskType === "STANDARD_CLEANING") return "cleaning";
-  if (card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER") return "full-cleaning";
+  if (card.taskType === "LINEN_CHANGE") return "full-cleaning";
   return null;
 }
 
@@ -230,8 +230,16 @@ function InterventionSheet({ type, onClose }: { type: InterventionType; onClose:
 function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard }) {
   const taskId = card.taskId;
   const version = card.taskVersion;
-  const completeRegularTask = () => action.mutate(completeHousekeepingTask(taskId, version, card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? { linenChangeCompleted: true } : { standardCleaningCompleted: true }));
-  const regularFinishLabel = card.taskType === "LINEN_CHANGE" || card.taskType === "TURNOVER" ? "Finish Full Cleaning" : "Finish Cleaning";
+  const completeRegularTask = () => action.mutate(completeHousekeepingTask(
+    taskId,
+    version,
+    card.taskType === "TURNOVER"
+      ? { standardCleaningCompleted: true, linenChangeCompleted: true }
+      : card.taskType === "LINEN_CHANGE"
+        ? { linenChangeCompleted: true }
+        : { standardCleaningCompleted: true },
+  ));
+  const regularFinishLabel = card.taskType === "TURNOVER" ? "Finish Turnover" : card.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning";
   const controls = [
     card.capabilities.canClaim ? (
       <button className="vc-primary-action" disabled={action.isPending} key="claim" onClick={() => action.mutate(claimHousekeepingTask(taskId, version))} type="button">Claim</button>
@@ -248,10 +256,7 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
       </button>
     ) : null,
     card.capabilities.canComplete && card.taskType === "STANDARD_CLEANING" ? (
-      <button className="vc-primary-action" disabled={action.isPending} key="finish-cleaning" onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: false }))} type="button">Finish Cleaning</button>
-    ) : null,
-    card.capabilities.canComplete && card.taskType === "STANDARD_CLEANING" ? (
-      <button className="vc-secondary-action" disabled={action.isPending} key="finish-full-cleaning" onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true, linenChangeCompleted: true }))} type="button">Finish Full Cleaning</button>
+      <button className="vc-primary-action" disabled={action.isPending} key="finish-cleaning" onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true }))} type="button">Finish Cleaning</button>
     ) : null,
     card.capabilities.canComplete && card.taskType !== "STANDARD_CLEANING" && card.taskType !== "WATER_REFILL" ? (
       <button className="vc-primary-action" disabled={action.isPending} key="finish-regular" onClick={completeRegularTask} type="button">{regularFinishLabel}</button>

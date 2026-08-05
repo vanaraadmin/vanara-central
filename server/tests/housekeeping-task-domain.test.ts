@@ -486,6 +486,26 @@ test("turnover transitions require release before start and support ready comple
   assert.equal(db.counters[0]?.last_linen_change_task_id, completed.id);
 });
 
+test("turnover completion from in-progress resets both standard and linen counters without checklist choice", async () => {
+  const db = new FakeHousekeepingTaskDB();
+  db.receptionRelease.set(100, 1);
+  const data = env(db);
+  const task = await createHousekeepingTask(data, { taskType: "TURNOVER", unitId: 1, bookingId: 100, operationalDate: "2026-08-01", receptionReleased: true }, actor());
+  const started = await transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor() });
+  const completed = await transitionHousekeepingTask(data, started.id, {
+    action: "complete",
+    expectedVersion: started.version,
+    actor: actor(),
+    completion: { completedAt: "2026-08-01T09:00:00.000Z" },
+  });
+
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(db.counters[0]?.last_standard_cleaning_task_id, completed.id);
+  assert.equal(db.counters[0]?.last_linen_change_task_id, completed.id);
+  assert.equal(db.counters[0]?.next_standard_cleaning_due_date, "2026-08-04");
+  assert.equal(db.counters[0]?.next_linen_change_due_date, "2026-08-04");
+});
+
 test("counter updates keep standard cleaning, linen, and water refill independent", async () => {
   const standard = await createTask("STANDARD_CLEANING", new FakeHousekeepingTaskDB());
   await applyCompletionCounters(standard.data, standard.task, { standardCleaningCompleted: true, completedAt: "2026-08-01T09:00:00.000Z" });

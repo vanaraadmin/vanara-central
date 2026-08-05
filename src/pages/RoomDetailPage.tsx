@@ -154,7 +154,8 @@ function taskExecutionStatus(task: RoomHousekeepingTask): string {
 
 function executionChecklist(task: RoomHousekeepingTask): string[] {
   if (task.taskType === "WATER_REFILL") return ["Water delivered"];
-  if (task.taskType === "LINEN_CHANGE" || task.taskType === "TURNOVER") {
+  if (task.taskType === "TURNOVER") return [];
+  if (task.taskType === "LINEN_CHANGE") {
     return ["General room cleaning", "Bed linen changed", "Amenities checked"];
   }
   return ["General room cleaning", "Amenities checked"];
@@ -163,6 +164,7 @@ function executionChecklist(task: RoomHousekeepingTask): string[] {
 function primaryTaskActionLabel(task: RoomHousekeepingTask): string {
   if (task.taskType === "WATER_REFILL") return "Complete Water";
   if (task.capabilities.canStart) return "Start Cleaning";
+  if (task.taskType === "TURNOVER") return "Finish Turnover";
   return "Finish Cleaning";
 }
 
@@ -190,6 +192,7 @@ function TaskExecutionChecklist({ task }: { task: RoomHousekeepingTask }) {
 
 function TaskExecutionPrimaryAction({ action, task }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask }) {
   const canAct = task.capabilities.canStart || task.capabilities.canComplete;
+  const completeCleaning = (includeLinen: boolean) => action.mutate(completeHousekeepingTask(task.id, task.version, { standardCleaningCompleted: true, linenChangeCompleted: includeLinen }));
 
   function submit() {
     if (task.capabilities.canStart) {
@@ -199,6 +202,15 @@ function TaskExecutionPrimaryAction({ action, task }: { action: ReturnType<typeo
     if (task.capabilities.canComplete) {
       action.mutate(completeHousekeepingTask(task.id, task.version, roomTaskCompletePayload(task)));
     }
+  }
+
+  if (task.capabilities.canComplete && task.taskType === "ON_DEMAND_CLEANING") {
+    return (
+      <div className="task-execution-primary-action">
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
+      </div>
+    );
   }
 
   return (
@@ -262,7 +274,7 @@ function TaskExecutionPage({ room, roomId, task }: { room: RoomDetail; roomId: s
         </dl>
       </section>
 
-      <TaskExecutionChecklist task={task} />
+      {task.taskType !== "TURNOVER" && <TaskExecutionChecklist task={task} />}
       <TaskExecutionMaintenance room={room} />
       <TaskExecutionPrimaryAction action={action} task={task} />
       {action.isError && <p className="room-form-error">This task changed. The room is refreshing.</p>}
@@ -304,19 +316,10 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
     );
   }
 
-  if (task.capabilities.canComplete && task.taskType === "STANDARD_CLEANING") {
-    return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
-        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
-      </div>
-    );
-  }
-
   if (task.capabilities.canComplete) {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "LINEN_CHANGE" || task.taskType === "TURNOVER" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "TURNOVER" ? "Finish Turnover" : task.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
       </div>
     );
   }
