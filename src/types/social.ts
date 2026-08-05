@@ -61,3 +61,14 @@ export interface PrepareSocialImageResponse {
   data?: PrepareSocialImageResult;
   error?: string;
 }
+
+export interface PrepareSocialCaptionResult {
+  processed: boolean;
+  item: SocialPostQueueItem | null;
+}
+
+export interface PrepareSocialCaptionResponse {
+  success: boolean;
+  data?: PrepareSocialCaptionResult;
+  error?: string;
+}

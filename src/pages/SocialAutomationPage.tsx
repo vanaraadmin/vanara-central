@@ -4,7 +4,7 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
-import { loadSocialAutomationOverview, prepareSocialImage, uploadSocialPhoto } from "../services/social.service";
+import { loadSocialAutomationOverview, prepareSocialCaption, prepareSocialImage, uploadSocialPhoto } from "../services/social.service";
 import type { SocialPostQueueItem, SocialPostStatus } from "../types/social";
 import "../styles/SocialAutomationPage.css";
 
@@ -66,13 +66,18 @@ function SummaryStrip({ summary }: { summary?: Partial<Record<SocialPostStatus, 
 function QueueItem({
   item,
   onPrepare,
+  onPrepareCaption,
   preparing,
+  captioning,
 }: {
   item: SocialPostQueueItem;
   onPrepare(item: SocialPostQueueItem): void;
+  onPrepareCaption(item: SocialPostQueueItem): void;
   preparing: boolean;
+  captioning: boolean;
 }) {
   const canPrepare = item.status === "QUEUED";
+  const canPrepareCaption = item.status === "IMAGE_READY";
   return (
     <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
       <span className="social-queue-item__thumb" aria-hidden="true" />
@@ -98,6 +103,17 @@ function QueueItem({
             type="button"
           >
             {preparing ? "Preparing" : "Prepare Image"}
+          </button>
+        ) : null}
+        {canPrepareCaption ? (
+          <button
+            aria-label={`Prepare caption for ${item.originalFileName}`}
+            className="social-queue-item__prepare"
+            disabled={captioning}
+            onClick={() => onPrepareCaption(item)}
+            type="button"
+          >
+            {captioning ? "Captioning" : "Prepare Caption"}
           </button>
         ) : null}
       </span>
@@ -145,6 +161,14 @@ export default function SocialAutomationPage() {
     mutationFn: (item: SocialPostQueueItem) => prepareSocialImage(item.id),
     onSuccess: async () => {
       setNotice("Image ready");
+      await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
+    },
+  });
+
+  const caption = useMutation({
+    mutationFn: (item: SocialPostQueueItem) => prepareSocialCaption(item.id),
+    onSuccess: async () => {
+      setNotice("Ready to post");
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -224,12 +248,15 @@ export default function SocialAutomationPage() {
                 item={item}
                 key={item.id}
                 onPrepare={(queuedItem) => prepare.mutate(queuedItem)}
+                onPrepareCaption={(readyItem) => caption.mutate(readyItem)}
                 preparing={prepare.isPending && prepare.variables?.id === item.id}
+                captioning={caption.isPending && caption.variables?.id === item.id}
               />
             ))}
           </ul>
         ) : null}
         {prepare.isError ? <p className="social-upload__error">{prepare.error instanceof Error ? prepare.error.message : "Image could not be prepared"}</p> : null}
+        {caption.isError ? <p className="social-upload__error">{caption.error instanceof Error ? caption.error.message : "Caption could not be prepared"}</p> : null}
       </VanaraGlassRegion>
     </WorkspaceShell>
   );
