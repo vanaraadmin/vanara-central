@@ -54,7 +54,7 @@ test("chat message input accepts one reply target and validates message actions"
 
 test("chat stickers and attachments normalize safely", () => {
   const sticker = CHAT_STICKERS[0]!;
-  assert.ok(CHAT_STICKERS.length >= 50);
+  assert.equal(CHAT_STICKERS.length, 296);
   assert.deepEqual(normalizeMessageInput({ messageKind: "STICKER", stickerId: sticker.id }), {
     messageKind: "STICKER",
     body: `Sticker: ${sticker.label}`,
@@ -359,7 +359,7 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /Translation is not available yet/);
   assert.match(page, /chat-thread-message__reactions/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
-  assert.ok((stickerCatalog.match(/\bid:/g) ?? []).length >= 50);
+  assert.equal((stickerCatalog.match(/\{ id:/g) ?? []).length, 296);
   assert.match(stickerCatalog, /imageSrc/);
   assert.match(stickerCatalog, /assets\/stickers/);
   assert.doesNotMatch(stickerCatalog, /symbol:\s*["']/);
