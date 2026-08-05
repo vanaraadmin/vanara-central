@@ -66,9 +66,13 @@
   width: 100%;
   min-height: 96px;
   display: grid;
-  grid-template-columns: 40px minmax(9rem, 1fr) minmax(0, 240px) 18px;
+  grid-template-columns: 40px minmax(10rem, 1fr) 18px;
+  grid-template-areas:
+    "icon identity chevron"
+    "icon signals chevron";
   align-items: start;
   column-gap: 14px;
+  row-gap: 8px;
   padding: 17px 18px;
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -113,6 +117,7 @@
 }
 
 .room-row__type-mark {
+  grid-area: icon;
   align-self: center;
   width: 32px;
   height: 32px;
@@ -130,6 +135,7 @@
 }
 
 .room-row__identity {
+  grid-area: identity;
   align-self: center;
   min-width: 9rem;
   display: flex;
@@ -162,14 +168,15 @@
 }
 
 .room-signals {
-  align-self: center;
-  justify-self: end;
-  width: min(36vw, 240px);
+  grid-area: signals;
+  align-self: start;
+  justify-self: stretch;
+  width: 100%;
   max-width: 100%;
   display: grid;
   min-width: 0;
   gap: 3px;
-  text-align: right;
+  text-align: left;
 }
 
 .room-signals__primary,
@@ -178,7 +185,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   overflow: visible;
   color: rgba(244, 237, 223, 0.74);
   font-family: var(--vc-font-sans);
@@ -231,13 +238,14 @@
 }
 
 .room-terminal-state {
-  justify-self: end;
-  width: min(36vw, 240px);
+  grid-area: signals;
+  justify-self: stretch;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
   display: grid;
   gap: 3px;
-  text-align: right;
+  text-align: left;
 }
 
 .room-terminal-state__label {
@@ -273,6 +281,7 @@
 }
 
 .room-row__chevron {
+  grid-area: chevron;
   align-self: center;
   width: 18px;
   height: 18px;
@@ -918,7 +927,7 @@ button.room-domain-card__primary-action {
   }
 
   .room-row__guest {
-    display: none;
+    display: block;
   }
 
   .room-signals {

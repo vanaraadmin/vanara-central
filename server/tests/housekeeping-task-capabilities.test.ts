@@ -7,7 +7,7 @@ import type { HousekeepingTask } from "../src/services/housekeeping-task-domain.
 
 const assignedStaff = user({ id: "hk-assigned", role: "Housekeeping", views: ["staff"] });
 const otherStaff = user({ id: "hk-other", role: "Housekeeping", views: ["staff"] });
-const noAccessStaff = user({ id: "hk-no-access", role: "Housekeeping", views: ["staff"], permissions: [] });
+const inactiveStaff = user({ id: "hk-inactive", role: "Housekeeping", views: ["staff"], status: "inactive" });
 const owner = user({ id: "owner-1", role: "Owner", views: ["owner", "staff"] });
 
 test("central housekeeping capabilities allow operational staff and Owner to finish an in-progress turnover", () => {
@@ -57,7 +57,7 @@ test("central housekeeping capabilities keep reception and maintenance blocks au
   assert.equal(housekeepingOperationalTaskCapabilities(waiting, otherStaff).canStartCleaning, false);
   assert.equal(housekeepingOperationalTaskCapabilities(waiting, otherStaff).canFinishCleaning, false);
   assert.equal(housekeepingOperationalTaskCapabilities(activeCleaning, otherStaff, { maintenanceBlocked: true }).canFinishCleaning, false);
-  assert.equal(housekeepingOperationalTaskCapabilities(activeCleaning, noAccessStaff).canFinishCleaning, false);
+  assert.equal(housekeepingOperationalTaskCapabilities(activeCleaning, inactiveStaff).canFinishCleaning, false);
 });
 
 test("central housekeeping capabilities keep start ownership consistent across read models", () => {
@@ -72,7 +72,12 @@ test("central housekeeping capabilities keep start ownership consistent across r
   assert.equal(housekeepingOperationalTaskCapabilities(claimed, owner).canStartCleaning, true);
 });
 
-function user(input: Pick<CurrentUser, "id" | "role" | "views"> & { permissions?: CurrentUser["permissions"] }): CurrentUser {
+function user(
+  input: Pick<CurrentUser, "id" | "role" | "views"> & {
+    permissions?: CurrentUser["permissions"];
+    status?: CurrentUser["status"];
+  },
+): CurrentUser {
   return {
     id: input.id,
     displayName: input.id,
@@ -82,7 +87,7 @@ function user(input: Pick<CurrentUser, "id" | "role" | "views"> & { permissions?
     preferredLanguage: "en",
     username: input.id,
     email: null,
-    status: "active",
+    status: input.status ?? "active",
     views: input.views,
     permissions: input.permissions ?? [
       { module: "rooms", canAccess: true, canEdit: false },

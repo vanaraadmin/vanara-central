@@ -170,9 +170,12 @@ test("Compact row type mark uses local monochrome accommodation icons", () => {
 test("Compact row CSS keeps operational alerts readable without uncontrolled status-pill clouds", () => {
   const roomRowCss = sourceBlockBetween(css, ".room-row {", ".rooms-home__item:last-child .room-row");
   const roomNameCss = sourceBlockBetween(css, ".room-row__name {", ".room-row__guest");
+  const roomGuestCss = sourceBlockBetween(css, ".room-row__guest {", ".room-signals");
+  const roomSignalsCss = sourceBlockBetween(css, ".room-signals {", ".room-signals__primary,");
 
   assert.match(css, /\.room-row/);
-  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(9rem,\s*1fr\)\s+minmax\(0,\s*240px\)\s+18px/);
+  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(10rem,\s*1fr\)\s+18px/);
+  assert.match(roomRowCss, /grid-template-areas:\s*\n\s*"icon identity chevron"\s*\n\s*"icon signals chevron"/);
   assert.match(css, /min-height:\s*96px/);
   assert.match(css, /padding:\s*17px 18px/);
   assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1\.125rem/);
@@ -182,8 +185,12 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
   assert.match(roomNameCss, /white-space:\s*normal/);
   assert.doesNotMatch(roomNameCss, /display:\s*none|visibility:\s*hidden|(?<!min-)width:\s*0|text-overflow:\s*ellipsis/);
   assert.match(css, /\.room-row__guest[\s\S]*font-size:\s*0\.78rem/);
+  assert.doesNotMatch(roomGuestCss, /display:\s*none|visibility:\s*hidden|(?<!min-)width:\s*0/);
   assert.match(css, /\.room-signals__primary/);
   assert.match(css, /\.room-signals__secondary/);
+  assert.match(roomSignalsCss, /grid-area:\s*signals/);
+  assert.match(roomSignalsCss, /width:\s*100%/);
+  assert.match(roomSignalsCss, /text-align:\s*left/);
   assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*flex-wrap:\s*wrap/);
   assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*white-space:\s*normal/);
   assert.match(css, /\.room-signal\s*\{[\s\S]*white-space:\s*normal/);
@@ -191,7 +198,6 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
   assert.doesNotMatch(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)[\s\S]*display:\s*none/);
   assert.doesNotMatch(css, /\.room-signal\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.doesNotMatch(css, /\.room-terminal-state__label\s*\{[^}]*text-overflow:\s*ellipsis/);
-  assert.match(css, /grid-template-areas:\s*\n\s*"icon identity chevron"\s*\n\s*"icon signals chevron"/);
   assert.match(css, /\.room-signals\s*\{[\s\S]*grid-area:\s*signals/);
   assert.match(roomRowCss, /box-shadow:\s*none/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);

@@ -290,7 +290,7 @@ function currentUser(permissions: CurrentUser["permissions"], actionPermissions:
 const roomsUser = currentUser([{ module: "rooms", canAccess: true, canEdit: false }]);
 const housekeepingCapableUser = currentUser([
   { module: "rooms", canAccess: true, canEdit: false },
-  { module: "housekeeping", canAccess: true, canEdit: true },
+  { module: "housekeeping", canAccess: true, canEdit: false },
 ]);
 const receptionCapableUser = currentUser(
   [

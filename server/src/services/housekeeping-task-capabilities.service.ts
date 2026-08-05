@@ -1,4 +1,4 @@
-import { isOwner, type CurrentUser } from "./current-user.service.js";
+import { hasModulePermission, isOwner, type CurrentUser } from "./current-user.service.js";
 import {
   housekeepingTaskCanFinishOperationally,
   housekeepingTaskCapabilities,
@@ -30,10 +30,8 @@ const terminalStatuses = new Set(["COMPLETED", "SKIPPED", "CANCELLED"]);
 function canUseOperationalCleaning(user: CurrentUser): boolean {
   if (isOwner(user)) return true;
   if (user.status !== "active" || !user.views.includes("staff")) return false;
-  return user.permissions.some((permission) => (
-    (permission.module === "housekeeping" || permission.module === "rooms")
-    && permission.canAccess
-  ));
+  return hasModulePermission(user, "housekeeping", "access")
+    || hasModulePermission(user, "rooms", "access");
 }
 
 export function housekeepingOperationalTaskCapabilities(

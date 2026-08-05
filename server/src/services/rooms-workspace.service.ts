@@ -568,7 +568,10 @@ async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<num
 }
 
 function canUseHousekeepingActions(user?: CurrentUser): boolean {
-  return Boolean(user && hasModulePermission(user, "housekeeping", "edit"));
+  return Boolean(user && (
+    hasModulePermission(user, "housekeeping", "access")
+    || hasModulePermission(user, "rooms", "access")
+  ));
 }
 
 function canUseHousekeepingWorkflowActions(user?: CurrentUser): boolean {
