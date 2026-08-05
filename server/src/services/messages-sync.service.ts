@@ -6,6 +6,7 @@ import type { Channel, DraftState, ImportedMessage, MessageAssociationState, Pro
 
 export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings {
   DB: D1Database;
+  fetcher?: Fetcher;
 }
 
 export interface SyncMessagesOptions {
@@ -61,6 +62,7 @@ export interface Beds24GuestMessage {
 }
 
 type JsonRecord = Record<string, unknown>;
+type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 
 interface Beds24MessagesResponse {
   success?: boolean;
@@ -556,6 +558,10 @@ export async function syncMessages(
   let latestReceivedAt: string | null = null;
 
   try {
+    const requestOptions: Beds24RequestOptions = {
+      ...options.requestOptions,
+      fetcher: options.requestOptions?.fetcher ?? (env.fetcher as typeof fetch | undefined),
+    };
     const response = await beds24Get<Beds24MessagesResponse>(
       env,
       BEDS24_MESSAGES_ENDPOINT,
@@ -563,7 +569,7 @@ export async function syncMessages(
         source: BEDS24_MESSAGES_SOURCE,
         maxAge: options.maxAge ?? BEDS24_MESSAGES_MAX_AGE,
       },
-      options.requestOptions,
+      requestOptions,
     );
 
     if (response.success === false) {

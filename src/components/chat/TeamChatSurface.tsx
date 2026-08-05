@@ -88,7 +88,7 @@ function chatAvatarVariant(conversation: ChatConversation): "group" | "user" | "
   return conversation.kind === "GROUP" ? "group" : "user";
 }
 
-function ChatToolIcon({ type }: { type: "plus" | "camera" | "gallery" | "sticker" | "send" | "close" | "user" | "group" }) {
+function ChatToolIcon({ type }: { type: "plus" | "sticker" | "send" | "close" | "user" | "group" }) {
   return <span className={`chat-tool-icon chat-tool-icon--${type}`} aria-hidden="true"><span /></span>;
 }
 
@@ -531,7 +531,7 @@ function ChatMessageBubble({
           )}
           {message.messageKind === "STICKER" ? (
             <div className={`chat-thread-message__sticker chat-thread-message__sticker--${sticker?.tone ?? "warm"}`} aria-label={sticker?.label ?? "Sticker"}>
-              <span>{sticker?.symbol ?? "✨"}</span>
+              {sticker?.imageSrc ? <img src={sticker.imageSrc} alt="" draggable={false} /> : <span aria-hidden="true" />}
               <strong>{sticker?.label ?? message.body.replace(/^Sticker:\s*/i, "")}</strong>
             </div>
           ) : message.messageKind === "ATTACHMENT" && message.attachment ? (
@@ -596,8 +596,6 @@ function ChatComposer({
   const [stickersOpen, setStickersOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   async function refreshChat() {
     await Promise.all([
@@ -677,7 +675,7 @@ function ChatComposer({
               disabled={stickerMutation.isPending}
               aria-label={sticker.label}
             >
-              <span>{sticker.symbol}</span>
+              <img src={sticker.imageSrc} alt="" draggable={false} />
               <strong>{sticker.label}</strong>
             </button>
           ))}
@@ -696,12 +694,8 @@ function ChatComposer({
       )}
       <div className="chat-composer__tools chat-composer__tools--left" aria-label="Message tools">
         <button type="button" aria-label="Attach file" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="plus" /></button>
-        <button type="button" aria-label="Open camera" onClick={() => cameraInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="camera" /></button>
-        <button type="button" aria-label="Choose image" onClick={() => galleryInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="gallery" /></button>
       </div>
       <input ref={fileInputRef} className="chat-composer__file-input" type="file" onChange={handleFileChange} />
-      <input ref={cameraInputRef} className="chat-composer__file-input" type="file" accept="image/*" capture="environment" onChange={handleFileChange} />
-      <input ref={galleryInputRef} className="chat-composer__file-input" type="file" accept="image/*" onChange={handleFileChange} />
       <label className="chat-composer__field">
         <span className="vc-sr-only">Message</span>
         <input

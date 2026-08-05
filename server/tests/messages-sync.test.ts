@@ -325,13 +325,13 @@ function env(db: FakeMessagesDB, fetcher?: typeof fetch) {
   };
 }
 
-function guestMessage(id: string, bookingId: number, message = "Hello"): Beds24GuestMessage {
+function guestMessage(id: string, bookingId: number, message = "Hello", time = "2026-08-04T09:00:00.000Z"): Beds24GuestMessage {
   return {
     id,
     bookingId,
     message,
     source: "guest",
-    time: "2026-08-04T09:00:00.000Z",
+    time,
     language: "en",
   };
 }
@@ -467,7 +467,7 @@ test("duplicate provider messages are ignored by provider_message_id", async () 
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Direct", api_source: "Direct", language_code: null }],
   });
-  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001)]);
+  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001, "Hello", new Date().toISOString())]);
 
   await syncMessages(env(db) as never, {
     now: NOW,
@@ -542,52 +542,41 @@ test("GET /api/messages returns imported messages and POST /sync/messages execut
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Agoda", api_source: "Agoda", language_code: "en" }],
   });
-  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001)]);
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = fetcher;
-  try {
-    const post = await worker.fetch(new Request("https://vanara.test/sync/messages", {
-      method: "POST",
-      headers: { cookie: "vanara_session=x" },
-    }), env(db) as never);
-    assert.equal(post.status, 200);
-    const postBody = await post.json() as { recordsWritten: number; recordsLinked: number };
-    assert.equal(postBody.recordsWritten, 1);
-    assert.equal(postBody.recordsLinked, 1);
+  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001, "Hello", new Date().toISOString())]);
+  const testEnv = env(db, fetcher);
+  const post = await worker.fetch(new Request("https://vanara.test/sync/messages", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+  }), testEnv as never);
+  assert.equal(post.status, 200);
+  const postBody = await post.json() as { recordsWritten: number; recordsLinked: number };
+  assert.equal(postBody.recordsWritten, 1, JSON.stringify(postBody));
+  assert.equal(postBody.recordsLinked, 1);
 
-    const get = await worker.fetch(new Request("https://vanara.test/api/messages", {
-      headers: { cookie: "vanara_session=x" },
-    }), env(db) as never);
-    assert.equal(get.status, 200);
-    const getBody = await get.json() as { success: boolean; data: Array<{ providerMessageId: string; associationState: string }> };
-    assert.equal(getBody.success, true);
-    assert.equal(getBody.data.length, 1);
-    assert.equal(getBody.data[0]!.providerMessageId, "msg-1");
-    assert.equal(getBody.data[0]!.associationState, "LINKED");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const get = await worker.fetch(new Request("https://vanara.test/api/messages", {
+    headers: { cookie: "vanara_session=x" },
+  }), testEnv as never);
+  assert.equal(get.status, 200);
+  const getBody = await get.json() as { success: boolean; data: Array<{ providerMessageId: string; associationState: string }> };
+  assert.equal(getBody.success, true);
+  assert.equal(getBody.data.length, 1);
+  assert.equal(getBody.data[0]!.providerMessageId, "msg-1");
+  assert.equal(getBody.data[0]!.associationState, "LINKED");
 });
 
 test("POST /sync/messages can import messages without generating drafts when explicitly requested", async () => {
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Agoda", api_source: "Agoda", language_code: "en" }],
   });
-  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001)]);
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = fetcher;
-  try {
-    const post = await worker.fetch(new Request("https://vanara.test/sync/messages?generateDrafts=false", {
-      method: "POST",
-      headers: { cookie: "vanara_session=x" },
-    }), env(db) as never);
-    assert.equal(post.status, 200);
-    const body = await post.json() as { recordsWritten: number; drafts: { attempted: number; generated: number; failed: number } };
-    assert.equal(body.recordsWritten, 1);
-    assert.deepEqual(body.drafts, { attempted: 0, generated: 0, reused: 0, failed: 0, draftIds: [] });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const { fetcher } = messagesFetcher([guestMessage("msg-1", 9001, "Hello", new Date().toISOString())]);
+  const post = await worker.fetch(new Request("https://vanara.test/sync/messages?generateDrafts=false", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x" },
+  }), env(db, fetcher) as never);
+  assert.equal(post.status, 200);
+  const body = await post.json() as { recordsWritten: number; drafts: { attempted: number; generated: number; failed: number } };
+  assert.equal(body.recordsWritten, 1, JSON.stringify(body));
+  assert.deepEqual(body.drafts, { attempted: 0, generated: 0, reused: 0, failed: 0, draftIds: [] });
 });
 
 test("messages endpoints reject unauthenticated and non-owner access", async () => {

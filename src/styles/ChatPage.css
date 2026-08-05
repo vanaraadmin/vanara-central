@@ -341,9 +341,13 @@
   text-align: center;
 }
 
-.chat-thread-message__sticker span {
-  font-size: 3rem;
-  line-height: 1;
+.chat-thread-message__sticker img {
+  display: block;
+  width: min(128px, 38vw);
+  max-width: 100%;
+  height: auto;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .chat-thread-message__sticker strong {
@@ -572,9 +576,13 @@
   opacity: 0.52;
 }
 
-.chat-sticker span {
-  font-size: 1.72rem;
-  line-height: 1;
+.chat-sticker img {
+  display: block;
+  width: 54px;
+  max-width: 100%;
+  height: auto;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .chat-sticker strong {
@@ -904,54 +912,6 @@
 
 .chat-tool-icon--plus::after {
   transform: rotate(90deg);
-}
-
-.chat-tool-icon--camera::before {
-  inset: 5px 3px 4px;
-  border: 2px solid currentColor;
-  border-radius: 5px;
-}
-
-.chat-tool-icon--camera::after {
-  top: 8px;
-  left: 8px;
-  width: 6px;
-  height: 6px;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-}
-
-.chat-tool-icon--camera > span {
-  top: 3px;
-  left: 7px;
-  width: 8px;
-  height: 4px;
-  border-radius: 3px 3px 0 0;
-  background: currentColor;
-}
-
-.chat-tool-icon--gallery::before {
-  inset: 4px;
-  border: 2px solid currentColor;
-  border-radius: 4px;
-}
-
-.chat-tool-icon--gallery::after {
-  right: 7px;
-  bottom: 7px;
-  width: 9px;
-  height: 7px;
-  background: currentColor;
-  clip-path: polygon(0 100%, 40% 35%, 64% 68%, 78% 48%, 100% 100%);
-}
-
-.chat-tool-icon--gallery > span {
-  top: 7px;
-  right: 7px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .chat-tool-icon--sticker::before {
