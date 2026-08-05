@@ -41,6 +41,7 @@ const stickyGlassHeader = readSource("src/components/StickyGlassHeader.tsx");
 const appRoot = readSource("src/App.tsx");
 const glassPhysicsHook = readSource("src/hooks/useGlassPhysics.ts");
 const interactiveGlass = readSource("src/components/vanara/VanaraInteractiveGlass.tsx");
+const workspaceHero = readSource("src/components/WorkspaceHero.tsx");
 const workspaceShellCss = readSource("src/styles/WorkspaceShell.css");
 const tokens = readSource("src/theme/tokens.css");
 const vanaraUi = readSource("src/theme/vanara-ui.css");
@@ -130,7 +131,6 @@ test("Vanara Glass Physics v1 centralizes press and release material behaviour",
 test("Floating navigation appears calmly without hero logo morphing", () => {
   const stickyGlassCss = readSource("src/styles/StickyGlassHeader.css");
   const workspaceShell = readSource("src/components/WorkspaceShell.tsx");
-  const workspaceHero = readSource("src/components/WorkspaceHero.tsx");
 
   assert.doesNotMatch(stickyGlassHeader, /getBoundingClientRect|useLayoutEffect|heroLogoRef|resetHeroLogo|compactLogoVisible|morphScale/);
   assert.doesNotMatch(workspaceShell, /heroLogoRef|<StickyGlassHeader[^>]*heroLogoRef|<WorkspaceHero ref=/);
@@ -146,6 +146,19 @@ test("Floating navigation appears calmly without hero logo morphing", () => {
   assert.match(stickyGlassCss, /\.sticky-glass-nav-logo-slot::before[\s\S]*radial-gradient/);
   assert.match(stickyGlassCss, /\.sticky-glass-nav-logo-slot::before[\s\S]*filter:\s*blur\(14px\)/);
   assert.doesNotMatch(workspaceShellCss, /green glow|neon|pulse|animation:\s*.*logo/i);
+});
+
+test("Workspace masthead exposes the public Vanara website without nested brand anchors", () => {
+  assert.match(workspaceHero, /className="workspace-masthead__identity"/);
+  assert.match(workspaceHero, /className="workspace-masthead__brand"[\s\S]*to=\{WORKSPACE_HOME_ROUTE\}/);
+  assert.match(workspaceHero, /className="workspace-masthead__site"/);
+  assert.match(workspaceHero, /href="https:\/\/www\.vanararetreat\.com"/);
+  assert.match(workspaceHero, />\s*vanararetreat\.com\s*</);
+  assert.doesNotMatch(workspaceHero, />\s*https?:\/\/(?:www\.)?vanararetreat\.com\s*</);
+  const brandLinkBlock = workspaceHero.match(/<Link className="workspace-masthead__brand"[\s\S]*?<\/Link>/)?.[0] ?? "";
+  assert.doesNotMatch(brandLinkBlock, /<a /);
+  assert.match(workspaceShellCss, /\.workspace-masthead__site\s*\{[\s\S]*font-size:\s*0\.72rem[\s\S]*text-transform:\s*none/);
+  assert.match(workspaceShellCss, /\.workspace-masthead__site:hover,\s*\.workspace-masthead__site:focus-visible/);
 });
 
 test("Rooms and Staff Home consume shared presentation instead of page glass copies", () => {

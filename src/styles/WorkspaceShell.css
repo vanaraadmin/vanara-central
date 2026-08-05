@@ -50,6 +50,12 @@
   gap: 20px;
 }
 
+.workspace-masthead__identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
 .workspace-masthead__brand {
   min-width: 0;
   min-height: 70px;
@@ -127,6 +133,35 @@
 
 .workspace-masthead__wordmark strong {
   color: rgba(244, 237, 223, 0.56);
+}
+
+.workspace-masthead__site {
+  width: fit-content;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  margin-top: -10px;
+  margin-left: 85px;
+  border-radius: 999px;
+  color: rgba(244, 237, 223, 0.72);
+  font-family: var(--vc-font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: none;
+  transition: color 160ms ease, text-shadow 160ms ease;
+}
+
+.workspace-masthead__site:hover,
+.workspace-masthead__site:focus-visible {
+  color: rgba(255, 253, 246, 0.94);
+  text-shadow: 0 0 18px rgba(244, 237, 223, 0.18);
+}
+
+.workspace-masthead__site:focus-visible {
+  outline: 2px solid rgba(244, 237, 223, 0.56);
+  outline-offset: 3px;
 }
 
 .workspace-masthead__date {
@@ -397,6 +432,13 @@
 
   .workspace-masthead__brand {
     min-height: 62px;
+  }
+
+  .workspace-masthead__site {
+    min-height: 24px;
+    margin-top: -8px;
+    margin-left: 77px;
+    font-size: 0.68rem;
   }
 
   .workspace-masthead__wordmark span,

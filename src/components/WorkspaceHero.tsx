@@ -19,16 +19,22 @@ export default function WorkspaceHero({
   return (
     <>
       <header className="workspace-masthead">
-        <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
-          <span className="workspace-masthead__logo-slot" aria-hidden="true">
-            <img src={logoSrc} alt="Vanara" className="workspace-masthead__logo" />
-          </span>
+        <div className="workspace-masthead__identity">
+          <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
+            <span className="workspace-masthead__logo-slot" aria-hidden="true">
+              <img src={logoSrc} alt="Vanara" className="workspace-masthead__logo" />
+            </span>
 
-          <div className="workspace-masthead__wordmark">
-            <span>Vanara</span>
-            <strong>Central</strong>
-          </div>
-        </Link>
+            <div className="workspace-masthead__wordmark">
+              <span>Vanara</span>
+              <strong>Central</strong>
+            </div>
+          </Link>
+
+          <a className="workspace-masthead__site" href="https://www.vanararetreat.com" target="_blank" rel="noreferrer">
+            vanararetreat.com
+          </a>
+        </div>
 
         <time className="workspace-masthead__date">{date}</time>
       </header>
