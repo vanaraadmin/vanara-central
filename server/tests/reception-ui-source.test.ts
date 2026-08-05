@@ -40,8 +40,12 @@ test("reception contact icon uses the current Design System color and centered t
   assert.doesNotMatch(receptionCss, /reception-contact-trigger|reception-address-book-icon/);
 });
 
-test("booking cards open booking details without replacing existing contact and completion actions", () => {
-  assert.match(receptionPage, /onDetailsRequest\(stay\)/);
+test("actionable today booking cards start completion while details remain secondary or fallback", () => {
+  assert.match(receptionPage, /const completed = type === "arrival"[\s\S]*stay\.checkOut\.guestLeft \|\| stay\.checkOut\.roomReleased/);
+  assert.match(receptionPage, /const canStartCompletion = isToday && canComplete && !completed/);
+  assert.match(receptionPage, /if \(canStartCompletion\) \{[\s\S]*onCompletionRequest\(stay, type\);[\s\S]*return;[\s\S]*\}[\s\S]*onDetailsRequest\(stay\);/);
+  assert.match(receptionPage, />\s*Details\s*<\/button>/);
+  assert.match(receptionPage, /event\.stopPropagation\(\);\s*onDetailsRequest\(stay\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onContactRequest\(contact\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onRequest\(stay, type\)/);
 });

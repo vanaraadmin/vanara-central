@@ -1,6 +1,7 @@
 .messages-page {
   display: grid;
   gap: var(--vc-space-5);
+  color: var(--vc-text-cream-strong);
 }
 
 .messages-layout {
@@ -15,6 +16,13 @@
   align-content: start;
   gap: var(--vc-space-4);
   padding: var(--vc-space-4);
+  border-color: rgba(244, 237, 223, 0.16);
+  background:
+    linear-gradient(145deg, rgba(244, 237, 223, 0.09), rgba(244, 237, 223, 0.025) 44%, rgba(9, 31, 22, 0.14)),
+    rgba(5, 24, 17, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(0, 0, 0, 0.26);
 }
 
 .messages-inbox {
@@ -27,6 +35,14 @@
   gap: var(--vc-space-4);
   min-height: min(70dvh, 720px);
   padding: var(--vc-space-4);
+  border-color: rgba(244, 237, 223, 0.18);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(244, 237, 223, 0.11), transparent 34%),
+    linear-gradient(150deg, rgba(244, 237, 223, 0.08), rgba(244, 237, 223, 0.025) 42%, rgba(7, 28, 20, 0.22)),
+    rgba(4, 22, 16, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 28px 78px rgba(0, 0, 0, 0.3);
 }
 
 .messages-selection-empty {
@@ -115,6 +131,7 @@
   line-height: 1;
   text-transform: uppercase;
   padding: var(--vc-space-2) 0;
+  background: rgba(5, 24, 17, 0.72);
   backdrop-filter: blur(18px);
 }
 
@@ -169,8 +186,8 @@
   border-radius: 22px;
   color: inherit;
   background:
-    linear-gradient(135deg, rgba(250, 247, 238, 0.08), rgba(250, 247, 238, 0.025)),
-    rgba(9, 31, 22, 0.32);
+    linear-gradient(135deg, rgba(250, 247, 238, 0.075), rgba(250, 247, 238, 0.018)),
+    rgba(6, 25, 18, 0.54);
   cursor: pointer;
   font: inherit;
   text-align: left;

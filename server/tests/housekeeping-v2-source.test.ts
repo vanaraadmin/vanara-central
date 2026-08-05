@@ -236,7 +236,9 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.match(taskCard, /const isWaterTask = card\.taskType === "WATER_REFILL"/);
   assert.match(taskCard, /housekeeping-v2-task-row--water/);
   assert.match(taskCard, /isWaterTask \? <WaterDeliveryControl action=\{action\} card=\{card\} \/> : null/);
-  assert.match(taskCard, /<button[\s\S]*className="housekeeping-v2-task-row__toggle"/);
+  assert.match(taskCard, /!\s*isWaterTask \? \(/);
+  assert.match(taskCard, /className="housekeeping-v2-task-row__toggle"/);
+  assert.match(taskCard, /!\s*isWaterTask && expanded && \(/);
   assert.match(deliveryControl, /disabled=\{disabled\}/);
   assert.match(deliveryControl, /action\.isPending \|\| delivered \|\| !card\.capabilities\.canComplete/);
   assert.match(deliveryControl, /onClick=\{\(\) => completeWaterRefill\(action, card\)\}/);
@@ -246,6 +248,8 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.match(page, /void queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
   assert.match(page, /This task changed\. The list is refreshing\./);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{/);
+  assert.match(css, /\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) minmax\(112px, auto\) auto;/);
+  assert.match(css, /@media \(max-width: 420px\)[\s\S]*\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*36px minmax\(0, 1fr\);/);
   assert.match(css, /\.housekeeping-v2-water-delivery\s*\{[\s\S]*min-height:\s*44px;/);
   assert.match(css, /\.housekeeping-v2-water-delivery\.is-delivered/);
   assert.doesNotMatch(taskCard, /<button[\s\S]*<button[\s\S]*<\/button>[\s\S]*<\/button>/);

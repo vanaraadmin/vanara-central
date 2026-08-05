@@ -343,15 +343,38 @@ function StayCard({
 }) {
   const nationality = formatNationalityText(stay.nationality);
   const contact = receptionStayContact(stay);
+  const completed = type === "arrival"
+    ? stay.checkIn.guestArrived
+    : stay.checkOut.guestLeft || stay.checkOut.roomReleased;
+  const canStartCompletion = isToday && canComplete && !completed;
 
   return (
-    <article className={`reception-card reception-card--${type} reception-booking-row`} onClick={() => onDetailsRequest(stay)}>
+    <article
+      className={`reception-card reception-card--${type} reception-booking-row`}
+      onClick={() => {
+        if (canStartCompletion) {
+          onCompletionRequest(stay, type);
+          return;
+        }
+        onDetailsRequest(stay);
+      }}
+    >
       <div className="reception-card__top">
         <div className="reception-room-chip">
           <RoomIcon />
           <span>{stay.roomName}</span>
         </div>
         <div className="reception-card__quick-actions">
+          <button
+            className="vc-secondary-action"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDetailsRequest(stay);
+            }}
+            type="button"
+          >
+            Details
+          </button>
           {stay.roomId && (
             <Link
               className="reception-report-issue vc-secondary-action"

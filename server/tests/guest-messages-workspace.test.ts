@@ -457,4 +457,6 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
   assert.match(css, /\.messages-skeleton__line/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /scrollbar-width:\s*thin/);
+  assert.match(css, /\.messages-inbox,[\s\S]*\.messages-context,[\s\S]*\.messages-selection-empty\s*\{[\s\S]*rgba\(5, 24, 17, 0\.72\)/);
+  assert.match(css, /\.messages-conversation\s*\{[\s\S]*rgba\(4, 22, 16, 0\.78\)/);
 });

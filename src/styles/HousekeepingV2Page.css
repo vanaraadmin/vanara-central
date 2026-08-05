@@ -59,7 +59,7 @@
 }
 
 .housekeeping-v2-task-row--water {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(112px, auto) auto 18px;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(112px, auto) auto;
 }
 
 .housekeeping-v2-task-item.is-expanded .housekeeping-v2-task-row {
@@ -474,7 +474,7 @@
   }
 
   .housekeeping-v2-task-row--water {
-    grid-template-columns: 36px minmax(0, 1fr) 18px;
+    grid-template-columns: 36px minmax(0, 1fr);
   }
 
   .housekeeping-v2-task-row__state {

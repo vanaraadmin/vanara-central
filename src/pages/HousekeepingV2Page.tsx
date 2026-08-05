@@ -359,18 +359,20 @@ function TaskCard({
 
         {isWaterTask ? <WaterDeliveryControl action={action} card={card} /> : null}
 
-        <button
-          aria-expanded={expanded}
-          aria-label={`${expanded ? "Collapse" : "Open"} ${card.unitName} task`}
-          className="housekeeping-v2-task-row__toggle"
-          onClick={onToggle}
-          type="button"
-        >
-          <ChevronDownIcon />
-        </button>
+        {!isWaterTask ? (
+          <button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Open"} ${card.unitName} task`}
+            className="housekeeping-v2-task-row__toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <ChevronDownIcon />
+          </button>
+        ) : null}
       </div>
 
-      {expanded && (
+      {!isWaterTask && expanded && (
         <div className="housekeeping-v2-task-expanded">
           <VanaraGlassSheet className="housekeeping-v2-task-sheet">
             <header className="vc-sheet-identity housekeeping-v2-task-identity">
