@@ -242,7 +242,7 @@ async function markFailed(
   code: SocialPublishError["code"],
   message: string,
   now: string,
-  ids: { instagramPostId?: string | null; facebookPostId?: string | null; publishedImageObjectKey?: string | null } = {},
+  ids: { instagramPostId?: string | null; facebookPostId?: string | null; publishedImageObjectKey?: string | null; clearPublishedImageObjectKey?: boolean } = {},
 ): Promise<void> {
   await env.DB.prepare(`
     UPDATE social_post_queue
@@ -253,7 +253,7 @@ async function markFailed(
         failure_message = ?,
         instagram_post_id = COALESCE(?, instagram_post_id),
         facebook_post_id = COALESCE(?, facebook_post_id),
-        published_image_object_key = COALESCE(?, published_image_object_key)
+        published_image_object_key = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, published_image_object_key) END
     WHERE social_post_id = ?
   `).bind(
     now,
@@ -262,6 +262,7 @@ async function markFailed(
     message.slice(0, 240),
     ids.instagramPostId ?? null,
     ids.facebookPostId ?? null,
+    ids.clearPublishedImageObjectKey ? 1 : 0,
     ids.publishedImageObjectKey ?? null,
     socialPostId,
   ).run();
@@ -340,7 +341,7 @@ export async function getSocialPublishAsset(env: Pick<SocialPublishBindings, "R2
   return new Response(object.body, {
     headers: {
       "content-type": "image/jpeg",
-      "cache-control": "public, max-age=300",
+      "cache-control": "no-store, max-age=0",
       "x-content-type-options": "nosniff",
     },
   });
@@ -412,10 +413,10 @@ export async function publishSocialPost(
   } catch (error) {
     await env.R2_STORAGE.delete(publicKey).catch(() => undefined);
     if (error instanceof SocialPublishError) {
-      await markFailed(env, leased.social_post_id, error.code, error.message, now, { instagramPostId, facebookPostId, publishedImageObjectKey: publicKey });
+      await markFailed(env, leased.social_post_id, error.code, error.message, now, { instagramPostId, facebookPostId, clearPublishedImageObjectKey: true });
       return { published: false, cleaned: false, facebookPostId, instagramPostId };
     }
-    await markFailed(env, leased.social_post_id, "meta_facebook_publish_failed", "Meta publish failed.", now, { instagramPostId, facebookPostId, publishedImageObjectKey: publicKey });
+    await markFailed(env, leased.social_post_id, "meta_facebook_publish_failed", "Meta publish failed.", now, { instagramPostId, facebookPostId, clearPublishedImageObjectKey: true });
     return { published: false, cleaned: false, facebookPostId, instagramPostId };
   }
 

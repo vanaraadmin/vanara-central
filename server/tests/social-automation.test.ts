@@ -353,8 +353,8 @@ class FakeSocialDB {
     }
     if (sql.includes("SET status = 'FAILED'")) {
       const isCaptionFailure = sql.includes("caption_openai_response_id");
-      const isPublishFailure = sql.includes("published_image_object_key = COALESCE");
-      const row = this.rows.find((item) => item.social_post_id === Number(params[isPublishFailure ? 7 : isCaptionFailure ? 13 : 20]));
+      const isPublishFailure = sql.includes("published_image_object_key = CASE WHEN");
+      const row = this.rows.find((item) => item.social_post_id === Number(params[isPublishFailure ? 8 : isCaptionFailure ? 13 : 20]));
       if (!row) return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "FAILED";
       row.failed_at = String(params[0]);
@@ -364,7 +364,8 @@ class FakeSocialDB {
       if (isPublishFailure) {
         if (params[4]) row.instagram_post_id = String(params[4]);
         if (params[5]) row.facebook_post_id = String(params[5]);
-        if (params[6]) row.published_image_object_key = String(params[6]);
+        if (params[6] === 1) row.published_image_object_key = null;
+        else if (params[7]) row.published_image_object_key = String(params[7]);
         return { meta: { changes: 1, last_row_id: 0 } };
       }
       if (isCaptionFailure) {
@@ -1164,6 +1165,7 @@ test("social publish serves only temporary public publish assets", async () => {
 
   assert.equal(allowed.status, 200);
   assert.equal(allowed.headers.get("content-type"), "image/jpeg");
+  assert.equal(allowed.headers.get("cache-control"), "no-store, max-age=0");
   assert.equal(blocked.status, 404);
 });
 
@@ -1187,6 +1189,7 @@ test("social publish failure keeps private images, removes public temp copy, and
   assert.equal(saved?.status, "FAILED");
   assert.equal(saved?.failure_code, "meta_facebook_publish_failed");
   assert.equal(saved?.instagram_post_id, "ig-post-1");
+  assert.equal(saved?.published_image_object_key, null);
   assert.equal(r2.objects.has(row.original_object_key), true);
   assert.equal(r2.objects.has(row.processed_object_key!), true);
   assert.equal([...r2.objects.keys()].some((key) => key.startsWith(`${SOCIAL_PUBLIC_PUBLISH_PREFIX}/`)), false);
@@ -1517,6 +1520,10 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(publishService, /social_publish_config_missing/);
   assert.match(publishService, /getSocialPublishAsset/);
   assert.match(publishService, /startsWith\(`\$\{SOCIAL_PUBLIC_PUBLISH_PREFIX\}\//);
+  assert.match(publishService, /"cache-control": "no-store, max-age=0"/);
+  assert.doesNotMatch(publishService, /max-age=300/);
+  assert.match(publishService, /clearPublishedImageObjectKey: true/);
+  assert.doesNotMatch(publishService, /error\.code, error\.message, now, \{ instagramPostId, facebookPostId, publishedImageObjectKey: publicKey \}/);
   assert.doesNotMatch(publishService, /OPENAI_RESPONSES_URL|OPENAI_API_KEY|input_image|image_generation|Cloudinary|google-drive|Google Drive|APP_SECRET/i);
   assert.doesNotMatch(publishService, /access_token/);
   assert.match(authTypes, /"social-automation"/);
