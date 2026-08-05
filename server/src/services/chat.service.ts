@@ -29,6 +29,7 @@ interface ChatConversationRow {
   last_message_author_id?: string | null;
   private_title?: string | null;
   private_username?: string | null;
+  private_avatar_photo_url?: string | null;
   unread_count?: number | null;
   mention_count?: number | null;
 }
@@ -43,6 +44,7 @@ interface ChatMessageRow {
   body_language: ChatLanguage;
   translated_body: string | null;
   translated_language: ChatLanguage | null;
+  author_profile_photo_url?: string | null;
   created_at: string;
 }
 
@@ -82,6 +84,7 @@ export interface ChatConversation {
   unreadCount: number;
   mentionCount: number;
   avatarLabel: string;
+  avatarPhotoUrl: string | null;
 }
 
 export interface ChatMessage {
@@ -91,6 +94,7 @@ export interface ChatMessage {
     id: string;
     displayName: string;
     role: string;
+    profilePhotoUrl: string | null;
   };
   body: string;
   bodyLanguage: ChatLanguage;
@@ -211,6 +215,7 @@ function mapConversation(row: ChatConversationRow): ChatConversation {
     unreadCount: row.unread_count ?? 0,
     mentionCount: row.mention_count ?? 0,
     avatarLabel: avatarLabel(title),
+    avatarPhotoUrl: kind === "PRIVATE" ? row.private_avatar_photo_url ?? null : null,
   };
 }
 
@@ -222,6 +227,7 @@ function mapMessage(row: ChatMessageRow): ChatMessage {
       id: row.author_id,
       displayName: row.author_display_name,
       role: row.author_role,
+      profilePhotoUrl: row.author_profile_photo_url ?? null,
     },
     body: row.body,
     bodyLanguage: row.body_language,
@@ -422,12 +428,21 @@ export async function listChatConversations(env: ChatBindings, user: CurrentChat
           AND cp.user_id <> ?
         ORDER BY cp.username ASC
         LIMIT 1
-      ) AS private_username
+      ) AS private_username,
+      (
+        SELECT u.profile_photo_url
+        FROM chat_conversation_participants cp
+        LEFT JOIN users u ON u.user_id = cp.user_id
+        WHERE cp.conversation_id = c.conversation_id
+          AND cp.user_id <> ?
+        ORDER BY cp.display_name ASC
+        LIMIT 1
+      ) AS private_avatar_photo_url
     FROM chat_conversation_participants p
     INNER JOIN chat_conversations c ON c.conversation_id = p.conversation_id
     WHERE p.user_id = ?
     ORDER BY COALESCE(last_message_at, c.updated_at) DESC, c.conversation_kind ASC, c.title ASC
-  `).bind(user.id, user.id, user.id, user.id, user.id).all<ChatConversationRow>();
+  `).bind(user.id, user.id, user.id, user.id, user.id, user.id).all<ChatConversationRow>();
 
   return (rows.results ?? []).map(mapConversation);
 }
@@ -441,10 +456,13 @@ export async function getChatConversation(env: ChatBindings, conversationId: str
 export async function listChatMessages(env: ChatBindings, conversationId: string, user: CurrentChatUser): Promise<ChatMessage[]> {
   await requireParticipant(env, conversationId, user);
   const rows = await env.DB.prepare(`
-    SELECT *
-    FROM chat_messages
-    WHERE conversation_id = ?
-    ORDER BY created_at ASC, message_id ASC
+    SELECT
+      m.*,
+      u.profile_photo_url AS author_profile_photo_url
+    FROM chat_messages m
+    LEFT JOIN users u ON u.user_id = m.author_id
+    WHERE m.conversation_id = ?
+    ORDER BY m.created_at ASC, m.message_id ASC
     LIMIT 200
   `).bind(conversationId).all<ChatMessageRow>();
 

@@ -29,20 +29,48 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
   const workspaceShell = readFileSync(new URL("../../src/components/WorkspaceShell.tsx", import.meta.url), "utf8");
   const chatPage = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
+  const appRouter = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
   const chatService = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
   const messagesPage = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
 
-  assert.match(floatingTeamChat, /to="\/chat"/);
+  assert.match(floatingTeamChat, /TeamChatSurface/);
+  assert.match(floatingTeamChat, /staff-chat-overlay/);
+  assert.doesNotMatch(floatingTeamChat, /Team chat is ready|Open chat|<Link/);
   assert.match(floatingTeamChat, /user\.data\.views\.includes\("staff"\)/);
   assert.match(floatingTeamChat, /module === "chat" && permission\.canAccess/);
   assert.match(floatingTeamChat, /loadChatUnreadSummary/);
   assert.match(chatService, /\/api\/chat\/conversations/);
   assert.match(chatService, /\/api\/chat\/private/);
   assert.match(chatService, /\/api\/chat\/summary/);
+  assert.match(appRouter, /<Route path="chat" element=\{<ChatPage \/>\}/);
+  assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\}/);
   assert.match(workspaceShell, /vc-floating-ui-suppressed/);
   assert.match(floatingTeamChatCss, /:root\.vc-floating-ui-suppressed \.staff-chat/);
-  assert.doesNotMatch(floatingTeamChat + chatPage + chatService, /messages\.service|MessagesPage|\/api\/messages|\/sync\/messages|guest-messages/i);
+  assert.doesNotMatch(floatingTeamChat + chatPage + teamChatSurface + chatService, /messages\.service|MessagesPage|\/api\/messages|\/sync\/messages|guest-messages/i);
   assert.match(messagesPage, /loadGuestMessageInbox/);
+});
+
+test("floating chat bubble opens direct app overlay with drag-down close", () => {
+  const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
+  const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
+
+  assert.match(floatingTeamChat, /className="staff-chat-overlay"/);
+  assert.match(floatingTeamChat, /role="dialog"/);
+  assert.match(floatingTeamChat, /aria-modal="true"/);
+  assert.match(floatingTeamChat, /className="staff-chat-overlay__grab-zone"/);
+  assert.match(floatingTeamChat, /onPointerDown=\{handleDragStart\}/);
+  assert.match(floatingTeamChat, /onPointerMove=\{handleDragMove\}/);
+  assert.match(floatingTeamChat, /onPointerUp=\{handleDragEnd\}/);
+  assert.match(floatingTeamChat, /setPointerCapture/);
+  assert.match(floatingTeamChat, /dragOffset > 92/);
+  assert.match(floatingTeamChat, /window\.addEventListener\("keydown", closeOnEscape\)/);
+  assert.match(floatingTeamChat, /\{!isOpen && \(/);
+  assert.match(floatingTeamChat, /<TeamChatSurface mode="overlay" \/>/);
+  assert.doesNotMatch(floatingTeamChat, /to="\/chat"|Team chat is ready|Open chat/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-overlay__sheet\s*\{[^}]*top:\s*calc\(env\(safe-area-inset-top\) \+ 18px\)/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-overlay__grab-zone\s*\{[^}]*min-height:\s*58px/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-overlay \.chat-app\s*\{[^}]*height:\s*100%/);
 });
 
 test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => {
@@ -84,6 +112,9 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(service, /WHERE p\.user_id = \?/);
   assert.match(service, /openPrivateChat\(env: ChatBindings, user: CurrentChatUser, targetUserId: string\)/);
   assert.match(service, /INSERT OR IGNORE INTO chat_conversation_participants/);
+  assert.match(service, /private_avatar_photo_url/);
+  assert.match(service, /avatarPhotoUrl: kind === "PRIVATE" \? row\.private_avatar_photo_url \?\? null : null/);
+  assert.match(service, /u\.profile_photo_url AS author_profile_photo_url/);
   assert.doesNotMatch(service, /isOwner|Owner access|requireOwner/i);
   assert.match(server, /const user = await chatMember\(c\)/);
   assert.match(server, /openPrivateChat\(c\.env, user, targetUserId\)/);
@@ -91,7 +122,7 @@ test("chat service enforces participant privacy and no owner private bypass", ()
 });
 
 test("chat page renders LINE-like conversation list and private picker without corporate cards", () => {
-  const page = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/ChatPage.css", import.meta.url), "utf8");
 
   assert.match(page, /ConversationRow/);
@@ -100,17 +131,22 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(page, /unreadCount/);
   assert.match(page, /mentionCount/);
   assert.match(page, /Vanara Group Chat/);
+  assert.match(page, /vanaraLogo/);
+  assert.match(page, /variant=\{conversation\.kind === "GROUP" \? "group" : "user"\}/);
+  assert.match(page, /photoUrl=\{conversation\.avatarPhotoUrl\}/);
+  assert.match(page, /photoUrl=\{message\.author\.profilePhotoUrl\}/);
   assert.match(page, /openPrivateChat/);
   assert.match(page, /markChatConversationRead/);
   assert.doesNotMatch(page, /ContextCard|Operational context|Open context/);
   assert.match(css, /\.chat-list-row/);
   assert.match(css, /\.chat-avatar/);
+  assert.match(css, /\.chat-avatar--group/);
   assert.match(css, /\.chat-thread-message\.is-outgoing/);
   assert.match(css, /\.chat-list-row__badge/);
 });
 
 test("chat thread and composer follow LINE-like message patterns without voice or guest-message coupling", () => {
-  const page = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/ChatPage.css", import.meta.url), "utf8");
   const service = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
 

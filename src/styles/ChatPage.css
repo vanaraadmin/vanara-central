@@ -110,6 +110,18 @@
   object-fit: cover;
 }
 
+.chat-avatar--group {
+  padding: 7px;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.42), transparent 32%),
+    linear-gradient(145deg, #f9f4e8, #dfead4);
+}
+
+.chat-avatar--group img {
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(15, 61, 45, 0.18));
+}
+
 .chat-list-row__main {
   display: grid;
   min-width: 0;

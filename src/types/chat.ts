@@ -21,6 +21,7 @@ export interface ChatConversation {
   unreadCount: number;
   mentionCount: number;
   avatarLabel: string;
+  avatarPhotoUrl: string | null;
 }
 
 export interface ChatMessage {
@@ -30,6 +31,7 @@ export interface ChatMessage {
     id: string;
     displayName: string;
     role: string;
+    profilePhotoUrl: string | null;
   };
   body: string;
   bodyLanguage: ChatLanguage;

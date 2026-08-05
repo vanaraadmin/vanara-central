@@ -63,7 +63,9 @@ test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Messages, Che
 
 test("Internal Chat is a persistent bubble and not a Staff Home workspace card", () => {
   assert.match(appLayout, /<FloatingTeamChat \/>/);
-  assert.match(floatingTeamChat, /to="\/chat"/);
+  assert.match(floatingTeamChat, /TeamChatSurface/);
+  assert.match(floatingTeamChat, /staff-chat-overlay/);
+  assert.doesNotMatch(floatingTeamChat, /Team chat is ready|Open chat|to="\/chat"/);
   assert.match(floatingTeamChat, /user\.data\.views\.includes\("staff"\)/);
   assert.match(floatingTeamChat, /module === "chat" && permission\.canAccess/);
   assert.doesNotMatch(staffPage, /id:\s*"chat"|chat:\s*chatIcon|"chat",/);
