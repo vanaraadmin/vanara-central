@@ -171,7 +171,7 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
   const roomRowCss = sourceBlockBetween(css, ".room-row {", ".rooms-home__item:last-child .room-row");
 
   assert.match(css, /\.room-row/);
-  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+minmax\(132px,\s*auto\)\s+18px/);
+  assert.match(css, /grid-template-columns:\s*40px\s+minmax\(0,\s*1fr\)\s+minmax\(0,\s*360px\)\s+18px/);
   assert.match(css, /min-height:\s*96px/);
   assert.match(css, /padding:\s*17px 18px/);
   assert.match(css, /\.room-row__name[\s\S]*font-size:\s*1\.125rem/);
@@ -181,8 +181,11 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
   assert.match(css, /\.room-signals__secondary/);
   assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*flex-wrap:\s*wrap/);
   assert.match(css, /\.room-signals__primary,\s*\n\.room-signals__secondary[\s\S]*white-space:\s*normal/);
+  assert.match(css, /\.room-signal\s*\{[\s\S]*white-space:\s*normal/);
+  assert.match(css, /\.room-terminal-state__label\s*\{[\s\S]*white-space:\s*normal/);
   assert.doesNotMatch(css, /\.room-signals__secondary \.room-signal:not\(:first-of-type\)[\s\S]*display:\s*none/);
   assert.doesNotMatch(css, /\.room-signal\s*\{[^}]*text-overflow:\s*ellipsis/);
+  assert.doesNotMatch(css, /\.room-terminal-state__label\s*\{[^}]*text-overflow:\s*ellipsis/);
   assert.match(roomRowCss, /box-shadow:\s*none/);
   assert.doesNotMatch(roomCompactSignals, /operational-status-pill/);
 });

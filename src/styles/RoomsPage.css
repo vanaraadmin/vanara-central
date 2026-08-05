@@ -66,7 +66,7 @@
   width: 100%;
   min-height: 96px;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) minmax(132px, auto) 18px;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 360px) 18px;
   align-items: start;
   column-gap: 14px;
   padding: 17px 18px;
@@ -164,8 +164,8 @@
 .room-signals {
   align-self: center;
   justify-self: end;
-  width: fit-content;
-  max-width: min(42vw, 280px);
+  width: min(58vw, 360px);
+  max-width: 100%;
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -206,9 +206,12 @@
 }
 
 .room-signal {
+  max-width: 100%;
   min-width: 0;
   overflow: visible;
+  overflow-wrap: normal;
   text-overflow: clip;
+  white-space: normal;
 }
 
 .room-signals__primary .room-signal--information {
@@ -229,7 +232,8 @@
 
 .room-terminal-state {
   justify-self: end;
-  max-width: min(42vw, 280px);
+  width: min(58vw, 360px);
+  max-width: 100%;
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -237,16 +241,16 @@
 }
 
 .room-terminal-state__label {
-  overflow: hidden;
+  overflow: visible;
   color: rgba(244, 237, 223, 0.84);
   font-family: var(--vc-font-sans);
   font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .room-terminal-state__label--critical {
@@ -258,14 +262,14 @@
 }
 
 .room-terminal-state__detail {
-  overflow: hidden;
+  overflow: visible;
   color: rgba(235, 230, 215, 0.72);
   font-family: var(--vc-font-sans);
   font-size: 0.76rem;
   font-weight: var(--vc-weight-medium);
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .room-row__chevron {
@@ -889,7 +893,7 @@ button.room-domain-card__primary-action {
 
 @media (max-width: 420px) {
   .room-row {
-    grid-template-columns: 32px minmax(0, 1fr) minmax(116px, auto) 16px;
+    grid-template-columns: 32px minmax(0, 1fr) minmax(0, 52vw) 16px;
     gap: 10px;
     padding: 13px 14px;
   }
@@ -909,7 +913,11 @@ button.room-domain-card__primary-action {
   }
 
   .room-signals {
-    max-width: 52vw;
+    width: 52vw;
+  }
+
+  .room-terminal-state {
+    width: 52vw;
   }
 }
 
