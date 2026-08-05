@@ -9,6 +9,8 @@
   "vars": {
     "BEDS24_BASE_URL": "https://api.beds24.com/v2",
     "PASSPORT_RETENTION_DAYS": "45",
+    "META_GRAPH_API_VERSION": "v25.0",
+    "SOCIAL_PUBLIC_BASE_URL": "https://vanara-central.administrator-5b7.workers.dev",
     "VANARA_DATABASE_ENVIRONMENT": "production",
     "VANARA_DATABASE_NAME": "vanara-central",
     "VANARA_DATABASE_ID": "1f0c6fce-8a47-442a-8158-97708aefe6b1"
@@ -38,6 +40,7 @@
       "*/5 * * * *",
       "0 20 * * *",
       "30 23 * * *",
+      "0 0 * * *",
       "17 20 * * *",
       "15 3 1 * *"
     ]

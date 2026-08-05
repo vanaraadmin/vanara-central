@@ -72,3 +72,16 @@ export interface PrepareSocialCaptionResponse {
   data?: PrepareSocialCaptionResult;
   error?: string;
 }
+
+export interface PublishSocialPostResult {
+  published: boolean;
+  cleaned: boolean;
+  facebookPostId: string | null;
+  instagramPostId: string | null;
+}
+
+export interface PublishSocialPostResponse {
+  success: boolean;
+  data?: PublishSocialPostResult;
+  error?: string;
+}

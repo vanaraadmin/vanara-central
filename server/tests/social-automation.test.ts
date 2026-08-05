@@ -25,6 +25,14 @@ import {
   prepareSocialCaption,
   SOCIAL_CAPTION_CRON,
 } from "../src/services/social-caption.service.ts";
+import {
+  getSocialPublishAsset,
+  publishNextSocialPost,
+  publishSocialPost,
+  SOCIAL_PUBLIC_PUBLISH_PREFIX,
+  SOCIAL_PUBLISH_CRON,
+  socialPublishAssetTokenFromKey,
+} from "../src/services/social-publish.service.ts";
 
 type PermissionRow = { module_key: ModuleKey; can_access: number; can_edit: number };
 type SocialRow = {
@@ -59,6 +67,9 @@ type SocialRow = {
   analysis_json: string | null;
   caption_json: string | null;
   caption_style_fingerprint: string | null;
+  published_image_object_key: string | null;
+  facebook_post_id: string | null;
+  instagram_post_id: string | null;
   source_metadata_json: string | null;
 };
 
@@ -103,6 +114,7 @@ class FakeSocialDB {
     failInsert?: boolean;
     failImageReadyUpdate?: boolean;
     failCaptionReadyUpdate?: boolean;
+    failDeleteRow?: boolean;
   } = {}) {}
 
   prepare(sql: string) { return new FakeSocialStmt(this, sql); }
@@ -141,6 +153,9 @@ class FakeSocialDB {
       analysis_json: overrides.analysis_json ?? null,
       caption_json: overrides.caption_json ?? null,
       caption_style_fingerprint: overrides.caption_style_fingerprint ?? null,
+      published_image_object_key: overrides.published_image_object_key ?? null,
+      facebook_post_id: overrides.facebook_post_id ?? null,
+      instagram_post_id: overrides.instagram_post_id ?? null,
       source_metadata_json: overrides.source_metadata_json ?? null,
     };
     this.nextId = Math.max(this.nextId, row.social_post_id + 1);
@@ -215,6 +230,23 @@ class FakeSocialDB {
       row.failure_message = null;
       return { ...row } as T;
     }
+    if (sql.includes("UPDATE social_post_queue") && sql.includes("SET status = 'POSTING'") && sql.includes("RETURNING *")) {
+      const targetId = params.length >= 3 ? Number(params[2]) : null;
+      const candidates = this.rows
+        .filter((row) => row.status === "READY_TO_POST"
+          && row.processed_object_key
+          && row.caption_json
+          && (targetId === null || row.social_post_id === targetId))
+        .sort((left, right) => left.queued_at.localeCompare(right.queued_at) || left.social_post_id - right.social_post_id);
+      const row = candidates[0];
+      if (!row) return null;
+      row.status = "POSTING";
+      row.processing_started_at = row.processing_started_at ?? String(params[0]);
+      row.updated_at = String(params[1]);
+      row.failure_code = null;
+      row.failure_message = null;
+      return { ...row } as T;
+    }
     if (sql.includes("SELECT s.session_id")) {
       if (this.options.authenticated === false) return null;
       return {
@@ -268,6 +300,9 @@ class FakeSocialDB {
         analysis_json: null,
         caption_json: null,
         caption_style_fingerprint: null,
+        published_image_object_key: null,
+        facebook_post_id: null,
+        instagram_post_id: null,
         source_metadata_json: null,
       });
       this.nextId += 1;
@@ -318,13 +353,20 @@ class FakeSocialDB {
     }
     if (sql.includes("SET status = 'FAILED'")) {
       const isCaptionFailure = sql.includes("caption_openai_response_id");
-      const row = this.rows.find((item) => item.social_post_id === Number(params[isCaptionFailure ? 13 : 20]));
+      const isPublishFailure = sql.includes("published_image_object_key = COALESCE");
+      const row = this.rows.find((item) => item.social_post_id === Number(params[isPublishFailure ? 7 : isCaptionFailure ? 13 : 20]));
       if (!row) return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "FAILED";
       row.failed_at = String(params[0]);
       row.updated_at = String(params[1]);
       row.failure_code = String(params[2]);
       row.failure_message = String(params[3]);
+      if (isPublishFailure) {
+        if (params[4]) row.instagram_post_id = String(params[4]);
+        if (params[5]) row.facebook_post_id = String(params[5]);
+        if (params[6]) row.published_image_object_key = String(params[6]);
+        return { meta: { changes: 1, last_row_id: 0 } };
+      }
       if (isCaptionFailure) {
         if (params[5] !== null) row.openai_request_count = 2;
         row.openai_input_tokens += Number(params[6]);
@@ -342,6 +384,34 @@ class FakeSocialDB {
       }
       return { meta: { changes: 1, last_row_id: 0 } };
     }
+    if (sql.includes("SET published_image_object_key = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.published_image_object_key = String(params[0]);
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET instagram_post_id = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_post_id = String(params[0]);
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET facebook_post_id = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.facebook_post_id = String(params[0]);
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("DELETE FROM social_post_queue")) {
+      if (this.options.failDeleteRow) return { meta: { changes: 0, last_row_id: 0 } };
+      const index = this.rows.findIndex((item) => item.social_post_id === Number(params[0]));
+      if (index < 0) return { meta: { changes: 0, last_row_id: 0 } };
+      this.rows.splice(index, 1);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     return { meta: { changes: 0, last_row_id: 0 } };
   }
 }
@@ -349,6 +419,7 @@ class FakeSocialDB {
 class FakeR2Storage {
   objects = new Map<string, { body: ArrayBuffer; contentType: string | undefined }>();
   deleted: string[] = [];
+  failDeleteKeys = new Set<string>();
 
   async put(key: string, body: ArrayBuffer | ArrayBufferView | string | null | ReadableStream, options?: R2PutOptions) {
     let buffer: ArrayBuffer;
@@ -369,11 +440,18 @@ class FakeR2Storage {
     const object = this.objects.get(key);
     if (!object) return null;
     return {
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(object.body));
+          controller.close();
+        },
+      }),
       arrayBuffer: async () => object.body,
     } as R2ObjectBody;
   }
 
   async delete(key: string) {
+    if (this.failDeleteKeys.has(key)) throw new Error("R2 delete failed");
     this.objects.delete(key);
     this.deleted.push(key);
   }
@@ -390,6 +468,11 @@ function env(db = new FakeSocialDB(), r2 = new FakeR2Storage(), fetcher?: typeof
     WARAPORN_KB_ARCHIVE: r2 as unknown as R2Bucket,
     OPENAI_API_KEY: "test-openai",
     SOCIAL_VECTOR_STORE_ID: "vs_social_test",
+    META_PAGE_ACCESS_TOKEN: "test-meta-token",
+    META_FACEBOOK_PAGE_ID: "fb-page-1",
+    META_INSTAGRAM_BUSINESS_ACCOUNT_ID: "ig-business-1",
+    META_GRAPH_API_VERSION: "v25.0",
+    SOCIAL_PUBLIC_BASE_URL: "https://vanara.test",
     fetcher,
   };
 }
@@ -548,6 +631,42 @@ function successfulCaptionFetcher(calls: Array<{ input: string; init: RequestIni
         total_tokens: 140,
       },
     }), { status: 200, headers: { "x-request-id": "req_social_caption_1" } });
+  }) as typeof fetch;
+}
+
+function socialCaptionJson(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify(captionPayload(overrides));
+}
+
+function readyToPostSeed(overrides: Partial<SocialRow> = {}): Partial<SocialRow> {
+  return {
+    status: "READY_TO_POST",
+    original_object_key: "social/uploads/2026-08-05/original.jpg",
+    processed_object_key: "social/processed/2026-08-05/processed.jpg",
+    caption_json: socialCaptionJson(),
+    openai_request_count: 2,
+    ...overrides,
+  };
+}
+
+function successfulMetaFetcher(calls: Array<{ input: string; init: RequestInit; body: string }>, failures: Partial<Record<"igCreate" | "igPublish" | "fb", boolean>> = {}): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = String(init?.body ?? "");
+    calls.push({ input: url, init: init ?? {}, body });
+    if (url.includes("/media_publish")) {
+      if (failures.igPublish) return new Response(JSON.stringify({ error: { message: "IG publish failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ id: "ig-post-1" }), { status: 200 });
+    }
+    if (url.includes("/media")) {
+      if (failures.igCreate) return new Response(JSON.stringify({ error: { message: "IG create failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ id: "ig-container-1" }), { status: 200 });
+    }
+    if (url.includes("/photos")) {
+      if (failures.fb) return new Response(JSON.stringify({ error: { message: "FB publish failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ post_id: "fb-post-1" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "Unexpected Meta endpoint" } }), { status: 404 });
   }) as typeof fetch;
 }
 
@@ -973,6 +1092,149 @@ test("social caption preparation saves repetitive warnings without a second Open
   assert.match(saved.repetitive_warning_reason ?? "", /similar to recent captions/);
 });
 
+test("social publish config missing performs no cron mutation or Meta call", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 50 }));
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const data = env(db, r2, successfulMetaFetcher(calls));
+  delete data.SOCIAL_PUBLIC_BASE_URL;
+
+  const result = await publishNextSocialPost(data);
+
+  assert.equal(result.published, false);
+  assert.equal(calls.length, 0);
+  assert.equal(db.rows[0]?.status, "READY_TO_POST");
+});
+
+test("social publish processes one ready post, publishes IG and FB, then deletes DB row and R2 images", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const older = db.seed(readyToPostSeed({
+    social_post_id: 60,
+    queued_at: "2026-08-05T00:00:00.000Z",
+    original_object_key: "social/uploads/2026-08-05/older.jpg",
+    processed_object_key: "social/processed/2026-08-05/older.jpg",
+  }));
+  const newer = db.seed(readyToPostSeed({
+    social_post_id: 61,
+    queued_at: "2026-08-05T01:00:00.000Z",
+    original_object_key: "social/uploads/2026-08-05/newer.jpg",
+    processed_object_key: "social/processed/2026-08-05/newer.jpg",
+  }));
+  r2.objects.set(older.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(older.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(newer.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(newer.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const result = await publishNextSocialPost(env(db, r2, successfulMetaFetcher(calls)), { now: "2026-08-06T00:00:00.000Z" });
+
+  assert.equal(result.published, true);
+  assert.equal(result.cleaned, true);
+  assert.equal(result.instagramPostId, "ig-post-1");
+  assert.equal(result.facebookPostId, "fb-post-1");
+  assert.equal(calls.length, 3);
+  assert.match(calls[0]!.input, /graph\.facebook\.com\/v25\.0\/ig-business-1\/media$/);
+  assert.match(calls[1]!.input, /graph\.facebook\.com\/v25\.0\/ig-business-1\/media_publish$/);
+  assert.match(calls[2]!.input, /graph\.facebook\.com\/v25\.0\/fb-page-1\/photos$/);
+  assert.equal(calls.every((call) => call.init.headers && String((call.init.headers as Record<string, string>).authorization).startsWith("Bearer ")), true);
+  assert.match(calls[0]!.body, /image_url=/);
+  assert.match(calls[0]!.body, /caption=/);
+  assert.match(calls[0]!.body, /Wood\+grain/);
+  assert.match(calls[2]!.body, /caption=/);
+  assert.match(calls[2]!.body, /Wood\+grain/);
+  assert.equal(db.rows.some((row) => row.social_post_id === older.social_post_id), false);
+  assert.equal(db.rows.find((row) => row.social_post_id === newer.social_post_id)?.status, "READY_TO_POST");
+  assert.equal(r2.objects.has(older.original_object_key), false);
+  assert.equal(r2.objects.has(older.processed_object_key!), false);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith(`${SOCIAL_PUBLIC_PUBLISH_PREFIX}/`)), false);
+});
+
+test("social publish serves only temporary public publish assets", async () => {
+  const r2 = new FakeR2Storage();
+  const allowedKey = "social/public-publish/2026-08-06/photo.jpg";
+  const blockedKey = "social/processed/2026-08-06/photo.jpg";
+  r2.objects.set(allowedKey, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(blockedKey, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+
+  const allowed = await getSocialPublishAsset(env(new FakeSocialDB(), r2), `${socialPublishAssetTokenFromKey(allowedKey)}.jpg`);
+  const blocked = await getSocialPublishAsset(env(new FakeSocialDB(), r2), `${socialPublishAssetTokenFromKey(blockedKey)}.jpg`);
+
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.headers.get("content-type"), "image/jpeg");
+  assert.equal(blocked.status, 404);
+});
+
+test("social publish failure keeps private images, removes public temp copy, and preserves partial provider ids", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 70 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const result = await publishSocialPost(env(db, r2, successfulMetaFetcher(calls, { fb: true })), row.social_post_id, {
+    now: "2026-08-06T00:00:00.000Z",
+    baseUrl: "https://manual.vanara.test",
+  });
+
+  assert.equal(result.published, false);
+  assert.equal(result.instagramPostId, "ig-post-1");
+  assert.equal(result.facebookPostId, null);
+  const saved = db.rows.find((item) => item.social_post_id === row.social_post_id);
+  assert.equal(saved?.status, "FAILED");
+  assert.equal(saved?.failure_code, "meta_facebook_publish_failed");
+  assert.equal(saved?.instagram_post_id, "ig-post-1");
+  assert.equal(r2.objects.has(row.original_object_key), true);
+  assert.equal(r2.objects.has(row.processed_object_key!), true);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith(`${SOCIAL_PUBLIC_PUBLISH_PREFIX}/`)), false);
+});
+
+test("social publish marks cleanup failure and retains DB row when R2 deletion fails", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 80 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.failDeleteKeys.add(row.original_object_key);
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const result = await publishSocialPost(env(db, r2, successfulMetaFetcher(calls)), row.social_post_id, {
+    now: "2026-08-06T00:00:00.000Z",
+  });
+
+  assert.equal(result.published, true);
+  assert.equal(result.cleaned, false);
+  const saved = db.rows.find((item) => item.social_post_id === row.social_post_id);
+  assert.equal(saved?.status, "FAILED");
+  assert.equal(saved?.failure_code, "publish_cleanup_failed");
+  assert.equal(db.rows.length, 1);
+});
+
+test("social publish blocks invalid captions and non-ready items without Meta calls", async () => {
+  const invalidDb = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const invalid = invalidDb.seed(readyToPostSeed({ social_post_id: 90, caption_json: "{invalid" }));
+  r2.objects.set(invalid.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const invalidCalls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const invalidResult = await publishSocialPost(env(invalidDb, r2, successfulMetaFetcher(invalidCalls)), invalid.social_post_id);
+  assert.equal(invalidResult.published, false);
+  assert.equal(invalidDb.rows.find((row) => row.social_post_id === invalid.social_post_id)?.status, "FAILED");
+  assert.equal(invalidDb.rows.find((row) => row.social_post_id === invalid.social_post_id)?.failure_code, "caption_json_invalid");
+  assert.equal(invalidCalls.length, 0);
+
+  const failedDb = new FakeSocialDB();
+  const failed = failedDb.seed(readyToPostSeed({ social_post_id: 91, status: "FAILED" }));
+  const failedCalls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  await assert.rejects(
+    () => publishSocialPost(env(failedDb, r2, successfulMetaFetcher(failedCalls)), failed.social_post_id),
+    /not eligible/,
+  );
+  assert.equal(failedCalls.length, 0);
+});
+
 test("social automation endpoints are owner-only and use the dedicated social permission", async () => {
   const unauthenticated = await request("/api/social/overview", { method: "GET" }, env(new FakeSocialDB({ authenticated: false })));
   assert.equal(unauthenticated.status, 401);
@@ -999,6 +1261,8 @@ test("social automation endpoints are owner-only and use the dedicated social pe
   assert.equal(readonlyPrepare.status, 403);
   const readonlyCaption = await request("/api/social/posts/1/prepare-caption", { method: "POST", headers: { cookie: "vanara_session=x" } }, env(readonlyOwner));
   assert.equal(readonlyCaption.status, 403);
+  const readonlyPublish = await request("/api/social/posts/1/publish", { method: "POST", headers: { cookie: "vanara_session=x" } }, env(readonlyOwner));
+  assert.equal(readonlyPublish.status, 403);
 
   const db = new FakeSocialDB();
   const r2 = new FakeR2Storage();
@@ -1058,12 +1322,36 @@ test("social caption preparation endpoint requires owner edit permission and pre
   assert.equal(calls.length, 1);
 });
 
-test("social automation foundation is additive, staged, and avoids external publishing calls", () => {
+test("social publish endpoint requires owner edit permission and publishes a ready post without OpenAI", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 1 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const response = await request(
+    "/api/social/posts/1/publish",
+    { method: "POST", headers: { cookie: "vanara_session=x" } },
+    env(db, r2, successfulMetaFetcher(calls)),
+  );
+
+  assert.equal(response.status, 200);
+  const body = await json(response);
+  assert.equal(body.success, true);
+  assert.equal((body.data as { published: boolean; cleaned: boolean }).published, true);
+  assert.equal((body.data as { published: boolean; cleaned: boolean }).cleaned, true);
+  assert.equal(calls.length, 3);
+  assert.equal(db.rows.length, 0);
+});
+
+test("social automation foundation is additive, staged, and isolates Meta publishing", () => {
   const migration = readFileSync(new URL("../migrations/0035_social_automation_foundation.sql", import.meta.url), "utf8");
   const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/social-automation.service.ts", import.meta.url), "utf8");
   const imageService = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
   const captionService = readFileSync(new URL("../src/services/social-caption.service.ts", import.meta.url), "utf8");
+  const publishService = readFileSync(new URL("../src/services/social-publish.service.ts", import.meta.url), "utf8");
   const imagePrompt = readFileSync(new URL("../src/assets/prompts/social-image-prepare-v1.prompt.ts", import.meta.url), "utf8");
   const captionPrompt = readFileSync(new URL("../src/assets/prompts/social-caption-v1.prompt.ts", import.meta.url), "utf8");
   const wrangler = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
@@ -1090,12 +1378,17 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(server, /app\.post\("\/api\/social\/posts"/);
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/prepare-image"/);
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/prepare-caption"/);
+  assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/publish"/);
+  assert.match(server, /app\.get\("\/api\/social\/publish-assets\/:assetId"/);
   assert.match(server, /controller\.cron === SOCIAL_IMAGE_PREPARE_CRON/);
   assert.match(server, /controller\.cron === SOCIAL_CAPTION_CRON/);
+  assert.match(server, /controller\.cron === SOCIAL_PUBLISH_CRON/);
   assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "0 20 * * *");
   assert.equal(SOCIAL_CAPTION_CRON, "30 23 * * *");
+  assert.equal(SOCIAL_PUBLISH_CRON, "0 0 * * *");
   assert.match(wrangler, /"0 20 \* \* \*"/);
   assert.match(wrangler, /"30 23 \* \* \*"/);
+  assert.match(wrangler, /"0 0 \* \* \*"/);
   assert.match(service, /const SOCIAL_UPLOAD_PREFIX = "social\/uploads"/);
   assert.match(service, /"image\/jpeg": "jpg"/);
   assert.match(service, /"image\/png": "png"/);
@@ -1109,7 +1402,7 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(page, /<SummaryStrip summary=\{summary\} \/>/);
   assert.match(page, /Queued/);
   assert.match(page, /Image ready/);
-  assert.match(page, /Posted/);
+  assert.match(page, /Ready to post/);
   assert.match(page, /Failed/);
   assert.match(page, /JPG, PNG or WebP\. HEIC is not supported\./);
   assert.match(page, /Next Social Photo/);
@@ -1119,9 +1412,11 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(page, /bodyClassName="social-automation-page" wide/);
   assert.match(page, /Prepare Image/);
   assert.match(page, /Prepare Caption/);
+  assert.match(page, /Publish/);
   assert.match(page, /title=\{item\.originalFileName\}/);
   assert.match(page, /aria-label=\{`Prepare image for \$\{item\.originalFileName\}`\}/);
   assert.match(page, /aria-label=\{`Prepare caption for \$\{item\.originalFileName\}`\}/);
+  assert.match(page, /aria-label=\{`Publish \$\{item\.originalFileName\}`\}/);
   assert.match(pageCss, /\.social-automation-page\s*\{[\s\S]*grid-template-columns: minmax\(0, 0\.92fr\) minmax\(0, 1\.08fr\)/);
   assert.match(pageCss, /@media \(max-width: 980px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(pageCss, /\.social-upload,\s*\n\.social-history\s*\{[\s\S]*padding: clamp\(16px, 3vw, var\(--vc-space-5\)\)/);
@@ -1145,6 +1440,7 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(frontendService, /\/api\/social\/posts/);
   assert.match(frontendService, /\/api\/social\/posts\/\$\{postId\}\/prepare-image/);
   assert.match(frontendService, /\/api\/social\/posts\/\$\{postId\}\/prepare-caption/);
+  assert.match(frontendService, /\/api\/social\/posts\/\$\{postId\}\/publish/);
   assert.match(imageService, /max_tool_calls: SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS/);
   assert.match(imageService, /SOCIAL_IMAGE_PREP_MODEL/);
   assert.match(imageService, /SOCIAL_CAPTION_MODEL/);
@@ -1204,6 +1500,25 @@ test("social automation foundation is additive, staged, and avoids external publ
   assert.match(captionPrompt, /Do not reuse the same opening syntax/);
   assert.match(captionPrompt, /The prepared analysis_json is the source of visual truth/);
   assert.match(captionPrompt, /Do not request, inspect, or require the image file/);
+  assert.match(publishService, /META_PAGE_ACCESS_TOKEN/);
+  assert.match(publishService, /META_FACEBOOK_PAGE_ID/);
+  assert.match(publishService, /META_INSTAGRAM_BUSINESS_ACCOUNT_ID/);
+  assert.match(publishService, /META_GRAPH_API_VERSION/);
+  assert.match(publishService, /SOCIAL_PUBLIC_BASE_URL/);
+  assert.match(publishService, /DEFAULT_META_GRAPH_API_VERSION = "v25\.0"/);
+  assert.match(publishService, /SOCIAL_PUBLIC_PUBLISH_PREFIX = "social\/public-publish"/);
+  assert.match(publishService, /authorization: `Bearer \$\{token\}`/);
+  assert.match(publishService, /graph\.facebook\.com/);
+  assert.match(publishService, /\/media_publish/);
+  assert.match(publishService, /\/photos/);
+  assert.match(publishService, /DELETE FROM social_post_queue WHERE social_post_id = \?/);
+  assert.match(publishService, /env\.R2_STORAGE\.delete\(leased\.original_object_key\)|cleanupKeys/);
+  assert.match(publishService, /publish_cleanup_failed/);
+  assert.match(publishService, /social_publish_config_missing/);
+  assert.match(publishService, /getSocialPublishAsset/);
+  assert.match(publishService, /startsWith\(`\$\{SOCIAL_PUBLIC_PUBLISH_PREFIX\}\//);
+  assert.doesNotMatch(publishService, /OPENAI_RESPONSES_URL|OPENAI_API_KEY|input_image|image_generation|Cloudinary|google-drive|Google Drive|APP_SECRET/i);
+  assert.doesNotMatch(publishService, /access_token/);
   assert.match(authTypes, /"social-automation"/);
   assert.match(currentUserService, /"social-automation"/);
   assert.match(router, /path="social-automation"/);

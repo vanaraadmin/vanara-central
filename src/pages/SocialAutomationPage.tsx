@@ -4,7 +4,7 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
-import { loadSocialAutomationOverview, prepareSocialCaption, prepareSocialImage, uploadSocialPhoto } from "../services/social.service";
+import { loadSocialAutomationOverview, prepareSocialCaption, prepareSocialImage, publishSocialPost, uploadSocialPhoto } from "../services/social.service";
 import type { SocialPostQueueItem, SocialPostStatus } from "../types/social";
 import "../styles/SocialAutomationPage.css";
 
@@ -47,7 +47,7 @@ function SummaryStrip({ summary }: { summary?: Partial<Record<SocialPostStatus, 
   const stats = [
     { label: "Queued", value: summary?.QUEUED ?? 0, tone: "queued" },
     { label: "Image ready", value: summary?.IMAGE_READY ?? 0, tone: "ready" },
-    { label: "Posted", value: summary?.POSTED ?? 0, tone: "posted" },
+    { label: "Ready to post", value: summary?.READY_TO_POST ?? 0, tone: "posted" },
     { label: "Failed", value: summary?.FAILED ?? 0, tone: "failed" },
   ];
 
@@ -67,17 +67,22 @@ function QueueItem({
   item,
   onPrepare,
   onPrepareCaption,
+  onPublish,
   preparing,
   captioning,
+  publishing,
 }: {
   item: SocialPostQueueItem;
   onPrepare(item: SocialPostQueueItem): void;
   onPrepareCaption(item: SocialPostQueueItem): void;
+  onPublish(item: SocialPostQueueItem): void;
   preparing: boolean;
   captioning: boolean;
+  publishing: boolean;
 }) {
   const canPrepare = item.status === "QUEUED";
   const canPrepareCaption = item.status === "IMAGE_READY";
+  const canPublish = item.status === "READY_TO_POST";
   return (
     <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
       <span className="social-queue-item__thumb" aria-hidden="true" />
@@ -114,6 +119,17 @@ function QueueItem({
             type="button"
           >
             {captioning ? "Captioning" : "Prepare Caption"}
+          </button>
+        ) : null}
+        {canPublish ? (
+          <button
+            aria-label={`Publish ${item.originalFileName}`}
+            className="social-queue-item__prepare"
+            disabled={publishing}
+            onClick={() => onPublish(item)}
+            type="button"
+          >
+            {publishing ? "Publishing" : "Publish"}
           </button>
         ) : null}
       </span>
@@ -173,6 +189,14 @@ export default function SocialAutomationPage() {
     },
   });
 
+  const publish = useMutation({
+    mutationFn: (item: SocialPostQueueItem) => publishSocialPost(item.id),
+    onSuccess: async () => {
+      setNotice("Published and cleaned");
+      await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
+    },
+  });
+
   const canUpload = Boolean(selectedFile && !upload.isPending);
   const latest = overview.data?.latest ?? [];
   const summary = overview.data?.summary;
@@ -227,7 +251,7 @@ export default function SocialAutomationPage() {
         <VanaraSectionHeader
           eyebrow="Status"
           headingId="social-history-title"
-          meta={summary ? `${summary.POSTED} posted` : "Latest"}
+          meta={summary ? `${summary.READY_TO_POST} ready` : "Latest"}
           title="Publishing Queue"
         />
         <SummaryStrip summary={summary} />
@@ -249,14 +273,17 @@ export default function SocialAutomationPage() {
                 key={item.id}
                 onPrepare={(queuedItem) => prepare.mutate(queuedItem)}
                 onPrepareCaption={(readyItem) => caption.mutate(readyItem)}
+                onPublish={(readyItem) => publish.mutate(readyItem)}
                 preparing={prepare.isPending && prepare.variables?.id === item.id}
                 captioning={caption.isPending && caption.variables?.id === item.id}
+                publishing={publish.isPending && publish.variables?.id === item.id}
               />
             ))}
           </ul>
         ) : null}
         {prepare.isError ? <p className="social-upload__error">{prepare.error instanceof Error ? prepare.error.message : "Image could not be prepared"}</p> : null}
         {caption.isError ? <p className="social-upload__error">{caption.error instanceof Error ? caption.error.message : "Caption could not be prepared"}</p> : null}
+        {publish.isError ? <p className="social-upload__error">{publish.error instanceof Error ? publish.error.message : "Post could not be published"}</p> : null}
       </VanaraGlassRegion>
     </WorkspaceShell>
   );

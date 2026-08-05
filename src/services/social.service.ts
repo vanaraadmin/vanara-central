@@ -1,5 +1,5 @@
 import { ApiError, requestJson } from "./api.client";
-import type { PrepareSocialCaptionResponse, PrepareSocialCaptionResult, PrepareSocialImageResponse, PrepareSocialImageResult, SocialAutomationOverview, SocialAutomationOverviewResponse, SocialPostQueueItem, SocialPostQueueItemResponse } from "../types/social";
+import type { PrepareSocialCaptionResponse, PrepareSocialCaptionResult, PrepareSocialImageResponse, PrepareSocialImageResult, PublishSocialPostResponse, PublishSocialPostResult, SocialAutomationOverview, SocialAutomationOverviewResponse, SocialPostQueueItem, SocialPostQueueItemResponse } from "../types/social";
 
 export async function loadSocialAutomationOverview(signal?: AbortSignal): Promise<SocialAutomationOverview> {
   const response = await requestJson<SocialAutomationOverviewResponse>("/api/social/overview", signal);
@@ -96,6 +96,35 @@ export async function prepareSocialCaption(postId: number, signal?: AbortSignal)
   const parsed = body as PrepareSocialCaptionResponse;
   if (!parsed.success || !parsed.data) {
     throw new Error(parsed.error ?? "Caption could not be prepared");
+  }
+  return parsed.data;
+}
+
+export async function publishSocialPost(postId: number, signal?: AbortSignal): Promise<PublishSocialPostResult> {
+  const response = await fetch(`/api/social/posts/${postId}/publish`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+    signal,
+  });
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError("The server returned an invalid response", response.status);
+  }
+
+  if (!response.ok) {
+    const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+      ? body.error
+      : "Post could not be published";
+    throw new ApiError(message, response.status);
+  }
+
+  const parsed = body as PublishSocialPostResponse;
+  if (!parsed.success || !parsed.data) {
+    throw new Error(parsed.error ?? "Post could not be published");
   }
   return parsed.data;
 }

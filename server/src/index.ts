@@ -27,6 +27,7 @@ import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcure
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
 import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, SOCIAL_CAPTION_CRON, type SocialCaptionBindings } from "./services/social-caption.service.js";
 import { prepareSocialImage, SocialImagePreparationError, SOCIAL_IMAGE_PREPARE_CRON, type SocialImagePreparationBindings } from "./services/social-image-preparation.service.js";
+import { getSocialPublishAsset, publishNextSocialPost, publishSocialPost, SocialPublishError, SOCIAL_PUBLISH_CRON, type SocialPublishBindings } from "./services/social-publish.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
 import { classifyPassportImageWithTiming, decidePassportClassification, PassportClassificationError, type PassportClassificationBindings } from "./services/passport-classification.service.js";
 import { isPassportLivePreflightReady, PassportLivePreflightError, runPassportLivePreflight, type PassportLivePreflightBindings } from "./services/passport-live-preflight.service.js";
@@ -66,7 +67,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, MaintenanceBindings, ProcurementBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   WARAPORN_VECTOR_STORE_ID?: string;
@@ -1597,6 +1598,20 @@ app.post("/api/social/posts/:id/prepare-caption", async (c) => {
   }
 });
 
+app.post("/api/social/posts/:id/publish", async (c) => {
+  try {
+    await socialOwner(c, "edit");
+    const postId = positiveIntegerParam(c.req.param("id"), "social post id");
+    const origin = new URL(c.req.url).origin;
+    return c.json({ success: true, data: await publishSocialPost(c.env, postId, { baseUrl: origin }) });
+  } catch (error) {
+    const status = error instanceof SocialPublishError ? error.status : protectedErrorStatus(error);
+    return c.json({ success: false, error: errorMessage(error) }, status);
+  }
+});
+
+app.get("/api/social/publish-assets/:assetId", async (c) => getSocialPublishAsset(c.env, c.req.param("assetId")));
+
 app.get("/api/maintenance/tickets", async (c) => {
   try {
     await authenticated(c, "maintenance", "access");
@@ -2216,6 +2231,10 @@ app.notFound((c) => c.json({ success: false, error: "Not found" }, 404));
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    if (controller.cron === SOCIAL_PUBLISH_CRON) {
+      ctx.waitUntil(publishNextSocialPost(env).then(() => undefined));
+      return;
+    }
     if (controller.cron === SOCIAL_CAPTION_CRON) {
       ctx.waitUntil(prepareNextSocialCaption(env).then(() => undefined));
       return;
