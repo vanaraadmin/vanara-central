@@ -507,8 +507,13 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(page, /max=\{eventDateBounds\.max\}/);
   assert.match(page, /worker\.fullName/);
   assert.match(css, /max-width: 100%/);
+  assert.match(css, /max-inline-size: 100%/);
+  assert.match(css, /min-inline-size: 0/);
   assert.match(css, /input\[type="month"\]/);
   assert.match(css, /input\[type="date"\]/);
+  assert.match(css, /\.payroll-event-form > \*/);
+  assert.doesNotMatch(css, /input\[type="month"\][\s\S]{0,160}(?:min-width:\s*(?:2[4-9]|[3-9]\d)rem|width:\s*(?:2[4-9]|[3-9]\d)rem)/);
+  assert.doesNotMatch(css, /input\[type="date"\][\s\S]{0,160}(?:min-width:\s*(?:2[4-9]|[3-9]\d)rem|width:\s*(?:2[4-9]|[3-9]\d)rem)/);
   assert.match(css, /overflow-wrap: anywhere/);
   assert.match(service, /Payroll adjustments/);
   assert.match(service, /ไม่ได้ใช้สำหรับเดือนเงินเดือนนี้/);

@@ -6,6 +6,12 @@
   padding-bottom: calc(104px + var(--vc-safe-bottom));
 }
 
+.payroll-page *,
+.payroll-page *::before,
+.payroll-page *::after {
+  box-sizing: border-box;
+}
+
 .payroll-workers,
 .payroll-detail {
   display: grid;
@@ -18,8 +24,11 @@
 .payroll-field {
   display: grid;
   gap: 7px;
+  width: 100%;
+  inline-size: 100%;
   max-width: 100%;
   min-width: 0;
+  min-inline-size: 0;
   color: var(--vc-text-cream-muted);
   font-family: var(--vc-font-sans);
   font-size: 0.78rem;
@@ -32,8 +41,11 @@
 .payroll-field select,
 .payroll-field textarea {
   width: 100%;
+  inline-size: 100%;
   max-width: 100%;
+  max-inline-size: 100%;
   min-width: 0;
+  min-inline-size: 0;
   min-height: 44px;
   color: var(--workspace-ink);
   background: rgba(255, 253, 246, 0.94);
@@ -46,8 +58,11 @@
 
 .payroll-month input[type="month"],
 .payroll-field input[type="date"] {
+  display: block;
+  justify-self: stretch;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .payroll-field textarea {
@@ -222,6 +237,11 @@
   grid-template-columns: minmax(0, 1.2fr) minmax(120px, 0.65fr);
   gap: var(--vc-space-3);
   align-items: end;
+  min-width: 0;
+}
+
+.payroll-form-grid > *,
+.payroll-event-form > * {
   min-width: 0;
 }
 
