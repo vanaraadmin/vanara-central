@@ -239,7 +239,7 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
         ? { linenChangeCompleted: true }
         : { standardCleaningCompleted: true },
   ));
-  const regularFinishLabel = card.taskType === "TURNOVER" ? "Finish Turnover" : card.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning";
+  const regularFinishLabel = card.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning";
   const controls = [
     card.capabilities.canClaim ? (
       <button className="vc-primary-action" disabled={action.isPending} key="claim" onClick={() => action.mutate(claimHousekeepingTask(taskId, version))} type="button">Claim</button>

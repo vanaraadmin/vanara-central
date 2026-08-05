@@ -97,8 +97,9 @@ test("task detail uses intervention help and trust completion instead of detaile
   assert.match(roomService, /canEditChecklist: false/);
   assert.match(roomWorkspace, /Finish Cleaning/);
   assert.match(roomWorkspace, /Finish Full Cleaning/);
+  assert.doesNotMatch(roomWorkspace, /Finish Turnover/);
   assert.match(roomTaskActions, /task\.capabilities\.canComplete && task\.taskType === "ON_DEMAND_CLEANING"/);
-  assert.match(roomTaskActions, /task\.taskType === "TURNOVER" \? "Finish Turnover"/);
+  assert.doesNotMatch(roomTaskActions, /task\.taskType === "TURNOVER" \? "Finish Turnover"/);
   assert.doesNotMatch(roomTaskActions, /task\.taskType === "STANDARD_CLEANING"[\s\S]*Finish Full Cleaning/);
   assert.match(roomWorkspace, /if \(task\.taskType === "TURNOVER"\) return \[\]/);
   assert.doesNotMatch(roomWorkspace, /function Checklist|updateHousekeepingTaskChecklist|Complete checklist/);

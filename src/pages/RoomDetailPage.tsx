@@ -164,7 +164,6 @@ function executionChecklist(task: RoomHousekeepingTask): string[] {
 function primaryTaskActionLabel(task: RoomHousekeepingTask): string {
   if (task.taskType === "WATER_REFILL") return "Complete Water";
   if (task.capabilities.canStart) return "Start Cleaning";
-  if (task.taskType === "TURNOVER") return "Finish Turnover";
   return "Finish Cleaning";
 }
 
@@ -319,7 +318,7 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
   if (task.capabilities.canComplete) {
     return (
       <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "TURNOVER" ? "Finish Turnover" : task.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
       </div>
     );
   }

@@ -201,6 +201,7 @@ test("v2 page uses intervention wording and informational help instead of checkl
   assert.match(page, /Please also check room amenities before completion\./);
   assert.match(page, /Finish Cleaning/);
   assert.match(page, /Finish Full Cleaning/);
+  assert.doesNotMatch(page, /Finish Turnover/);
   assert.doesNotMatch(page, /card\.taskType === "STANDARD_CLEANING"[\s\S]*finish-full-cleaning/);
 });
 
