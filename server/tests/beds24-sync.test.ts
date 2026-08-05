@@ -31,6 +31,10 @@ function jsonResponse(status: number, payload: unknown, headers?: HeadersInit): 
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
+function requestPath(input: RequestInfo | URL): string {
+  return new URL(input instanceof Request ? input.url : String(input)).pathname;
+}
+
 test("country2 is normalized as booking country_code fallback", () => {
   const normalized = normalizeBookingFields({
     id: 10,
@@ -177,11 +181,16 @@ test("cancelled child booking does not fan out to siblings only because it share
 });
 
 test("temporary Beds24 errors retry with Retry-After and then succeed", async () => {
-  let calls = 0;
+  let dataCalls = 0;
+  let authCalls = 0;
   const sleeps: number[] = [];
-  const fetcher: typeof fetch = async () => {
-    calls += 1;
-    if (calls === 1) {
+  const fetcher: typeof fetch = async (input) => {
+    if (requestPath(input).endsWith("/authentication/token")) {
+      authCalls += 1;
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    dataCalls += 1;
+    if (dataCalls === 1) {
       return jsonResponse(429, { error: "rate limited" }, { "Retry-After": "1" });
     }
     return jsonResponse(200, { success: true, data: [] });
@@ -201,14 +210,18 @@ test("temporary Beds24 errors retry with Retry-After and then succeed", async ()
   );
 
   assert.equal(result.success, true);
-  assert.equal(calls, 2);
+  assert.equal(authCalls, 1);
+  assert.equal(dataCalls, 2);
   assert.deepEqual(sleeps, [1000]);
 });
 
 test("permanent Beds24 4xx errors are not retried", async () => {
-  let calls = 0;
-  const fetcher: typeof fetch = async () => {
-    calls += 1;
+  let dataCalls = 0;
+  const fetcher: typeof fetch = async (input) => {
+    if (requestPath(input).endsWith("/authentication/token")) {
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    dataCalls += 1;
     return jsonResponse(400, { error: "bad request" });
   };
 
@@ -220,7 +233,37 @@ test("permanent Beds24 4xx errors are not retried", async () => {
     }),
     (error: unknown) => error instanceof Beds24ApiError && error.status === 400,
   );
-  assert.equal(calls, 1);
+  assert.equal(dataCalls, 1);
+});
+
+test("Beds24 GET exchanges the long-life token before reading booking data", async () => {
+  const seen: Array<{ path: string; token: string | null; refreshToken: string | null }> = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    const path = requestPath(input);
+    const headers = new Headers(init?.headers);
+    seen.push({
+      path,
+      token: headers.get("token"),
+      refreshToken: headers.get("refreshToken"),
+    });
+    if (path.endsWith("/authentication/token")) {
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    return jsonResponse(200, { success: true, data: [{ id: 90999999 }] });
+  };
+
+  const result = await beds24Get<{ success: boolean; data: Array<{ id: number }> }>(
+    env,
+    "/bookings",
+    { modifiedFrom: "2026-08-05T00:00:00.000Z", includeGuests: true },
+    { fetcher, pauseAfterMs: 0 },
+  );
+
+  assert.equal(result.data[0]?.id, 90999999);
+  assert.deepEqual(seen, [
+    { path: "/v2/authentication/token", token: null, refreshToken: env.BEDS24_LONG_LIFE_TOKEN },
+    { path: "/v2/bookings", token: "current-access-token", refreshToken: null },
+  ]);
 });
 
 test("records_failed remains distinct from records_skipped", () => {
@@ -375,7 +418,12 @@ test("sanitized logs and Beds24 API errors do not expose secrets or response bod
   assert.equal(sanitized.includes(secret), false);
   assert.equal(sanitized.includes("[redacted]"), true);
 
-  const fetcher: typeof fetch = async () => jsonResponse(500, { error: secret });
+  const fetcher: typeof fetch = async (input) => {
+    if (requestPath(input).endsWith("/authentication/token")) {
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    return jsonResponse(500, { error: secret });
+  };
   await assert.rejects(
     beds24Get(env, "/bookings", undefined, {
       fetcher,

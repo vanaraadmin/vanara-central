@@ -208,7 +208,8 @@ export async function beds24Get<T>(
   for (const [key, value] of Object.entries(queryParams ?? {})) {
     url.searchParams.set(key, String(value));
   }
-  return requestJson<T>(env, url, "GET", undefined, options);
+  const accessToken = await getBeds24AccessToken(env, options);
+  return requestJson<T>({ ...env, BEDS24_LONG_LIFE_TOKEN: accessToken }, url, "GET", undefined, options);
 }
 
 export async function beds24GetAbsolute<T>(
@@ -221,7 +222,8 @@ export async function beds24GetAbsolute<T>(
   if (url.host !== allowedHost) {
     throw new Error(`Rejected Beds24 pagination host: ${url.host}`);
   }
-  return requestJson<T>(env, url, "GET", undefined, options);
+  const accessToken = await getBeds24AccessToken(env, options);
+  return requestJson<T>({ ...env, BEDS24_LONG_LIFE_TOKEN: accessToken }, url, "GET", undefined, options);
 }
 
 export async function beds24PostAbsolute<T>(

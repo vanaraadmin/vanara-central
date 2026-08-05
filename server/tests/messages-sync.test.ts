@@ -340,11 +340,18 @@ function jsonResponse(status: number, payload: unknown, headers?: HeadersInit): 
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
+function requestPath(input: RequestInfo | URL): string {
+  return new URL(input instanceof Request ? input.url : String(input)).pathname;
+}
+
 function messagesFetcher(messages: Beds24GuestMessage[]): { fetcher: typeof fetch; urls: string[] } {
   const urls: string[] = [];
   return {
     urls,
     fetcher: async (input) => {
+      if (requestPath(input).endsWith("/authentication/token")) {
+        return jsonResponse(200, { token: "current-access-token" });
+      }
       urls.push(String(input));
       return jsonResponse(200, { success: true, data: messages });
     },
@@ -485,10 +492,13 @@ test("duplicate provider messages are ignored by provider_message_id", async () 
 
 test("provider retry succeeds after a transient Beds24 failure", async () => {
   const db = new FakeMessagesDB();
-  let calls = 0;
-  const fetcher: typeof fetch = async () => {
-    calls += 1;
-    if (calls === 1) return jsonResponse(500, { error: "temporary" }, { "Retry-After": "0" });
+  let dataCalls = 0;
+  const fetcher: typeof fetch = async (input) => {
+    if (requestPath(input).endsWith("/authentication/token")) {
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    dataCalls += 1;
+    if (dataCalls === 1) return jsonResponse(500, { error: "temporary" }, { "Retry-After": "0" });
     return jsonResponse(200, { success: true, data: [guestMessage("msg-1", 9001)] });
   };
 
@@ -497,14 +507,19 @@ test("provider retry succeeds after a transient Beds24 failure", async () => {
     requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
   });
 
-  assert.equal(calls, 2);
+  assert.equal(dataCalls, 2);
   assert.equal(result.recordsWritten, 1);
   assert.equal(result.recordsUnlinked, 1);
 });
 
 test("provider failure records a failed sync run without writing messages", async () => {
   const db = new FakeMessagesDB();
-  const fetcher: typeof fetch = async () => jsonResponse(400, { error: "bad request" });
+  const fetcher: typeof fetch = async (input) => {
+    if (requestPath(input).endsWith("/authentication/token")) {
+      return jsonResponse(200, { token: "current-access-token" });
+    }
+    return jsonResponse(400, { error: "bad request" });
+  };
 
   await assert.rejects(
     syncMessages(env(db) as never, {
