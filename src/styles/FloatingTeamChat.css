@@ -177,11 +177,11 @@ body.vc-chat-overlay-open {
   position: fixed;
   top: var(--vc-chat-top-gap);
   right: 8px;
-  bottom: auto;
+  bottom: max(8px, env(safe-area-inset-bottom));
   left: 8px;
   display: grid;
   grid-template-rows: 58px minmax(0, 1fr);
-  height: calc(var(--vc-chat-viewport-height, 100dvh) - var(--vc-chat-top-gap) - max(8px, env(safe-area-inset-bottom)));
+  max-height: calc(100dvh - var(--vc-chat-top-gap) - max(8px, env(safe-area-inset-bottom)));
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.48);
   border-radius: 28px 28px 22px 22px;
@@ -294,9 +294,9 @@ body.vc-chat-overlay-open {
     --vc-chat-top-gap: max(28px, calc(env(safe-area-inset-top) + 18px));
     top: var(--vc-chat-top-gap);
     right: max(32px, calc((100vw - 1120px) / 2));
-    bottom: auto;
+    bottom: max(28px, env(safe-area-inset-bottom));
     left: max(32px, calc((100vw - 1120px) / 2));
-    height: calc(var(--vc-chat-viewport-height, 100dvh) - var(--vc-chat-top-gap) - max(28px, env(safe-area-inset-bottom)));
+    max-height: calc(100dvh - var(--vc-chat-top-gap) - max(28px, env(safe-area-inset-bottom)));
     grid-template-rows: 54px minmax(0, 1fr);
     border-radius: 32px;
   }

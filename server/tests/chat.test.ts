@@ -79,16 +79,21 @@ test("floating chat bubble opens direct app overlay with drag-down close", () =>
   assert.match(floatingTeamChat, /dragOffset > 92/);
   assert.match(floatingTeamChat, /window\.addEventListener\("keydown", closeOnEscape\)/);
   assert.match(floatingTeamChat, /vc-chat-overlay-open/);
-  assert.match(floatingTeamChat, /visualViewport/);
+  assert.match(floatingTeamChat, /overlayMobileView === "thread"/);
+  assert.match(floatingTeamChat, /setOverlayMobileView\("list"\)/);
+  assert.match(floatingTeamChat, /handleOverlayCloseIntent/);
   assert.match(floatingTeamChat, /body\.style\.position = "fixed"/);
   assert.match(floatingTeamChat, /\{!isOpen && \(/);
-  assert.match(floatingTeamChat, /<TeamChatSurface mode="overlay" \/>/);
+  assert.match(floatingTeamChat, /onMobileViewChange=\{setOverlayMobileView\}/);
+  assert.match(floatingTeamChat, /mobileView=\{overlayMobileView\}/);
+  assert.doesNotMatch(floatingTeamChat, /visualViewport|--vc-chat-viewport-height/);
   assert.doesNotMatch(floatingTeamChat, /to="\/chat"|Team chat is ready|Open chat/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay__sheet\s*\{[^}]*--vc-chat-top-gap:\s*calc\(env\(safe-area-inset-top\) \+ 18px\)[^}]*top:\s*var\(--vc-chat-top-gap\)/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-overlay__sheet\s*\{[^}]*bottom:\s*max\(8px, env\(safe-area-inset-bottom\)\)/);
+  assert.doesNotMatch(floatingTeamChatCss, /--vc-chat-viewport-height|visualViewport/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay__grab-zone\s*\{[^}]*min-height:\s*58px/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay \.chat-app\s*\{[^}]*height:\s*100%/);
   assert.match(floatingTeamChatCss, /:root\.vc-chat-overlay-open,\s*body\.vc-chat-overlay-open\s*\{[^}]*overflow:\s*hidden[^}]*overscroll-behavior:\s*none/);
-  assert.match(floatingTeamChatCss, /--vc-chat-viewport-height/);
 });
 
 test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => {
@@ -153,13 +158,21 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(page, /unreadCount/);
   assert.match(page, /mentionCount/);
   assert.match(page, /hasUnread/);
-  assert.match(page, /chat-app--mobile-\$\{mobileView\}/);
-  assert.match(page, /setMobileView\("thread"\)/);
-  assert.match(page, /onBack=\{\(\) => setMobileView\("list"\)\}/);
-  assert.match(page, /Back to chat list/);
+  assert.match(page, /chat-app--mobile-\$\{currentMobileView\}/);
+  assert.match(page, /onMobileViewChange\("thread"\)/);
+  assert.doesNotMatch(page, /Back to chat list|chat-thread__back|ChatToolIcon type="back"/);
   assert.match(page, />New Chat</);
+  assert.match(page, />New Group Chat</);
+  assert.match(page, /ChatToolIcon type="user"/);
+  assert.match(page, /ChatToolIcon type="group"/);
+  assert.match(page, /setPickerKind\("private"\)/);
+  assert.match(page, /setPickerKind\("group"\)/);
   assert.match(page, /openGroupChat/);
   assert.match(page, /Create Group/);
+  assert.match(page, /kind === "private"/);
+  assert.match(page, /kind === "group"/);
+  assert.match(page, /selectedUserIds\.length === 1/);
+  assert.doesNotMatch(page, />Private<|>Group<\/h3>|chat-picker__section|chat-picker__people/);
   assert.match(page, /Vanara Group Chat/);
   assert.match(page, /vanaraLogo/);
   assert.match(page, /conversation\.isMainGroup/);
@@ -176,7 +189,8 @@ test("chat page renders LINE-like conversation list and private picker without c
   assert.match(css, /\.chat-thread-message\.is-outgoing/);
   assert.match(css, /\.chat-list-row__badge/);
   assert.match(css, /\.chat-app--mobile-list \.chat-thread,\s*\.chat-app--mobile-thread \.chat-list\s*\{[^}]*display:\s*none/);
-  assert.match(css, /\.chat-thread__back/);
+  assert.match(css, /\.chat-list__actions/);
+  assert.doesNotMatch(css, /\.chat-thread__back|\.chat-tool-icon--back/);
 });
 
 test("chat thread and composer follow LINE-like message patterns without voice or guest-message coupling", () => {
@@ -199,6 +213,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
   assert.match(css, /\.chat-composer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.chat-composer__tools button,\s*\.chat-composer__send\s*\{[^}]*width:\s*46px[^}]*height:\s*46px/);
+  assert.match(css, /\.chat-tool-icon\s*\{[^}]*width:\s*26px[^}]*height:\s*26px/);
   assert.match(css, /\.chat-tool-icon--camera/);
   assert.match(css, /\.chat-tool-icon--gallery/);
   assert.match(css, /\.chat-tool-icon--sticker/);

@@ -20,6 +20,7 @@ function VanaraChatIcon() {
 
 export default function FloatingTeamChat() {
   const [isOpen, setIsOpen] = useState(false);
+  const [overlayMobileView, setOverlayMobileView] = useState<"list" | "thread">("list");
   const [dragOffset, setDragOffset] = useState(0);
   const dragStartYRef = useRef<number | null>(null);
   const user = useQuery({
@@ -52,14 +53,16 @@ export default function FloatingTeamChat() {
     const previousBodyWidth = body.style.width;
     const previousBodyOverflow = body.style.overflow;
 
-    const updateViewportHeight = () => {
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      root.style.setProperty("--vc-chat-viewport-height", `${viewportHeight}px`);
-    };
-
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        closeOverlay();
+        if (overlayMobileView === "thread") {
+          setOverlayMobileView("list");
+          return;
+        }
+        dragStartYRef.current = null;
+        setDragOffset(0);
+        setOverlayMobileView("list");
+        setIsOpen(false);
       }
     };
 
@@ -69,30 +72,33 @@ export default function FloatingTeamChat() {
     body.style.top = `-${scrollY}px`;
     body.style.width = "100%";
     body.style.overflow = "hidden";
-    updateViewportHeight();
     window.addEventListener("keydown", closeOnEscape);
-    window.visualViewport?.addEventListener("resize", updateViewportHeight);
-    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
 
     return () => {
       window.removeEventListener("keydown", closeOnEscape);
-      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
-      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
       root.classList.remove("vc-chat-overlay-open");
       body.classList.remove("vc-chat-overlay-open");
-      root.style.removeProperty("--vc-chat-viewport-height");
       body.style.position = previousBodyPosition;
       body.style.top = previousBodyTop;
       body.style.width = previousBodyWidth;
       body.style.overflow = previousBodyOverflow;
       window.scrollTo(0, scrollY);
     };
-  }, [isOpen]);
+  }, [isOpen, overlayMobileView]);
 
   function closeOverlay() {
     dragStartYRef.current = null;
     setDragOffset(0);
+    setOverlayMobileView("list");
     setIsOpen(false);
+  }
+
+  function handleOverlayCloseIntent() {
+    if (overlayMobileView === "thread") {
+      setOverlayMobileView("list");
+      return;
+    }
+    closeOverlay();
   }
 
   function handleDragStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -123,7 +129,7 @@ export default function FloatingTeamChat() {
           <button
             type="button"
             className="staff-chat-overlay__backdrop"
-            onClick={closeOverlay}
+            onClick={handleOverlayCloseIntent}
             aria-label="Close team chat"
           />
           <section
@@ -141,13 +147,17 @@ export default function FloatingTeamChat() {
               <button
                 type="button"
                 className="staff-chat-overlay__close"
-                onClick={closeOverlay}
+                onClick={handleOverlayCloseIntent}
                 aria-label="Close team chat"
               >
                 <span aria-hidden="true">×</span>
               </button>
             </div>
-            <TeamChatSurface mode="overlay" />
+            <TeamChatSurface
+              mode="overlay"
+              mobileView={overlayMobileView}
+              onMobileViewChange={setOverlayMobileView}
+            />
           </section>
         </div>
       )}

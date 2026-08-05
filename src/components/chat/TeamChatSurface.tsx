@@ -22,7 +22,9 @@ type TeamChatSurfaceMode = "route" | "overlay";
 interface TeamChatSurfaceProps {
   activeConversationId?: string;
   mode?: TeamChatSurfaceMode;
+  mobileView?: "list" | "thread";
   onActiveConversationChange?: (conversationId: string) => void;
+  onMobileViewChange?: (view: "list" | "thread") => void;
 }
 
 function inferLanguage(value: string): ChatLanguage {
@@ -78,7 +80,7 @@ function chatAvatarVariant(conversation: ChatConversation): "group" | "user" | "
   return conversation.kind === "GROUP" ? "group" : "user";
 }
 
-function ChatToolIcon({ type }: { type: "plus" | "camera" | "gallery" | "sticker" | "send" | "close" | "back" }) {
+function ChatToolIcon({ type }: { type: "plus" | "camera" | "gallery" | "sticker" | "send" | "close" | "user" | "group" }) {
   return <span className={`chat-tool-icon chat-tool-icon--${type}`} aria-hidden="true"><span /></span>;
 }
 
@@ -123,18 +125,21 @@ function ConversationRow({
 }
 
 function NewChatPicker({
+  kind,
   users,
   isLoading,
   onOpenPrivate,
   onOpenGroup,
   onClose,
 }: {
+  kind: "private" | "group";
   users: ChatUser[];
   isLoading: boolean;
   onOpenPrivate: (userId: string) => void;
   onOpenGroup: (payload: { title: string; participantIds: string[] }) => void;
   onClose: () => void;
 }) {
+  const [step, setStep] = useState<"people" | "group-details">("people");
   const [groupTitle, setGroupTitle] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
@@ -144,13 +149,23 @@ function NewChatPicker({
       : [...current, userId]);
   }
 
+  const selectedUsers = users.filter((user) => selectedUserIds.includes(user.id));
+  const canContinue = kind === "private" ? selectedUserIds.length === 1 : selectedUserIds.length >= 2;
   const canCreateGroup = groupTitle.trim().length >= 2 && selectedUserIds.length >= 2;
 
+  function handlePeopleNext() {
+    if (kind === "private" && selectedUserIds.length === 1) {
+      onOpenPrivate(selectedUserIds[0]);
+      return;
+    }
+    if (kind === "group" && selectedUserIds.length >= 2) setStep("group-details");
+  }
+
   return (
-    <div className="chat-picker" role="dialog" aria-modal="true" aria-label="New Chat">
+    <div className="chat-picker" role="dialog" aria-modal="true" aria-label={kind === "group" ? "New Group Chat" : "New Chat"}>
       <div className="chat-picker__sheet">
         <header>
-          <h2>New Chat</h2>
+          <h2>{kind === "group" && step === "group-details" ? "Group Details" : kind === "group" ? "New Group Chat" : "New Chat"}</h2>
           <button type="button" className="chat-picker__close" onClick={onClose} aria-label="Close">
             <ChatToolIcon type="close" />
           </button>
@@ -159,22 +174,43 @@ function NewChatPicker({
           {isLoading ? (
             <p>Loading team...</p>
           ) : users.length > 0 ? (
-            <>
-              <section className="chat-picker__section" aria-label="Private chat">
-                <h3>Private</h3>
-                {users.map((user) => (
-                  <button key={user.id} type="button" onClick={() => onOpenPrivate(user.id)}>
+            step === "people" ? (
+              <>
+                <div className="chat-picker__user-list" aria-label="Team members">
+                {users.map((user) => {
+                  const selected = selectedUserIds.includes(user.id);
+                  return (
+                  <button
+                    key={user.id}
+                    type="button"
+                    className={`chat-picker__user ${selected ? "is-selected" : ""}`}
+                    onClick={() => kind === "private" ? setSelectedUserIds([user.id]) : toggleUser(user.id)}
+                    aria-pressed={selected}
+                  >
                     <ConversationAvatar label={avatarLabel(user.displayName)} photoUrl={user.profilePhotoUrl} />
                     <span>
                       <strong>{user.displayName}</strong>
                       <small>@{user.username}</small>
                     </span>
+                    <span className="chat-picker__check" aria-hidden="true" />
                   </button>
-                ))}
-              </section>
-
-              <section className="chat-picker__section chat-picker__section--group" aria-label="Group chat">
-                <h3>Group</h3>
+                  );
+                })}
+                </div>
+                <button
+                  type="button"
+                  className="chat-picker__primary"
+                  disabled={!canContinue}
+                  onClick={handlePeopleNext}
+                >
+                  {kind === "private" ? "Start Chat" : "Next"}
+                </button>
+              </>
+            ) : (
+              <div className="chat-picker__group-details">
+                <div className="chat-picker__group-avatar" aria-hidden="true">
+                  {avatarLabel(groupTitle || "Group")}
+                </div>
                 <label className="chat-picker__group-name">
                   <span>Group name</span>
                   <input
@@ -182,35 +218,30 @@ function NewChatPicker({
                     onChange={(event) => setGroupTitle(event.target.value)}
                     maxLength={80}
                     placeholder="Chat Ristorante"
+                    autoFocus
                   />
                 </label>
-                <div className="chat-picker__people">
-                  {users.map((user) => (
-                    <button
-                      key={user.id}
-                      type="button"
-                      className={selectedUserIds.includes(user.id) ? "is-selected" : ""}
-                      onClick={() => toggleUser(user.id)}
-                      aria-pressed={selectedUserIds.includes(user.id)}
-                    >
+                <div className="chat-picker__selected-people" aria-label="Selected team members">
+                  {selectedUsers.map((user) => (
+                    <span key={user.id}>
                       <ConversationAvatar label={avatarLabel(user.displayName)} photoUrl={user.profilePhotoUrl} />
-                      <span>
-                        <strong>{user.displayName}</strong>
-                        <small>@{user.username}</small>
-                      </span>
-                    </button>
+                      <strong>{user.displayName}</strong>
+                    </span>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  className="chat-picker__create-group"
-                  disabled={!canCreateGroup}
-                  onClick={() => onOpenGroup({ title: groupTitle.trim(), participantIds: selectedUserIds })}
-                >
-                  Create Group
-                </button>
-              </section>
-            </>
+                <div className="chat-picker__actions">
+                  <button type="button" className="chat-picker__secondary" onClick={() => setStep("people")}>Back</button>
+                  <button
+                    type="button"
+                    className="chat-picker__primary"
+                    disabled={!canCreateGroup}
+                    onClick={() => onOpenGroup({ title: groupTitle.trim(), participantIds: selectedUserIds })}
+                  >
+                    Create Group
+                  </button>
+                </div>
+              </div>
+            )
           ) : (
             <p>No team members available.</p>
           )}
@@ -313,19 +344,14 @@ function ChatThread({
   conversation,
   messages,
   currentUserId,
-  onBack,
 }: {
   conversation: ChatConversation;
   messages: ChatMessage[];
   currentUserId: string;
-  onBack: () => void;
 }) {
   return (
     <section className="chat-thread" aria-label={`${conversation.title} conversation`}>
       <header className="chat-thread__header">
-        <button type="button" className="chat-thread__back" onClick={onBack} aria-label="Back to chat list">
-          <ChatToolIcon type="back" />
-        </button>
         <ConversationAvatar
           label={conversation.avatarLabel}
           photoUrl={conversation.avatarPhotoUrl}
@@ -358,11 +384,13 @@ function ChatThread({
 export default function TeamChatSurface({
   activeConversationId,
   mode = "route",
+  mobileView,
   onActiveConversationChange,
+  onMobileViewChange,
 }: TeamChatSurfaceProps) {
   const queryClient = useQueryClient();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [mobileView, setMobileView] = useState<"list" | "thread">(activeConversationId ? "thread" : "list");
+  const [pickerKind, setPickerKind] = useState<"private" | "group" | null>(null);
+  const [localMobileView, setLocalMobileView] = useState<"list" | "thread">(activeConversationId ? "thread" : "list");
   const [localActiveConversationId, setLocalActiveConversationId] = useState("");
 
   const currentUserQuery = useQuery({
@@ -376,13 +404,14 @@ export default function TeamChatSurface({
   const usersQuery = useQuery({
     queryKey: ["chat", "users"],
     queryFn: ({ signal }) => loadChatUsers(signal),
-    enabled: pickerOpen,
+    enabled: Boolean(pickerKind),
   });
 
   const conversations = useMemo(() => conversationsQuery.data ?? [], [conversationsQuery.data]);
   const fallbackConversationId = conversations[0]?.id ?? "";
   const selectedConversationId = activeConversationId ?? (localActiveConversationId || fallbackConversationId);
   const activeInList = conversations.some((conversation) => conversation.id === selectedConversationId);
+  const currentMobileView = mobileView ?? localMobileView;
 
   const conversationQuery = useQuery({
     queryKey: ["chat", "conversation", selectedConversationId],
@@ -397,7 +426,7 @@ export default function TeamChatSurface({
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),
     onSuccess: async (conversation) => {
-      setPickerOpen(false);
+      setPickerKind(null);
       await queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
       selectConversation(conversation.id);
     },
@@ -405,7 +434,7 @@ export default function TeamChatSurface({
   const openGroupMutation = useMutation({
     mutationFn: (payload: { title: string; participantIds: string[] }) => openGroupChat(payload),
     onSuccess: async (conversation) => {
-      setPickerOpen(false);
+      setPickerKind(null);
       await queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
       selectConversation(conversation.id);
     },
@@ -421,7 +450,11 @@ export default function TeamChatSurface({
   });
 
   function selectConversation(conversationId: string) {
-    setMobileView("thread");
+    if (onMobileViewChange) {
+      onMobileViewChange("thread");
+    } else {
+      setLocalMobileView("thread");
+    }
     if (onActiveConversationChange) {
       onActiveConversationChange(conversationId);
       return;
@@ -452,16 +485,22 @@ export default function TeamChatSurface({
 
   return (
     <>
-      <div className={`chat-app chat-app--${mode} chat-app--mobile-${mobileView}`} data-internal-chat="team">
+      <div className={`chat-app chat-app--${mode} chat-app--mobile-${currentMobileView}`} data-internal-chat="team">
         <aside className="chat-list" aria-label="Team conversations">
           <header className="chat-list__header">
             <div>
               <h1>Chat</h1>
             </div>
-            <button type="button" className="chat-list__new-chat" onClick={() => setPickerOpen(true)} aria-label="New Chat">
-              <ChatToolIcon type="plus" />
-              <span>New Chat</span>
-            </button>
+            <div className="chat-list__actions">
+              <button type="button" className="chat-list__new-chat" onClick={() => setPickerKind("private")} aria-label="New Chat">
+                <ChatToolIcon type="user" />
+                <span>New Chat</span>
+              </button>
+              <button type="button" className="chat-list__new-chat chat-list__new-chat--group" onClick={() => setPickerKind("group")} aria-label="New Group Chat">
+                <ChatToolIcon type="group" />
+                <span>New Group Chat</span>
+              </button>
+            </div>
           </header>
 
           <div className="chat-list__rows">
@@ -488,7 +527,6 @@ export default function TeamChatSurface({
             conversation={conversation}
             messages={messages}
             currentUserId={currentUserQuery.data?.id ?? ""}
-            onBack={() => setMobileView("list")}
           />
         ) : (
           <section className="chat-thread chat-thread--empty" aria-label="No conversation selected">
@@ -500,13 +538,14 @@ export default function TeamChatSurface({
         )}
       </div>
 
-      {pickerOpen && (
+      {pickerKind && (
         <NewChatPicker
+          kind={pickerKind}
           users={usersQuery.data ?? []}
           isLoading={usersQuery.isLoading}
           onOpenPrivate={(userId) => openPrivateMutation.mutate(userId)}
           onOpenGroup={(payload) => openGroupMutation.mutate(payload)}
-          onClose={() => setPickerOpen(false)}
+          onClose={() => setPickerKind(null)}
         />
       )}
     </>
