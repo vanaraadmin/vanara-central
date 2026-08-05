@@ -45,6 +45,20 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   assert.match(messagesPage, /loadGuestMessageInbox/);
 });
 
+test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => {
+  const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
+  const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
+
+  assert.doesNotMatch(floatingTeamChat, /staff-chat__orb-label|aria-hidden="true">Team</);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*border-radius:\s*19px/);
+  assert.doesNotMatch(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*border-radius:\s*50%/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*background:\s*linear-gradient\([^;]*#24805c[^;]*#176044[^;]*#0e3d2d/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb \.staff-chat-icon__bubble\s*\{[^}]*width:\s*48px[^}]*height:\s*34px/);
+  assert.match(floatingTeamChatCss, /\.staff-chat-icon__bubble\s*\{[^}]*background:\s*#fffdf6/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb \.staff-chat-icon__bubble span\s*\{[^}]*background:\s*#176044/);
+  assert.doesNotMatch(floatingTeamChat + floatingTeamChatCss, />\s*LINE\s*<|line-logo|LINE_New_App_Icon|wechat-logo|whatsapp-logo/i);
+});
+
 test("chat foundation is additive and separates group/private participants", () => {
   const migration = readFileSync(new URL("../migrations/0032_internal_chat_conversations.sql", import.meta.url), "utf8");
 

@@ -35,19 +35,18 @@
 
 .staff-chat__orb {
   display: grid;
-  grid-template-rows: 1fr auto;
-  width: 64px;
-  height: 64px;
+  width: 68px;
+  height: 68px;
   place-items: center;
-  padding: 8px 7px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 50%;
-  color: #173b2d;
-  background:
-    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.98), rgba(247, 244, 238, 0.88) 42%, rgba(218, 236, 218, 0.96) 100%);
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 19px;
+  color: #fffdf6;
+  background: linear-gradient(145deg, #24805c 0%, #176044 48%, #0e3d2d 100%);
   box-shadow:
-    0 18px 42px rgba(0, 10, 6, 0.34),
-    inset 0 -8px 18px rgba(30, 91, 67, 0.12);
+    0 16px 34px rgba(0, 10, 6, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -10px 18px rgba(0, 18, 12, 0.16);
   cursor: pointer;
   transition:
     transform 170ms ease,
@@ -60,16 +59,6 @@
 
 .staff-chat__orb:active {
   transform: translateY(1px) scale(0.96);
-}
-
-.staff-chat__orb-label {
-  color: rgba(23, 59, 45, 0.78);
-  font-family: var(--vc-font-sans);
-  font-size: 0.58rem;
-  font-weight: 850;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .staff-chat__panel {
@@ -151,11 +140,11 @@
 
 .staff-chat__body-icon {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 46px;
+  height: 46px;
   place-items: center;
   border: 1px solid rgba(23, 59, 45, 0.14);
-  border-radius: 50%;
+  border-radius: 14px;
   color: #f7f4ee;
   background: linear-gradient(145deg, #1e5b43, #0a2a1e);
   box-shadow: 0 10px 22px rgba(23, 59, 45, 0.18);
@@ -175,9 +164,17 @@
 }
 
 .staff-chat__body-icon .staff-chat-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.staff-chat__orb .staff-chat-icon {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border-radius: inherit;
   box-shadow: none;
 }
 
@@ -193,6 +190,13 @@
   background: #fffdf6;
 }
 
+.staff-chat__orb .staff-chat-icon__bubble {
+  width: 48px;
+  height: 34px;
+  gap: 4px;
+  border-radius: 19px;
+}
+
 .staff-chat-icon__bubble::after {
   position: absolute;
   right: 3px;
@@ -205,6 +209,14 @@
   content: "";
 }
 
+.staff-chat__orb .staff-chat-icon__bubble::after {
+  right: 8px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 0 0 7px;
+}
+
 .staff-chat-icon__bubble span {
   position: relative;
   z-index: 1;
@@ -212,6 +224,12 @@
   height: 3px;
   border-radius: 50%;
   background: #155438;
+}
+
+.staff-chat__orb .staff-chat-icon__bubble span {
+  width: 5px;
+  height: 5px;
+  background: #176044;
 }
 
 .staff-chat__badge {

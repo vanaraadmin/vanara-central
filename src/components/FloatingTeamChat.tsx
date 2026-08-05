@@ -83,7 +83,6 @@ export default function FloatingTeamChat() {
         onClick={() => setIsOpen((current) => !current)}
       >
         <VanaraChatIcon />
-        <span className="staff-chat__orb-label" aria-hidden="true">Team</span>
         {badgeLabel && <span className="staff-chat__badge" aria-label={`${badgeLabel} unread team chat alert`}>{badgeLabel}</span>}
       </button>
     </aside>
