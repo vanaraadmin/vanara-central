@@ -1127,7 +1127,55 @@ test("passport OCR verifier timeout preserves primary results for manual confirm
   assert.ok(passport.verification?.consensus.fields.passportNumber.issues.includes("VERIFICATION_TIMEOUT"));
 });
 
-test("passport OCR timeout reports the precise failed stage after both primary calls start", async () => {
+test("passport OCR accepts valid MRZ when visual biodata is unavailable", async () => {
+  const passport = await extractPassportReview(
+    { OPENAI_API_KEY: "test-openai-key" },
+    {
+      image: new Uint8Array([1, 2, 3]).buffer,
+      passportNumberCrop: new Uint8Array([4, 5, 6]).buffer,
+      mrzCrop: new Uint8Array([7, 8, 9]).buffer,
+      contentType: "image/jpeg",
+    },
+    (async (_input: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        input: Array<{ content: Array<{ type: string; text?: string }> }>;
+      };
+      const prompt = body.input[0]?.content[0]?.text ?? "";
+      if (prompt.includes("human-readable biodata")) {
+        throw new PassportOcrError("Visual biodata response invalid.", "passport_schema_invalid", "visual_biodata");
+      }
+      return new Response(JSON.stringify({
+        output: [{ content: [{ type: "output_text", text: JSON.stringify({
+          mrzLine1: "P<DEUBENNOR<<DOMINIC<HERIBERT<WERNER<<<<<<<<",
+          mrzLine2: "C7NJ9KNW50DEU8804145M3503236<<<<<<<<<<<<<<08",
+          mrzPassportNumber: "C7NJ9KNW5",
+          passportNumberVisual: null,
+          fieldStatus: {
+            mrzLine1: "READ",
+            mrzLine2: "READ",
+            mrzPassportNumber: "READ",
+            passportNumberVisual: "NOT_FOUND",
+          },
+        }) }] }],
+      }), { status: 200, headers: { "content-type": "application/json", "x-request-id": "mrz-request" } });
+    }) as typeof fetch,
+  );
+
+  assert.equal(passport.passportNumber, "C7NJ9KNW5");
+  assert.equal(passport.firstName, "DOMINIC HERIBERT WERNER");
+  assert.equal(passport.lastName, "BENNOR");
+  assert.equal(passport.nationality, "DEU");
+  assert.equal(passport.birthDate, "1988-04-14");
+  assert.equal(passport.expiryDate, "2035-03-23");
+  assert.equal(passport.verification?.consensus.mrz.mrzValid, true);
+  assert.equal(passport.verification?.consensus.fields.passportNumber.source, "MRZ");
+  assert.equal(passport.verification?.timing?.visualStatus, "error");
+  assert.equal(passport.verification?.timing?.mrzStatus, "ok");
+  assert.equal(passport.verification?.timing?.manualConfirmationRequired, true);
+  assert.ok(passport.verification?.consensus.fields.passportNumber.issues.includes("VISUAL_BIODATA_UNAVAILABLE"));
+});
+
+test("passport OCR timeout reports the precise failed stage when MRZ is not usable", async () => {
   let mrzStarted = false;
   await assert.rejects(
     extractPassportReview(
@@ -1147,8 +1195,8 @@ test("passport OCR timeout reports the precise failed stage after both primary c
         mrzStarted = true;
         return new Response(JSON.stringify({
           output: [{ content: [{ type: "output_text", text: JSON.stringify({
-            mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
-            mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+            mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<",
+            mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<11",
             mrzPassportNumber: "L898902C3",
             passportNumberVisual: "L898902C3",
             fieldStatus: {

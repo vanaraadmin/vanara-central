@@ -424,6 +424,27 @@ function emptyStatus(): Record<string, "READ" | "UNCERTAIN" | "NOT_FOUND"> {
   return Object.fromEntries(PASSPORT_EXTRACTION_FIELDS.map((field) => [field, "NOT_FOUND"]));
 }
 
+function emptyVisualExtraction(): PassportExtraction {
+  return {
+    documentType: null,
+    issuingCountry: null,
+    surname: null,
+    givenNames: null,
+    passportNumberVisual: null,
+    nationality: null,
+    dateOfBirth: null,
+    sex: null,
+    expiryDate: null,
+    personalNumber: null,
+    mrzLine1: null,
+    mrzLine2: null,
+    mrzPassportNumber: null,
+    rawVisualText: null,
+    imageQualityAssessment: "Visual biodata unavailable; MRZ used as primary source.",
+    fieldStatus: emptyStatus(),
+  };
+}
+
 function validateVisualExtraction(value: unknown): PassportExtraction {
   if (!isRecord(value) || !isRecord(value.fieldStatus)) {
     throw new PassportOcrError("Visual biodata response invalid.", "passport_schema_invalid", "visual_biodata");
@@ -769,21 +790,26 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
     readMrzCritical(env, input, deadline, fetcher),
   ]);
 
-  if (visualSettled.status === "rejected") throw visualSettled.reason;
   if (mrzSettled.status === "rejected") throw mrzSettled.reason;
+  const visualUnavailable = visualSettled.status === "rejected";
+  const visualExtraction = visualUnavailable ? emptyVisualExtraction() : visualSettled.value.extraction;
 
   const mergeStart = Date.now();
-  let consensus = buildPassportConsensus(visualSettled.value.extraction, mrzSettled.value.extraction);
+  let consensus = buildPassportConsensus(visualExtraction, mrzSettled.value.extraction);
+  if (visualUnavailable) {
+    if (!consensus.mrz.mrzValid) throw visualSettled.reason;
+    consensus = markManualConfirmationRequired(consensus, "VISUAL_BIODATA_UNAVAILABLE");
+  }
   let mergeMs = Date.now() - mergeStart;
   let verifierResult: Awaited<ReturnType<typeof runConditionalVerifier>> | null = null;
-  const triggerCode = verifierTriggerCode(consensus, visualSettled.value.extraction, mrzSettled.value.extraction);
+  const triggerCode = visualUnavailable ? null : verifierTriggerCode(consensus, visualExtraction, mrzSettled.value.extraction);
   let verifierTimedOut = false;
-  let manualConfirmationRequired = false;
+  let manualConfirmationRequired = visualUnavailable;
   if (triggerCode) {
     try {
       verifierResult = await runConditionalVerifier(env, input, consensus, triggerCode, deadline, fetcher);
       const verifiedMergeStart = Date.now();
-      consensus = buildPassportConsensus(visualSettled.value.extraction, verifierResult.extraction);
+      consensus = buildPassportConsensus(visualExtraction, verifierResult.extraction);
       if (consensus.fields.passportNumber.state !== "AUTO_VERIFIED") {
         manualConfirmationRequired = true;
         consensus = markManualConfirmationRequired(consensus, "VERIFICATION_UNRESOLVED");
@@ -798,7 +824,7 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
   }
 
   const validation: PassportReviewValidation = {
-    firstPass: visualSettled.value.extraction,
+    firstPass: visualExtraction,
     secondPass: verifierResult?.extraction ?? mrzSettled.value.extraction,
     consensus,
     ocrModel: `${OPENAI_PASSPORT_VISUAL_MODEL}+${OPENAI_PASSPORT_MRZ_MODEL}`,
@@ -806,13 +832,13 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
     schemaVersion: PASSPORT_OCR_SCHEMA_VERSION,
     timing: {
       model: `${OPENAI_PASSPORT_VISUAL_MODEL}+${OPENAI_PASSPORT_MRZ_MODEL}`,
-      pass1Ms: Math.max(visualSettled.value.ms, mrzSettled.value.ms),
+      pass1Ms: Math.max(visualSettled.status === "fulfilled" ? visualSettled.value.ms : 0, mrzSettled.value.ms),
       pass2Ms: verifierResult?.ms ?? 0,
       consensusMs: mergeMs,
       totalMs: Date.now() - totalStart,
       pass1Status: "ok",
       pass2Status: triggerCode ? (verifierTimedOut ? "timeout" : verifierResult ? "ok" : "error") : undefined,
-      pass1OpenAiRequestId: visualSettled.value.openAiRequestId,
+      pass1OpenAiRequestId: visualSettled.status === "fulfilled" ? visualSettled.value.openAiRequestId : null,
       pass2OpenAiRequestId: verifierResult?.openAiRequestId ?? null,
       pass1Attempts: 1,
       pass2Attempts: triggerCode ? 1 : 0,
@@ -821,13 +847,15 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
       conditionalVerificationInvoked: Boolean(triggerCode),
       visualModel: OPENAI_PASSPORT_VISUAL_MODEL,
       mrzModel: OPENAI_PASSPORT_MRZ_MODEL,
-      visualMs: visualSettled.value.ms,
+      visualMs: visualSettled.status === "fulfilled" ? visualSettled.value.ms : 0,
       mrzMs: mrzSettled.value.ms,
       mergeMs,
       verifierMs: verifierResult?.ms ?? 0,
-      visualStatus: "ok",
+      visualStatus: visualUnavailable
+        ? (visualSettled.reason instanceof PassportOcrError && visualSettled.reason.code === "openai_timeout" ? "timeout" : "error")
+        : "ok",
       mrzStatus: "ok",
-      visualOpenAiRequestId: visualSettled.value.openAiRequestId,
+      visualOpenAiRequestId: visualSettled.status === "fulfilled" ? visualSettled.value.openAiRequestId : null,
       mrzOpenAiRequestId: mrzSettled.value.openAiRequestId,
       verifierOpenAiRequestId: verifierResult?.openAiRequestId ?? null,
       verifierTriggerCode: triggerCode,
