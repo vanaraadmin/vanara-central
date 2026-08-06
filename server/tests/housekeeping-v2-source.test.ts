@@ -259,6 +259,18 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.doesNotMatch(page, /quantityDelivered|waterQuantityDelivered|prompt\(|window\.confirm/);
 });
 
+test("water refill summary tap opens the water list directly instead of acting like a dead counter", () => {
+  const overview = page.match(/export default function HousekeepingV2Page[\s\S]*?<\/WorkspaceShell>/)?.[0] ?? "";
+
+  assert.match(overview, /const sectionsRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(overview, /onItemSelect=\{\(item\) =>/);
+  assert.match(overview, /const nextSection = item\.id as HousekeepingV2SectionId/);
+  assert.match(overview, /setActiveSection\(nextSection\)/);
+  assert.match(overview, /sectionsRef\.current\?\.scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
+  assert.match(overview, /ref=\{sectionsRef\}/);
+  assert.match(page, /id: "water-refill", labelKey: "waterRefill"/);
+});
+
 test("read model includes generated Standard Cleaning work and excludes Room-owned cleaning from the queue", () => {
   assert.doesNotMatch(service, /function readyCard/);
   assert.doesNotMatch(service, /No ready rooms to list/);

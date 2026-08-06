@@ -124,6 +124,16 @@ test("Booking Pulse read model enforces retention without deleting source data",
   assert.doesNotMatch(service, /DELETE FROM booking_events|DELETE FROM bookings/);
 });
 
+test("Booking Pulse read model uses live booking status and safe guest-name fallbacks", () => {
+  assert.match(service, /effectivePulseTypeFor/);
+  assert.match(service, /isCancelled\(row\.booking_status\)/);
+  assert.match(service, /booking_status\)\) return "CANCELLED"/);
+  assert.match(service, /cleanGuestNameText/);
+  assert.match(service, /isPlaceholderGuestName/);
+  assert.match(service, /row\.first_name/);
+  assert.match(service, /row\.last_name/);
+});
+
 test("Booking Pulse groups Beds24 master booking children without guest-date heuristics", () => {
   assert.match(service, /booking_group_members/);
   assert.match(service, /master_beds24_booking_id/);

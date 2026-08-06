@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
@@ -517,6 +517,7 @@ export default function HousekeepingV2Page() {
   const [activeSection, setActiveSection] = useState<HousekeepingV2SectionId | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [infoSheet, setInfoSheet] = useState<InterventionType | null>(null);
+  const sectionsRef = useRef<HTMLDivElement | null>(null);
   const action = useOverviewAction();
   const housekeeping = useQuery({
     queryKey: ["housekeeping-v2"],
@@ -555,12 +556,15 @@ export default function HousekeepingV2Page() {
             onItemSelect={(item) => {
               const nextSection = item.id as HousekeepingV2SectionId;
               setExpandedTaskId(null);
-              setActiveSection((current) => current === nextSection ? null : nextSection);
+              setActiveSection(nextSection);
+              window.requestAnimationFrame(() => {
+                sectionsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+              });
             }}
           />
 
           {expandedSection && (
-            <div className="housekeeping-v2-sections" aria-label={translate("housekeepingTaskQueue")}>
+            <div ref={sectionsRef} className="housekeeping-v2-sections" aria-label={translate("housekeepingTaskQueue")}>
               <Section
                 action={action}
                 expandedTaskId={expandedTaskId}

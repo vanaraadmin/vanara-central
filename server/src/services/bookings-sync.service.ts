@@ -227,6 +227,16 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function cleanGuestNameText(value: unknown): string | null {
+  const cleaned = text(value);
+  if (!cleaned) return null;
+  const normalized = cleaned.toLowerCase().replace(/\s+/g, " ");
+  if (normalized === "0" || normalized === "n/a" || normalized === "na" || normalized === "-" || normalized === "undefined" || normalized === "null") {
+    return null;
+  }
+  return cleaned;
+}
+
 function normalizedText(value: unknown): string | null {
   return text(value)?.toLowerCase() ?? null;
 }
@@ -239,8 +249,8 @@ function booleanOrFalse(value: unknown): boolean {
   return value === true || value === 1 || value === "true" || value === "yes";
 }
 
-function guestName(booking: Beds24Booking): string | null {
-  const value = [text(booking.firstName), text(booking.lastName)].filter(Boolean).join(" ");
+export function normalizeBookingGuestName(booking: Pick<Beds24Booking, "firstName" | "lastName">): string | null {
+  const value = [cleanGuestNameText(booking.firstName), cleanGuestNameText(booking.lastName)].filter(Boolean).join(" ");
   return value || null;
 }
 
@@ -891,7 +901,7 @@ async function upsertBooking(
       numberOrNull(booking.masterId), numberOrNull(booking.roomQty), text(booking.status) ?? "confirmed",
       text(booking.subStatus), numberOrNull(booking.statusCode), booking.arrival, booking.departure,
       text(booking.arrivalTime), numberOrNull(booking.numAdult) ?? 0, numberOrNull(booking.numChild) ?? 0,
-      text(booking.title), text(booking.firstName), text(booking.lastName), guestName(booking), text(booking.email),
+      text(booking.title), cleanGuestNameText(booking.firstName), cleanGuestNameText(booking.lastName), normalizeBookingGuestName(booking), text(booking.email),
       text(booking.phone), text(booking.mobile), text(booking.fax), text(booking.company), text(booking.address),
       text(booking.city), text(booking.state), text(booking.postcode), text(booking.country), normalized.countryCode,
       text(booking.lang), text(booking.comments), text(booking.notes), text(booking.message), text(booking.groupNote),

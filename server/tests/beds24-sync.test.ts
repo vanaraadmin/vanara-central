@@ -9,6 +9,7 @@ import {
   deduplicateBookingGuestsForPersistence,
   deduplicateBookingInfoItemsForPersistence,
   isCancelledBeds24BookingStatus,
+  normalizeBookingGuestName,
   normalizeBookingFields,
   normalizeBookingGroupMembers,
   providerDeletedBookingIds,
@@ -46,6 +47,12 @@ test("country2 is normalized as booking country_code fallback", () => {
   });
 
   assert.equal(normalized.countryCode, "TH");
+});
+
+test("Beds24 booking guest name normalization ignores placeholder values", () => {
+  assert.equal(normalizeBookingGuestName({ firstName: "0", lastName: "Boonthai" }), "Boonthai");
+  assert.equal(normalizeBookingGuestName({ firstName: "Nicharee", lastName: "0" }), "Nicharee");
+  assert.equal(normalizeBookingGuestName({ firstName: " n/a ", lastName: "-" }), null);
 });
 
 test("allowCancellation is normalized as cancellation fallback", () => {

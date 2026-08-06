@@ -41,7 +41,11 @@ test("reception desktop layout creates two columns and keeps sheets bounded", ()
   assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-agenda\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-details-sheet__panel\s*\{[\s\S]*width:\s*min\(100%, 1120px\)/);
   assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-details-sheet__panel\s*\{[\s\S]*max-height:\s*calc\(100dvh - 48px\)/);
+  assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-details-sheet__panel\s*\{[\s\S]*overflow-y:\s*auto/);
+  assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-details-sheet__panel \.reception-sheet__header h2\s*\{[\s\S]*font-size:\s*var\(--vc-type-section-title\)/);
   assert.match(receptionCss, /@media \(max-width: 420px\)[\s\S]*\.reception-date-picker,[\s\S]*\.reception-date-picker__trigger\s*\{[\s\S]*width:\s*100%/);
+  assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-date-picker__panel \.rdp-caption_label\s*\{[\s\S]*clip:\s*rect\(0, 0, 0, 0\)/);
+  assert.match(receptionCss, /@media \(min-width: 1024px\)[\s\S]*\.reception-date-picker__panel \.rdp-dropdowns\s*\{[\s\S]*flex-wrap:\s*wrap/);
 });
 
 test("desktop responsive CSS keeps text containers flexible instead of forcing overflow", () => {

@@ -1281,6 +1281,31 @@
     justify-content: flex-end;
   }
 
+  .reception-date-picker__panel .rdp-caption_label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .reception-date-picker__panel .rdp-dropdowns {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .reception-date-picker__panel .rdp-dropdown {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .reception-date-picker__panel .rdp-nav {
+    flex: 0 0 auto;
+  }
+
   .reception-sheet {
     align-items: center;
     padding: 24px;
@@ -1296,8 +1321,19 @@
     height: auto;
     align-self: center;
     justify-self: center;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-radius: 30px;
     padding: var(--vc-space-6);
+  }
+
+  .reception-details-sheet__panel .reception-sheet__header {
+    min-height: auto;
+    align-content: start;
+  }
+
+  .reception-details-sheet__panel .reception-sheet__header h2 {
+    font-size: var(--vc-type-section-title);
   }
 
   .reception-details-sheet__panel .reception-details-region {

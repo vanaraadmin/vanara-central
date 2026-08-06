@@ -325,3 +325,28 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (min-width: 1024px) {
+  .procurement-section {
+    padding: var(--vc-space-4);
+    overflow: hidden;
+    border: var(--vc-glass-region-border);
+    border-radius: var(--vc-glass-region-radius);
+    background: var(--vc-glass-region-background);
+    box-shadow: var(--vc-glass-region-shadow);
+  }
+
+  .procurement-list {
+    min-width: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .procurement-list::before {
+    content: none;
+  }
+}

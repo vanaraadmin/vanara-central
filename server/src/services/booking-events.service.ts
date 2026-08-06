@@ -67,6 +67,8 @@ interface BookingEventRow {
   event_source: string | null;
   occurred_at: string;
   guest_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   country: string | null;
   country_code: string | null;
   unit_id: number | null;
@@ -147,6 +149,27 @@ function pulseTypeFor(type: BookingEventType): BookingPulseEventType {
 function cleanOptionalText(value: string | null | undefined): string | null {
   const cleaned = value?.trim();
   return cleaned ? cleaned : null;
+}
+
+function isPlaceholderGuestName(value: string): boolean {
+  const normalized = normalizedText(value).replace(/\s+/g, " ");
+  return normalized === "0" || normalized === "n/a" || normalized === "na" || normalized === "-" || normalized === "undefined" || normalized === "null";
+}
+
+function cleanGuestNameText(value: string | null | undefined): string | null {
+  const cleaned = cleanOptionalText(value);
+  if (!cleaned || isPlaceholderGuestName(cleaned)) return null;
+  return cleaned;
+}
+
+function guestNameFor(row: BookingEventRow): string {
+  const fallback = [cleanGuestNameText(row.first_name), cleanGuestNameText(row.last_name)].filter(Boolean).join(" ");
+  return cleanGuestNameText(row.guest_name) ?? (fallback || "Guest name unavailable");
+}
+
+function effectivePulseTypeFor(row: BookingEventRow): BookingPulseEventType {
+  if (row.event_type === "cancelled" || isCancelled(row.booking_status)) return "CANCELLED";
+  return pulseTypeFor(row.event_type);
 }
 
 function sourceFor(row: BookingEventRow): string | null {
@@ -271,7 +294,7 @@ function cleanOptionalNumber(value: number | null | undefined): number | null {
 }
 
 function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEventsOptions, groupMembers: BookingPulseGroupMemberRow[] = []): BookingPulseItem {
-  const eventType = pulseTypeFor(row.event_type);
+  const eventType = effectivePulseTypeFor(row);
   const includeBookingValue = options.includeBookingValue === true;
   const groupKey = pulseGroupKeyFor(row);
   const arrivalDate = groupDateFor(row, groupMembers, "arrival_date");
@@ -282,7 +305,7 @@ function toBookingPulseItem(row: BookingEventRow, options: ListRecentBookingEven
     bookingId: String(groupKey),
     eventType,
     eventTimestamp: row.occurred_at,
-    guestName: cleanOptionalText(row.guest_name) ?? "Guest name unavailable",
+    guestName: guestNameFor(row),
     nationality: cleanOptionalText(row.country) ?? cleanOptionalText(row.country_code),
     countryCode: cleanOptionalText(row.country_code),
     unitId: groupUnitIdFor(row, groupMembers),
@@ -399,7 +422,9 @@ export async function recordBookingEvent(
 function bookingPulseRowFor(rows: BookingEventRow[]): BookingEventRow {
   const sorted = rows.slice().sort(eventSortDescending);
   const latest = sorted[0];
-  if (latest.event_type === "cancelled") return latest;
+  if (latest.event_type === "cancelled" || isCancelled(latest.booking_status)) return latest;
+  const cancelled = sorted.find((row) => row.event_type === "cancelled" || isCancelled(row.booking_status));
+  if (cancelled) return cancelled;
   return sorted.find((row) => row.event_type === "new") ?? latest;
 }
 
@@ -453,6 +478,8 @@ export async function listRecentBookingEvents(
       be.source AS event_source,
       be.occurred_at,
       b.guest_name,
+      b.first_name,
+      b.last_name,
       b.country,
       b.country_code,
       b.unit_id,

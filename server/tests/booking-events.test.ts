@@ -55,6 +55,8 @@ type FakeBookingEventRow = {
   event_source: string | null;
   occurred_at: string;
   guest_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   country: string | null;
   country_code: string | null;
   unit_id: number | null;
@@ -97,6 +99,8 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     event_source: "Booking.com",
     occurred_at: "2026-08-02T10:00:00.000Z",
     guest_name: "Mali Guest",
+    first_name: "Mali",
+    last_name: "Guest",
     country: "Thailand",
     country_code: "TH",
     unit_id: 10,
@@ -603,6 +607,50 @@ test("booking pulse keeps NEW visible for 24 hours unless CANCELLED is the lates
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
 
   assert.deepEqual(events.map((event) => `${event.bookingId}:${event.eventType}`), ["9022:CANCELLED", "9021:NEW"]);
+});
+
+test("booking pulse shows cancelled when the live booking status is cancelled even if the selected event row is NEW", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 41,
+      event_type: "updated",
+      beds24_booking_id: 9041,
+      booking_status: "cancelled",
+      occurred_at: "2026-08-02T11:30:00.000Z",
+    }),
+    eventRow({
+      booking_event_id: 40,
+      event_type: "new",
+      beds24_booking_id: 9041,
+      booking_status: "cancelled",
+      occurred_at: "2026-08-02T10:30:00.000Z",
+    }),
+  ];
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
+
+  assert.equal(events[0]?.bookingId, "9041");
+  assert.equal(events[0]?.eventType, "CANCELLED");
+  assert.match(events[0]?.eventId ?? "", /:CANCELLED:/);
+});
+
+test("booking pulse treats placeholder guest names as missing and falls back to first and last name", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 50,
+      beds24_booking_id: 9050,
+      guest_name: "0",
+      first_name: "Nicharee",
+      last_name: "Boonthai",
+      occurred_at: "2026-08-02T11:00:00.000Z",
+    }),
+  ];
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-08-02T12:00:00.000Z"));
+
+  assert.equal(events[0]?.guestName, "Nicharee Boonthai");
 });
 
 test("Booking Pulse active feed hides provider-deleted reconciliation events while preserving stored history", async () => {
