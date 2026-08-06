@@ -63,8 +63,8 @@ export default function HousekeepingCard({
       headingId={`housekeeping-card-${roomId}`}
       state={(
         <OperationalStateBlock
-          detail={housekeeping.detail}
-          secondaryInfo={housekeeping.secondaryInfo}
+          detail={translateStaffLabel(housekeeping.detail, translate)}
+          secondaryInfo={housekeeping.secondaryInfo ? translateStaffLabel(housekeeping.secondaryInfo, translate) : null}
           tone={housekeeping.tone}
           value={translateStaffLabel(housekeeping.primaryStatus, translate)}
         />

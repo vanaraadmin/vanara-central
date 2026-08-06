@@ -71,6 +71,11 @@ const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
 
 const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   availability: "pricesDescription",
+  housekeeping: "housekeepingDescription",
+  maintenance: "maintenanceDescription",
+  procurement: "procurementDescription",
+  reception: "movementsDescription",
+  rooms: "roomsDescription",
 };
 
 const metricLabelKeys: Record<string, string> = {
@@ -90,14 +95,14 @@ const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]>
   urgent: "critical",
 };
 
-function firstName(displayName: string) {
+function staffNickname(displayName: string) {
   const cleaned = displayName.trim();
 
   if (!cleaned || cleaned.toLowerCase() === "vanara owner") {
     return "";
   }
 
-  return cleaned.split(/\s+/)[0];
+  return cleaned;
 }
 
 function sortWorkspaces(workspaces: StaffOverviewCard[]) {
@@ -116,9 +121,9 @@ function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
 }
 
-function summaryItems(metrics: StaffOverviewMetric[], translate: (key: string) => string): VanaraSummaryItem[] {
+function summaryItems(metrics: StaffOverviewMetric[], translate: (key: string, options?: Record<string, unknown>) => string): VanaraSummaryItem[] {
   return metrics.map((metric) => ({
-    label: metricLabelKeys[metric.label] ? translate(metricLabelKeys[metric.label]) : metric.label,
+    label: translateStaffSummaryLabel(metric.label, translate),
     tone: metricTone[metric.tone],
     value: metric.value,
   }));
@@ -217,7 +222,7 @@ function WorkspaceCard({
 }
 
 export default function StaffPage() {
-  const { translate } = useLanguage();
+  const { language, translate } = useLanguage();
   const staff = useQuery({
     queryKey: ["staff", "overview"],
     queryFn: ({ signal }) => loadStaffOverview(signal),
@@ -225,10 +230,13 @@ export default function StaffPage() {
   });
 
   const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
-  const name = staff.data ? firstName(staff.data.user.displayName) : "";
+  const name = staff.data ? staffNickname(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
-  const title = useMemo(() => (name ? translate("sawasdeeName", { name }) : translate("sawasdee")), [name, translate]);
+  const title = useMemo(() => {
+    if (!name) return translate("sawasdee");
+    return language === "th" ? `${translate("sawasdee")} ${name}` : `${translate("sawasdee")}, ${name}`;
+  }, [language, name, translate]);
   const showWorkspaceSection = Boolean(workspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (

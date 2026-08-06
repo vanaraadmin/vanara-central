@@ -151,7 +151,6 @@ export default function ProcurementPage() {
         <VanaraSectionHeader
           eyebrow={translate("procurement")}
           headingId="procurement-new-request"
-          meta={isOwner ? translate("ownerView") : translate("staffRequest")}
           title={isOwner ? translate("openRequests") : translate("newRequest")}
         />
 

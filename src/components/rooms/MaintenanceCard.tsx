@@ -29,7 +29,7 @@ export default function MaintenanceCard({ maintenance, roomId, roomName }: Maint
       state={(
         <OperationalStateBlock
           detail={translateStaffLabel(maintenance.detail, translate)}
-          secondaryInfo={maintenance.secondaryInfo}
+          secondaryInfo={maintenance.secondaryInfo ? translateStaffLabel(maintenance.secondaryInfo, translate) : null}
           tone={maintenance.tone}
           value={translateStaffLabel(maintenance.primaryStatus, translate)}
         />

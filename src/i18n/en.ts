@@ -2,6 +2,7 @@ const en = {
   appName: "Vanara Central",
   vanaraRetreat: "Vanara Retreat",
   today: "Today",
+  sawasdee: "Sawasdee",
   loading: "Loading",
   loadingApp: "Loading Vanara Central...",
   loadingToday: "Loading today's operations...",

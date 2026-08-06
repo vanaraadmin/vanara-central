@@ -2,6 +2,7 @@ const th = {
   appName: "Vanara Central",
   vanaraRetreat: "Vanara Retreat",
   today: "วันนี้",
+  sawasdee: "สวัสดี",
   loading: "กำลังโหลด",
   loadingApp: "กำลังเปิด Vanara Central...",
   loadingToday: "กำลังโหลดงานวันนี้...",

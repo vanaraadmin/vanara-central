@@ -15,7 +15,7 @@ function RoomOperationalItem({ item }: { item: RoomOperationalItemModel }) {
       <dt className="room-status-item__label room-operational-item__label">{translateStaffLabel(item.label, translate)}</dt>
       <dd className="room-status-item__body room-operational-item__body">
         <strong className="room-status-item__value room-operational-item__value">{translateStaffLabel(item.value, translate)}</strong>
-        {item.detail ? <span className="room-status-item__detail room-operational-item__detail">{item.detail}</span> : null}
+        {item.detail ? <span className="room-status-item__detail room-operational-item__detail">{translateStaffLabel(item.detail, translate)}</span> : null}
         {item.meta ? <span className="room-status-item__meta room-operational-item__meta">{translateStaffLabel(item.meta, translate)}</span> : null}
       </dd>
     </div>

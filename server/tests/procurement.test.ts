@@ -248,13 +248,19 @@ test("procurement source stays MVP-only and translation-ready without fake AI tr
   }
   assert.match(css, /overflow-wrap:\s*anywhere/);
   assert.match(css, /min-width:\s*0/);
+  assert.doesNotMatch(page, /meta=\{isOwner \? translate\("ownerView"\) : translate\("staffRequest"\)\}/);
 });
 
 test("procurement staff UI layout is mobile-safe for Thai and long request text", () => {
   const css = readFileSync(new URL("../../src/styles/ProcurementPage.css", import.meta.url), "utf8");
 
   assert.match(css, /\.procurement-page \.vc-section-header\s*\{[\s\S]*flex-wrap:\s*wrap/);
-  assert.match(css, /\.procurement-page \.vc-section-header__meta\s*\{[\s\S]*flex:\s*1 1 auto/);
+  assert.match(css, /\.procurement-compose\s*\{[\s\S]*overflow:\s*hidden/);
+  assert.match(css, /\.procurement-form\s*\{[\s\S]*width:\s*100%/);
+  assert.match(css, /\.procurement-field\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.1\)[\s\S]*border-radius:\s*var\(--vc-radius-xl\)/);
+  assert.match(css, /\.procurement-field span\s*\{[\s\S]*letter-spacing:\s*0[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.doesNotMatch(css, /\.procurement-field span\s*\{[\s\S]*text-transform:\s*uppercase/);
+  assert.match(css, /\.procurement-field textarea\s*\{[\s\S]*min-height:\s*8\.5rem[\s\S]*background:\s*rgba\(244,\s*237,\s*223,\s*0\.94\)/);
   assert.match(css, /\.procurement-card\s*\{[\s\S]*max-width:\s*100%/);
   assert.match(css, /\.procurement-card__top\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
   assert.match(css, /\.procurement-status\s*\{[\s\S]*max-width:\s*100%[\s\S]*white-space:\s*normal/);
