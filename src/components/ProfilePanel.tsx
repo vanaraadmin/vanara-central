@@ -364,7 +364,13 @@ export default function ProfilePanel() {
               {tab === "owner" && owner ? (
                 <section className="profile-panel__section profile-panel__owner-actions" aria-label="Owner">
                   <header className="profile-panel__subheader"><h3>Owner</h3></header>
-                  <a className="profile-panel__download" href="/api/owner/tm30/export"><DownloadIcon /><span>{translate("downloadTm30")}</span></a>
+                  <div className="profile-panel__owner-utility">
+                    <div>
+                      <strong>TM30 export</strong>
+                      <span>Download the current ready passport registrations.</span>
+                    </div>
+                    <a aria-label="Download TM30" className="profile-panel__download" href="/api/owner/tm30/export"><DownloadIcon /><span>{translate("downloadTm30")}</span></a>
+                  </div>
                   <header className="profile-panel__subheader profile-panel__subheader--users"><h3>Manage Users</h3><div><button type="button" onClick={() => startCreate(false)}>New staff</button><button type="button" onClick={() => startCreate(true)}>New owner</button></div></header>
                   <div className="profile-panel__user-list">
                     {(usersQuery.data ?? []).map((item) => (

@@ -510,6 +510,19 @@
   }
 }
 
+@media (display-mode: standalone) and (max-width: 520px) {
+  .workspace-body.housekeeping-v2-page + .workspace-canopy {
+    min-height: 148px;
+    margin-top: 8px;
+    padding-bottom: calc(var(--vc-safe-bottom) + 56px);
+  }
+
+  .workspace-body.housekeeping-v2-page + .workspace-canopy img {
+    width: max(520px, 132%);
+    opacity: 0.72;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .housekeeping-v2-task-sheet {
     animation: none;

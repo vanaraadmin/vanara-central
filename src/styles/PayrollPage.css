@@ -23,6 +23,7 @@
 .payroll-month,
 .payroll-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   width: 100%;
   inline-size: 100%;
@@ -46,6 +47,7 @@
   max-inline-size: 100%;
   min-width: 0;
   min-inline-size: 0;
+  overflow: hidden;
   min-height: 44px;
   color: var(--workspace-ink);
   background: rgba(255, 253, 246, 0.94);
@@ -58,8 +60,11 @@
 
 .payroll-month input[type="month"],
 .payroll-field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
   display: block;
   justify-self: stretch;
+  place-self: stretch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -234,10 +239,12 @@
 
 .payroll-event-form {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(120px, 0.65fr);
+  grid-template-columns: repeat(2, minmax(min(100%, 180px), 1fr));
   gap: var(--vc-space-3);
   align-items: end;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .payroll-form-grid > *,

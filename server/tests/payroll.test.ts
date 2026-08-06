@@ -511,6 +511,12 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(css, /min-inline-size: 0/);
   assert.match(css, /input\[type="month"\]/);
   assert.match(css, /input\[type="date"\]/);
+  assert.match(css, /\.payroll-month,[\s\S]*\.payroll-field\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(css, /\.payroll-month input,[\s\S]*\.payroll-field textarea\s*\{[\s\S]*overflow:\s*hidden/);
+  assert.match(css, /\.payroll-month input\[type="month"\],[\s\S]*\.payroll-field input\[type="date"\]\s*\{[\s\S]*-webkit-appearance:\s*none/);
+  assert.match(css, /\.payroll-month input\[type="month"\],[\s\S]*\.payroll-field input\[type="date"\]\s*\{[\s\S]*place-self:\s*stretch/);
+  assert.match(css, /\.payroll-event-form\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(min\(100%, 180px\), 1fr\)\)/);
+  assert.match(css, /\.payroll-event-form\s*\{[\s\S]*overflow:\s*hidden/);
   assert.match(css, /\.payroll-event-form > \*/);
   assert.doesNotMatch(css, /input\[type="month"\][\s\S]{0,160}(?:min-width:\s*(?:2[4-9]|[3-9]\d)rem|width:\s*(?:2[4-9]|[3-9]\d)rem)/);
   assert.doesNotMatch(css, /input\[type="date"\][\s\S]{0,160}(?:min-width:\s*(?:2[4-9]|[3-9]\d)rem|width:\s*(?:2[4-9]|[3-9]\d)rem)/);

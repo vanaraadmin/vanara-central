@@ -597,6 +597,42 @@ input.profile-panel__file-input {
   color: rgba(244, 237, 223, 0.66);
 }
 
+.profile-panel__owner-utility {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--vc-space-3);
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(244, 237, 223, 0.14);
+  border-radius: 18px;
+  background: rgba(244, 237, 223, 0.08);
+}
+
+.profile-panel__owner-utility div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.profile-panel__owner-utility strong,
+.profile-panel__owner-utility span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.profile-panel__owner-utility strong {
+  color: rgba(244, 237, 223, 0.92);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.profile-panel__owner-utility span {
+  color: rgba(244, 237, 223, 0.58);
+  font-size: 0.74rem;
+  font-weight: 680;
+}
+
 .profile-panel__download {
   min-width: 0;
   min-height: 46px;
@@ -780,6 +816,10 @@ input.profile-panel__file-input {
 
   .profile-panel__user-actions button {
     width: 100%;
+  }
+
+  .profile-panel__owner-utility {
+    grid-template-columns: 1fr;
   }
 
   .profile-panel__photo-row {
@@ -1036,6 +1076,35 @@ input.profile-panel__file-input {
   font-size: 0.54rem;
   font-weight: 500;
   letter-spacing: 0.16em;
+}
+
+@media (display-mode: standalone) {
+  .workspace-page,
+  .workspace-masthead,
+  .workspace-section-marker,
+  .workspace-canopy,
+  .sticky-glass-nav {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .workspace-masthead img,
+  .workspace-canopy img,
+  .sticky-glass-nav img {
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  .workspace-page input,
+  .workspace-page textarea,
+  .workspace-page select,
+  .workspace-page [contenteditable="true"] {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 @media (max-width: 380px) {

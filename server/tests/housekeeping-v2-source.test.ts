@@ -271,6 +271,14 @@ test("water refill summary tap opens the water list directly instead of acting l
   assert.match(page, /id: "water-refill", labelKey: "waterRefill"/);
 });
 
+test("installed PWA Housekeeping keeps the shared footer compact without changing the task page", () => {
+  assert.match(css, /@media \(display-mode: standalone\) and \(max-width: 520px\)/);
+  assert.match(css, /\.workspace-body\.housekeeping-v2-page \+ \.workspace-canopy\s*\{[\s\S]*min-height:\s*148px/);
+  assert.match(css, /\.workspace-body\.housekeeping-v2-page \+ \.workspace-canopy\s*\{[\s\S]*padding-bottom:\s*calc\(var\(--vc-safe-bottom\) \+ 56px\)/);
+  assert.match(css, /\.workspace-body\.housekeeping-v2-page \+ \.workspace-canopy img\s*\{[\s\S]*opacity:\s*0\.72/);
+  assert.doesNotMatch(page, /workspace-canopy|footer/);
+});
+
 test("read model includes generated Standard Cleaning work and excludes Room-owned cleaning from the queue", () => {
   assert.doesNotMatch(service, /function readyCard/);
   assert.doesNotMatch(service, /No ready rooms to list/);

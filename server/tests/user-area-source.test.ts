@@ -15,8 +15,12 @@ const currentUserService = readFileSync(new URL("../src/services/current-user.se
 test("profile panel owns TM30 and user management without exposing owner tools to staff", () => {
   assert.match(profilePanel, /currentUser\?\.isOwner|owner/);
   assert.match(profilePanel, /href="\/api\/owner\/tm30\/export"/);
+  assert.match(profilePanel, /aria-label="Download TM30"/);
+  assert.match(profilePanel, /profile-panel__owner-utility/);
+  assert.match(profilePanel, /TM30 export/);
   assert.match(profilePanel, /Manage Users/);
   assert.match(profilePanel, /tab === "owner" && owner/);
+  assert.match(profilePanel, /tabs\.filter\(\(item\) => !item\.ownerOnly \|\| owner\)/);
   assert.doesNotMatch(profilePanel, /PanelTab = "profile" \| "password" \| "updates" \| "owner" \| "users"/);
   assert.doesNotMatch(dashboardPage, /href="\/api\/owner\/tm30\/export"/);
 });
@@ -51,6 +55,14 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
   assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
+});
+
+test("installed PWA reduces native browser callouts without blocking forms or chat actions", () => {
+  assert.match(workspaceCss, /@media \(display-mode: standalone\)/);
+  assert.match(workspaceCss, /\.workspace-page,[\s\S]*\.sticky-glass-nav\s*\{[\s\S]*-webkit-touch-callout:\s*none/);
+  assert.match(workspaceCss, /\.workspace-masthead img,[\s\S]*\.workspace-canopy img,[\s\S]*\.sticky-glass-nav img\s*\{[\s\S]*-webkit-user-drag:\s*none/);
+  assert.match(workspaceCss, /\.workspace-page input,[\s\S]*\.workspace-page textarea,[\s\S]*\.workspace-page select,[\s\S]*\.workspace-page \[contenteditable="true"\]\s*\{[\s\S]*-webkit-touch-callout:\s*default/);
+  assert.doesNotMatch(workspaceCss, /onContextMenu|preventDefault/);
 });
 
 test("profile panel uses styled photo controls and preserves create-user input when role changes", () => {
