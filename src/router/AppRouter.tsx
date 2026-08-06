@@ -13,12 +13,10 @@ import MessagesPage from "../pages/MessagesPage";
 import HousekeepingV2Page from "../pages/HousekeepingV2Page";
 import LoginPage from "../pages/LoginPage";
 import MovementsPage from "../pages/MovementsPage";
-import ProcurementDetailPage from "../pages/ProcurementDetailPage";
 import ProcurementPage from "../pages/ProcurementPage";
 import PayrollPage from "../pages/PayrollPage";
 import ReceptionPage from "../pages/ReceptionPage";
 import RoomsPage from "../pages/RoomsPage";
-import SupplyRequestPage from "../pages/SupplyRequestPage";
 import RoomDetailPage from "../pages/RoomDetailPage";
 import SettingsPage from "../pages/SettingsPage";
 import SocialAutomationPage from "../pages/SocialAutomationPage";
@@ -99,8 +97,8 @@ export default function AppRouter() {
           <Route path="maintenance/:issueId" element={<MaintenanceDetailPage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="procurement" element={<ProcurementPage />} />
-          <Route path="procurement/new" element={<SupplyRequestPage />} />
-          <Route path="procurement/:requestId" element={<ProcurementDetailPage />} />
+          <Route path="procurement/new" element={<Navigate replace to="/procurement" />} />
+          <Route path="procurement/:requestId" element={<Navigate replace to="/procurement" />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="social-automation" element={<SocialAutomationPage />} />
           <Route path="chat" element={<ChatPage />} />

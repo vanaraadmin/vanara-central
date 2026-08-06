@@ -192,10 +192,12 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       id: "procurement",
       module: "procurement",
       title: "Procurement",
-      description: "Request supplies through the existing workflow.",
+      description: "Send simple purchase requests.",
       href: "/procurement",
       cta: "Open Procurement",
       metrics: [],
+      summaryLine1: "Free-text request",
+      summaryLine2: "Owner decision",
     }));
   }
 

@@ -1,45 +1,35 @@
-﻿export type ProcurementStatus = "requested" | "reviewed" | "ordered" | "received" | "rejected";
+export type ProcurementStatus = "PENDING" | "DONE" | "REJECTED";
+export type ProcurementLanguage = "en" | "th";
 
 export type { CurrentUserView } from "./auth";
 
-export interface ProcurementItem {
-  id: number;
-  code: string;
-  nameEn: string;
-  nameTh: string | null;
-  category: string;
-  active: boolean;
-  defaultUnit: string | null;
-  defaultQuantity: string | null;
-  notes: string | null;
-}
-
 export interface ProcurementRequest {
   id: number;
+  requestTextOriginal: string;
+  originalLanguage: ProcurementLanguage;
+  translatedText: string | null;
+  translatedLanguage: ProcurementLanguage | null;
+  translatedAt: string | null;
+  translationProvider: string | null;
+  viewerLanguage: ProcurementLanguage;
+  translationAvailable: boolean;
+  translationPending: boolean;
   requestedBy: string;
   requestedByName: string;
   status: ProcurementStatus;
-  customItemText: string | null;
-  note: string | null;
   createdAt: string;
   updatedAt: string;
-  reviewedAt: string | null;
-  orderedAt: string | null;
-  receivedAt: string | null;
-  rejectedAt: string | null;
-  updatedBy: string | null;
-  updatedByName: string | null;
-  items: ProcurementItem[];
+  closedBy: string | null;
+  closedByName: string | null;
+  closedAt: string | null;
 }
 
 export interface CreateProcurementRequestPayload {
-  itemIds: number[];
-  customItemText?: string | null;
-  note?: string | null;
+  requestText: string;
 }
 
 export interface UpdateProcurementRequestPayload {
-  status: ProcurementStatus;
+  status: "DONE" | "REJECTED";
 }
 
 export interface ApiResponse<T> {

@@ -77,8 +77,11 @@ test("Internal Chat is a persistent bubble and not a Staff Home workspace card",
 test("Staff Owner UI model keeps one visual component tree and gates only capabilities", () => {
   assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY/);
   assert.doesNotMatch(staffService, /id:\s*"availability"/);
-  assert.match(procurementPage, /<WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">[\s\S]*<SupplyRequestPage embedded \/>[\s\S]*<ProcurementOwnerPage embedded \/>/);
-  assert.doesNotMatch(procurementPage, /return user\.data\.isOwner \?/);
+  assert.match(procurementPage, /<WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">/);
+  assert.match(procurementPage, /requestTextOriginal/);
+  assert.match(procurementPage, /Bought/);
+  assert.match(procurementPage, /Reject/);
+  assert.doesNotMatch(procurementPage, /SupplyRequestPage|ProcurementOwnerPage|loadProcurementItems/);
   assert.match(housekeepingV2Page, /card\.capabilities\.canReassign/);
   assert.match(housekeepingV2Page, /Assign Cleaning/);
   assert.match(housekeepingV2Page, /Assign Task/);

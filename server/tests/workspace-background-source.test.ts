@@ -103,8 +103,8 @@ test("implemented workspaces map to the correct shared shell background keys", (
   assert.match(readFileSync(new URL("../../src/pages/MaintenancePage.tsx", import.meta.url), "utf8"), /workspace="maintenance"/);
   assert.match(readFileSync(new URL("../../src/pages/MaintenanceDetailPage.tsx", import.meta.url), "utf8"), /workspace="maintenance"/);
   assert.match(readFileSync(new URL("../../src/pages/ProcurementPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
-  assert.match(readFileSync(new URL("../../src/pages/ProcurementOwnerPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
-  assert.match(readFileSync(new URL("../../src/pages/SupplyRequestPage.tsx", import.meta.url), "utf8"), /workspace="procurement"/);
+  assert.match(readFileSync(new URL("../../src/pages/ProcurementOwnerPage.tsx", import.meta.url), "utf8"), /to="\/procurement"/);
+  assert.match(readFileSync(new URL("../../src/pages/SupplyRequestPage.tsx", import.meta.url), "utf8"), /to="\/procurement"/);
   assert.match(readFileSync(new URL("../../src/pages/SocialAutomationPage.tsx", import.meta.url), "utf8"), /workspace="social"/);
   assert.match(readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8"), /workspace="chat"/);
   assert.match(readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8"), /workspace="messages"/);

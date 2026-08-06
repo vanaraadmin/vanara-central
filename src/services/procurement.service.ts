@@ -1,9 +1,8 @@
-﻿import { ApiError, requestJson } from "./api.client";
+import { ApiError, requestJson } from "./api.client";
 import type {
   ApiResponse,
   CreateProcurementRequestPayload,
   CurrentUserView,
-  ProcurementItem,
   ProcurementRequest,
   ProcurementStatus,
   UpdateProcurementRequestPayload,
@@ -35,33 +34,21 @@ export async function loadCurrentUser(signal?: AbortSignal): Promise<CurrentUser
   return response.data;
 }
 
-export async function loadProcurementItems(signal?: AbortSignal): Promise<ProcurementItem[]> {
-  const response = await requestJson<ApiResponse<ProcurementItem[]>>("/api/procurement/items", signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Supply items are unavailable");
-  return response.data;
-}
-
 export async function createProcurementRequest(payload: CreateProcurementRequestPayload, signal?: AbortSignal): Promise<ProcurementRequest> {
   const response = await sendJson<ApiResponse<ProcurementRequest>>("/api/procurement/requests", "POST", payload, signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Supply request could not be created");
+  if (!response.success || !response.data) throw new Error(response.error ?? "Procurement request could not be created");
   return response.data;
 }
 
 export async function loadProcurementRequests(status: ProcurementStatus | "all", signal?: AbortSignal): Promise<ProcurementRequest[]> {
   const suffix = status === "all" ? "" : `?status=${status}`;
   const response = await requestJson<ApiResponse<ProcurementRequest[]>>(`/api/procurement/requests${suffix}`, signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Supply requests are unavailable");
-  return response.data;
-}
-
-export async function loadProcurementRequest(id: number, signal?: AbortSignal): Promise<ProcurementRequest> {
-  const response = await requestJson<ApiResponse<ProcurementRequest>>(`/api/procurement/requests/${id}`, signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Supply request is unavailable");
+  if (!response.success || !response.data) throw new Error(response.error ?? "Procurement requests are unavailable");
   return response.data;
 }
 
 export async function updateProcurementRequest(id: number, payload: UpdateProcurementRequestPayload, signal?: AbortSignal): Promise<ProcurementRequest> {
   const response = await sendJson<ApiResponse<ProcurementRequest>>(`/api/procurement/requests/${id}`, "PATCH", payload, signal);
-  if (!response.success || !response.data) throw new Error(response.error ?? "Supply request could not be updated");
+  if (!response.success || !response.data) throw new Error(response.error ?? "Procurement request could not be updated");
   return response.data;
 }
