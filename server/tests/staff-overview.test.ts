@@ -68,6 +68,7 @@ function currentUser(
   permissions: Array<{ module: ModuleKey; canAccess: boolean; canEdit: boolean }>,
   role: CurrentUser["role"] = "Operations",
   views: CurrentUser["views"] = ["staff"],
+  preferredLanguage: CurrentUser["preferredLanguage"] = "en",
 ): CurrentUser {
   return {
     id: USER_ROW.user_id,
@@ -75,7 +76,7 @@ function currentUser(
     fullName: USER_ROW.full_name,
     profilePhotoUrl: null,
     role,
-    preferredLanguage: "en",
+    preferredLanguage,
     username: USER_ROW.username,
     email: null,
     status: "active",
@@ -527,6 +528,24 @@ test("staff overview supports users with multiple permissions without owner data
   assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
   assert.equal(JSON.stringify(overview).includes("Dashboard Owner"), false);
+});
+
+test("staff overview module perimeter is identical for English and Thai staff and excludes Guest Messages", async () => {
+  const permissions = [
+    { module: "movements" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "rooms" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "housekeeping" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "maintenance" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "procurement" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "messages" as ModuleKey, canAccess: true, canEdit: false },
+    { module: "chat" as ModuleKey, canAccess: true, canEdit: false },
+  ];
+  const enOverview = await getStaffOverview(env([movementsAccess, roomsAccess, maintenanceAccess, procurementAccess]), currentUser(permissions, "Operations", ["staff"], "en"));
+  const thOverview = await getStaffOverview(env([movementsAccess, roomsAccess, maintenanceAccess, procurementAccess]), currentUser(permissions, "Operations", ["staff"], "th"));
+
+  assert.deepEqual(thOverview.cards.map((card) => card.id), enOverview.cards.map((card) => card.id));
+  assert.equal(enOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
+  assert.equal(thOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
 });
 
 test("staff overview exposes Social Automation only to owners with the social module", async () => {

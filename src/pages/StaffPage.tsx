@@ -20,12 +20,12 @@ import VanaraSummaryGrid, { type VanaraSummaryItem } from "../components/vanara/
 import { loadStaffOverview } from "../services/staff.service";
 import type { StaffCardId, StaffOverviewCard, StaffOverviewMetric } from "../types/staff";
 import { useLanguage } from "../providers/language.context";
+import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
   "rooms",
   "availability",
-  "messages",
   "reception",
   "housekeeping",
   "maintenance",
@@ -58,23 +58,10 @@ const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
   summaryLine2: "readOnlySearch",
 };
 
-const MESSAGES_WORKSPACE_CARD: StaffOverviewCard = {
-  id: "messages",
-  module: "messages",
-  title: "messages",
-  description: "messagesDescription",
-  href: "/messages",
-  cta: "openWorkspace",
-  metrics: [],
-  summaryLine1: "humanReview",
-  summaryLine2: "reviewBeforeSend",
-};
-
 const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
   availability: "prices",
   housekeeping: "housekeeping",
   maintenance: "maintenance",
-  messages: "messages",
   payroll: "payroll",
   procurement: "procurement",
   reception: "arrivalsDepartures",
@@ -84,7 +71,6 @@ const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
 
 const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   availability: "pricesDescription",
-  messages: "messagesDescription",
 };
 
 const metricLabelKeys: Record<string, string> = {
@@ -126,11 +112,6 @@ function withAvailabilityWorkspace(workspaces: StaffOverviewCard[]) {
   return [...workspaces, AVAILABILITY_WORKSPACE_CARD];
 }
 
-function withMessagesWorkspace(workspaces: StaffOverviewCard[]) {
-  if (workspaces.some((workspace) => workspace.id === "messages")) return workspaces;
-  return [...workspaces, MESSAGES_WORKSPACE_CARD];
-}
-
 function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
 }
@@ -141,6 +122,27 @@ function summaryItems(metrics: StaffOverviewMetric[], translate: (key: string) =
     tone: metricTone[metric.tone],
     value: metric.value,
   }));
+}
+
+function translateDynamicSummaryLine(value: string | undefined, translate: (key: string, options?: Record<string, unknown>) => string) {
+  if (!value) return "-";
+  const paired = /^(\d+)\s+(.+?)\s+\/\s+(\d+)\s+(.+)$/.exec(value);
+  if (paired?.[1] && paired[2] && paired[3] && paired[4]) {
+    return `${paired[1]} ${translateStaffSummaryLabel(paired[2], translate)} / ${paired[3]} ${translateStaffSummaryLabel(paired[4], translate)}`;
+  }
+  return translateStaffSummaryLabel(value, translate);
+}
+
+function translateStaffSummaryLabel(label: string, translate: (key: string, options?: Record<string, unknown>) => string) {
+  const mapped = metricLabelKeys[label] ? translate(metricLabelKeys[label]) : label;
+  if (mapped !== label) return mapped;
+  const staffLabel = translateStaffLabel(label, translate);
+  if (staffLabel !== label) return staffLabel;
+  const knownLabels: Record<string, string> = {
+    "Free-text request": "freeTextRequest",
+    "Owner decision": "ownerDecision",
+  };
+  return knownLabels[label] ? translate(knownLabels[label]) : label;
 }
 
 function WorkspaceCard({
@@ -155,8 +157,8 @@ function WorkspaceCard({
   const title = workspaceTitleKeys[workspace.id] ? translate(workspaceTitleKeys[workspace.id]!) : workspace.title;
   const description = workspaceDescriptionKeys[workspace.id] ? translate(workspaceDescriptionKeys[workspace.id]!) : workspace.description;
   const metrics = summaryItems(workspace.metrics, translate);
-  const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : (workspace.summaryLine1 ?? "-");
-  const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : (workspace.summaryLine2 ?? "-");
+  const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
+  const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
 
   return (
     <Link
@@ -222,7 +224,7 @@ export default function StaffPage() {
     refetchInterval: 60_000,
   });
 
-  const workspaces = staff.data ? sortWorkspaces(withMessagesWorkspace(withAvailabilityWorkspace(staff.data.cards))) : [];
+  const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;

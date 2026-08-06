@@ -102,6 +102,8 @@ class FakeStmt {
 class FakeGuestMessagesDB {
   authenticated = true;
   views: string[] = ["staff"];
+  role = "Operations";
+  messagesAccess = false;
   conversations: ConversationRow[] = [
     conversationRow(1, 1, "DRAFT_READY", "BOOKING_COM", "2026-08-04T10:00:00.000Z"),
     conversationRow(2, 2, "SENT", "AIRBNB", "2026-08-04T11:00:00.000Z"),
@@ -134,9 +136,11 @@ class FakeGuestMessagesDB {
     draftRow(2, 1, 1, "Failed internal draft.", "FAILED", "2026-08-04T09:57:00.000Z"),
   ];
 
-  constructor(options: { authenticated?: boolean; views?: string[] } = {}) {
+  constructor(options: { authenticated?: boolean; views?: string[]; role?: string; messagesAccess?: boolean } = {}) {
     this.authenticated = options.authenticated ?? true;
     this.views = options.views ?? ["staff"];
+    this.role = options.role ?? "Operations";
+    this.messagesAccess = options.messagesAccess ?? false;
   }
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
@@ -202,7 +206,7 @@ class FakeGuestMessagesDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
-    if (sql.includes("SELECT s.session_id")) return (this.authenticated ? USER_ROW : null) as T | null;
+    if (sql.includes("SELECT s.session_id")) return (this.authenticated ? { ...USER_ROW, role: this.role } : null) as T | null;
     if (sql.includes("WHERE c.message_conversation_id = ?")) {
       const conversationId = Number(params[0]);
       const conversation = this.conversations.find((item) => item.message_conversation_id === conversationId);
@@ -216,7 +220,11 @@ class FakeGuestMessagesDB {
       return { results: this.views.map((view_key) => ({ view_key })) as T[] };
     }
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) {
-      return { results: [] as T[] };
+      return {
+        results: this.messagesAccess
+          ? [{ module_key: "messages", can_access: 1, can_edit: 1 }] as T[]
+          : [] as T[],
+      };
     }
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) {
       return { results: [] as T[] };
@@ -407,20 +415,20 @@ test("guest message booking context is read-only and complete for linked booking
   });
 });
 
-test("guest message endpoints are read-only and require an authenticated staff or owner view", async () => {
+test("guest message endpoints are read-only and require owner view", async () => {
   const ok = await worker.fetch(new Request("https://vanara.test/api/messages/conversations", {
     headers: { cookie: "vanara_session=test" },
-  }), env(new FakeGuestMessagesDB()) as never);
+  }), env(new FakeGuestMessagesDB({ role: "Owner", views: ["owner", "staff"] })) as never);
   assert.equal(ok.status, 200);
   assert.equal((await ok.json() as { success: boolean }).success, true);
 
   const unauthenticated = await worker.fetch(new Request("https://vanara.test/api/messages/conversations"), env(new FakeGuestMessagesDB({ authenticated: false })) as never);
   assert.equal(unauthenticated.status, 401);
 
-  const forbidden = await worker.fetch(new Request("https://vanara.test/api/messages/conversations", {
+  const staff = await worker.fetch(new Request("https://vanara.test/api/messages/conversations", {
     headers: { cookie: "vanara_session=test" },
-  }), env(new FakeGuestMessagesDB({ views: [] })) as never);
-  assert.equal(forbidden.status, 403);
+  }), env(new FakeGuestMessagesDB({ role: "Operations", views: ["staff"], messagesAccess: true })) as never);
+  assert.equal(staff.status, 403);
 });
 
 test("guest messages UI uses only the human review draft endpoints and no AI or sync path", () => {

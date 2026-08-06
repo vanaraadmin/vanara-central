@@ -31,7 +31,6 @@ const moreLinks: PlaceholderLink[] = [
   { labelKey: "staffHome", to: "/staff" },
   { labelKey: "housekeeping", to: "/housekeeping" },
   { labelKey: "maintenance", to: "/maintenance" },
-  { labelKey: "messages", to: "/messages" },
   { labelKey: "procurement", to: "/procurement" },
   { labelKey: "notifications", to: "/notifications" },
   { labelKey: "askWaraporn", to: "/assistant" },

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -22,9 +23,7 @@ function getInitialLanguage(): Language {
     return savedLanguage;
   }
 
-  const browserLanguage = navigator.language.toLowerCase();
-
-  return browserLanguage.startsWith("th") ? "th" : "en";
+  return "en";
 }
 
 export function LanguageProvider({
@@ -33,6 +32,16 @@ export function LanguageProvider({
   const { t, i18n } = useTranslation();
 
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
+
+  useLayoutEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.setAttribute("translate", "no");
+    document.documentElement.classList.add("notranslate");
+    document.body.setAttribute("translate", "no");
+    document.body.classList.add("notranslate");
+    document.getElementById("root")?.setAttribute("translate", "no");
+    document.getElementById("root")?.classList.add("notranslate");
+  }, [language]);
 
   useEffect(() => {
     void i18n.changeLanguage(language);

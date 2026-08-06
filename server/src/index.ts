@@ -339,9 +339,7 @@ async function payrollOwner(c: AppContext, action: "access" | "edit" = "access")
 
 async function guestMessagesReader(c: AppContext): Promise<CurrentUser> {
   const user = await resolveCurrentUser(c);
-  if (!user.views.includes("staff") && !user.views.includes("owner")) {
-    throw new ForbiddenError("Staff view access is required.");
-  }
+  requireOwner(user);
   return user;
 }
 

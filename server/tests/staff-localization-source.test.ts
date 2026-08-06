@@ -10,6 +10,7 @@ const movementsPage = readFileSync(new URL("../../src/pages/MovementsPage.tsx", 
 const passportWorkflow = readFileSync(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportMessages = readFileSync(new URL("../../src/components/passport/passport-messages.ts", import.meta.url), "utf8");
 const staffLabels = readFileSync(new URL("../../src/utils/staff-i18n-labels.ts", import.meta.url), "utf8");
+const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
 
 test("staff-facing Thai dictionary uses Somkiat-approved practical labels", () => {
   for (const text of [
@@ -24,6 +25,17 @@ test("staff-facing Thai dictionary uses Somkiat-approved practical labels", () =
     "เลือกวันเข้าและวันออกเพื่อเช็กห้องว่าง",
   ]) {
     assert.match(th, new RegExp(text));
+  }
+
+  for (const key of [
+    "completedCleaningToday",
+    "maintenanceClear",
+    "maintenanceActive",
+    "freeTextRequest",
+    "ownerDecision",
+    "maintenanceBlocked",
+  ]) {
+    assert.match(en + th, new RegExp(`${key}:`));
   }
 
   for (const formalOrWrong of [
@@ -97,6 +109,13 @@ test("Passport staff-facing edge messages avoid visible OCR/OpenAI wording in Th
 
 test("staff label helper preserves operational meaning for compact statuses", () => {
   for (const mapping of [
+    'ARRIVALS: "arrivals"',
+    'DEPARTURES: "departures"',
+    'VACANT: "vacant"',
+    'OCCUPIED: "occupied"',
+    'ACTIVE: "maintenanceActive"',
+    'CLEAR: "maintenanceClear"',
+    '"COMPLETED CLEANING TODAY": "completedCleaningToday"',
     '"CLEANING IN PROGRESS": "cleaningInProgress"',
     '"WATER IN PROGRESS": "waterInProgress"',
     '"ROOMS TO CLEAN": "roomsToClean"',
@@ -105,4 +124,19 @@ test("staff label helper preserves operational meaning for compact statuses", ()
   ]) {
     assert.match(staffLabels, new RegExp(mapping.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("Staff Home Thai source translates greeting, metrics, and summary lines without Google Translate", () => {
+  assert.match(staffPage, /translate\("sawasdeeName"/);
+  assert.match(staffPage, /translateStaffSummaryLabel/);
+  assert.match(staffPage, /translateStaffLabel\(label, translate\)/);
+  assert.match(staffLabels, /VACANT:\s*"vacant"/);
+  assert.match(staffLabels, /OCCUPIED:\s*"occupied"/);
+  assert.match(staffLabels, /ACTIVE:\s*"maintenanceActive"/);
+  assert.match(staffLabels, /CLEAR:\s*"maintenanceClear"/);
+  assert.match(staffLabels, /"COMPLETED CLEANING TODAY":\s*"completedCleaningToday"/);
+  assert.match(staffPage, /"Free-text request":\s*"freeTextRequest"/);
+  assert.match(staffPage, /"Owner decision":\s*"ownerDecision"/);
+  assert.doesNotMatch(th, /:\s*"(Arrival|Arrivals|Departure|Departures|In House|Completed Cleaning Today|Vacant|Clear|Active|Free-text request|Owner decision|Maintenance Blocked)"/);
+  assert.doesNotMatch(staffPage, /translation\.service|translateFreeText|\/api\/translations\/free-text/);
 });

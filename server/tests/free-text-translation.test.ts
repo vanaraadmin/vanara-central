@@ -249,6 +249,10 @@ test("free-text translation source guardrails keep Google centralized and preven
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const component = readFileSync(new URL("../../src/components/TranslatableText.tsx", import.meta.url), "utf8");
   const clientService = readFileSync(new URL("../../src/services/translation.service.ts", import.meta.url), "utf8");
+  const languageProvider = readFileSync(new URL("../../src/providers/LanguageProvider.tsx", import.meta.url), "utf8");
+  const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
+  const workspaceShell = readFileSync(new URL("../../src/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  const appRouter = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
   const migration = readFileSync(new URL("../migrations/0040_free_text_translation_cache.sql", import.meta.url), "utf8");
 
   assert.match(index, /app\.post\("\/api\/translations\/free-text"/);
@@ -261,6 +265,7 @@ test("free-text translation source guardrails keep Google centralized and preven
   assert.match(component, /onClick=\{\(\) => mutation\.mutate\(\)\}/);
   assert.match(component, /translate\("translate"\)/);
   assert.match(clientService, /\/api\/translations\/free-text/);
+  assert.doesNotMatch(languageProvider + staffPage + workspaceShell + appRouter, /translation\.service|translateFreeText|\/api\/translations\/free-text/);
   assert.doesNotMatch(service + component + clientService, /openai|OPENAI|fake translation|placeholder translation/i);
   assert.doesNotMatch(component, /useEffect\([\s\S]*translateFreeText/);
 });
