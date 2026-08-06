@@ -79,7 +79,7 @@ export class ValidationError extends Error {
 export const SESSION_COOKIE_NAME = "vanara_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 180;
 const PASSWORD_ITERATIONS = 100_000;
-const MAX_PROFILE_PHOTO_BYTES = 512 * 1024;
+const MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024;
 const PROFILE_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MODULES: ModuleKey[] = [
   "dashboard",
@@ -293,14 +293,14 @@ function profilePhotoBytes(dataUrl: string): number {
 }
 
 function normalizeProfilePhoto(value: unknown): string | null {
-  const text = normalizeOptionalText(value, MAX_PROFILE_PHOTO_BYTES * 2);
+  const text = normalizeOptionalText(value, Math.ceil(MAX_PROFILE_PHOTO_BYTES * 1.4) + 128);
   if (!text) return null;
   if (/^\/assets\/img\/[A-Za-z0-9._-]+\.(?:jpe?g|png|webp|gif)$/i.test(text)) return text;
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(text);
   if (!match) throw new ValidationError("Profile photo must be a base64 image data URL.");
   const mime = match[1]!.toLowerCase();
   if (!PROFILE_PHOTO_MIME_TYPES.has(mime)) throw new ValidationError("Profile photo type is not supported.");
-  if (profilePhotoBytes(text) > MAX_PROFILE_PHOTO_BYTES) throw new ValidationError("Profile photo must be 512 KB or smaller.");
+  if (profilePhotoBytes(text) > MAX_PROFILE_PHOTO_BYTES) throw new ValidationError("Profile photo must be 5 MB or smaller.");
   return text;
 }
 

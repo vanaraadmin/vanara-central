@@ -782,7 +782,7 @@ const en = {
   passwordChangedSignInAgain: "Password changed. Please sign in again.",
   passwordCouldNotBeChanged: "Password could not be changed.",
   useSupportedProfilePhoto: "Use JPG, PNG or WebP photo.",
-  profilePhotoTooLarge: "Profile photo must be 512 KB or smaller.",
+  profilePhotoTooLarge: "Profile photo must be 5 MB or smaller.",
   actionCouldNotBeCompleted: "Action could not be completed.",
   currentPasswordIncorrect: "Current password is incorrect.",
   notifications: "Notifications",

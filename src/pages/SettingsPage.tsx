@@ -14,7 +14,7 @@ const actionPermissionLabels: Record<ActionPermissionKey, string> = {
 };
 const defaultActionPermissions = (Object.keys(actionPermissionLabels) as ActionPermissionKey[]).map((action) => ({ action, allowed: false }));
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-const maxPhotoBytes = 512 * 1024;
+const maxPhotoBytes = 5 * 1024 * 1024;
 
 function emptyForm(): SaveUserPayload {
   return {
@@ -194,7 +194,7 @@ export default function SettingsPage() {
       return;
     }
     if (file.size > maxPhotoBytes) {
-      setPhotoError("Profile photo must be 512 KB or smaller.");
+      setPhotoError("Profile photo must be 5 MB or smaller.");
       event.target.value = "";
       return;
     }

@@ -442,6 +442,40 @@ test("profile photos are MIME and size validated server-side", async () => {
   }, data);
   assert.equal(validPhoto.status, 201);
 
+  const modernPhonePhoto = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Modern Phone Photo",
+      username: "modern-phone-photo",
+      password: "staff-password",
+      role: "Operations",
+      preferredLanguage: "en",
+      status: "active",
+      views: ["staff"],
+      profilePhotoUrl: `data:image/jpeg;base64,${"A".repeat(4 * 1024 * 1024)}`,
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  assert.equal(modernPhonePhoto.status, 201);
+
+  const oversizedPhoto = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Oversized Photo",
+      username: "oversized-photo",
+      password: "staff-password",
+      role: "Operations",
+      preferredLanguage: "en",
+      status: "active",
+      views: ["staff"],
+      profilePhotoUrl: `data:image/jpeg;base64,${"A".repeat(8 * 1024 * 1024)}`,
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  assert.equal(oversizedPhoto.status, 400);
+
   const validAssetPhoto = await request("/api/users", {
     method: "POST",
     headers: { cookie: ownerCookie, "content-type": "application/json" },

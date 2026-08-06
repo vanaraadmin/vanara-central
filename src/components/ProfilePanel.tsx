@@ -17,7 +17,7 @@ import type { CurrentUserView, ManagedUser, ModuleKey, ModulePermission, SaveUse
 import { moduleKeys } from "../types/auth";
 
 const photoTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-const maxPhotoBytes = 512 * 1024;
+const maxPhotoBytes = 5 * 1024 * 1024;
 
 type PanelTab = "profile" | "password" | "updates" | "owner";
 
