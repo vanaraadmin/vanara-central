@@ -104,6 +104,10 @@ interface OpenAiResponsesResult {
   estimatedCostUsd: number;
 }
 
+type WarapornDraftErrorWithResult = WarapornDraftError & {
+  openAiResult?: OpenAiResponsesResult;
+};
+
 export class WarapornDraftError extends Error {
   constructor(
     message: string,
@@ -312,6 +316,18 @@ function estimateGpt55CostUsd(usage: OpenAiUsage): number {
   return Number(cost.toFixed(8));
 }
 
+function attachOpenAiResult(error: unknown, result: OpenAiResponsesResult): void {
+  if (error instanceof WarapornDraftError) {
+    (error as WarapornDraftErrorWithResult).openAiResult = result;
+  }
+}
+
+function openAiResultFromError(error: unknown): OpenAiResponsesResult | null {
+  return error instanceof WarapornDraftError
+    ? ((error as WarapornDraftErrorWithResult).openAiResult ?? null)
+    : null;
+}
+
 export function buildWarapornResponsesRequest(
   promptText: string,
   context: VerifiedMessageContext,
@@ -417,7 +433,7 @@ async function acquireDraftLease(env: Pick<WarapornDraftBindings, "DB">, message
     SET state = 'GENERATING',
         updated_at = ?
     WHERE message_id = ?
-      AND state = 'ASSOCIATED'
+      AND state IN ('ASSOCIATED', 'FAILED_MANUAL_RETRY')
       AND association_state = 'LINKED'
       AND NOT EXISTS (
         SELECT 1
@@ -464,8 +480,10 @@ async function persistFailedDraftAttempt(
     error: unknown;
   },
 ): Promise<void> {
-  await markMessageFailedManualRetry(env, params.messageId, params.now);
-  if (!params.prompt || !params.context || params.openAiRequestCount !== 1) return;
+  if (!params.prompt || !params.context || params.openAiRequestCount !== 1) {
+    await markMessageFailedManualRetry(env, params.messageId, params.now);
+    return;
+  }
   const result = params.openAiResult ?? null;
   const usage = result?.usage ?? {
     inputTokens: 0,
@@ -475,7 +493,7 @@ async function persistFailedDraftAttempt(
     totalTokens: 0,
   };
 
-  await env.DB.prepare(`
+  const failedDraftInsert = env.DB.prepare(`
     INSERT INTO message_drafts (
       message_id,
       message_conversation_id,
@@ -506,7 +524,7 @@ async function persistFailedDraftAttempt(
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(message_id) DO NOTHING
   `).bind(
     params.messageId,
@@ -535,7 +553,26 @@ async function persistFailedDraftAttempt(
     failureMessage(params.error),
     params.now,
     params.now,
-  ).run();
+  );
+  const failedMessageUpdate = env.DB.prepare(`
+    UPDATE messages
+    SET state = 'FAILED_MANUAL_RETRY',
+        updated_at = ?
+    WHERE message_id = ?
+      AND state <> 'DRAFT_READY'
+  `).bind(params.now, params.messageId);
+
+  try {
+    await env.DB.batch([failedDraftInsert, failedMessageUpdate]);
+  } catch (insertError) {
+    console.error("waraporn_failed_draft_persist_failed", {
+      messageId: params.messageId,
+      failureCode: failureCode(params.error),
+      failureMessage: failureMessage(params.error),
+      insertError: failureMessage(insertError),
+    });
+    throw insertError;
+  }
 }
 
 async function callOpenAiResponses(
@@ -580,9 +617,8 @@ async function callOpenAiResponses(
   }
   const usage = usageFrom(payload);
   const fileSearchCallCount = fileSearchCallCountFrom(payload);
-
-  return {
-    text: outputTextFrom(payload),
+  const result: OpenAiResponsesResult = {
+    text: "",
     responseId: openAiResponseId(payload),
     retrievalFilenames: retrievalFilenamesFrom(payload),
     retrievalResultCount: retrievalResultCountFrom(payload),
@@ -591,6 +627,12 @@ async function callOpenAiResponses(
     elapsedMs,
     estimatedCostUsd: estimateGpt55CostUsd(usage),
   };
+  try {
+    return { ...result, text: outputTextFrom(payload) };
+  } catch (error) {
+    attachOpenAiResult(error, result);
+    throw error;
+  }
 }
 
 export async function generateWarapornDraft(
@@ -712,7 +754,16 @@ export async function generateWarapornDraft(
 
     return draft;
   } catch (error) {
-    await persistFailedDraftAttempt(env, { messageId, now, prompt, context, storeId, openAiRequestCount, openAiResult, error });
+    await persistFailedDraftAttempt(env, {
+      messageId,
+      now,
+      prompt,
+      context,
+      storeId,
+      openAiRequestCount,
+      openAiResult: openAiResult ?? openAiResultFromError(error),
+      error,
+    });
     throw error;
   }
 }

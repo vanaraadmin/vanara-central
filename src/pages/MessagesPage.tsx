@@ -7,6 +7,7 @@ import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import {
   approveGuestMessageDraft,
+  generateGuestMessageDraft,
   loadGuestMessageConversation,
   loadGuestMessageInbox,
   rejectGuestMessageDraft,
@@ -180,6 +181,7 @@ interface DraftActionHandlers {
   busy: boolean;
   onApprove: (draftId: string) => Promise<void>;
   onApproveEdited: (draftId: string, draftText: string) => Promise<void>;
+  onGenerate: (messageId: string) => Promise<void>;
   onReject: (draftId: string) => Promise<void>;
   onSave: (draftId: string, draftText: string) => Promise<void>;
 }
@@ -197,8 +199,24 @@ function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
 
 function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
   const { translate } = useLanguage();
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
   const label = item.kind === "draft" ? translate("guestMessagesDraft") : item.sender;
   const canActOnDraft = item.kind === "draft" && (item.status === "READY" || item.status === "DELIVERY_FAILED");
+  const failedMessageId = item.kind === "guest" && item.canGenerateDraft && item.id.startsWith("message:")
+    ? item.id.slice("message:".length)
+    : "";
+  const generateDraft = async () => {
+    if (!failedMessageId) return;
+    setNotice("");
+    setError("");
+    try {
+      await actions.onGenerate(failedMessageId);
+      setNotice("Wara draft generated.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Wara draft could not be generated.");
+    }
+  };
   return (
     <article className={`messages-bubble messages-bubble--${item.kind}`}>
       <div className="messages-bubble__meta">
@@ -212,6 +230,15 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
         </div>
       ) : null}
       <p>{item.message}</p>
+      {failedMessageId ? (
+        <div className="messages-draft-actions" aria-label="Wara draft recovery actions">
+          <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={generateDraft}>
+            Generate Wara draft
+          </button>
+          {notice ? <p role="status">{notice}</p> : null}
+          {error ? <p role="alert">{error}</p> : null}
+        </div>
+      ) : null}
       {canActOnDraft ? (
         <DraftActions actions={actions} item={item} key={`${item.draftId ?? item.id}:${item.message}`} />
       ) : null}
@@ -482,15 +509,25 @@ export default function MessagesPage() {
     mutationFn: ({ draftId, draftText }: { draftId: string; draftText: string }) => saveGuestMessageDraft(draftId, draftText),
     onSuccess: applyConversation,
   });
+  const generateMutation = useMutation({
+    mutationFn: generateGuestMessageDraft,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["guest-messages", "inbox"] });
+      await detailQuery.refetch();
+    },
+  });
 
   const draftActions: DraftActionHandlers = {
-    busy: approveMutation.isPending || rejectMutation.isPending || saveMutation.isPending,
+    busy: approveMutation.isPending || rejectMutation.isPending || saveMutation.isPending || generateMutation.isPending,
     onApprove: async (draftId) => {
       await approveMutation.mutateAsync(draftId);
     },
     onApproveEdited: async (draftId, draftText) => {
       await saveMutation.mutateAsync({ draftId, draftText });
       await approveMutation.mutateAsync(draftId);
+    },
+    onGenerate: async (messageId) => {
+      await generateMutation.mutateAsync(messageId);
     },
     onReject: async (draftId) => {
       await rejectMutation.mutateAsync(draftId);

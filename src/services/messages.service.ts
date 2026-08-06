@@ -1,5 +1,6 @@
 import { requestJson } from "./api.client";
 import type {
+  Draft,
   GuestMessageConversationDetail,
   GuestMessageConversationResponse,
   GuestMessageInbox,
@@ -89,4 +90,14 @@ export async function saveGuestMessageDraft(draftId: string, draftText: string):
     "PATCH",
     { draftText },
   ));
+}
+
+export async function generateGuestMessageDraft(messageId: string): Promise<Draft> {
+  const response = await sendJson<{ success: boolean; data?: Draft; error?: string }>(
+    `/api/messages/${encodeURIComponent(messageId)}/generate`,
+    "POST",
+    {},
+  );
+  if (!response.success || !response.data) throw new Error(response.error ?? "Draft could not be generated");
+  return response.data;
 }

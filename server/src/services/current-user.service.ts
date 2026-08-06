@@ -589,7 +589,6 @@ const staffOperationalModules = new Set<ModuleKey>([
   "movements",
   "maintenance",
   "procurement",
-  "messages",
   "chat",
 ]);
 

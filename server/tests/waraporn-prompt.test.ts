@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  canonicalPromptTextForChecksum,
   DEFAULT_WARAPORN_PROMPT_KEY,
   getPromptChecksum,
   getPromptVersion,
@@ -21,12 +22,27 @@ const expectedChecksum = "1534c2d9654b2ccca292784110d31b7a6aa739fb498709913bd327
 
 test("frozen Waraporn prompt asset matches the approved checksum", () => {
   const prompt = readFileSync(promptPath, "utf8");
-  const actualChecksum = createHash("sha256").update(prompt, "utf8").digest("hex");
+  const actualChecksum = createHash("sha256").update(canonicalPromptTextForChecksum(prompt), "utf8").digest("hex");
 
   assert.equal(actualChecksum, expectedChecksum);
   assert.equal(getPromptChecksum(DEFAULT_WARAPORN_PROMPT_KEY), expectedChecksum);
   assert.equal(getPromptVersion(DEFAULT_WARAPORN_PROMPT_KEY), "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE");
   assert.match(prompt, /^# SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE/);
+});
+
+test("Waraporn prompt checksum is stable across Windows and LF line endings", () => {
+  const prompt = readFileSync(promptPath, "utf8");
+  const lfPrompt = prompt.replace(/\r\n/g, "\n");
+  const crlfPrompt = lfPrompt.replace(/\n/g, "\r\n");
+
+  assert.equal(
+    createHash("sha256").update(canonicalPromptTextForChecksum(lfPrompt), "utf8").digest("hex"),
+    expectedChecksum,
+  );
+  assert.equal(
+    createHash("sha256").update(canonicalPromptTextForChecksum(crlfPrompt), "utf8").digest("hex"),
+    expectedChecksum,
+  );
 });
 
 test("prompt registry contains only the current frozen Make prompt", () => {

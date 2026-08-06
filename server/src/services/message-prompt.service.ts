@@ -65,6 +65,10 @@ function bytesToHex(bytes: ArrayBuffer): string {
     .join("");
 }
 
+export function canonicalPromptTextForChecksum(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
 export function listPromptVersions(): PromptMetadata[] {
   return Object.values(PROMPT_REGISTRY).map((prompt) => ({
     key: prompt.key,
@@ -91,6 +95,6 @@ export async function loadPrompt(key: MessagePromptKey = DEFAULT_WARAPORN_PROMPT
 
 export async function verifyPromptChecksum(key: MessagePromptKey = DEFAULT_WARAPORN_PROMPT_KEY): Promise<boolean> {
   const prompt = await loadPrompt(key);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(prompt.text));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalPromptTextForChecksum(prompt.text)));
   return bytesToHex(digest) === prompt.checksum;
 }
