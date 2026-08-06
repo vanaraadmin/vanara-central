@@ -45,6 +45,15 @@ type CounterRow = {
   linen_override_reason: string | null;
 };
 
+type UnitRow = {
+  unit_id: number;
+  unit_name: string;
+  unit_type: string | null;
+  room_type_name: string | null;
+  room_name: string | null;
+  position: number | null;
+};
+
 class FakeStmt {
   private params: unknown[] = [];
   constructor(private db: FakeHousekeepingV2DB, private sql: string) {}
@@ -65,6 +74,11 @@ class FakeHousekeepingV2DB {
     booking(101, 900101, 1, "Bungalow Guest", 1, 0),
     booking(102, 900102, 2, "Tent Guest", 2, 2),
     booking(103, 900103, 3, "Villa Guest", 4, 3),
+  ];
+  unitRows: UnitRow[] = [
+    { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 1 },
+    { unit_id: 2, unit_name: "Tent 1", unit_type: "other", room_type_name: "Tent", room_name: "Tent", position: 1 },
+    { unit_id: 3, unit_name: "Villa 1", unit_type: "villa", room_type_name: "Villa", room_name: "Villa", position: 1 },
   ];
   nextTaskId = 1;
   raceWaterInsertKey: string | null = null;
@@ -87,11 +101,10 @@ class FakeHousekeepingV2DB {
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
     if (sql.includes("FROM units u")) {
       return {
-        results: [
-          { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", operational_availability_status: this.operationalAvailability.get(1) ?? "OPERATING" },
-          { unit_id: 2, unit_name: "Tent 1", unit_type: "other", room_type_name: "Tent", room_name: "Tent", operational_availability_status: this.operationalAvailability.get(2) ?? "OPERATING" },
-          { unit_id: 3, unit_name: "Villa 1", unit_type: "villa", room_type_name: "Villa", room_name: "Villa", operational_availability_status: this.operationalAvailability.get(3) ?? "OPERATING" },
-        ] as T[],
+        results: this.unitRows.map((unit) => ({
+          ...unit,
+          operational_availability_status: this.operationalAvailability.get(unit.unit_id) ?? "OPERATING",
+        })) as T[],
       };
     }
     if (sql.includes("FROM bookings b")) {
@@ -157,12 +170,7 @@ class FakeHousekeepingV2DB {
   async first<T>(sql: string, params: unknown[]) {
     if (sql.includes("SELECT s.session_id")) return this.currentUser as T;
     if (sql.includes("FROM units u")) {
-      const units = [
-        { unit_id: 1, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow" },
-        { unit_id: 2, unit_name: "Tent 1", unit_type: "other", room_type_name: "Tent", room_name: "Tent" },
-        { unit_id: 3, unit_name: "Villa 1", unit_type: "villa", room_type_name: "Villa", room_name: "Villa" },
-      ];
-      return (units.find((unit) => unit.unit_id === params[0]) as T) ?? null;
+      return (this.unitRows.find((unit) => unit.unit_id === params[0]) as T) ?? null;
     }
     if (sql.includes("SELECT beds24_booking_id FROM bookings WHERE booking_id = ?")) {
       const row = this.bookings.find((bookingRow) => bookingRow.booking_id === params[0]);
@@ -433,6 +441,25 @@ test("housekeeping v2 tasks returns 200 when repeated water refill creation repl
   assert.equal(quantities.get(1), 2);
   assert.equal(quantities.get(2), 2);
   assert.equal(quantities.get(3), 4);
+});
+
+test("water refill cards use readable Vanara unit labels instead of internal room codes", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 4, unit_name: "E2", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 2 },
+  ];
+  db.bookings = [
+    { ...booking(104, 900104, 4, "Water Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
+  ];
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { tasks: Array<{ taskType: string | null; unitName: string }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const waterTask = body.data.tasks.find((card) => card.taskType === "WATER_REFILL");
+  assert.ok(waterTask);
+  assert.equal(waterTask.unitName, "Bungalow 2");
+  assert.notEqual(waterTask.unitName, "E2");
 });
 
 test("water refill is not generated on arrival day and starts the following occupied day", async () => {

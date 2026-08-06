@@ -2,6 +2,7 @@ import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import { createHousekeepingTask, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
+import { readableUnitName } from "./room-display-label.service.js";
 import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
 
 export interface HousekeepingV2Bindings {
@@ -83,6 +84,7 @@ interface UnitRow {
   unit_type: string | null;
   room_type_name: string | null;
   room_name: string | null;
+  position: number | null;
   operational_availability_status: OperationalAvailabilityStatus;
 }
 
@@ -387,7 +389,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
 
   return {
     unitId: context.unit.unit_id,
-    unitName: context.unit.unit_name,
+    unitName: readableUnitName(context.unit),
     taskId: task.id,
     taskVersion: task.version,
     taskType,
@@ -736,7 +738,7 @@ function formatBangkokDate(now: Date): string {
 
 async function loadUnits(env: HousekeepingV2Bindings): Promise<UnitRow[]> {
   const rows = await env.DB.prepare(`
-    SELECT u.unit_id, u.unit_name, u.unit_type, rt.room_type_name, rt.room_name,
+    SELECT u.unit_id, u.unit_name, u.unit_type, u.position, rt.room_type_name, rt.room_name,
            COALESCE(roa.status, 'OPERATING') AS operational_availability_status
     FROM units u
     JOIN room_types rt ON rt.room_type_id = u.room_type_id

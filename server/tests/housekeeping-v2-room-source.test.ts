@@ -6,6 +6,7 @@ const roomService = await readFile(new URL("../src/services/housekeeping-v2-room
 const overviewService = await readFile(new URL("../src/services/housekeeping-v2-overview.service.ts", import.meta.url), "utf8");
 const roomDetailService = await readFile(new URL("../src/services/room-detail.service.ts", import.meta.url), "utf8");
 const roomsWorkspaceService = await readFile(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
+const roomDisplayLabelService = await readFile(new URL("../src/services/room-display-label.service.ts", import.meta.url), "utf8");
 const index = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
 const homePage = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
@@ -226,4 +227,16 @@ test("housekeeping generation uses internal booking ids while UI still exposes B
   assert.match(overviewService, /beds24_booking_id/);
   assert.match(roomService, /beds24BookingId/);
   assert.match(roomService, /WHERE booking_id = \?/);
+});
+
+test("housekeeping and room read models resolve internal unit codes into readable room labels", () => {
+  assert.match(roomDisplayLabelService, /function looksLikeInternalUnitCode/);
+  assert.match(roomDisplayLabelService, /\[4,\s*"Bungalow 2"\]/);
+  assert.match(roomDisplayLabelService, /export function readableUnitName/);
+
+  assert.match(overviewService, /import \{ readableUnitName \} from "\.\/room-display-label\.service\.js"/);
+  assert.match(overviewService, /unitName:\s*readableUnitName\(context\.unit\)/);
+  assert.match(roomService, /unitName:\s*readableUnitName\(unit\)/);
+  assert.match(roomDetailService, /roomName:\s*readableUnitName\(unit\)/);
+  assert.match(roomsWorkspaceService, /roomName:\s*readableRoomName/);
 });

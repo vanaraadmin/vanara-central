@@ -21,6 +21,7 @@ import {
   type HousekeepingV2Bindings,
 } from "./housekeeping-v2-overview.service.js";
 import { ForbiddenError, type CurrentUser } from "./current-user.service.js";
+import { readableUnitName } from "./room-display-label.service.js";
 
 export interface HousekeepingV2RoomBindings extends HousekeepingV2Bindings {
   DB: D1Database;
@@ -164,6 +165,7 @@ interface UnitRow {
   unit_type: string | null;
   room_type_name: string | null;
   room_name: string | null;
+  position: number | null;
 }
 
 interface BookingRow {
@@ -362,9 +364,9 @@ export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBinding
     operationalDate: date,
     room: {
       unitId: unit.unit_id,
-      unitName: unit.unit_name,
+      unitName: readableUnitName(unit),
       roomType: roomTypeLabel(unit),
-      displayName: `${unit.unit_name} · ${roomTypeLabel(unit)}`,
+      displayName: `${readableUnitName(unit)} · ${roomTypeLabel(unit)}`,
     },
     occupancy: {
       status: departing ? "departing" : current ? "occupied" : next?.arrival_date === date ? "arriving" : "vacant",
@@ -853,7 +855,7 @@ async function clearLinenOverrideForTask(env: HousekeepingV2RoomBindings, task: 
 
 async function loadUnit(env: HousekeepingV2RoomBindings, unitId: number): Promise<UnitRow | null> {
   return env.DB.prepare(`
-    SELECT u.unit_id, u.unit_name, u.unit_type, rt.room_type_name, rt.room_name
+    SELECT u.unit_id, u.unit_name, u.unit_type, u.position, rt.room_type_name, rt.room_name
     FROM units u
     JOIN room_types rt ON rt.room_type_id = u.room_type_id
     WHERE u.unit_id = ?

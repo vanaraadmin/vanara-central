@@ -3,6 +3,7 @@ import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-cap
 import { type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { canCompleteReception, hasModulePermission, type CurrentUser } from "./current-user.service.js";
+import { readableUnitName } from "./room-display-label.service.js";
 
 export interface RoomsWorkspaceBindings {
   DB: D1Database;
@@ -797,6 +798,7 @@ function mapMaintenanceSummary(row: RoomWorkspaceRow, user?: CurrentUser): RoomM
 
 function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSummary[], date: string, user?: CurrentUser): RoomsWorkspaceRoom {
   const group = roomFamily(row);
+  const readableRoomName = readableUnitName(row);
   const occupancyState = roomOccupancyState(row, date);
   const guestName = operationalGuestName(row);
   const staySource = operationalSource(row);
@@ -815,12 +817,12 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSum
 
   return {
     unitId: row.unit_id,
-    roomName: row.unit_name,
+    roomName: readableRoomName,
     roomType: roomType(row),
     accommodationType: accommodationType(group),
     sortGroup: group,
-    sortNumber: roomNumber(row.unit_name),
-    heroImageKey: normalizeKey(row.unit_name),
+    sortNumber: roomNumber(readableRoomName),
+    heroImageKey: normalizeKey(readableRoomName),
     alertSummary: compactAlertSummary(row, reception, date),
     currentStay: occupancyState === "OCCUPIED" && arrival && departure
       ? {

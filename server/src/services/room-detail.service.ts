@@ -9,6 +9,7 @@ import { getBangkokDate } from "./today.service.js";
 import { ForbiddenError, type CurrentUser } from "./current-user.service.js";
 import { canChangeOperationalAvailability, loadOperationalAvailabilityForUnit, type OperationalAvailabilityStatus, type RoomOperationalStateBindings } from "./room-operational-state.service.js";
 import { loadRoomHousekeepingStateForUnit, setRoomHousekeepingState, type RoomHousekeepingState, type RoomHousekeepingStateBindings, type RoomReadyState } from "./room-housekeeping-state.service.js";
+import { readableUnitName } from "./room-display-label.service.js";
 
 export interface RoomDetailBindings extends HousekeepingBindings, HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, RoomOperationalStateBindings, RoomHousekeepingStateBindings {
   DB: D1Database;
@@ -24,6 +25,7 @@ interface UnitRow {
   room_type_id: number;
   room_type_name: string;
   room_name: string | null;
+  position: number | null;
 }
 
 interface StayRow {
@@ -324,7 +326,7 @@ function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenance
 
 async function resolveUnit(env: RoomDetailBindings, id: number): Promise<UnitRow | null> {
   const direct = await env.DB.prepare(`
-    SELECT u.unit_id, u.unit_name, u.unit_type, u.room_type_id, rt.room_type_name, rt.room_name
+    SELECT u.unit_id, u.unit_name, u.unit_type, u.position, u.room_type_id, rt.room_type_name, rt.room_name
     FROM units u
     JOIN room_types rt ON rt.room_type_id = u.room_type_id
     WHERE u.unit_id = ?1
@@ -334,7 +336,7 @@ async function resolveUnit(env: RoomDetailBindings, id: number): Promise<UnitRow
   if (direct) return direct;
 
   return env.DB.prepare(`
-    SELECT u.unit_id, u.unit_name, u.unit_type, u.room_type_id, rt.room_type_name, rt.room_name
+    SELECT u.unit_id, u.unit_name, u.unit_type, u.position, u.room_type_id, rt.room_type_name, rt.room_name
     FROM bookings b
     JOIN units u ON u.unit_id = b.unit_id
     JOIN room_types rt ON rt.room_type_id = u.room_type_id
@@ -503,7 +505,7 @@ async function loadChatContext(env: RoomDetailBindings, unit: UnitRow): Promise<
   return {
     contextType: "room",
     contextId: String(unit.unit_id),
-    roomName: unit.unit_name,
+    roomName: readableUnitName(unit),
     accommodationType: unitType(unit),
     conversationId: row?.conversation_id ?? null,
     readyForContextualChat: true,
@@ -531,7 +533,7 @@ function operationalFallback(unit: UnitRow, stay: RoomCurrentStay | null): House
   return {
     id: `unit:${unit.unit_id}`,
     unitId: unit.unit_id,
-    unitName: unit.unit_name,
+    unitName: readableUnitName(unit),
     group: occupied ? "occupied" : "ready",
     operationalPriority: occupied ? "Occupied" : "Ready",
     occupancyStatus: occupied ? "Occupied" : "Ready for Guest",
@@ -807,7 +809,7 @@ export async function getRoomDetail(env: RoomDetailBindings, id: number, user: C
 
   return {
     unitId: unit.unit_id,
-    roomName: unit.unit_name,
+    roomName: readableUnitName(unit),
     roomType: unitType(unit),
     accommodationType: unitType(unit),
     roomStatus: outOfService || operationalAvailability.status === "NOT_OPERATING" || housekeeping.primaryStatus === "Clean" || housekeeping.primaryStatus === "Dirty"
