@@ -9,6 +9,7 @@ type UserRecord = {
   first_name: string | null;
   last_name: string | null;
   full_name: string;
+  display_name: string | null;
   profile_photo_url: string | null;
   role: string;
   preferred_language: "en" | "th";
@@ -95,10 +96,10 @@ class FakeAuthDB {
     }
     if (sql.includes("INSERT INTO users")) {
       const id = String(params[0]);
-      if ([...this.users.values()].some((user) => user.username === params[7] || (params[8] && user.email === params[8]))) {
+      if ([...this.users.values()].some((user) => user.username === params[8] || (params[9] && user.email === params[9]))) {
         throw new Error("UNIQUE constraint failed");
       }
-      this.users.set(id, this.userFromParams(params, String(params[10])));
+      this.users.set(id, this.userFromParams(params, String(params[11])));
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("INSERT INTO user_sessions")) {
@@ -116,6 +117,24 @@ class FakeAuthDB {
       if (user) {
         user.last_login_at = String(params[0]);
         user.updated_at = String(params[1]);
+      }
+      return { meta: { changes: user ? 1 : 0, last_row_id: 0 } };
+    }
+    if (sql.includes("UPDATE users") && sql.includes("SET password_hash")) {
+      const user = this.users.get(String(params[2]));
+      if (user) {
+        user.password_hash = String(params[0]);
+        user.updated_at = String(params[1]);
+      }
+      return { meta: { changes: user ? 1 : 0, last_row_id: 0 } };
+    }
+    if (sql.includes("UPDATE users") && sql.includes("SET display_name")) {
+      const user = this.users.get(String(params[4]));
+      if (user) {
+        user.display_name = String(params[0]);
+        user.profile_photo_url = params[1] as string | null;
+        user.preferred_language = params[2] as "en" | "th";
+        user.updated_at = String(params[3]);
       }
       return { meta: { changes: user ? 1 : 0, last_row_id: 0 } };
     }
@@ -141,6 +160,13 @@ class FakeAuthDB {
       this.permissions.delete(String(params[0]));
       return { meta: { changes: 1, last_row_id: 0 } };
     }
+    if (sql.includes("DELETE FROM user_action_permissions")) {
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("DELETE FROM users WHERE user_id")) {
+      this.users.delete(String(params[0]));
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     if (sql.includes("INSERT INTO user_views")) {
       const userId = String(params[0]);
       const set = this.views.get(userId) ?? new Set<string>();
@@ -156,20 +182,21 @@ class FakeAuthDB {
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("UPDATE users")) {
-      const userId = String(params[11]);
+      const userId = String(params[12]);
       const user = this.users.get(userId);
       if (!user) return { meta: { changes: 0, last_row_id: 0 } };
       user.first_name = String(params[0]);
       user.last_name = String(params[1]);
       user.full_name = String(params[2]);
-      user.profile_photo_url = params[3] as string | null;
-      user.role = String(params[4]);
-      user.preferred_language = params[5] as "en" | "th";
-      user.username = String(params[6]);
-      user.email = params[7] as string | null;
-      user.password_hash = String(params[8]);
-      user.status = String(params[9]);
-      user.updated_at = String(params[10]);
+      user.display_name = String(params[3]);
+      user.profile_photo_url = params[4] as string | null;
+      user.role = String(params[5]);
+      user.preferred_language = params[6] as "en" | "th";
+      user.username = String(params[7]);
+      user.email = params[8] as string | null;
+      user.password_hash = String(params[9]);
+      user.status = String(params[10]);
+      user.updated_at = String(params[11]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     return { meta: { changes: 0, last_row_id: 0 } };
@@ -181,12 +208,13 @@ class FakeAuthDB {
       first_name: String(params[1]),
       last_name: String(params[2]),
       full_name: String(params[3]),
-      profile_photo_url: params[4] as string | null,
-      role: String(params[5]),
-      preferred_language: params[6] as "en" | "th",
-      username: String(params[7]),
-      email: params[8] as string | null,
-      password_hash: String(params[9]),
+      display_name: String(params[4]),
+      profile_photo_url: params[5] as string | null,
+      role: String(params[6]),
+      preferred_language: params[7] as "en" | "th",
+      username: String(params[8]),
+      email: params[9] as string | null,
+      password_hash: String(params[10]),
       status,
       created_at: String(params.at(-2)),
       updated_at: String(params.at(-1)),
@@ -232,6 +260,7 @@ async function loginOwner(data: ReturnType<typeof env>) {
   assert.match(cookie ?? "", /vanara_session=/);
   assert.match(cookie ?? "", /HttpOnly/);
   assert.match(cookie ?? "", /Secure/);
+  assert.match(cookie ?? "", /Expires=/);
   return cookie!.split(";", 1)[0]!;
 }
 
@@ -412,4 +441,136 @@ test("profile photos are MIME and size validated server-side", async () => {
     }),
   }, data);
   assert.equal(validPhoto.status, 201);
+
+  const validAssetPhoto = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Asset Photo",
+      username: "asset-photo",
+      password: "staff-password",
+      role: "Operations",
+      preferredLanguage: "en",
+      status: "active",
+      views: ["staff"],
+      profilePhotoUrl: "/assets/img/nun.jpg",
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  assert.equal(validAssetPhoto.status, 201);
+
+  const invalidAssetPath = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Bad Asset Path",
+      username: "bad-asset-path",
+      password: "staff-password",
+      role: "Operations",
+      preferredLanguage: "en",
+      status: "active",
+      views: ["staff"],
+      profilePhotoUrl: "/uploads/avatar.jpg",
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  assert.equal(invalidAssetPath.status, 400);
+});
+
+test("users can update only their own profile basics and change their own password", async () => {
+  const data = await bootstrap();
+  const ownerCookie = await loginOwner(data);
+  const created = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      firstName: "Nong Yao",
+      lastName: "Khomprang",
+      displayName: "Nun",
+      username: "nun",
+      password: "nun",
+      role: "Operations",
+      preferredLanguage: "th",
+      status: "active",
+      views: ["staff"],
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  assert.equal(created.status, 201);
+
+  const staffLogin = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "nun", password: "nun" }),
+    headers: { "content-type": "application/json" },
+  }, data);
+  const staffCookie = staffLogin.headers.get("set-cookie")!.split(";", 1)[0]!;
+
+  const profile = await request("/api/current-user/profile", {
+    method: "PATCH",
+    headers: { cookie: staffCookie, "content-type": "application/json" },
+    body: JSON.stringify({ displayName: "Nunny", preferredLanguage: "en", firstName: "Bad" }),
+  }, data);
+  assert.equal(profile.status, 200);
+  const body = await json(profile);
+  assert.equal((body.data as { displayName: string; firstName: string; preferredLanguage: string }).displayName, "Nunny");
+  assert.equal((body.data as { displayName: string; firstName: string; preferredLanguage: string }).firstName, "Nong Yao");
+  assert.equal((body.data as { displayName: string; firstName: string; preferredLanguage: string }).preferredLanguage, "en");
+
+  const wrongPassword = await request("/api/current-user/password", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json" },
+    body: JSON.stringify({ currentPassword: "wrong", newPassword: "newnun", confirmPassword: "newnun" }),
+  }, data);
+  assert.equal(wrongPassword.status, 403);
+
+  const storedBefore = [...data.DB.users.values()].find((user) => user.username === "nun")!.password_hash;
+  const passwordChanged = await request("/api/current-user/password", {
+    method: "POST",
+    headers: { cookie: staffCookie, "content-type": "application/json" },
+    body: JSON.stringify({ currentPassword: "nun", newPassword: "newnun", confirmPassword: "newnun" }),
+  }, data);
+  assert.equal(passwordChanged.status, 200);
+  assert.match(passwordChanged.headers.get("set-cookie") ?? "", /Max-Age=0/);
+  const storedAfter = [...data.DB.users.values()].find((user) => user.username === "nun")!.password_hash;
+  assert.match(storedAfter, /^pbkdf2_sha256\$100000\$/);
+  assert.notEqual(storedAfter, storedBefore);
+  assert.equal((await request("/api/current-user", { headers: { cookie: staffCookie } }, data)).status, 401);
+  assert.equal((await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "nun", password: "nun" }),
+    headers: { "content-type": "application/json" },
+  }, data)).status, 401);
+  assert.equal((await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "nun", password: "newnun" }),
+    headers: { "content-type": "application/json" },
+  }, data)).status, 200);
+});
+
+test("owner user management can delete users but cannot delete or freeze current owner", async () => {
+  const data = await bootstrap();
+  const ownerCookie = await loginOwner(data);
+  const ownerId = [...data.DB.users.values()].find((user) => user.username === "owner")!.user_id;
+  const created = await request("/api/users", {
+    method: "POST",
+    headers: { cookie: ownerCookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      firstName: "Temp",
+      lastName: "Staff",
+      displayName: "Temp",
+      username: "temp-staff",
+      password: "temp",
+      role: "Operations",
+      preferredLanguage: "th",
+      status: "active",
+      views: ["staff"],
+      permissions: [{ module: "dashboard", canAccess: true, canEdit: false }],
+    }),
+  }, data);
+  const createdId = ((await json(created)).data as { id: string }).id;
+
+  assert.equal((await request(`/api/users/${ownerId}/disable`, { method: "POST", headers: { cookie: ownerCookie } }, data)).status, 403);
+  assert.equal((await request(`/api/users/${ownerId}`, { method: "DELETE", headers: { cookie: ownerCookie } }, data)).status, 403);
+  assert.equal((await request(`/api/users/${createdId}`, { method: "DELETE", headers: { cookie: ownerCookie } }, data)).status, 200);
+  assert.equal(data.DB.users.has(createdId), false);
 });

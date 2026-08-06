@@ -74,6 +74,13 @@
   height: 18px;
 }
 
+.dashboard-header__actions .profile-panel__trigger {
+  color: var(--vc-text-primary);
+  border-color: var(--vc-border-subtle);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
 .is-spinning {
   animation: vc-spin 900ms linear infinite;
 }

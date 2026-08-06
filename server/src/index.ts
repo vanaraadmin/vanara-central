@@ -46,8 +46,10 @@ import {
   ForbiddenError,
   authOptions,
   canCompleteReception,
+  changeSelfPassword,
   createInitialOwner,
   createUser,
+  deleteUser,
   disableUser,
   hasModulePermission,
   isOwner,
@@ -58,6 +60,8 @@ import {
   makeSessionCookie,
   normalizeCreateUserInput,
   normalizeLoginInput,
+  normalizePasswordChangeInput,
+  normalizeSelfProfileInput,
   normalizeUpdateUserInput,
   publicCurrentUser,
   requireModulePermission,
@@ -65,6 +69,7 @@ import {
   requireView,
   resolveCurrentUser,
   updateUser,
+  updateSelfProfile,
   type AuthBindings,
   type CurrentUser,
   type ModuleKey,
@@ -472,6 +477,30 @@ app.get("/api/current-user", async (c) => {
   }
 });
 
+app.patch("/api/current-user/profile", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null);
+    const updated = await updateSelfProfile(c.env, user.id, normalizeSelfProfileInput(payload));
+    if (!updated) return c.json({ success: false, error: "User not found" }, 404);
+    return c.json({ success: true, data: publicCurrentUser(updated) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/current-user/password", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null);
+    await changeSelfPassword(c.env, user.id, normalizePasswordChangeInput(payload));
+    c.header("Set-Cookie", makeExpiredSessionCookie(new URL(c.req.url).protocol === "https:"));
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
 app.post("/api/translations/free-text", async (c) => {
   try {
     const user = await resolveCurrentUser(c);
@@ -526,10 +555,22 @@ app.patch("/api/users/:id", async (c) => {
 
 app.post("/api/users/:id/disable", async (c) => {
   try {
-    await owner(c, "edit");
+    const current = await owner(c, "edit");
+    if (c.req.param("id") === current.id) throw new ForbiddenError("You cannot disable your own account.");
     const user = await disableUser(c.env, c.req.param("id"));
     if (!user) return c.json({ success: false, error: "User not found" }, 404);
     return c.json({ success: true, data: user });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.delete("/api/users/:id", async (c) => {
+  try {
+    const current = await owner(c, "edit");
+    const deleted = await deleteUser(c.env, c.req.param("id"), current.id);
+    if (!deleted) return c.json({ success: false, error: "User not found" }, 404);
+    return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }

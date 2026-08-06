@@ -33,5 +33,7 @@ export function RoomsIcon(props: IconProps) { return <RoomIcon {...props}/>; }
 export function TasksIcon(props: IconProps) { return <HousekeepingIcon {...props}/>; }
 export function AskIcon(props: IconProps) { return <svg {...base} {...props}><path d="M20.5 15a4 4 0 0 1-4 4H9l-5.5 2.5V8a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4z"/><path d="M8 10h8M8 14h5"/></svg>; }
 export function RefreshIcon(props: IconProps) { return <svg {...base} {...props}><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>; }
+export function SettingsGearIcon(props: IconProps) { return <svg {...base} {...props}><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.1M12 19.1v2.1M4 5.3l1.5 1.5M18.5 17.2l1.5 1.5M2.8 12h2.1M19.1 12h2.1M4 18.7l1.5-1.5M18.5 6.8 20 5.3"/><path d="M7.1 4.7 5.7 6.1l1.1 2.1a6.7 6.7 0 0 0-.7 1.7L3.8 10.7v2.6l2.3.8c.2.6.4 1.2.7 1.7l-1.1 2.1 1.4 1.4 2.1-1.1c.5.3 1.1.5 1.7.7l.8 2.3h.6l.8-2.3c.6-.2 1.2-.4 1.7-.7l2.1 1.1 1.4-1.4-1.1-2.1c.3-.5.5-1.1.7-1.7l2.3-.8v-2.6l-2.3-.8a6.7 6.7 0 0 0-.7-1.7l1.1-2.1-1.4-1.4-2.1 1.1a6.7 6.7 0 0 0-1.7-.7l-.8-2.3h-.6l-.8 2.3c-.6.2-1.2.4-1.7.7L7.1 4.7Z"/></svg>; }
+export function DownloadIcon(props: IconProps) { return <svg {...base} {...props}><path d="M12 3.5v10"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 18.5h14"/></svg>; }
 export function ArrivalsIcon(props: IconProps) { return <CheckInIcon {...props}/>; }
 export function DeparturesIcon(props: IconProps) { return <CheckOutIcon {...props}/>; }

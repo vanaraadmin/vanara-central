@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../providers/language.context";
+import ProfilePanel from "./ProfilePanel";
 
 const WORKSPACE_HOME_ROUTE = "/staff";
 
@@ -39,7 +40,10 @@ export default function WorkspaceHero({
           </a>
         </div>
 
-        <time className="workspace-masthead__date">{date}</time>
+        <div className="workspace-masthead__tools">
+          <time className="workspace-masthead__date">{date}</time>
+          <ProfilePanel />
+        </div>
       </header>
 
       <section className="workspace-intro" aria-labelledby="workspace-title">

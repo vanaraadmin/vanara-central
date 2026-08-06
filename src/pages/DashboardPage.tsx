@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import LanguageSwitch from "../components/LanguageSwitch";
 import { PageError, PageLoading } from "../components/AsyncState";
 import { AlertIcon, MaintenanceIcon, RefreshIcon } from "../components/OperationsIcons";
+import ProfilePanel from "../components/ProfilePanel";
 import { useLanguage } from "../providers/language.context";
 import { loadDashboardOverview } from "../services/dashboard.service";
 import type { DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
@@ -121,9 +122,7 @@ export default function DashboardPage() {
         </div>
         <div className="dashboard-header__actions">
           <LanguageSwitch />
-          <a className="dashboard-download" href="/api/owner/tm30/export">
-            {translate("downloadTm30")}
-          </a>
+          <ProfilePanel />
           <button
             aria-label={translate("refresh")}
             className="dashboard-refresh"

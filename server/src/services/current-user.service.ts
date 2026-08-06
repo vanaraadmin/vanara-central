@@ -77,8 +77,8 @@ export class ValidationError extends Error {
 }
 
 export const SESSION_COOKIE_NAME = "vanara_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
-const PASSWORD_ITERATIONS = 120_000;
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 180;
+const PASSWORD_ITERATIONS = 100_000;
 const MAX_PROFILE_PHOTO_BYTES = 512 * 1024;
 const PROFILE_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MODULES: ModuleKey[] = [
@@ -106,6 +106,7 @@ interface UserRow {
   first_name?: string | null;
   last_name?: string | null;
   full_name: string;
+  display_name?: string | null;
   profile_photo_url: string | null;
   role: UserRole;
   preferred_language: "en" | "th";
@@ -147,6 +148,7 @@ export interface CreateUserInput {
   firstName: string;
   lastName: string;
   fullName: string;
+  displayName: string;
   profilePhotoUrl: string | null;
   role: UserRole;
   preferredLanguage: "en" | "th";
@@ -160,6 +162,15 @@ export interface CreateUserInput {
 }
 
 export type UpdateUserInput = Partial<Omit<CreateUserInput, "password">> & { password?: string | null };
+export interface SelfProfileInput {
+  displayName?: string;
+  profilePhotoUrl?: string | null;
+  preferredLanguage?: "en" | "th";
+}
+export interface PasswordChangeInput {
+  currentPassword: string;
+  newPassword: string;
+}
 
 export interface PublicManagedUser {
   id: string;
@@ -271,6 +282,11 @@ function normalizeOptionalText(value: unknown, max: number): string | null {
   return text ? text.slice(0, max) : null;
 }
 
+function normalizeDisplayName(value: unknown, fallback: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return (text || fallback).slice(0, 80);
+}
+
 function profilePhotoBytes(dataUrl: string): number {
   const base64 = dataUrl.split(",", 2)[1] ?? "";
   return Math.floor((base64.length * 3) / 4);
@@ -279,6 +295,7 @@ function profilePhotoBytes(dataUrl: string): number {
 function normalizeProfilePhoto(value: unknown): string | null {
   const text = normalizeOptionalText(value, MAX_PROFILE_PHOTO_BYTES * 2);
   if (!text) return null;
+  if (/^\/assets\/img\/[A-Za-z0-9._-]+\.(?:jpe?g|png|webp|gif)$/i.test(text)) return text;
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(text);
   if (!match) throw new ValidationError("Profile photo must be a base64 image data URL.");
   const mime = match[1]!.toLowerCase();
@@ -344,12 +361,16 @@ export function normalizeLoginInput(payload: unknown): LoginInput {
 export function normalizeCreateUserInput(payload: unknown): CreateUserInput {
   if (!payload || typeof payload !== "object") throw new ValidationError("User payload is required.");
   const legalName = normalizeLegalName(payload);
+  const role = normalizeEnum("role" in payload ? payload.role : undefined, ROLES, "Role");
+  const displayName = normalizeDisplayName("displayName" in payload ? payload.displayName : "nickname" in payload ? payload.nickname : undefined, legalName.firstName);
+  if (!displayName) throw new ValidationError("Nickname is required.");
   return {
     firstName: legalName.firstName,
     lastName: legalName.lastName,
     fullName: legalName.fullName,
+    displayName,
     profilePhotoUrl: normalizeProfilePhoto("profilePhotoUrl" in payload ? payload.profilePhotoUrl : undefined),
-    role: normalizeEnum("role" in payload ? payload.role : undefined, ROLES, "Role"),
+    role,
     preferredLanguage: normalizeEnum("preferredLanguage" in payload ? payload.preferredLanguage : undefined, LANGUAGES, "Preferred language"),
     username: normalizeText("username" in payload ? payload.username : undefined, "Username", 120).toLowerCase(),
     email: normalizeOptionalText("email" in payload ? payload.email : undefined, 180)?.toLowerCase() ?? null,
@@ -357,7 +378,7 @@ export function normalizeCreateUserInput(payload: unknown): CreateUserInput {
     status: normalizeEnum("status" in payload ? payload.status : "invited", STATUSES, "Status"),
     views: normalizeViews("views" in payload ? payload.views : undefined),
     permissions: normalizePermissions("permissions" in payload ? payload.permissions : undefined),
-    actionPermissions: normalizeActionPermissions("actionPermissions" in payload ? payload.actionPermissions : undefined, normalizeEnum("role" in payload ? payload.role : undefined, ROLES, "Role")),
+    actionPermissions: normalizeActionPermissions("actionPermissions" in payload ? payload.actionPermissions : undefined, role),
   };
 }
 
@@ -369,6 +390,10 @@ export function normalizeUpdateUserInput(payload: unknown): UpdateUserInput {
     input.firstName = legalName.firstName;
     input.lastName = legalName.lastName;
     input.fullName = legalName.fullName;
+  }
+  if ("displayName" in payload || "nickname" in payload) {
+    input.displayName = normalizeDisplayName("displayName" in payload ? payload.displayName : "nickname" in payload ? payload.nickname : undefined, "");
+    if (!input.displayName) throw new ValidationError("Nickname is required.");
   }
   if ("profilePhotoUrl" in payload) input.profilePhotoUrl = normalizeProfilePhoto(payload.profilePhotoUrl);
   if ("role" in payload) input.role = normalizeEnum(payload.role, ROLES, "Role");
@@ -382,6 +407,28 @@ export function normalizeUpdateUserInput(payload: unknown): UpdateUserInput {
   if ("actionPermissions" in payload) input.actionPermissions = normalizeActionPermissions(payload.actionPermissions, "role" in payload ? normalizeEnum(payload.role, ROLES, "Role") : "Operations");
   if (Object.keys(input).length === 0) throw new ValidationError("At least one user field is required.");
   return input;
+}
+
+export function normalizeSelfProfileInput(payload: unknown): SelfProfileInput {
+  if (!payload || typeof payload !== "object") throw new ValidationError("Profile payload is required.");
+  const input: SelfProfileInput = {};
+  if ("displayName" in payload || "nickname" in payload) {
+    input.displayName = normalizeDisplayName("displayName" in payload ? payload.displayName : "nickname" in payload ? payload.nickname : undefined, "");
+    if (!input.displayName) throw new ValidationError("Nickname is required.");
+  }
+  if ("profilePhotoUrl" in payload) input.profilePhotoUrl = normalizeProfilePhoto(payload.profilePhotoUrl);
+  if ("preferredLanguage" in payload) input.preferredLanguage = normalizeEnum(payload.preferredLanguage, LANGUAGES, "Preferred language");
+  if (Object.keys(input).length === 0) throw new ValidationError("At least one profile field is required.");
+  return input;
+}
+
+export function normalizePasswordChangeInput(payload: unknown): PasswordChangeInput {
+  if (!payload || typeof payload !== "object") throw new ValidationError("Password payload is required.");
+  const currentPassword = normalizeText("currentPassword" in payload ? payload.currentPassword : undefined, "Current password", 200);
+  const newPassword = normalizeText("newPassword" in payload ? payload.newPassword : undefined, "New password", 200);
+  const confirmPassword = normalizeText("confirmPassword" in payload ? payload.confirmPassword : undefined, "Confirm password", 200);
+  if (newPassword !== confirmPassword) throw new ValidationError("Password confirmation does not match.");
+  return { currentPassword, newPassword };
 }
 
 function sessionCookie(request: Request): string | null {
@@ -414,7 +461,7 @@ function mapPublicUser(row: UserRow, views: UserView[], permissions: ModulePermi
     firstName,
     lastName,
     fullName,
-    displayName: fullName,
+    displayName: row.display_name?.trim() || fullName,
     profilePhotoUrl: row.profile_photo_url,
     role: row.role,
     preferredLanguage: row.preferred_language,
@@ -630,14 +677,15 @@ export async function createUser(env: AuthBindings, input: CreateUserInput): Pro
   const hashed = await passwordHash(input.password);
   await env.DB.prepare(`
     INSERT INTO users (
-      user_id, first_name, last_name, full_name, profile_photo_url, role, preferred_language, username, email,
+      user_id, first_name, last_name, full_name, display_name, profile_photo_url, role, preferred_language, username, email,
       password_hash, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
     input.firstName,
     input.lastName,
     input.fullName,
+    input.displayName,
     input.profilePhotoUrl,
     input.role,
     input.preferredLanguage,
@@ -663,16 +711,17 @@ export async function createInitialOwner(env: AuthBindings, input: CreateUserInp
   const hashed = await passwordHash(input.password);
   const result = await env.DB.prepare(`
     INSERT INTO users (
-      user_id, first_name, last_name, full_name, profile_photo_url, role, preferred_language, username, email,
+      user_id, first_name, last_name, full_name, display_name, profile_photo_url, role, preferred_language, username, email,
       password_hash, status, created_at, updated_at
     )
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?
     WHERE NOT EXISTS (SELECT 1 FROM users)
   `).bind(
     id,
     input.firstName,
     input.lastName,
     input.fullName,
+    input.displayName,
     input.profilePhotoUrl,
     input.role,
     input.preferredLanguage,
@@ -696,13 +745,14 @@ export async function updateUser(env: AuthBindings, userId: string, input: Updat
   const nextHash = input.password ? await passwordHash(input.password) : current.password_hash;
   await env.DB.prepare(`
     UPDATE users
-    SET first_name = ?, last_name = ?, full_name = ?, profile_photo_url = ?, role = ?, preferred_language = ?, username = ?, email = ?,
+    SET first_name = ?, last_name = ?, full_name = ?, display_name = ?, profile_photo_url = ?, role = ?, preferred_language = ?, username = ?, email = ?,
         password_hash = ?, status = ?, updated_at = ?
     WHERE user_id = ?
   `).bind(
     input.firstName ?? current.first_name ?? splitLegalName(current.full_name).firstName,
     input.lastName ?? current.last_name ?? splitLegalName(current.full_name).lastName,
     input.fullName ?? current.full_name,
+    input.displayName ?? current.display_name ?? current.full_name,
     input.profilePhotoUrl !== undefined ? input.profilePhotoUrl : current.profile_photo_url,
     input.role ?? current.role,
     input.preferredLanguage ?? current.preferred_language,
@@ -728,6 +778,50 @@ export async function updateUser(env: AuthBindings, userId: string, input: Updat
 
 export async function disableUser(env: AuthBindings, userId: string): Promise<PublicManagedUser | null> {
   return updateUser(env, userId, { status: "disabled" });
+}
+
+export async function updateSelfProfile(env: AuthBindings, userId: string, input: SelfProfileInput): Promise<PublicManagedUser | null> {
+  const current = await env.DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(userId).first<UserRow>();
+  if (!current) return null;
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    UPDATE users
+    SET display_name = ?, profile_photo_url = ?, preferred_language = ?, updated_at = ?
+    WHERE user_id = ?
+  `).bind(
+    input.displayName ?? current.display_name ?? current.full_name,
+    input.profilePhotoUrl !== undefined ? input.profilePhotoUrl : current.profile_photo_url,
+    input.preferredLanguage ?? current.preferred_language,
+    now,
+    userId,
+  ).run();
+  const row = await env.DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(userId).first<UserRow>();
+  return row ? loadPublicUser(env, row) : null;
+}
+
+export async function changeSelfPassword(env: AuthBindings, userId: string, input: PasswordChangeInput): Promise<void> {
+  const current = await env.DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(userId).first<UserRow>();
+  if (!current) throw new AuthenticationError();
+  if (!await verifyPassword(input.currentPassword, current.password_hash)) throw new ForbiddenError("Current password is incorrect.");
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?").bind(await passwordHash(input.newPassword), now, userId),
+    env.DB.prepare("DELETE FROM user_sessions WHERE user_id = ?").bind(userId),
+  ]);
+}
+
+export async function deleteUser(env: AuthBindings, userId: string, currentUserId: string): Promise<boolean> {
+  if (userId === currentUserId) throw new ForbiddenError("You cannot delete your own account.");
+  const current = await env.DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(userId).first<UserRow>();
+  if (!current) return false;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM user_sessions WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_action_permissions WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_module_permissions WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM user_views WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM users WHERE user_id = ?").bind(userId),
+  ]);
+  return true;
 }
 
 export const authOptions = {

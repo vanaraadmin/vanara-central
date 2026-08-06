@@ -21,6 +21,7 @@ function emptyForm(): SaveUserPayload {
     firstName: "",
     lastName: "",
     fullName: "",
+    displayName: "",
     profilePhotoUrl: null,
     role: "Operations",
     preferredLanguage: "en",
@@ -139,6 +140,7 @@ export default function SettingsPage() {
       firstName: user.firstName,
       lastName: user.lastName,
       fullName: user.fullName,
+      displayName: user.displayName,
       profilePhotoUrl: user.profilePhotoUrl,
       role: user.role,
       preferredLanguage: user.preferredLanguage,
@@ -255,6 +257,7 @@ export default function SettingsPage() {
             <label><span>Last name</span><input value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value, fullName: `${form.firstName} ${event.target.value}`.trim() })} /></label>
           </div>
           <label><span>Username</span><input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+          <label><span>Nickname</span><input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
           <label><span>Email optional</span><input value={form.email ?? ""} onChange={(event) => setForm({ ...form, email: event.target.value || null })} /></label>
           <label><span>Password {editingId ? "optional" : "required"}</span><input type="password" value={form.password ?? ""} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
           <label><span>Profile photo</span><input accept="image/*" type="file" onChange={uploadPhoto} /></label>

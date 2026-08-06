@@ -61,6 +61,7 @@ export interface SaveUserPayload {
   firstName: string;
   lastName: string;
   fullName: string;
+  displayName: string;
   profilePhotoUrl: string | null;
   role: UserRole;
   preferredLanguage: "en" | "th";

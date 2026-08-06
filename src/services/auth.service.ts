@@ -55,8 +55,36 @@ export async function updateUser(id: string, payload: Partial<SaveUserPayload>, 
   return response.data;
 }
 
+export async function updateCurrentUserProfile(payload: { displayName?: string; profilePhotoUrl?: string | null; preferredLanguage?: "en" | "th" }, signal?: AbortSignal): Promise<CurrentUserView> {
+  const response = await sendJson<ApiResponse<CurrentUserView>>("/api/current-user/profile", "PATCH", payload, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Profile could not be saved");
+  return response.data;
+}
+
+export async function changeCurrentUserPassword(payload: { currentPassword: string; newPassword: string; confirmPassword: string }, signal?: AbortSignal): Promise<void> {
+  await sendJson<ApiResponse<null>>("/api/current-user/password", "POST", payload, signal);
+}
+
 export async function disableUser(id: string, signal?: AbortSignal): Promise<ManagedUser> {
   const response = await sendJson<ApiResponse<ManagedUser>>(`/api/users/${encodeURIComponent(id)}/disable`, "POST", undefined, signal);
   if (!response.success || !response.data) throw new Error(response.error ?? "User could not be disabled");
   return response.data;
+}
+
+export async function deleteUser(id: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  let body: unknown;
+  try { body = await response.json(); }
+  catch { throw new ApiError("The server returned an invalid response", response.status); }
+  if (!response.ok) {
+    const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+      ? body.error
+      : "User could not be deleted";
+    throw new ApiError(message, response.status);
+  }
 }
