@@ -52,9 +52,10 @@ test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Check-In, Hou
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*"payroll",\s*\]/);
+  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"messages",\s*"social",\s*"payroll",\s*\]/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
-  assert.doesNotMatch(staffPage, /const MESSAGES_WORKSPACE_CARD|href:\s*"\/messages"/);
+  assert.match(staffService, /id:\s*"messages"[\s\S]*href:\s*"\/messages"/);
+  assert.match(staffService, /function canUseGuestMessages\(user: CurrentUser\): boolean \{[\s\S]*return isOwner\(user\) && canAccess\(user, "messages"\)/);
   assert.match(staffService, /id:\s*"social"[\s\S]*href:\s*"\/social-automation"/);
   assert.match(staffService, /id:\s*"payroll"[\s\S]*href:\s*"\/payroll"/);
   assert.doesNotMatch(staffPage, /href:\s*"\/chat"/);

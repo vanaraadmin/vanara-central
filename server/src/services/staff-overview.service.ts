@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "social" | "payroll";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -57,6 +57,10 @@ function canUseSocialAutomation(user: CurrentUser): boolean {
 
 function canUsePayroll(user: CurrentUser): boolean {
   return isOwner(user) && canAccess(user, "payroll");
+}
+
+function canUseGuestMessages(user: CurrentUser): boolean {
+  return isOwner(user) && canAccess(user, "messages");
 }
 
 function formatMetric(metric: StaffOverviewMetric | undefined): string | undefined {
@@ -198,6 +202,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       metrics: [],
       summaryLine1: "Free-text request",
       summaryLine2: "Owner decision",
+    }));
+  }
+
+  if (canUseGuestMessages(user)) {
+    cards.push(withSummaryLines({
+      id: "messages",
+      module: "messages",
+      title: "Guest Messages",
+      description: "Review guest replies before sending.",
+      href: "/messages",
+      cta: "Open Messages",
+      metrics: [],
+      summaryLine1: "Human review",
+      summaryLine2: "Review before send",
     }));
   }
 

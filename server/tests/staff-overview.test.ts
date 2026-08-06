@@ -434,6 +434,7 @@ const roomsAccess: Permission = { module_key: "rooms", can_access: 1, can_edit: 
 const housekeepingAccess: Permission = { module_key: "housekeeping", can_access: 1, can_edit: 0 };
 const maintenanceAccess: Permission = { module_key: "maintenance", can_access: 1, can_edit: 0 };
 const procurementAccess: Permission = { module_key: "procurement", can_access: 1, can_edit: 0 };
+const messagesAccess: Permission = { module_key: "messages", can_access: 1, can_edit: 1 };
 const socialAutomationAccess: Permission = { module_key: "social-automation", can_access: 1, can_edit: 1 };
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
 
@@ -546,6 +547,33 @@ test("staff overview module perimeter is identical for English and Thai staff an
   assert.deepEqual(thOverview.cards.map((card) => card.id), enOverview.cards.map((card) => card.id));
   assert.equal(enOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
   assert.equal(thOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
+});
+
+test("staff overview exposes Guest Messages only to owners with the messages module", async () => {
+  const ownerOverview = await getStaffOverview(
+    env([messagesAccess]),
+    currentUser([{ module: "messages", canAccess: true, canEdit: true }], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const ownerCard = ownerOverview.cards.find((card) => card.id === "messages");
+  assert.ok(ownerCard);
+  assert.equal(ownerCard.module, "messages");
+  assert.equal(ownerCard.title, "Guest Messages");
+  assert.equal(ownerCard.href, "/messages");
+
+  const ownerWithoutModule = await getStaffOverview(
+    env([]),
+    currentUser([], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  assert.equal(ownerWithoutModule.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
+
+  const staffOverview = await getStaffOverview(
+    env([messagesAccess]),
+    currentUser([{ module: "messages", canAccess: true, canEdit: true }], "Operations", ["staff"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  assert.equal(staffOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
 });
 
 test("staff overview exposes Social Automation only to owners with the social module", async () => {

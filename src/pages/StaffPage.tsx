@@ -30,6 +30,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "housekeeping",
   "maintenance",
   "procurement",
+  "messages",
   "social",
   "payroll",
 ];
@@ -62,6 +63,7 @@ const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
   availability: "prices",
   housekeeping: "housekeeping",
   maintenance: "maintenance",
+  messages: "messages",
   payroll: "payroll",
   procurement: "procurement",
   reception: "arrivalsDepartures",
@@ -73,6 +75,7 @@ const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   availability: "pricesDescription",
   housekeeping: "housekeepingDescription",
   maintenance: "maintenanceDescription",
+  messages: "messagesDescription",
   procurement: "procurementDescription",
   reception: "movementsDescription",
   rooms: "roomsDescription",
