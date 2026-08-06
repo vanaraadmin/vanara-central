@@ -1246,6 +1246,65 @@
   }
 }
 
+@media (min-width: 1024px) {
+  .reception-page {
+    gap: var(--vc-space-5);
+  }
+
+  .reception-date-actions {
+    justify-content: space-between;
+  }
+
+  .reception-agenda {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--vc-space-5);
+  }
+
+  .reception-section,
+  .reception-list,
+  .reception-card {
+    min-width: 0;
+  }
+
+  .reception-list {
+    padding-block: var(--vc-space-3);
+  }
+
+  .reception-card {
+    min-height: 198px;
+    padding: var(--vc-space-4);
+  }
+
+  .reception-card__quick-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .reception-sheet {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .reception-sheet__panel {
+    border-radius: 30px;
+  }
+
+  .reception-details-sheet__panel {
+    width: min(100%, 1120px);
+    max-height: calc(100dvh - 48px);
+    height: auto;
+    align-self: center;
+    justify-self: center;
+    border-radius: 30px;
+    padding: var(--vc-space-6);
+  }
+
+  .reception-details-sheet__panel .reception-details-region {
+    padding: var(--vc-space-5);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reception-sheet__panel,
   .reception-skeleton {

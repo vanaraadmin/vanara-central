@@ -971,6 +971,57 @@ button.room-domain-card__primary-action {
   }
 }
 
+@media (min-width: 1024px) {
+  .rooms-home {
+    grid-template-columns: minmax(220px, 0.28fr) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--vc-space-5);
+  }
+
+  .rooms-home__summary {
+    position: sticky;
+    top: calc(var(--vc-safe-top) + 24px);
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .rooms-summary-item {
+    min-height: 78px;
+    align-content: center;
+  }
+
+  .rooms-home__list {
+    padding-block: 12px;
+  }
+
+  .room-row {
+    grid-template-columns: 46px minmax(13rem, 0.88fr) minmax(0, 1.12fr) 22px;
+    grid-template-areas: "icon identity signals chevron";
+    min-height: 84px;
+    padding: 15px 20px;
+  }
+
+  .room-row__identity,
+  .room-signals,
+  .room-terminal-state {
+    align-self: center;
+  }
+
+  .room-signals,
+  .room-terminal-state {
+    justify-self: stretch;
+    text-align: left;
+  }
+
+  .room-row-expanded-content {
+    padding-inline: 18px;
+  }
+
+  .room-expanded-sheet {
+    padding: 24px;
+  }
+}
+
 @media (max-width: 370px) {
   .room-expanded-sheet .room-expanded-facts--three,
   .room-expanded-sheet .room-status-grid,

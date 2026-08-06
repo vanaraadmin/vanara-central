@@ -1074,7 +1074,46 @@ input.profile-panel__file-input {
 }
 
 @media (min-width: 1024px) {
+  .workspace-shell {
+    width: min(calc(100% - 72px), 1080px);
+    padding-top: calc(var(--vc-safe-top) + 38px);
+    padding-inline:
+      max(30px, var(--vc-safe-right))
+      max(30px, var(--vc-safe-left));
+  }
+
   .workspace-shell--wide {
-    width: min(100%, 1180px);
+    width: min(calc(100% - 72px), 1280px);
+  }
+
+  .workspace-masthead__date {
+    max-width: 180px;
+  }
+
+  .workspace-intro {
+    max-width: 760px;
+    padding: 54px 0 36px;
+  }
+
+  .workspace-intro h1 {
+    font-size: clamp(2.2rem, 4vw, 3.6rem);
+  }
+
+  .workspace-body {
+    width: 100%;
+  }
+
+  .workspace-canopy {
+    padding-bottom: calc(var(--vc-safe-bottom) + 78px);
+  }
+}
+
+@media (min-width: 1440px) {
+  .workspace-shell {
+    width: min(calc(100% - 96px), 1160px);
+  }
+
+  .workspace-shell--wide {
+    width: min(calc(100% - 96px), 1360px);
   }
 }
