@@ -4,6 +4,11 @@ import test from "node:test";
 
 const profilePanel = readFileSync(new URL("../../src/components/ProfilePanel.tsx", import.meta.url), "utf8");
 const dashboardPage = readFileSync(new URL("../../src/pages/DashboardPage.tsx", import.meta.url), "utf8");
+const indexHtml = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+const mainTsx = readFileSync(new URL("../../src/main.tsx", import.meta.url), "utf8");
+const manifest = readFileSync(new URL("../../public/manifest.webmanifest", import.meta.url), "utf8");
+const pwaService = readFileSync(new URL("../../src/services/pwa.service.ts", import.meta.url), "utf8");
+const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
 const workspaceCss = readFileSync(new URL("../../src/styles/WorkspaceShell.css", import.meta.url), "utf8");
 const currentUserService = readFileSync(new URL("../src/services/current-user.service.ts", import.meta.url), "utf8");
 
@@ -19,12 +24,33 @@ test("profile panel owns TM30 and user management without exposing owner tools t
 test("profile panel exposes app update and logout while keeping owner actions separate", () => {
   assert.match(profilePanel, /updateVanaraCentral/);
   assert.match(profilePanel, /pwaUpdatePlaceholder/);
+  assert.match(profilePanel, /checkVanaraUpdate/);
+  assert.match(profilePanel, /applyVanaraUpdate/);
+  assert.match(profilePanel, /vanaraCentralUpToDate/);
   assert.match(profilePanel, /logoutMutation/);
   assert.match(profilePanel, /currentUser\?\.preferredLanguage/);
   assert.match(profilePanel, /changeLanguage\(currentUser\.preferredLanguage\)/);
   assert.match(profilePanel, /tab === "profile"/);
   assert.match(profilePanel, /tab === "updates"/);
   assert.match(profilePanel, /tab === "owner" && owner/);
+});
+
+test("Vanara Central is installable as a PWA without caching operational API data", () => {
+  const parsed = JSON.parse(manifest) as { name?: string; start_url?: string; scope?: string; display?: string; icons?: Array<{ src: string; sizes: string; purpose: string }> };
+
+  assert.match(indexHtml, /<link rel="manifest" href="\/manifest\.webmanifest" \/>/);
+  assert.match(indexHtml, /apple-mobile-web-app-capable/);
+  assert.match(indexHtml, /apple-touch-icon/);
+  assert.match(mainTsx, /import\.meta\.env\.PROD\)\s*registerVanaraServiceWorker\(\)/);
+  assert.equal(parsed.name, "Vanara Central");
+  assert.equal(parsed.start_url, "/");
+  assert.equal(parsed.scope, "/");
+  assert.equal(parsed.display, "standalone");
+  assert.ok(parsed.icons?.some((icon) => icon.sizes === "192x192" && icon.purpose === "any"));
+  assert.ok(parsed.icons?.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
+  assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
+  assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
+  assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
 });
 
 test("profile panel uses styled photo controls and preserves create-user input when role changes", () => {

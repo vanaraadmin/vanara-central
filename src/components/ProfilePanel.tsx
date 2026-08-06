@@ -10,6 +10,7 @@ import {
   logout,
   updateCurrentUserProfile,
 } from "../services/auth.service";
+import { applyVanaraUpdate, checkVanaraUpdate, type PwaUpdateStatus } from "../services/pwa.service";
 import { useLanguage } from "../providers/language.context";
 import { DownloadIcon, SettingsGearIcon } from "./OperationsIcons";
 import type { CurrentUserView, ManagedUser, ModuleKey, ModulePermission, SaveUserPayload } from "../types/auth";
@@ -102,6 +103,8 @@ export default function ProfilePanel() {
   const [userPhotoName, setUserPhotoName] = useState("");
   const [showUserForm, setShowUserForm] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -251,6 +254,18 @@ export default function ProfilePanel() {
     saveUser.mutate();
   }
 
+  async function onCheckOrApplyUpdate() {
+    setCheckingUpdate(true);
+    try {
+      const nextStatus = pwaStatus === "update-available" ? await applyVanaraUpdate() : await checkVanaraUpdate();
+      setPwaStatus(nextStatus);
+    } catch {
+      setPwaStatus("unsupported");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
   const owner = currentUser?.isOwner === true;
   const tabs: Array<{ id: PanelTab; label: string; ownerOnly?: boolean }> = [
     { id: "profile", label: translate("profile") },
@@ -331,7 +346,8 @@ export default function ProfilePanel() {
               {tab === "updates" ? (
                 <section className="profile-panel__section profile-panel__update" aria-label={translate("updateVanaraCentral")}>
                   <h3>{translate("updateVanaraCentral")}</h3>
-                  <p className="profile-panel__empty">{translate("pwaUpdatePlaceholder")}</p>
+                  <p className="profile-panel__empty">{pwaStatus === "ready" ? translate("vanaraCentralUpToDate") : translate("pwaUpdatePlaceholder")}</p>
+                  <button className="profile-panel__primary" disabled={checkingUpdate || pwaStatus === "unsupported"} onClick={() => void onCheckOrApplyUpdate()} type="button">{checkingUpdate ? translate("loading") : translate("updateVanaraCentral")}</button>
                 </section>
               ) : null}
 
