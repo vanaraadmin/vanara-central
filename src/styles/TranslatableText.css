@@ -1,0 +1,43 @@
+.free-text-translate {
+  min-width: 0;
+}
+
+.free-text-translate p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.free-text-translate__button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(92, 104, 96, 0.72);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.free-text-translate__button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.free-text-translate__translation {
+  margin-top: 6px;
+  color: rgba(55, 72, 62, 0.72);
+  font-size: 0.9rem;
+}
+
+.free-text-translate__error {
+  margin-top: 5px;
+  color: #8c3a32;
+  font-size: 0.78rem;
+  font-weight: 750;
+}

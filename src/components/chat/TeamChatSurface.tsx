@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEven
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../AsyncState";
+import TranslatableText from "../TranslatableText";
 import { loadCurrentUser } from "../../services/auth.service";
 import {
   createChatMessage,
@@ -15,7 +16,6 @@ import {
   openGroupChat,
   openPrivateChat,
   setChatAnnouncement,
-  translateChatMessage,
   toggleChatMessageReaction,
   uploadChatAttachment,
 } from "../../services/chat.service";
@@ -451,8 +451,7 @@ function ChatMessageBubble({
   message,
   currentUserId,
   highlighted,
-  showTranslation,
-  translationError,
+  targetLanguage,
   registerMessage,
   onContextRequest,
   onJumpToMessage,
@@ -461,8 +460,7 @@ function ChatMessageBubble({
   message: ChatMessage;
   currentUserId: string;
   highlighted: boolean;
-  showTranslation: boolean;
-  translationError: boolean;
+  targetLanguage: ChatLanguage;
   registerMessage: (messageId: number, element: HTMLElement | null) => void;
   onContextRequest: (message: ChatMessage, anchorRect: ContextMenuAnchorRect) => void;
   onJumpToMessage: (messageId: number) => void;
@@ -552,13 +550,18 @@ function ChatMessageBubble({
               </a>
             )
           ) : (
-            <p lang={message.bodyLanguage}>{message.body}</p>
-          )}
-          {showTranslation && message.translatedBody && message.translatedLanguage && (
-            <p className="chat-thread-message__translation" lang={message.translatedLanguage}>{message.translatedBody}</p>
-          )}
-          {translationError && (
-            <p className="chat-thread-message__translation chat-thread-message__translation--error">Translation is not available yet.</p>
+            <TranslatableText
+              entityType="chat_message"
+              entityId={`${message.conversationId}:${message.id}`}
+              fieldName="body"
+              originalText={message.body}
+              sourceLanguage={message.bodyLanguage}
+              targetLanguage={targetLanguage}
+              initialTranslatedText={message.translatedBody}
+              initialTranslatedLanguage={message.translatedLanguage}
+              originalClassName="chat-thread-message__body"
+              translationClassName="chat-thread-message__translation"
+            />
           )}
         </div>
         {message.reactions.length > 0 && (
@@ -732,17 +735,17 @@ function ChatThread({
   conversation,
   messages,
   currentUserId,
+  viewerLanguage,
 }: {
   conversation: ChatConversation;
   messages: ChatMessage[];
   currentUserId: string;
+  viewerLanguage: ChatLanguage;
 }) {
   const [contextMenu, setContextMenu] = useState<ChatContextMenuState | null>(null);
   const [contextFeedback, setContextFeedback] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<ChatMessageReply | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
-  const [visibleTranslations, setVisibleTranslations] = useState<Set<number>>(() => new Set());
-  const [translationErrors, setTranslationErrors] = useState<Set<number>>(() => new Set());
   const messageRefs = useRef(new Map<number, HTMLElement>());
   const queryClient = useQueryClient();
 
@@ -771,22 +774,6 @@ function ChatThread({
       ]);
     },
   });
-  const translateMutation = useMutation({
-    mutationFn: (message: ChatMessage) => translateChatMessage(conversation.id, message.id),
-    onSuccess: async (message) => {
-      setVisibleTranslations((current) => new Set(current).add(message.id));
-      setTranslationErrors((current) => {
-        const next = new Set(current);
-        next.delete(message.id);
-        return next;
-      });
-      await queryClient.invalidateQueries({ queryKey: ["chat", "messages", conversation.id] });
-    },
-    onError: (_error, message) => {
-      setTranslationErrors((current) => new Set(current).add(message.id));
-    },
-  });
-
   function registerMessage(messageId: number, element: HTMLElement | null) {
     if (element) messageRefs.current.set(messageId, element);
     else messageRefs.current.delete(messageId);
@@ -827,12 +814,8 @@ function ChatThread({
   }
 
   function handleTranslate(message: ChatMessage) {
-    if (message.translatedBody) {
-      setVisibleTranslations((current) => new Set(current).add(message.id));
-      setContextMenu(null);
-      return;
-    }
-    translateMutation.mutate(message);
+    const target = document.querySelector<HTMLElement>(`[data-chat-message-id="${message.id}"] .free-text-translate__button`);
+    target?.click();
     setContextMenu(null);
   }
 
@@ -880,8 +863,7 @@ function ChatThread({
               message={message}
               currentUserId={currentUserId}
               highlighted={highlightedMessageId === message.id}
-              showTranslation={visibleTranslations.has(message.id)}
-              translationError={translationErrors.has(message.id)}
+              targetLanguage={viewerLanguage}
               registerMessage={registerMessage}
               onContextRequest={openContextMenu}
               onJumpToMessage={jumpToMessage}
@@ -1063,6 +1045,7 @@ export default function TeamChatSurface({
             conversation={conversation}
             messages={messages}
             currentUserId={currentUserQuery.data?.id ?? ""}
+            viewerLanguage={currentUserQuery.data?.preferredLanguage ?? "en"}
           />
         ) : (
           <section className="chat-thread chat-thread--empty" aria-label="No conversation selected">

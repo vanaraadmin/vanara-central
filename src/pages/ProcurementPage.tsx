@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import { CheckIcon, PlusIcon } from "../components/OperationsIcons";
+import TranslatableText from "../components/TranslatableText";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import WorkspaceShell from "../components/WorkspaceShell";
@@ -34,7 +35,6 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
       await queryClient.invalidateQueries({ queryKey: ["procurement", "requests"] });
     },
   });
-  const translatedForViewer = request.translationAvailable && request.translatedText;
 
   return (
     <article className={`procurement-card status-${request.status.toLowerCase()}`}>
@@ -46,19 +46,18 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
         <span className="procurement-status">{statusLabel(request.status)}</span>
       </div>
 
-      <p className="procurement-card__text" lang={request.originalLanguage}>
-        {request.requestTextOriginal}
-      </p>
-
-      {translatedForViewer ? (
-        <p className="procurement-card__translation" lang={request.translatedLanguage ?? request.viewerLanguage}>
-          {request.translatedText}
-        </p>
-      ) : request.translationPending ? (
-        <p className="procurement-card__translation procurement-card__translation--pending">
-          Translation will be available after Google Translate is connected.
-        </p>
-      ) : null}
+      <TranslatableText
+        entityType="procurement_request"
+        entityId={String(request.id)}
+        fieldName="request_text_original"
+        originalText={request.requestTextOriginal}
+        sourceLanguage={request.originalLanguage}
+        targetLanguage={request.viewerLanguage}
+        initialTranslatedText={request.translationAvailable ? request.translatedText : null}
+        initialTranslatedLanguage={request.translatedLanguage}
+        originalClassName="procurement-card__text"
+        translationClassName="procurement-card__translation"
+      />
 
       {request.closedAt ? (
         <p className="procurement-card__meta">

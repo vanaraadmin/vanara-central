@@ -1,11 +1,12 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { chatStickerById } from "./chat-stickers.service.js";
+import { translateFreeText, type FreeTextTranslationBindings } from "./free-text-translation.service.js";
 
 export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
 export type ChatConversationKind = "GROUP" | "PRIVATE";
 export type ChatLanguage = "en" | "th";
 
-export interface ChatBindings {
+export interface ChatBindings extends FreeTextTranslationBindings {
   DB: D1Database;
   R2_STORAGE: R2Bucket;
 }
@@ -1187,7 +1188,31 @@ export async function translateChatMessage(
   `).bind(conversationId, messageId).first<ChatMessageRow>();
   if (!row) throw new Error("Message not found.");
   if (!row.translated_body || !row.translated_language) {
-    throw new Error("translation_unavailable");
+    await translateFreeText(env, {
+      entityType: "chat_message",
+      entityId: `${conversationId}:${messageId}`,
+      fieldName: "body",
+      originalText: row.body,
+      sourceLanguage: row.body_language,
+      targetLanguage: user.preferredLanguage,
+    }, user);
+    const updated = await env.DB.prepare(`
+      SELECT
+        m.*,
+        u.profile_photo_url AS author_profile_photo_url,
+        reply.author_display_name AS reply_author_display_name,
+        reply.body AS reply_body
+      FROM chat_messages m
+      LEFT JOIN users u ON u.user_id = m.author_id
+      LEFT JOIN chat_messages reply
+        ON reply.message_id = m.reply_to_message_id
+        AND reply.conversation_id = m.conversation_id
+      WHERE m.conversation_id = ?
+        AND m.message_id = ?
+      LIMIT 1
+    `).bind(conversationId, messageId).first<ChatMessageRow>();
+    if (!updated) throw new Error("Message not found.");
+    return (await hydrateMessages(env, [updated], user))[0]!;
   }
   return (await hydrateMessages(env, [row], user))[0]!;
 }

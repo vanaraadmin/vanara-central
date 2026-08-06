@@ -489,11 +489,13 @@
   font-size: 0.86rem !important;
 }
 
-.chat-thread-message__translation--error {
-  color: rgba(23, 59, 45, 0.44) !important;
-  font-style: italic;
+.chat-thread-message .free-text-translate__button {
+  min-height: 34px;
+  color: rgba(23, 59, 45, 0.58);
+  font-size: 0.78rem;
 }
 
+.chat-thread-message.is-outgoing .free-text-translate__button,
 .chat-thread-message.is-outgoing .chat-thread-message__translation {
   color: rgba(255, 253, 246, 0.72);
 }

@@ -216,7 +216,7 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(service, /setChatAnnouncement/);
   assert.match(service, /clearChatAnnouncement/);
   assert.match(service, /translateChatMessage/);
-  assert.match(service, /translation_unavailable/);
+  assert.match(service, /translateFreeText/);
   assert.match(service, /createChatAttachmentMessage/);
   assert.match(service, /getChatAttachmentDownload/);
   assert.match(service, /cleanupExpiredChatAttachments/);
@@ -241,7 +241,8 @@ test("chat service enforces participant privacy and no owner private bypass", ()
   assert.match(server, /cleanupExpiredChatAttachments/);
   assert.match(server, /app\.delete\("\/api\/chat\/conversations\/:id\/announcement"/);
   assert.doesNotMatch(server, /authenticated\(c, "chat", "edit"\)/);
-  assert.doesNotMatch(service + server, /translate\.googleapis|GOOGLE_TRANSLATE|DEEPL|Google Cloud Translation/i);
+  assert.match(service, /translateFreeText/);
+  assert.doesNotMatch(service + server, /translation\.googleapis\.com|DEEPL/i);
 });
 
 test("chat page renders LINE-like conversation list and private picker without corporate cards", () => {
@@ -346,6 +347,9 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, />Rispondi</);
   assert.match(page, />Translate</);
   assert.match(page, />Annuncia</);
+  assert.match(page, /TranslatableText/);
+  assert.match(page, /entityType="chat_message"/);
+  assert.match(page, /fieldName="body"/);
   assert.match(page, /QUICK_REACTIONS/);
   assert.match(page, /navigator\.clipboard/);
   assert.match(page, /replyTarget/);
@@ -355,8 +359,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /data-chat-message-id/);
   assert.match(page, /scrollIntoView/);
   assert.match(page, /is-highlighted/);
-  assert.match(page, /translateMutation/);
-  assert.match(page, /Translation is not available yet/);
+  assert.match(page, /free-text-translate__button/);
+  assert.doesNotMatch(page, /translateMutation|Translation is not available yet/);
   assert.match(page, /chat-thread-message__reactions/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
   assert.equal((stickerCatalog.match(/\{ id:/g) ?? []).length, 296);
@@ -399,7 +403,7 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-announcement/);
   assert.match(css, /\.chat-composer__reply-preview/);
   assert.match(css, /\.chat-thread-message__quote/);
-  assert.match(css, /\.chat-thread-message__translation--error/);
+  assert.match(css, /\.chat-thread-message \.free-text-translate__button\s*\{[^}]*min-height:\s*34px/);
   assert.match(css, /\.chat-thread-message__reactions/);
   assert.doesNotMatch(page + service, /\/api\/messages|messages\.service|MessagesPage|guest-messages/i);
   assert.match(service, /\/api\/chat\/conversations\/\$\{id\}\/attachments/);

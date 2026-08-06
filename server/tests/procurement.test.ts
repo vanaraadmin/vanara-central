@@ -233,7 +233,9 @@ test("procurement source stays MVP-only and translation-ready without fake AI tr
   const migration = readFileSync(new URL("../migrations/0039_procurement_mvp_translation_ready.sql", import.meta.url), "utf8");
 
   assert.match(page, /requestTextOriginal/);
-  assert.match(page, /Google Translate is connected/);
+  assert.match(page, /TranslatableText/);
+  assert.match(page, /entityType="procurement_request"/);
+  assert.match(page, /fieldName="request_text_original"/);
   assert.match(migration, /original_language/);
   assert.match(migration, /translated_text/);
   assert.match(migration, /translated_language/);
