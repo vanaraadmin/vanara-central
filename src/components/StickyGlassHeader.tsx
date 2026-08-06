@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import logoSrc from "../assets/img/logo.png";
+import { useLanguage } from "../providers/language.context";
 import "../styles/StickyGlassHeader.css";
 
 export type StickyGlassHeaderVariant = "default";
@@ -77,6 +78,7 @@ export default function StickyGlassHeader({
   title,
   variant = "default",
 }: StickyGlassHeaderProps) {
+  const { translate } = useLanguage();
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const lastActivationRef = useRef(0);
   const p = clampProgress(progress);
@@ -123,11 +125,11 @@ export default function StickyGlassHeader({
       style={positionerStyle}
     >
       <nav
-        aria-label={`${title} navigation`}
+        aria-label={`${title} ${translate("mainNavigation")}`}
         className={`sticky-glass-nav-surface sticky-glass-nav-surface--${variant} sticky-glass-header__surface`}
       >
         <button
-          aria-label={`Return to top of ${title}`}
+          aria-label={`${translate("back")} ${title}`}
           className="sticky-glass-nav-return vc-interactive-surface"
           onClick={activateReturnToTop}
           onPointerUp={activateReturnToTop}
@@ -148,7 +150,7 @@ export default function StickyGlassHeader({
         </button>
 
         <Link
-          aria-label="Staff Home"
+          aria-label={translate("staffHome")}
           className="sticky-glass-nav-home vc-interactive-surface"
           tabIndex={visible ? 0 : -1}
           to="/staff"

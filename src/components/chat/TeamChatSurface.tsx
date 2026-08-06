@@ -20,6 +20,7 @@ import {
   uploadChatAttachment,
 } from "../../services/chat.service";
 import vanaraLogo from "../../assets/img/logo.png";
+import { useLanguage } from "../../providers/language.context";
 import type { ChatConversation, ChatLanguage, ChatMessage, ChatMessageReply, ChatReactionEmoji, ChatUser } from "../../types/chat";
 import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStickers";
 import "../../styles/ChatPage.css";
@@ -39,23 +40,23 @@ function inferLanguage(value: string): ChatLanguage {
   return /[\u0E00-\u0E7F]/.test(value) ? "th" : "en";
 }
 
-function formatChatTime(value: string | null): string {
+function formatChatTime(value: string | null, language: "en" | "th" = "en"): string {
   if (!value) return "";
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
 }
 
-function formatConversationTime(value: string | null): string {
+function formatConversationTime(value: string | null, language: "en" | "th" = "en"): string {
   if (!value) return "";
   const date = new Date(value);
   const now = new Date();
   const sameDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", dateStyle: "short" }).format(date)
     === new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", dateStyle: "short" }).format(now);
-  if (sameDay) return formatChatTime(value);
-  return new Intl.DateTimeFormat("en-GB", {
+  if (sameDay) return formatChatTime(value, language);
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -101,6 +102,7 @@ function ConversationRow({
   active: boolean;
   onSelect: () => void;
 }) {
+  const { language } = useLanguage();
   const alertCount = conversation.mentionCount || conversation.unreadCount;
   const hasUnread = alertCount > 0;
 
@@ -121,7 +123,7 @@ function ConversationRow({
         <span>{conversation.lastMessagePreview}</span>
       </span>
       <span className="chat-list-row__side">
-        <time>{formatConversationTime(conversation.lastMessageAt ?? conversation.updatedAt)}</time>
+        <time>{formatConversationTime(conversation.lastMessageAt ?? conversation.updatedAt, language)}</time>
         {alertCount > 0 && (
           <span className={`chat-list-row__badge ${conversation.mentionCount > 0 ? "is-mention" : ""}`}>
             {conversation.mentionCount > 0 ? `@${conversation.mentionCount}` : alertCount}
@@ -147,6 +149,7 @@ function NewChatPicker({
   onOpenGroup: (payload: { title: string; participantIds: string[] }) => void;
   onClose: () => void;
 }) {
+  const { translate } = useLanguage();
   const [step, setStep] = useState<"people" | "group-details">("people");
   const [groupTitle, setGroupTitle] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -170,21 +173,21 @@ function NewChatPicker({
   }
 
   return (
-    <div className="chat-picker" role="dialog" aria-modal="true" aria-label={kind === "group" ? "New Group Chat" : "New Chat"}>
+    <div className="chat-picker" role="dialog" aria-modal="true" aria-label={kind === "group" ? translate("newGroupChat") : translate("newChat")}>
       <div className="chat-picker__sheet">
         <header>
-          <h2>{kind === "group" && step === "group-details" ? "Group Details" : kind === "group" ? "New Group Chat" : "New Chat"}</h2>
-          <button type="button" className="chat-picker__close" onClick={onClose} aria-label="Close">
+          <h2>{kind === "group" && step === "group-details" ? translate("groupDetails") : kind === "group" ? translate("newGroupChat") : translate("newChat")}</h2>
+          <button type="button" className="chat-picker__close" onClick={onClose} aria-label={translate("close")}>
             <ChatToolIcon type="close" />
           </button>
         </header>
         <div className="chat-picker__list">
           {isLoading ? (
-            <p>Loading team...</p>
+            <p>{translate("loadingTeam")}</p>
           ) : users.length > 0 ? (
             step === "people" ? (
               <>
-                <div className="chat-picker__user-list" aria-label="Team members">
+                <div className="chat-picker__user-list" aria-label={translate("teamMembers")}>
                 {users.map((user) => {
                   const selected = selectedUserIds.includes(user.id);
                   return (
@@ -211,7 +214,7 @@ function NewChatPicker({
                   disabled={!canContinue}
                   onClick={handlePeopleNext}
                 >
-                  {kind === "private" ? "Start Chat" : "Next"}
+                  {kind === "private" ? translate("startChat") : translate("next")}
                 </button>
               </>
             ) : (
@@ -220,7 +223,7 @@ function NewChatPicker({
                   {avatarLabel(groupTitle || "Group")}
                 </div>
                 <label className="chat-picker__group-name">
-                  <span>Group name</span>
+                  <span>{translate("groupName")}</span>
                   <input
                     value={groupTitle}
                     onChange={(event) => setGroupTitle(event.target.value)}
@@ -229,7 +232,7 @@ function NewChatPicker({
                     autoFocus
                   />
                 </label>
-                <div className="chat-picker__selected-people" aria-label="Selected team members">
+                <div className="chat-picker__selected-people" aria-label={translate("selectedTeamMembers")}>
                   {selectedUsers.map((user) => (
                     <span key={user.id}>
                       <ConversationAvatar label={avatarLabel(user.displayName)} photoUrl={user.profilePhotoUrl} />
@@ -238,20 +241,20 @@ function NewChatPicker({
                   ))}
                 </div>
                 <div className="chat-picker__actions">
-                  <button type="button" className="chat-picker__secondary" onClick={() => setStep("people")}>Back</button>
+                  <button type="button" className="chat-picker__secondary" onClick={() => setStep("people")}>{translate("back")}</button>
                   <button
                     type="button"
                     className="chat-picker__primary"
                     disabled={!canCreateGroup}
                     onClick={() => onOpenGroup({ title: groupTitle.trim(), participantIds: selectedUserIds })}
                   >
-                    Create Group
+                    {translate("createGroup")}
                   </button>
                 </div>
               </div>
             )
           ) : (
-            <p>No team members available.</p>
+            <p>{translate("noTeamMembers")}</p>
           )}
         </div>
       </div>
@@ -397,6 +400,7 @@ function ChatMessageContextMenu({
   onAnnounce: (message: ChatMessage) => void;
   onReact: (message: ChatMessage, emoji: ChatReactionEmoji) => void;
 }) {
+  const { translate } = useLanguage();
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<ContextMenuPosition>(() => contextMenuPosition(state.anchorRect));
 
@@ -418,7 +422,7 @@ function ChatMessageContextMenu({
 
   const layer = (
     <div className="chat-context-menu-layer" role="presentation">
-      <button type="button" className="chat-context-menu__backdrop" onClick={onClose} aria-label="Close message actions" />
+      <button type="button" className="chat-context-menu__backdrop" onClick={onClose} aria-label={translate("closeMessageActions")} />
       <div
         ref={menuRef}
         className={`chat-context-menu chat-context-menu--${position.placement}`}
@@ -427,7 +431,7 @@ function ChatMessageContextMenu({
           top: `${position.top}px`,
         }}
       >
-        <div className="chat-context-menu__reactions" aria-label="Quick reactions">
+        <div className="chat-context-menu__reactions" aria-label={translate("reactions")}>
           {QUICK_REACTIONS.map((emoji) => (
             <button key={emoji} type="button" onClick={() => onReact(state.message, emoji)} aria-label={`React ${emoji}`}>
               {emoji}
@@ -435,10 +439,10 @@ function ChatMessageContextMenu({
           ))}
         </div>
         <div className="chat-context-menu__actions">
-          <button type="button" onClick={() => onCopy(state.message)}>Copia</button>
-          <button type="button" onClick={() => onReply(state.message)}>Rispondi</button>
-          <button type="button" onClick={() => onTranslate(state.message)}>Translate</button>
-          <button type="button" onClick={() => onAnnounce(state.message)}>Annuncia</button>
+          <button type="button" onClick={() => onCopy(state.message)}>{translate("copy")}</button>
+          <button type="button" onClick={() => onReply(state.message)}>{translate("reply")}</button>
+          <button type="button" onClick={() => onTranslate(state.message)}>{translate("translate")}</button>
+          <button type="button" onClick={() => onAnnounce(state.message)}>{translate("announce")}</button>
         </div>
         {feedback && <span className="chat-context-menu__feedback">{feedback}</span>}
       </div>
@@ -466,6 +470,7 @@ function ChatMessageBubble({
   onJumpToMessage: (messageId: number) => void;
   onReaction: (message: ChatMessage, emoji: ChatReactionEmoji) => void;
 }) {
+  const { language, translate } = useLanguage();
   const outgoing = message.author.id === currentUserId;
   const contextable = !outgoing && message.messageKind === "TEXT";
   const sticker = stickerById(message.stickerId);
@@ -535,7 +540,7 @@ function ChatMessageBubble({
           ) : message.messageKind === "ATTACHMENT" && message.attachment ? (
             attachmentUnavailable || attachmentFailed ? (
               <div className="chat-thread-message__attachment chat-thread-message__attachment--missing">
-                <strong>File no longer available</strong>
+                <strong>{translate("fileNoLongerAvailable")}</strong>
                 <span>{message.attachment.fileName}</span>
               </div>
             ) : message.attachment.isImage ? (
@@ -565,7 +570,7 @@ function ChatMessageBubble({
           )}
         </div>
         {message.reactions.length > 0 && (
-          <div className="chat-thread-message__reactions" aria-label="Message reactions">
+          <div className="chat-thread-message__reactions" aria-label={translate("messageReactions")}>
             {message.reactions.map((reaction) => (
               <button
                 key={reaction.emoji}
@@ -579,7 +584,7 @@ function ChatMessageBubble({
             ))}
           </div>
         )}
-        <time>{formatChatTime(message.createdAt)}</time>
+        <time>{formatChatTime(message.createdAt, language)}</time>
       </div>
     </article>
   );
@@ -594,6 +599,7 @@ function ChatComposer({
   replyTarget: ChatMessageReply | null;
   onCancelReply: () => void;
 }) {
+  const { translate } = useLanguage();
   const [body, setBody] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [stickersOpen, setStickersOpen] = useState(false);
@@ -666,9 +672,9 @@ function ChatComposer({
   }
 
   return (
-    <form className={`chat-composer ${isFocused ? "is-focused" : ""} ${stickersOpen ? "has-stickers" : ""}`} aria-label="Message composer" onSubmit={submit}>
+    <form className={`chat-composer ${isFocused ? "is-focused" : ""} ${stickersOpen ? "has-stickers" : ""}`} aria-label={translate("messageComposer")} onSubmit={submit}>
       {stickersOpen && (
-        <div className="chat-sticker-drawer" aria-label="Stickers">
+        <div className="chat-sticker-drawer" aria-label={translate("openStickers")}>
           {CHAT_STICKERS.map((sticker) => (
             <button
               key={sticker.id}
@@ -690,17 +696,17 @@ function ChatComposer({
             <strong>{replyTarget.authorDisplayName}</strong>
             <small>{replyTarget.bodyPreview}</small>
           </span>
-          <button type="button" onClick={onCancelReply} aria-label="Cancel reply">
+          <button type="button" onClick={onCancelReply} aria-label={translate("cancelReply")}>
             <ChatToolIcon type="close" />
           </button>
         </div>
       )}
-      <div className="chat-composer__tools chat-composer__tools--left" aria-label="Message tools">
-        <button type="button" aria-label="Attach file" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="plus" /></button>
+      <div className="chat-composer__tools chat-composer__tools--left" aria-label={translate("messageTools")}>
+        <button type="button" aria-label={translate("attachFile")} onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}><ChatToolIcon type="plus" /></button>
       </div>
       <input ref={fileInputRef} className="chat-composer__file-input" type="file" onChange={handleFileChange} />
       <label className="chat-composer__field">
-        <span className="vc-sr-only">Message</span>
+        <span className="vc-sr-only">{translate("message")}</span>
         <input
           ref={inputRef}
           value={body}
@@ -712,21 +718,21 @@ function ChatComposer({
         />
       </label>
       <div className="chat-composer__tools chat-composer__tools--right">
-        <button type="button" aria-label="Open stickers" aria-expanded={stickersOpen} onClick={() => setStickersOpen((open) => !open)} disabled={stickerMutation.isPending}><ChatToolIcon type="sticker" /></button>
+        <button type="button" aria-label={translate("openStickers")} aria-expanded={stickersOpen} onClick={() => setStickersOpen((open) => !open)} disabled={stickerMutation.isPending}><ChatToolIcon type="sticker" /></button>
         {body.trim() && (
-          <button className="chat-composer__send" type="submit" disabled={mutation.isPending} aria-label="Send message">
+          <button className="chat-composer__send" type="submit" disabled={mutation.isPending} aria-label={translate("sendMessage")}>
             <ChatToolIcon type="send" />
           </button>
         )}
       </div>
       {isFocused && (
         <div className="chat-composer__focus-row">
-          <button type="button" className="chat-composer__cancel-focus" onMouseDown={(event) => event.preventDefault()} onClick={exitFocusMode} aria-label="Exit writing mode">
+          <button type="button" className="chat-composer__cancel-focus" onMouseDown={(event) => event.preventDefault()} onClick={exitFocusMode} aria-label={translate("exitWritingMode")}>
             <ChatToolIcon type="close" />
           </button>
         </div>
       )}
-      {(mutation.isError || uploadMutation.isError || stickerMutation.isError) && <p className="chat-composer__error">Message was not saved. Please try again.</p>}
+      {(mutation.isError || uploadMutation.isError || stickerMutation.isError) && <p className="chat-composer__error">{translate("messageNotSaved")}</p>}
     </form>
   );
 }
@@ -742,6 +748,7 @@ function ChatThread({
   currentUserId: string;
   viewerLanguage: ChatLanguage;
 }) {
+  const { translate } = useLanguage();
   const [contextMenu, setContextMenu] = useState<ChatContextMenuState | null>(null);
   const [contextFeedback, setContextFeedback] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<ChatMessageReply | null>(null);
@@ -797,10 +804,10 @@ function ChatThread({
   async function handleCopy(message: ChatMessage) {
     try {
       await copyText(message.body);
-      setContextFeedback("Copiato");
+      setContextFeedback(translate("copied"));
       window.setTimeout(() => setContextMenu(null), 420);
     } catch {
-      setContextFeedback("Copy unavailable");
+      setContextFeedback(translate("copyUnavailable"));
     }
   }
 
@@ -830,7 +837,7 @@ function ChatThread({
   }
 
   return (
-    <section className="chat-thread" aria-label={`${conversation.title} conversation`}>
+    <section className="chat-thread" aria-label={conversation.title}>
       <header className="chat-thread__header">
         <ConversationAvatar
           label={conversation.avatarLabel}
@@ -838,18 +845,18 @@ function ChatThread({
           variant={chatAvatarVariant(conversation)}
         />
         <div>
-          <h2>{conversation.kind === "GROUP" ? "Vanara Group Chat" : conversation.title}</h2>
-          <span>{conversation.participantCount} people</span>
+          <h2>{conversation.kind === "GROUP" ? translate("vanaraGroupChat") : conversation.title}</h2>
+          <span>{conversation.participantCount} {translate("people")}</span>
         </div>
       </header>
 
       {conversation.announcement && (
         <div className="chat-announcement">
           <button type="button" onClick={() => jumpToMessage(conversation.announcement!.messageId)}>
-            <strong>Annuncio</strong>
+            <strong>{translate("announcement")}</strong>
             <span>{conversation.announcement.authorDisplayName}: {conversation.announcement.bodyPreview}</span>
           </button>
-          <button type="button" className="chat-announcement__clear" onClick={() => clearAnnouncementMutation.mutate()} aria-label="Clear announcement">
+          <button type="button" className="chat-announcement__clear" onClick={() => clearAnnouncementMutation.mutate()} aria-label={translate("clearAnnouncement")}>
             <ChatToolIcon type="close" />
           </button>
         </div>
@@ -872,8 +879,8 @@ function ChatThread({
           ))
         ) : (
           <div className="chat-thread__empty">
-            <h3>No messages yet</h3>
-            <p>Start with a quick team note.</p>
+            <h3>{translate("noMessagesYet")}</h3>
+            <p>{translate("startTeamNote")}</p>
           </div>
         )}
       </div>
@@ -902,6 +909,7 @@ export default function TeamChatSurface({
   onActiveConversationChange,
   onMobileViewChange,
 }: TeamChatSurfaceProps) {
+  const { translate } = useLanguage();
   const queryClient = useQueryClient();
   const [pickerKind, setPickerKind] = useState<"private" | "group" | null>(null);
   const [localMobileView, setLocalMobileView] = useState<"list" | "thread">(activeConversationId ? "thread" : "list");
@@ -1004,19 +1012,19 @@ export default function TeamChatSurface({
         data-internal-chat="team"
         onContextMenu={preventNativeChatContextMenu}
       >
-        <aside className="chat-list" aria-label="Team conversations">
+        <aside className="chat-list" aria-label={translate("teamConversations")}>
           <header className="chat-list__header">
             <div>
-              <h1>Chat</h1>
+              <h1>{translate("chat")}</h1>
             </div>
             <div className="chat-list__actions">
-              <button type="button" className="chat-list__new-chat" onClick={() => setPickerKind("private")} aria-label="New Chat">
+              <button type="button" className="chat-list__new-chat" onClick={() => setPickerKind("private")} aria-label={translate("newChat")}>
                 <ChatToolIcon type="user" />
-                <span>New Chat</span>
+                <span>{translate("newChat")}</span>
               </button>
-              <button type="button" className="chat-list__new-chat chat-list__new-chat--group" onClick={() => setPickerKind("group")} aria-label="New Group Chat">
+              <button type="button" className="chat-list__new-chat chat-list__new-chat--group" onClick={() => setPickerKind("group")} aria-label={translate("newGroupChat")}>
                 <ChatToolIcon type="group" />
-                <span>New Group Chat</span>
+                <span>{translate("newGroupChat")}</span>
               </button>
             </div>
           </header>
@@ -1033,8 +1041,8 @@ export default function TeamChatSurface({
               ))
             ) : (
               <div className="chat-list__empty">
-                <h2>No conversations</h2>
-                <p>No team chats yet.</p>
+                <h2>{translate("noConversations")}</h2>
+                <p>{translate("noTeamChats")}</p>
               </div>
             )}
           </div>
@@ -1048,10 +1056,10 @@ export default function TeamChatSurface({
             viewerLanguage={currentUserQuery.data?.preferredLanguage ?? "en"}
           />
         ) : (
-          <section className="chat-thread chat-thread--empty" aria-label="No conversation selected">
+          <section className="chat-thread chat-thread--empty" aria-label={translate("selectChat")}>
             <div className="chat-thread__empty">
-              <h2>Select a chat</h2>
-              <p>Pick a team thread.</p>
+              <h2>{translate("selectChat")}</h2>
+              <p>{translate("pickTeamThread")}</p>
             </div>
           </section>
         )}

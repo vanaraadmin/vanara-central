@@ -34,14 +34,14 @@ test("maintenance home is an expandable operational queue", () => {
   assert.match(maintenancePage, /vc-glass-list/);
   assert.match(maintenancePage, /maintenance-ticket-row/);
   assert.match(maintenancePage, /VanaraGlassSheet/);
-  assert.match(maintenancePage, /Open issue/);
+  assert.match(maintenancePage, /translate\("openIssue"\)/);
   assert.doesNotMatch(maintenancePage, /<Link\s+className=\{`maintenance-ticket/);
 });
 
 test("maintenance detail keeps only the approved intervention details", () => {
   assert.match(maintenanceDetail, /MaintenancePhotoGallery/);
-  assert.match(maintenanceDetail, /Timeline/);
-  assert.match(maintenanceDetail, /Description/);
+  assert.match(maintenanceDetail, /translate\("timeline"\)/);
+  assert.match(maintenanceDetail, /translate\("description"\)/);
   assert.doesNotMatch(maintenanceDetail, /NotesPanel|addMaintenanceNote|addMaintenancePhoto|Reported by|Created<\/dt>|Updated<\/dt>/);
 });
 
@@ -62,16 +62,16 @@ test("blocking maintenance is surfaced in Reception, Staff Home, and Room Worksp
 test("maintenance creation requires an explicit Room or Other target", () => {
   assert.match(createMaintenance, /loadMaintenanceRoomTargets/);
   assert.match(createMaintenance, /maintenance-target-field/);
-  assert.match(createMaintenance, /Issue target/);
+  assert.match(createMaintenance, /translate\("issueTarget"\)/);
   assert.match(createMaintenance, /targetType/);
   assert.match(createMaintenance, /name="maintenance-target"/);
   assert.match(createMaintenance, /"ROOM"/);
   assert.match(createMaintenance, /"OTHER"/);
-  assert.match(createMaintenance, /Select room/);
-  assert.match(createMaintenance, /Restaurant/);
-  assert.match(createMaintenance, /Select area/);
-  assert.match(createMaintenance, /Utilities/);
-  assert.match(createMaintenance, /Area/);
+  assert.match(createMaintenance, /translate\("selectRoom"\)/);
+  assert.match(createMaintenance, /key: "restaurant"/);
+  assert.doesNotMatch(createMaintenance, /Select area/);
+  assert.doesNotMatch(createMaintenance, /Utilities/);
+  assert.match(createMaintenance, /translate\("areaOrAsset"\)/);
   assert.doesNotMatch(createMaintenance, /inputMode="numeric"/);
   assert.doesNotMatch(createMaintenance, /Room optional/);
 });

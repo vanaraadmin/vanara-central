@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useLanguage } from "../../providers/language.context";
 
 /**
  * Purpose: shared Staff Home return action for operational workspace heroes.
@@ -16,6 +17,8 @@ import { Link } from "react-router-dom";
  * no hidden click area.
  */
 export default function VanaraStaffHomeAction() {
+  const { translate } = useLanguage();
+
   return (
     <Link className="vc-secondary-glass-action vc-staff-home-action" to="/staff">
       <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
@@ -23,7 +26,7 @@ export default function VanaraStaffHomeAction() {
         <path d="M6.75 10.2v8.05h10.5V10.2" />
         <path d="M10 18.25v-4.5h4v4.5" />
       </svg>
-      <span>Staff Home</span>
+      <span>{translate("staffHome")}</span>
     </Link>
   );
 }

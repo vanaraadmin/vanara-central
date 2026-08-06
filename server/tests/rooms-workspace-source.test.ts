@@ -77,14 +77,14 @@ test("Internal Chat is a persistent bubble and not a Staff Home workspace card",
 test("Staff Owner UI model keeps one visual component tree and gates only capabilities", () => {
   assert.doesNotMatch(staffPage, /HIDDEN_UNTIL_PAGE_READY/);
   assert.doesNotMatch(staffService, /id:\s*"availability"/);
-  assert.match(procurementPage, /<WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">/);
+  assert.match(procurementPage, /<WorkspaceShell title=\{translate\("procurement"\)\} workspace="procurement" bodyClassName="procurement-page">/);
   assert.match(procurementPage, /requestTextOriginal/);
-  assert.match(procurementPage, /Bought/);
-  assert.match(procurementPage, /Reject/);
+  assert.match(procurementPage, /translate\("bought"\)/);
+  assert.match(procurementPage, /translate\("reject"\)/);
   assert.doesNotMatch(procurementPage, /SupplyRequestPage|ProcurementOwnerPage|loadProcurementItems/);
   assert.match(housekeepingV2Page, /card\.capabilities\.canReassign/);
-  assert.match(housekeepingV2Page, /Assign Cleaning/);
-  assert.match(housekeepingV2Page, /Assign Task/);
+  assert.match(housekeepingV2Page, /translate\("assignCleaning"\)/);
+  assert.match(housekeepingV2Page, /translate\("assignTask"\)/);
 });
 
 test("Rooms Workspace consumes one dedicated read model and cards do not load services", () => {
@@ -222,12 +222,14 @@ test("Compact row CSS keeps operational alerts readable without uncontrolled sta
 
 test("Expanded Rooms Workspace uses a read-only operational summary card", () => {
   assert.match(roomExpandedWorkspace, /RoomOperationalSummaryCard summary=\{room\.operational\}/);
-  assert.match(roomOperationalSummaryCard, /Room Status/);
+  assert.match(roomOperationalSummaryCard, /translate\("roomsSummary"\)/);
   assert.match(roomOperationalSummaryCard, /<dl className="room-status-grid vc-data-grid room-operational-card__grid">/);
   assert.match(roomOperationalSummaryCard, /room-status-item vc-data-item/);
   for (const label of ["Operational", "Occupancy", "Cleaning", "Maintenance"]) {
     assert.match(presentation, new RegExp(label));
   }
+  assert.match(roomOperationalSummaryCard, /translateStaffLabel\(item\.label, translate\)/);
+  assert.match(roomOperationalSummaryCard, /translateStaffLabel\(item\.value, translate\)/);
   assert.doesNotMatch(roomOperationalSummaryCard, /onClick|button|input|select|textarea/);
 });
 
@@ -274,9 +276,9 @@ test("Expanded Rooms Workspace renders GuestCard only for occupied current stays
   assert.match(guestCard, /function GuestBookingSummary/);
   assert.match(guestCard, /function GuestStaySummary/);
   assert.match(guestCard, /formatNationalityText\(stay\.nationality\)/);
-  assert.match(guestCard, /label="Arrived"/);
-  assert.match(guestCard, /label="Leaving"/);
-  assert.match(guestCard, /label="Stay"/);
+  assert.match(guestCard, /label=\{translate\("checkIn"\)\}/);
+  assert.match(guestCard, /label=\{translate\("checkOut"\)\}/);
+  assert.match(guestCard, /label=\{translate\("stay"\)\}/);
   assert.doesNotMatch(guestCard, /bookingId|Passport|Deposit|payment|flag|countryCodeToFlag|UNKNOWN|N\/A/);
 });
 
@@ -296,10 +298,10 @@ test("Rooms reuses the Reception guest contact trigger and sheet", () => {
   assert.match(guestContactTrigger, /export function AddressBookIcon/);
   assert.match(guestContactSheet, /https:\/\/wa\.me\/\$\{whatsappPhone\}/);
   assert.match(guestContactSheet, /window\.location\.href = `mailto:\$\{email\}`/);
-  assert.match(guestContactSheet, /Phone number unavailable/);
-  assert.match(guestContactSheet, /Email address unavailable/);
-  assert.match(guestContactSheet, /Phone number not available/);
-  assert.match(guestContactSheet, /Email not available/);
+  assert.match(guestContactSheet, /translate\("phoneNumberUnavailable"\)/);
+  assert.match(guestContactSheet, /translate\("emailAddressUnavailable"\)/);
+  assert.match(guestContactSheet, /translate\("phoneNotAvailable"\)/);
+  assert.match(guestContactSheet, /translate\("emailNotAvailable"\)/);
   assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
   assert.match(guestContactCss, /\.vanara-guest-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
@@ -311,8 +313,8 @@ test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead 
   assert.match(roomExpandedWorkspace, /getRoomsWorkspaceTurnover\(room\)/);
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Reception"/);
-  assert.match(turnoverCard, /eyebrow="Turnover"/);
-  assert.match(turnoverCard, /title="Current State"/);
+  assert.match(turnoverCard, /eyebrow=\{translate\("turnover"\)\}/);
+  assert.match(turnoverCard, /title=\{translate\("currentState"\)\}/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);

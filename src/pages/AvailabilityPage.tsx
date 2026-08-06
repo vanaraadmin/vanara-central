@@ -5,6 +5,7 @@ import { CalendarIcon, ChevronDownIcon } from "../components/OperationsIcons";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
+import { useLanguage } from "../providers/language.context";
 import { loadAvailabilityPrices } from "../services/availability-prices.service";
 import type { AvailabilityPricesGroup } from "../types/availability-prices";
 import "../styles/AvailabilityPage.css";
@@ -44,23 +45,23 @@ function isValidStayRange(range: SearchRange, minimumArrival: string): boolean {
     && range.departure > range.arrival;
 }
 
-function formatPrice(value: number | null): string {
-  return value === null ? "Price missing" : `${PRICE_FORMATTER.format(value)} THB`;
+function formatPrice(value: number | null, translate: (key: string) => string): string {
+  return value === null ? translate("priceMissing") : `${PRICE_FORMATTER.format(value)} THB`;
 }
 
-function formatStayDate(value: string): string {
+function formatStayDate(value: string, language = "en"): string {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-function availabilityLabel(group: AvailabilityPricesGroup): string {
-  if (group.availabilityStatus === "UNKNOWN") return "Cache missing";
-  return group.availableCount === 1 ? "1 available unit" : `${group.availableCount} available units`;
+function availabilityLabel(group: AvailabilityPricesGroup, translate: (key: string, options?: Record<string, unknown>) => string): string {
+  if (group.availabilityStatus === "UNKNOWN") return translate("cacheMissing");
+  return translate(group.availableCount === 1 ? "oneAvailableUnit" : "availableUnits", { count: group.availableCount });
 }
 
 function AvailabilityResultCard({
@@ -72,6 +73,7 @@ function AvailabilityResultCard({
   group: AvailabilityPricesGroup;
   onToggle: () => void;
 }) {
+  const { translate } = useLanguage();
   return (
     <article className={`availability-card availability-card--${group.availabilityStatus.toLowerCase()}`}>
       <button
@@ -90,28 +92,28 @@ function AvailabilityResultCard({
           </span>
         </span>
 
-        <span className="availability-card__availability">{availabilityLabel(group)}</span>
+        <span className="availability-card__availability">{availabilityLabel(group, translate)}</span>
 
         <dl className="availability-card__metrics">
           <div>
-            <dt>Average / night</dt>
-            <dd>{formatPrice(group.pricing.averageNightlyPrice)}</dd>
+            <dt>{translate("averageNight")}</dt>
+            <dd>{formatPrice(group.pricing.averageNightlyPrice, translate)}</dd>
           </div>
           <div>
-            <dt>Stay total</dt>
-            <dd>{formatPrice(group.pricing.totalPrice)}</dd>
+            <dt>{translate("stayTotal")}</dt>
+            <dd>{formatPrice(group.pricing.totalPrice, translate)}</dd>
           </div>
         </dl>
 
         <span className="availability-card__expand">
-          <span>{expanded ? "Hide rooms" : "Expand"}</span>
+          <span>{expanded ? translate("hideRooms") : translate("expand")}</span>
           <ChevronDownIcon />
         </span>
       </button>
 
       {expanded ? (
         <div className="availability-card__rooms">
-          <span>Available rooms</span>
+          <span>{translate("availableRooms")}</span>
           {group.availableUnits.length > 0 ? (
             <ul>
               {group.availableUnits.map((unit) => (
@@ -119,7 +121,7 @@ function AvailabilityResultCard({
               ))}
             </ul>
           ) : (
-            <p>No available rooms in the Beds24 cache for this stay.</p>
+            <p>{translate("noAvailableRoomsInCache")}</p>
           )}
         </div>
       ) : null}
@@ -128,6 +130,7 @@ function AvailabilityResultCard({
 }
 
 export default function AvailabilityPage() {
+  const { language, translate } = useLanguage();
   const defaultArrival = useMemo(() => bangkokDate(), []);
   const defaultDeparture = useMemo(() => bangkokDate(1), []);
   const [arrival, setArrival] = useState(defaultArrival);
@@ -171,7 +174,7 @@ export default function AvailabilityPage() {
     event.preventDefault();
     const nextRange = { arrival, departure };
     if (!isValidStayRange(nextRange, defaultArrival)) {
-      setSearchError("Choose a departure date after arrival.");
+      setSearchError(translate("chooseDepartureAfterArrival"));
       return;
     }
 
@@ -190,21 +193,21 @@ export default function AvailabilityPage() {
   };
 
   return (
-    <WorkspaceShell title="Prices" stickyNavigationTitle="Prices" workspace="rooms" bodyClassName="availability-page">
+    <WorkspaceShell title={translate("prices")} stickyNavigationTitle={translate("prices")} workspace="rooms" bodyClassName="availability-page">
       <p className="availability-page__subtitle">
-        Check availability and verified prices for selected dates.
+        {translate("pricesDescription")}
       </p>
 
       <VanaraGlassRegion className="availability-search" ariaLabelledBy="availability-search-title">
         <VanaraSectionHeader
-          eyebrow="Beds24 cache"
+          eyebrow={translate("verifiedPrices")}
           headingId="availability-search-title"
-          title="Price Search"
+          title={translate("search")}
         />
 
         <form className="availability-search__controls" onSubmit={submitSearch}>
           <label className="availability-field">
-            <span>Arrival</span>
+            <span>{translate("arrival")}</span>
             <input
               min={defaultArrival}
               onChange={(event) => updateArrival(event.target.value)}
@@ -214,7 +217,7 @@ export default function AvailabilityPage() {
           </label>
 
           <label className="availability-field">
-            <span>Departure</span>
+            <span>{translate("departure")}</span>
             <input
               aria-invalid={Boolean(searchError)}
               min={minimumDeparture}
@@ -225,7 +228,7 @@ export default function AvailabilityPage() {
           </label>
 
           <button className="vc-primary-action availability-search__action" disabled={availability.isFetching} type="submit">
-            {availability.isFetching ? "Searching" : "Search Prices"}
+            {availability.isFetching ? translate("searching") : translate("searchPrices")}
           </button>
         </form>
 
@@ -234,56 +237,56 @@ export default function AvailabilityPage() {
 
       <div className="availability-summary-slot" aria-hidden={!result}>
         {result ? (
-          <span>{formatStayDate(result.arrivalDate)} to {formatStayDate(result.departureDate)} - {result.nights === 1 ? "1 night" : `${result.nights} nights`}</span>
+          <span>{formatStayDate(result.arrivalDate, language)} - {formatStayDate(result.departureDate, language)} · {result.nights} {translate("nights")}</span>
         ) : null}
       </div>
 
       <VanaraGlassSheet className="availability-results" ariaLabelledBy="availability-results-title">
         <VanaraSectionHeader
-          eyebrow="Beds24 cache"
+          eyebrow={translate("verifiedPrices")}
           headingId="availability-results-title"
-          meta={result ? `${groups.length} types` : undefined}
-          title="Results"
+          meta={result ? translate("typesCount", { count: groups.length }) : undefined}
+          title={translate("results")}
         />
 
         {!submittedRange && !searchError ? (
           <div className="availability-results__empty" role="status">
-            <strong>No search executed yet.</strong>
-            <p>Select arrival and departure to check availability and verified prices.</p>
+            <strong>{translate("noSearchExecuted")}</strong>
+            <p>{translate("selectArrivalDeparture")}</p>
           </div>
         ) : null}
 
         {availability.isLoading ? (
           <div className="availability-results__loading" aria-live="polite">
-            <span>Reading Beds24 cache</span>
+            <span>{translate("readingCache")}</span>
           </div>
         ) : null}
 
         {availability.isError ? (
           <div className="availability-results__error" role="alert">
-            <strong>Prices are unavailable.</strong>
-            <p>The cached Beds24 result could not be loaded.</p>
-            <button className="vc-secondary-action" onClick={() => void availability.refetch()} type="button">Retry</button>
+            <strong>{translate("pricesUnavailable")}</strong>
+            <p>{translate("priceCouldNotLoad")}</p>
+            <button className="vc-secondary-action" onClick={() => void availability.refetch()} type="button">{translate("tryAgain")}</button>
           </div>
         ) : null}
 
         {result && !availability.isLoading && !availability.isError ? (
           cacheUnavailable ? (
             <div className="availability-results__empty" role="status">
-              <strong>Cache unavailable.</strong>
-              <p>Beds24 availability cache has not been populated for this stay range.</p>
+              <strong>{translate("cacheUnavailable")}</strong>
+              <p>{translate("availabilityCouldNotLoad")}</p>
             </div>
           ) : noAvailability ? (
             <div className="availability-results__empty" role="status">
-              <strong>No accommodation available.</strong>
-              <p>Beds24 has no available units for this stay range.</p>
+              <strong>{translate("noAccommodationAvailable")}</strong>
+              <p>{translate("noAvailableUnitsForStay")}</p>
             </div>
           ) : groups.length > 0 ? (
             <div className="availability-results__list">
               {missingPricingGroups.length > 0 ? (
                 <div className="availability-results__notice" role="status">
-                  <strong>Price missing.</strong>
-                  <p>Some available accommodation types are missing a complete verified price for every night.</p>
+                  <strong>{translate("priceMissing")}</strong>
+                  <p>{translate("priceMissingNotice")}</p>
                 </div>
               ) : null}
 
@@ -298,8 +301,8 @@ export default function AvailabilityPage() {
             </div>
           ) : (
             <div className="availability-results__empty" role="status">
-              <strong>No accommodation available.</strong>
-              <p>Beds24 has no available units for this stay range.</p>
+              <strong>{translate("noAccommodationAvailable")}</strong>
+              <p>{translate("noAvailableUnitsForStay")}</p>
             </div>
           )
         ) : null}

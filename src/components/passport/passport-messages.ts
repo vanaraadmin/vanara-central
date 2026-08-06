@@ -1,4 +1,5 @@
 import type { PassportClassificationDecision } from "../../types/reception";
+import i18n from "../../i18n";
 
 export type PassportMessageKey =
   | PassportClassificationDecision["messageKey"]
@@ -42,6 +43,36 @@ export const PASSPORT_MESSAGES: Record<PassportMessageKey, string> = {
   "passport.cropFailed": "The passport crop could not be prepared. Please retake the photo.",
 };
 
+const PASSPORT_MESSAGE_I18N_KEYS: Partial<Record<PassportMessageKey, string>> = {
+  "passport.ready": "passportReady",
+  "passport.notPassport": "passportNotPassport",
+  "passport.notBiodataPage": "passportNotBiodataPage",
+  "passport.moveCloser": "passportMoveSlightlyCloser",
+  "passport.pageIncomplete": "passportPageIncomplete",
+  "passport.showMrz": "showBottomCode",
+  "passport.moreLight": "moreLightNeeded",
+  "passport.tooBlurry": "passportTooBlurry",
+  "passport.avoidReflections": "passportAvoidReflections",
+  "passport.checkFailed": "passportCheckFailed",
+  "passport.ocrFailed": "passportOcrFailed",
+  "passport.notReadable": "passportImageUnreadable",
+  "passport.numberNotVerified": "passportNumberNotVerified",
+  "passport.networkProblem": "passportNetworkProblem",
+  "passport.openAiTimeout": "passportOpenAiTimeout",
+  "passport.mrzValidationFailed": "passportMrzValidationFailed",
+  "passport.ocrInconsistency": "passportOcrInconsistency",
+  "passport.unknownInternal": "passportUnknownInternal",
+  "passport.saveFailed": "passportSaveFailed",
+  "passport.imageUnreadable": "passportImageUnreadable",
+  "passport.imageTooSmall": "passportImageTooSmall",
+  "passport.cropFailed": "passportCropFailed",
+};
+
 export function passportMessage(key: PassportMessageKey, fallback?: string): string {
+  const i18nKey = PASSPORT_MESSAGE_I18N_KEYS[key];
+  if (i18nKey) {
+    const translated = i18n.t(i18nKey);
+    if (translated !== i18nKey) return translated;
+  }
   return PASSPORT_MESSAGES[key] ?? fallback ?? PASSPORT_MESSAGES["passport.unknownInternal"];
 }

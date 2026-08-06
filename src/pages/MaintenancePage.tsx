@@ -12,23 +12,27 @@ import WorkspaceShell from "../components/WorkspaceShell";
 import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 import { loadMaintenanceTickets } from "../services/maintenance.service";
 import type { MaintenancePriority, MaintenanceStatus, MaintenanceTicketSummary } from "../types/maintenance";
+import { useLanguage } from "../providers/language.context";
+import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/MaintenancePage.css";
 
-function displayStatus(status: MaintenanceStatus | "All") {
-  return status.toUpperCase();
+type Translate = ReturnType<typeof useLanguage>["translate"];
+
+function displayStatus(status: MaintenanceStatus | "All", translate: Translate) {
+  return translateStaffLabel(status, translate);
 }
 
-function displayPriority(priority: MaintenancePriority) {
-  return priority.toUpperCase();
+function displayPriority(priority: MaintenancePriority, translate: Translate) {
+  return translateStaffLabel(priority, translate);
 }
 
 function locationLabel(ticket: MaintenanceTicketSummary) {
-  return ticket.roomName ?? ticket.locationArea ?? ticket.accommodationName ?? "General Resort Area";
+  return ticket.roomName ?? ticket.locationArea ?? ticket.accommodationName ?? null;
 }
 
-function assignmentLabel(ticket: MaintenanceTicketSummary) {
-  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? "Maintenance";
-  return "Unassigned";
+function assignmentLabel(ticket: MaintenanceTicketSummary, translate: Translate) {
+  if (ticket.assignment.type === "INTERNAL") return ticket.assignment.assignedUserName ?? translate("maintenance");
+  return translate("unassigned");
 }
 
 function priorityTone(priority: MaintenancePriority): string {
@@ -49,8 +53,8 @@ function priorityStateTone(priority: MaintenancePriority, outOfService = false):
   return "neutral";
 }
 
-function creationDate(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function creationDate(value: string, language = "en"): string {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -58,25 +62,22 @@ function creationDate(value: string): string {
   }).format(new Date(value));
 }
 
-function summaryTone(label: string, value: number): VanaraSummaryItem["tone"] {
-  if (value === 0) return "clean";
-  if (label === "Open" || label === "Waiting Parts") return "warning";
-  if (label === "In Progress") return "progress";
-  return "clean";
-}
-
 function TicketCard({
   expanded,
   onToggle,
   ticket,
+  translate,
+  language,
 }: {
   expanded: boolean;
+  language: string;
   onToggle: () => void;
   ticket: MaintenanceTicketSummary;
+  translate: Translate;
 }) {
   const detailId = `maintenance-ticket-${ticket.id}-details`;
   const tone = statusTone(ticket.status, ticket.outOfService);
-  const target = locationLabel(ticket);
+  const target = locationLabel(ticket) ?? translate("generalResortArea");
 
   return (
     <article className={`maintenance-ticket priority-${priorityTone(ticket.priority)} status-${ticket.status.toLowerCase().replaceAll(" ", "-")}${expanded ? " is-expanded" : ""}`}>
@@ -95,9 +96,9 @@ function TicketCard({
           <span className="maintenance-ticket-row__subtitle">{target}</span>
         </span>
         <span className="maintenance-ticket-row__signals">
-          <strong className={`vc-state-${tone}`}>{ticket.outOfService ? "Blocking" : displayStatus(ticket.status)}</strong>
-          <span>{displayPriority(ticket.priority)} - {assignmentLabel(ticket)}</span>
-          <time dateTime={ticket.createdAt}>{creationDate(ticket.createdAt)}</time>
+          <strong className={`vc-state-${tone}`}>{ticket.outOfService ? translate("blocking") : displayStatus(ticket.status, translate)}</strong>
+          <span>{displayPriority(ticket.priority, translate)} - {assignmentLabel(ticket, translate)}</span>
+          <time dateTime={ticket.createdAt}>{creationDate(ticket.createdAt, language)}</time>
         </span>
         <span className="maintenance-ticket-row__chevron" aria-hidden="true">
           <ChevronDownIcon />
@@ -106,7 +107,7 @@ function TicketCard({
 
       {expanded && (
         <div className="maintenance-ticket-expanded-content" id={detailId}>
-          <VanaraGlassSheet ariaLabel={`${ticket.title} details`} className="maintenance-ticket-sheet">
+          <VanaraGlassSheet ariaLabel={translate("ticketDetails", { title: ticket.title })} className="maintenance-ticket-sheet">
             <header className="vc-sheet-identity maintenance-sheet-identity">
               <div className="vc-sheet-identity__icon maintenance-sheet-identity__icon" aria-hidden="true">
                 {ticket.outOfService ? <AlertIcon /> : <MaintenanceIcon />}
@@ -115,49 +116,49 @@ function TicketCard({
                 <span className="vc-sheet-identity__eyebrow">{ticket.category}</span>
                 <h2 className="vc-sheet-identity__title">{ticket.title}</h2>
                 <p className="vc-sheet-identity__subtitle">{target}</p>
-                <small className="vc-sheet-identity__meta">{assignmentLabel(ticket)} - {creationDate(ticket.createdAt)}</small>
+                <small className="vc-sheet-identity__meta">{assignmentLabel(ticket, translate)} - {creationDate(ticket.createdAt, language)}</small>
               </div>
             </header>
 
             <VanaraGlassRegion ariaLabelledBy={`maintenance-ticket-state-${ticket.id}`} className="maintenance-region">
               <VanaraSectionHeader
-                eyebrow="Maintenance"
+                eyebrow={translate("maintenance")}
                 headingId={`maintenance-ticket-state-${ticket.id}`}
-                title="Current State"
+                title={translate("currentState")}
               />
               <div className="vc-operational-state">
-                <span className="vc-operational-state__label">Current state</span>
-                <strong className={`vc-operational-state__value vc-state-${tone}`}>{ticket.outOfService ? "Blocking" : displayStatus(ticket.status)}</strong>
+                <span className="vc-operational-state__label">{translate("currentState")}</span>
+                <strong className={`vc-operational-state__value vc-state-${tone}`}>{ticket.outOfService ? translate("blocking") : displayStatus(ticket.status, translate)}</strong>
                 <p className="vc-operational-state__description">{ticket.waitingReason ?? ticket.description}</p>
               </div>
             </VanaraGlassRegion>
 
             <VanaraGlassRegion ariaLabelledBy={`maintenance-ticket-facts-${ticket.id}`} className="maintenance-region">
               <VanaraSectionHeader
-                eyebrow="Issue"
+                eyebrow={translate("issue")}
                 headingId={`maintenance-ticket-facts-${ticket.id}`}
-                title="Issue"
+                title={translate("issue")}
               />
               <VanaraDataGrid
-                ariaLabel={`${ticket.title} issue facts`}
+                ariaLabel={translate("issueFacts", { title: ticket.title })}
                 items={[
-                  { label: "Category", value: ticket.category },
-                  { label: "Priority", tone: priorityStateTone(ticket.priority, ticket.outOfService), value: displayPriority(ticket.priority) },
-                  { label: "Status", tone, value: displayStatus(ticket.status) },
-                  { label: "Assigned To", value: assignmentLabel(ticket) },
-                  { label: "Target", value: target },
-                  { label: "Photos", value: ticket.photoCount },
+                  { label: translate("category"), value: ticket.category },
+                  { label: translate("priority"), tone: priorityStateTone(ticket.priority, ticket.outOfService), value: displayPriority(ticket.priority, translate) },
+                  { label: translate("status"), tone, value: displayStatus(ticket.status, translate) },
+                  { label: translate("assignedTo"), value: assignmentLabel(ticket, translate) },
+                  { label: translate("target"), value: target },
+                  { label: translate("photos"), value: ticket.photoCount },
                 ]}
               />
             </VanaraGlassRegion>
 
             <VanaraGlassRegion ariaLabelledBy={`maintenance-ticket-actions-${ticket.id}`} className="maintenance-region">
               <VanaraSectionHeader
-                eyebrow="Actions"
+                eyebrow={translate("actions")}
                 headingId={`maintenance-ticket-actions-${ticket.id}`}
-                title="Actions"
+                title={translate("actions")}
               />
-              <Link className="vc-primary-action maintenance-open-issue" to={`/maintenance/${ticket.id}`}>Open issue</Link>
+              <Link className="vc-primary-action maintenance-open-issue" to={`/maintenance/${ticket.id}`}>{translate("openIssue")}</Link>
             </VanaraGlassRegion>
           </VanaraGlassSheet>
         </div>
@@ -171,6 +172,7 @@ function todayBangkok(): string {
 }
 
 export default function MaintenancePage() {
+  const { language, translate } = useLanguage();
   const [params] = useSearchParams();
   const [expandedTicketId, setExpandedTicketId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -189,12 +191,12 @@ export default function MaintenancePage() {
   const activeExpandedTicketId = expandedTicketId !== null && activeTickets.some((ticket) => ticket.id === expandedTicketId) ? expandedTicketId : null;
   const completedToday = useMemo(() => tickets.filter((ticket) => ticket.status === "Completed" && ticket.closedAt?.startsWith(todayBangkok())).length, [tickets]);
   const summary = [
-    { label: "Open", value: activeTickets.filter((ticket) => ticket.status === "Open").length },
-    { label: "In Progress", value: activeTickets.filter((ticket) => ticket.status === "In Progress").length },
-    { label: "Waiting Parts", value: activeTickets.filter((ticket) => ticket.status === "Waiting Parts").length },
-    { label: "Completed Today", value: completedToday },
-  ] satisfies Array<{ label: string; value: number }>;
-  const summaryItems = summary.map((item) => ({ ...item, tone: summaryTone(item.label, item.value) }));
+    { label: translate("openStatus"), tone: activeTickets.some((ticket) => ticket.status === "Open") ? "warning" : "clean", value: activeTickets.filter((ticket) => ticket.status === "Open").length },
+    { label: translate("maintenanceInProgress"), tone: activeTickets.some((ticket) => ticket.status === "In Progress") ? "progress" : "clean", value: activeTickets.filter((ticket) => ticket.status === "In Progress").length },
+    { label: translate("waitingParts"), tone: activeTickets.some((ticket) => ticket.status === "Waiting Parts") ? "warning" : "clean", value: activeTickets.filter((ticket) => ticket.status === "Waiting Parts").length },
+    { label: translate("completedToday"), tone: "clean", value: completedToday },
+  ] satisfies VanaraSummaryItem[];
+  const summaryItems = summary;
 
   const collapse = useCallback(() => {
     setExpandedTicketId(null);
@@ -213,41 +215,43 @@ export default function MaintenancePage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [activeExpandedTicketId]);
 
-  if (query.isLoading) return <WorkspaceShell title="Maintenance" workspace="maintenance"><PageLoading /></WorkspaceShell>;
-  if (query.isError) return <WorkspaceShell title="Maintenance" workspace="maintenance"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
+  if (query.isLoading) return <WorkspaceShell title={translate("maintenance")} workspace="maintenance"><PageLoading /></WorkspaceShell>;
+  if (query.isError) return <WorkspaceShell title={translate("maintenance")} workspace="maintenance"><PageError onRetry={() => void query.refetch()} /></WorkspaceShell>;
 
   return (
-    <WorkspaceShell title="Maintenance" workspace="maintenance" bodyClassName="maintenance-page">
+    <WorkspaceShell title={translate("maintenance")} workspace="maintenance" bodyClassName="maintenance-page">
       <div className="workspace-body-actions">
-        <span>{activeTickets.length} active issue{activeTickets.length === 1 ? "" : "s"}</span>
-        <Link className="vc-primary-action" to="/maintenance/new">Report Issue</Link>
+        <span>{translate("activeIssuesCount", { count: activeTickets.length })}</span>
+        <Link className="vc-primary-action" to="/maintenance/new">{translate("reportIssue")}</Link>
       </div>
 
       <VanaraSummaryGrid
-        ariaLabel="Maintenance summary"
+        ariaLabel={translate("maintenanceSummary")}
         className="maintenance-summary"
         items={summaryItems}
       />
 
       <section className="maintenance-section" aria-labelledby="maintenance-active-tickets">
         <VanaraSectionHeader
-          eyebrow="Maintenance"
+          eyebrow={translate("maintenance")}
           headingId="maintenance-active-tickets"
-          meta={`${activeTickets.length} active`}
-          title="Active Tickets"
+          meta={translate("activeCount", { count: activeTickets.length })}
+          title={translate("activeMaintenanceTickets")}
         />
         <div ref={containerRef} className="maintenance-ticket-list vc-glass-list">
           {activeTickets.length > 0 ? activeTickets.map((ticket) => (
             <TicketCard
               expanded={activeExpandedTicketId === ticket.id}
               key={ticket.id}
+              language={language}
               onToggle={() => setExpandedTicketId((current) => (current === ticket.id ? null : ticket.id))}
               ticket={ticket}
+              translate={translate}
             />
           )) : (
             <div className="maintenance-empty">
-              <strong>No active tickets</strong>
-              <p>Create a ticket when something physical needs attention.</p>
+              <strong>{translate("noActiveTickets")}</strong>
+              <p>{translate("createTicketWhenPhysical")}</p>
             </div>
           )}
         </div>

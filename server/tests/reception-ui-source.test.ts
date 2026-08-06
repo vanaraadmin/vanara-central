@@ -47,7 +47,7 @@ test("actionable today booking cards start completion while details remain secon
   assert.match(receptionPage, /const completed = type === "arrival"[\s\S]*stay\.checkOut\.guestLeft \|\| stay\.checkOut\.roomReleased/);
   assert.match(receptionPage, /const canStartCompletion = isToday && canComplete && !completed/);
   assert.match(receptionPage, /if \(canStartCompletion\) \{[\s\S]*onCompletionRequest\(stay, type\);[\s\S]*return;[\s\S]*\}[\s\S]*onDetailsRequest\(stay\);/);
-  assert.match(receptionPage, />\s*Details\s*<\/button>/);
+  assert.match(receptionPage, /\{translate\("details"\)\}/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onDetailsRequest\(stay\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onContactRequest\(contact\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onRequest\(stay, type\)/);
@@ -58,7 +58,7 @@ test("check-in and check-out cards render nationality text without flags", async
   assert.match(receptionPage, /const nationality = formatNationalityText\(stay\.nationality\);/);
   assert.match(countryNationality, /export function countryCodeToNationality/);
   assert.match(receptionPage, /\{nationality \? <p className="reception-nationality">\{nationality\}<\/p> : null\}/);
-  assert.match(receptionPage, /<p className="reception-booking-source">\{bookingSourceLabel\(stay\)\}<\/p>/);
+  assert.match(receptionPage, /<p className="reception-booking-source">\{bookingSourceLabel\(stay, translate\)\}<\/p>/);
   assert.doesNotMatch(receptionPage, /reception-nationality-flag|nationalityFlagUrl|nationalityFlag/);
   assert.doesNotMatch(receptionPage, /UNKNOWN|N\/A|Guest nationality/);
   assert.match(receptionCss, /\.reception-nationality \{/);
@@ -70,10 +70,10 @@ test("check-in and check-out cards render nationality text without flags", async
   assert.doesNotMatch(receptionCss, /\.reception-nationality-flag/);
 });
 
-test("Reception displays Direct source as Front Desk without changing the source contract", () => {
-  assert.match(receptionPage, /function bookingSourceLabel\(stay: ReceptionStay\): string/);
-  assert.match(receptionPage, /value\.includes\("direct"\)\) return "Front Desk"/);
-  assert.match(receptionPage, /return stay\.bookingSource \|\| "Front Desk"/);
+test("Reception displays Direct source as localized Front Desk without changing the source contract", () => {
+  assert.match(receptionPage, /function bookingSourceLabel\(stay: ReceptionStay, translate: \(key: string\) => string\): string/);
+  assert.match(receptionPage, /value\.includes\("direct"\)\) return translate\("frontDesk"\)/);
+  assert.match(receptionPage, /return stay\.bookingSource \|\| translate\("frontDesk"\)/);
   assert.doesNotMatch(receptionPage, /return "Direct"|return stay\.bookingSource \|\| "Direct"/);
 });
 
@@ -85,9 +85,9 @@ test("Reception suppresses floating navigation while operational overlays are op
 });
 
 test("check-in cards expose housekeeping-only cleaning labels", () => {
-  assert.match(receptionPage, /ROOM CLEAN/);
-  assert.match(receptionPage, /ROOM DIRTY/);
-  assert.match(receptionPage, /CLEANING IN PROGRESS/);
+  assert.match(receptionPage, /translate\("roomClean"\)/);
+  assert.match(receptionPage, /translate\("roomDirty"\)/);
+  assert.match(receptionPage, /translate\("cleaningInProgress"\)/);
   assert.match(serverReceptionService, /status:\s*"Clean"/);
   assert.match(serverReceptionService, /status:\s*"Dirty"/);
   assert.match(serverReceptionService, /status:\s*"Cleaning In Progress"/);
@@ -110,10 +110,10 @@ test("passport acquired status is derived from backend data and refreshed after 
 });
 
 test("complete check-in passport row is an action derived from persisted booking passports", () => {
-  const passportRow = receptionPage.match(/<PassportStatusRow[\s\S]*?label="Passport registration completed"[\s\S]*?\/>/)?.[0] ?? "";
+  const passportRow = receptionPage.match(/<PassportStatusRow[\s\S]*?label=\{translate\("passportRegistrationCompleted"\)\}[\s\S]*?\/>/)?.[0] ?? "";
   assert.ok(passportRow);
   assert.doesNotMatch(passportRow, /onChange=/);
-  assert.match(receptionPage, /label="Passport registration completed"/);
+  assert.match(receptionPage, /label=\{translate\("passportRegistrationCompleted"\)\}/);
   assert.match(receptionPage, /function openPassportFlow\(\)/);
   assert.match(receptionPage, /setPassportManagerOpen\(true\)/);
   assert.match(receptionPage, /function openNewPassportCapture\(\)/);
@@ -128,8 +128,8 @@ test("complete check-in passport row is an action derived from persisted booking
 
 test("saved passports open a management panel and add another reuses the same capture pipeline", () => {
   assert.match(receptionPage, /function PassportManagementPanel/);
-  assert.match(receptionPage, /Saved passports/);
-  assert.match(receptionPage, /Add another passport/);
+  assert.match(receptionPage, /translate\("savedPassports"\)/);
+  assert.match(receptionPage, /translate\("addAnotherPassport"\)/);
   assert.match(receptionPage, /onAddAnother=\{openNewPassportCapture\}/);
   assert.match(receptionPage, /onOpenPassport=\{\(passport\) => \{/);
   assert.match(receptionPage, /passports=\{passports\.data \?\? \[\]\}/);
@@ -149,12 +149,12 @@ test("passport action opens a capture panel before file selection and OCR", () =
   assert.doesNotMatch(passportWorkflow, /Continue to check/);
   assert.match(passportWorkflow, /livePassportPreflight/);
   assert.match(passportWorkflow, /semanticPreflight\.ready/);
-  assert.match(passportWorkflow, /Take photo/);
-  assert.match(passportWorkflow, /Use native camera/);
-  assert.match(passportWorkflow, /Choose from library/);
-  assert.match(passportWorkflow, /Uploading/);
-  assert.match(passportWorkflow, /Reading passport/);
-  assert.match(passportWorkflow, /Verifying details/);
+  assert.match(passportWorkflow, /translate\("takePhoto"\)/);
+  assert.match(passportWorkflow, /translate\("useNativeCamera"\)/);
+  assert.match(passportWorkflow, /translate\("chooseFromLibrary"\)/);
+  assert.match(passportWorkflow, /translate\("uploading"\)/);
+  assert.match(passportWorkflow, /translate\("readingPassport"\)/);
+  assert.match(passportWorkflow, /translate\("verifyingDetails"\)/);
   assert.match(passportWorkflow, /PASSPORT_IMAGE_ACCEPT/);
   assert.match(passportWorkflow, /navigator\.mediaDevices\?\.getUserMedia/);
   assert.match(passportWorkflow, /dispatch\(\{ type: "CAPTURE"/);
@@ -163,7 +163,7 @@ test("passport action opens a capture panel before file selection and OCR", () =
   assert.match(passportWorkflow, /dispatchBase\(\{ type: "START_CLASSIFICATION"/);
   assert.match(passportWorkflow, /dispatchBase\(\{ type: "CLASSIFICATION_ACCEPTED"/);
   assert.match(passportWorkflow, /dispatchBase\(\{ type: "CLASSIFICATION_REJECTED"/);
-  assert.match(passportWorkflow, /Scan Passport/);
+  assert.match(passportWorkflow, /translate\("scanPassport"\)/);
   assert.doesNotMatch(passportWorkflow, /quality\.status !== "ACCEPTED_FOR_OCR"/);
 });
 
@@ -173,7 +173,8 @@ test("mobile Safari camera startup waits for a live video preview before analysi
   assert.match(passportWorkflow, /focusMode = "continuous"/);
   assert.match(passportWorkflow, /exposureMode = "continuous"/);
   assert.match(passportWorkflow, /capabilities\.torch === true/);
-  assert.match(passportWorkflow, /Torch on/);
+  assert.match(passportWorkflow, /translate\("torchOn"\)/);
+  assert.match(passportWorkflow, /translate\("torchOff"\)/);
   assert.match(passportWorkflow, /video\.srcObject = stream/);
   assert.match(passportWorkflow, /video\.autoplay = true/);
   assert.match(passportWorkflow, /video\.muted = true/);
@@ -219,18 +220,17 @@ test("passport capture layout stays viewport-contained and captures only the gui
 test("live passport guidance uses weighted readiness and hides advisory diagnostics in production UI", () => {
   assert.match(passportWorkflow, /liveQuality\?\.blockingIssue/);
   assert.match(passportWorkflow, /semanticPreflight\.ready/);
-  assert.match(passportWorkflow, /Searching for passport/);
+  assert.match(passportWorkflow, /translate\("searchingForPassport"\)/);
   assert.match(passportWorkflowState, /phase: "READY_FOR_OCR"/);
   assert.doesNotMatch(passportWorkflow, /Ready to scan language belongs here/);
 });
 
 test("failed live camera preview exposes deterministic native fallback and cleanup", () => {
-  assert.match(passportWorkflow, /Camera opened but preview could not start\. Use native camera instead\./);
-  assert.match(passportWorkflow, /Camera permission denied/);
-  assert.match(passportWorkflow, /Another application may be using the camera/);
+  assert.match(passportWorkflow, /translate\("cameraPreviewFailed"\)/);
+  assert.match(passportWorkflow, /translate\("cameraUnavailable"\)/);
   assert.match(passportWorkflow, /const stopCamera = useCallback\(\(\) =>/);
   assert.match(passportWorkflow, /getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
-  assert.match(passportWorkflow, /Retry camera/);
+  assert.match(passportWorkflow, /translate\("retryCamera"\)/);
   assert.match(passportWorkflow, /capture="environment"/);
   assert.match(passportWorkflow, /onClick=\{onTakePhoto\}/);
 });
@@ -238,17 +238,17 @@ test("failed live camera preview exposes deterministic native fallback and clean
 test("passport OCR result must be reviewed before persistence", () => {
   assert.match(passportWorkflow, /function PassportReviewStep/);
   assert.match(passportWorkflow, /dispatchBase\(\{ type: "OCR_SUCCESS", captureId, objectKey: result\.objectKey, passport: result\.passport }\)/);
-  assert.match(passportWorkflow, /Save Passport/);
+  assert.match(passportWorkflow, /translate\("savePassport"\)/);
   assert.match(passportWorkflowState, /phase: "REVIEW"/);
   assert.match(receptionPage, /setPassportReview\({ mode: "existing", passport }\)/);
 });
 
 test("verification timeout opens review with manual confirmation and technical details collapsed", () => {
-  assert.match(passportWorkflow, /Automatic verification took too long\. Please confirm the highlighted field\./);
-  assert.match(passportWorkflow, /Confirm Passport Number/);
+  assert.match(passportWorkflow, /translate\("passportCheckTimedOut"\)/);
+  assert.match(passportWorkflow, /translate\("confirmPassportNumber"\)/);
   assert.match(passportWorkflow, /MANUALLY_VERIFIED/);
   assert.match(passportWorkflow, /<details className="passport-review__technical">/);
-  assert.match(passportWorkflow, /<summary>Technical details<\/summary>/);
+  assert.match(passportWorkflow, /<summary>\{translate\("details"\)\}<\/summary>/);
   assert.doesNotMatch(passportWorkflow, /<p className="passport-capture__hint">Request ID:/);
 });
 
@@ -260,13 +260,13 @@ test("passport review save button always explains disabled state", () => {
   assert.match(passportWorkflow, /disabled=\{Boolean\(saveDisabledReason\)\}/);
   assert.match(passportWorkflow, /markPassportNumberNeedsConfirmation/);
   assert.match(passportWorkflow, /passportNameReviewSummary/);
-  assert.match(passportWorkflow, /Given names need review/);
+  assert.match(passportWorkflow, /translate\("passportGivenNamesNeedReview"\)/);
 });
 
 test("passport review is a compact quick review with one sticky action bar", () => {
   const reviewStep = passportWorkflow.match(/function PassportReviewStep[\s\S]*?function updateDraftField/)?.[0] ?? "";
   const reviewCss = receptionCss.match(/\.passport-review\s*\{[\s\S]*?\.passport-management/)?.[0] ?? "";
-  assert.match(passportWorkflow, /reviewingPassport \? "Review Passport" : "Passport Registration"/);
+  assert.match(passportWorkflow, /reviewingPassport \? translate\("reviewPassport"\) : translate\("passportRegistration"\)/);
   assert.doesNotMatch(reviewStep, /Passport OCR Review|Review extracted fields/);
   assert.match(reviewStep, /className="passport-workflow__actions passport-review-actions"/);
   assert.match(reviewCss, /\.passport-review-actions/);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 import type { BookingPulseEventType, BookingPulseItem } from "../types/staff";
+import { useLanguage } from "../providers/language.context";
 import "../styles/RecentBookings.css";
 
 export type RecentBookingEvent = BookingPulseItem;
@@ -13,11 +14,11 @@ type RecentBookingsProps = {
   onRetry?: () => void;
 };
 
-const EVENT_LABELS: Record<BookingPulseEventType, string> = {
-  NEW: "NEW",
-  UPDATED: "UPDATED",
-  CANCELLED: "CANCELLED",
-};
+function eventLabel(type: BookingPulseEventType, translate: (key: string) => string): string {
+  if (type === "NEW") return translate("eventNew");
+  if (type === "UPDATED") return translate("eventModified");
+  return translate("cancelled");
+}
 
 function eventTone(type: BookingPulseEventType): string {
   return type.toLowerCase();
@@ -30,11 +31,11 @@ function countryCodeToFlag(countryCode?: string | null): string {
   return String.fromCodePoint(...normalized.split("").map((character) => 127397 + character.charCodeAt(0)));
 }
 
-function formatDate(value?: string | null): string | null {
+function formatDate(value?: string | null, language = "en"): string | null {
   if (!value) return null;
   const date = new Date(`${value}T12:00:00+07:00`);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -50,10 +51,10 @@ function bangkokDateKey(value: Date): string {
   }).format(value);
 }
 
-function formatDateTime(value: string): string {
+function formatDateTime(value: string, language = "en"): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -63,35 +64,35 @@ function formatDateTime(value: string): string {
   }).format(date);
 }
 
-function formatRelativeEventTime(value: string): string {
+function formatRelativeEventTime(value: string, language = "en", translate: (key: string, options?: Record<string, unknown>) => string): string {
   const occurredAt = new Date(value);
   if (Number.isNaN(occurredAt.getTime())) return value;
 
   const now = new Date();
   const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - occurredAt.getTime()) / 60_000));
-  if (elapsedMinutes < 60) return `${Math.max(1, elapsedMinutes)} min ago`;
+  if (elapsedMinutes < 60) return translate("minutesAgo", { count: Math.max(1, elapsedMinutes) });
 
   const eventDay = bangkokDateKey(occurredAt);
   const today = bangkokDateKey(now);
-  const time = new Intl.DateTimeFormat("en-GB", {
+  const time = new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   }).format(occurredAt);
 
-  if (eventDay === today) return `Today ${time}`;
-  return formatDateTime(value);
+  if (eventDay === today) return `${translate("today")} ${time}`;
+  return formatDateTime(value, language);
 }
 
-function formatGuestCount(value?: number | null): string | null {
+function formatGuestCount(value: number | null | undefined, translate: (key: string, options?: Record<string, unknown>) => string): string | null {
   if (value == null || value <= 0) return null;
-  return `${value} ${value === 1 ? "guest" : "guests"}`;
+  return translate(value === 1 ? "guestCount" : "guestCountPlural", { count: value });
 }
 
-function formatStay(value?: number | null): string | null {
+function formatStay(value: number | null | undefined, translate: (key: string, options?: Record<string, unknown>) => string): string | null {
   if (value == null) return null;
-  return `${value} ${value === 1 ? "night" : "nights"}`;
+  return translate(value === 1 ? "nightCount" : "nightCountPlural", { count: value });
 }
 
 function formatBookingValue(value?: number | null): string | null {
@@ -99,10 +100,10 @@ function formatBookingValue(value?: number | null): string | null {
   return `${value.toLocaleString("en-GB", { maximumFractionDigits: 2 })} THB`;
 }
 
-function bookingSourceLabel(value?: string | null): string | null {
+function bookingSourceLabel(value: string | null | undefined, translate: (key: string) => string): string | null {
   const cleaned = value?.trim();
   if (!cleaned) return null;
-  return cleaned.toLowerCase() === "direct" ? "Front Desk" : cleaned;
+  return cleaned.toLowerCase() === "direct" ? translate("frontDesk") : cleaned;
 }
 
 function safeDetailsId(eventId: string): string {
@@ -128,27 +129,28 @@ function BookingPulseDetails({
   id: string;
   item: RecentBookingEvent;
 }) {
+  const { language, translate } = useLanguage();
   const bookingValue = canViewBookingValue ? formatBookingValue(item.totalPrice) : null;
   const roomQuantity = item.roomQuantity > 1 ? item.roomQuantity : null;
-  const source = bookingSourceLabel(item.source);
+  const source = bookingSourceLabel(item.source, translate);
 
   return (
     <div
       id={id}
       className="booking-pulse__details"
       role="region"
-      aria-label={`Booking details for ${item.guestName}`}
+      aria-label={translate("bookingDetailsFor", { guestName: item.guestName })}
     >
       <dl className="booking-pulse__detail-grid">
-        <BookingPulseDetail label="Guest" value={item.guestName} />
-        <BookingPulseDetail label="Room" value={item.unitName} />
-        <BookingPulseDetail label="Room Quantity" value={roomQuantity} />
-        <BookingPulseDetail label="Source" value={source} />
-        <BookingPulseDetail label="Arrival" value={formatDate(item.arrivalDate)} />
-        <BookingPulseDetail label="Departure" value={formatDate(item.departureDate)} />
-        <BookingPulseDetail label="Stay" value={formatStay(item.stayNights)} />
-        <BookingPulseDetail label="Guest Count" value={formatGuestCount(item.guestCount)} />
-        <BookingPulseDetail label="Booking Value" value={bookingValue} />
+        <BookingPulseDetail label={translate("guest")} value={item.guestName} />
+        <BookingPulseDetail label={translate("room")} value={item.unitName} />
+        <BookingPulseDetail label={translate("roomQuantity")} value={roomQuantity} />
+        <BookingPulseDetail label={translate("source")} value={source} />
+        <BookingPulseDetail label={translate("checkIn")} value={formatDate(item.arrivalDate, language)} />
+        <BookingPulseDetail label={translate("checkOut")} value={formatDate(item.departureDate, language)} />
+        <BookingPulseDetail label={translate("stay")} value={formatStay(item.stayNights, translate)} />
+        <BookingPulseDetail label={translate("guestCountLabel")} value={formatGuestCount(item.guestCount, translate)} />
+        <BookingPulseDetail label={translate("bookingValue")} value={bookingValue} />
       </dl>
     </div>
   );
@@ -167,10 +169,11 @@ function BookingEventRow({
   index: number;
   onToggle: () => void;
 }) {
+  const { language, translate } = useLanguage();
   const tone = eventTone(event.eventType);
-  const source = bookingSourceLabel(event.source);
+  const source = bookingSourceLabel(event.source, translate);
   const detail = source;
-  const eventTime = formatRelativeEventTime(event.eventTimestamp);
+  const eventTime = formatRelativeEventTime(event.eventTimestamp, language, translate);
   const timing = eventTime;
   const detailsId = safeDetailsId(event.eventId);
   const flag = countryCodeToFlag(event.countryCode);
@@ -206,11 +209,11 @@ function BookingEventRow({
             </strong>
 
             <span className={`recent-bookings__event-kind booking-pulse__status booking-pulse__status--${tone}`}>
-              {EVENT_LABELS[event.eventType]}
+              {eventLabel(event.eventType, translate)}
             </span>
           </span>
 
-          <span className="recent-bookings__event-detail booking-pulse__meta">{detail || "Booking details"}</span>
+          <span className="recent-bookings__event-detail booking-pulse__meta">{detail || translate("bookingDetails")}</span>
         </span>
 
         <time className="recent-bookings__event-time booking-pulse__timing" dateTime={event.eventTimestamp}>
@@ -228,6 +231,7 @@ function BookingEventRow({
 }
 
 function RecentBookingsEmpty() {
+  const { translate } = useLanguage();
   return (
     <div className="recent-bookings__empty booking-pulse__empty" role="status">
       <span className="recent-bookings__empty-symbol" aria-hidden="true">
@@ -235,17 +239,18 @@ function RecentBookingsEmpty() {
       </span>
 
       <span className="recent-bookings__empty-copy">
-        <strong>No recent booking activity</strong>
+        <strong>{translate("noRecentBookingActivity")}</strong>
       </span>
     </div>
   );
 }
 
 function RecentBookingsLoading() {
+  const { translate } = useLanguage();
   return (
     <div
       className="recent-bookings__loading"
-      aria-label="Loading recent bookings"
+      aria-label={translate("loading")}
       role="status"
     >
       {[0, 1, 2].map((item) => (
@@ -259,11 +264,12 @@ function RecentBookingsLoading() {
 }
 
 function RecentBookingsError({ onRetry }: { onRetry?: () => void }) {
+  const { translate } = useLanguage();
   return (
     <div className="recent-bookings__empty booking-pulse__error" role="status">
       <span className="recent-bookings__empty-copy">
-        <strong>Booking activity could not be loaded.</strong>
-        {onRetry ? <button type="button" onClick={onRetry}>Try again</button> : null}
+        <strong>{translate("bookingActivityLoadFailed")}</strong>
+        {onRetry ? <button type="button" onClick={onRetry}>{translate("tryAgain")}</button> : null}
       </span>
     </div>
   );
@@ -277,6 +283,7 @@ export default function RecentBookings({
   onRetry,
 }: RecentBookingsProps) {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const { translate } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const visibleEvents = useMemo(() => events.slice(0, 3), [events]);
   const expandedEventStillVisible = expandedEventId !== null && visibleEvents.some((item) => item.eventId === expandedEventId);
@@ -324,17 +331,17 @@ export default function RecentBookings({
     >
       <div className="recent-bookings__heading booking-pulse__heading">
         <div className="recent-bookings__heading-copy">
-          <span className="recent-bookings__eyebrow">Booking pulse</span>
+          <span className="recent-bookings__eyebrow">{translate("bookingPulse")}</span>
 
-          <h2 id="recent-bookings-title">Recent Bookings</h2>
+          <h2 id="recent-bookings-title">{translate("recentBookings")}</h2>
         </div>
 
         <div
           className="recent-bookings__counter"
-          aria-label={`${visibleEvents.length} recent booking events`}
+          aria-label={translate("recentBookingEventsAria", { count: visibleEvents.length })}
         >
           <span>{String(visibleEvents.length).padStart(2, "0")}</span>
-          <small>latest</small>
+          <small>{translate("latest")}</small>
         </div>
       </div>
 

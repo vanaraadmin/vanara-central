@@ -1,4 +1,6 @@
 import type { RoomHousekeepingCompletionMode, RoomHousekeepingDomainSummary } from "../../types/rooms-workspace";
+import { useLanguage } from "../../providers/language.context";
+import { translateStaffLabel } from "../../utils/staff-i18n-labels";
 import OperationalStatusPill from "./OperationalStatusPill";
 import RoomDomainCard, { OperationalStateBlock, PrimaryActionRow } from "./RoomDomainCard";
 
@@ -23,6 +25,7 @@ export default function HousekeepingCard({
   roomId,
   roomName,
 }: HousekeepingCardProps) {
+  const { translate } = useLanguage();
   const action = housekeeping.primaryAction;
   const runAction = () => {
     if (!action) return;
@@ -48,26 +51,26 @@ export default function HousekeepingCard({
     <RoomDomainCard
       action={action ? (
         <PrimaryActionRow
-          ariaLabel={`${action.label} for ${roomName}`}
+          ariaLabel={`${translateStaffLabel(action.label, translate)} ${roomName}`}
           busy={actionPending}
-          label={action.label}
+          label={translateStaffLabel(action.label, translate)}
           onClick={runAction}
           to={action.target}
         />
       ) : null}
       className="housekeeping-domain-card"
-      eyebrow="Housekeeping"
+      eyebrow={translate("housekeeping")}
       headingId={`housekeeping-card-${roomId}`}
       state={(
         <OperationalStateBlock
           detail={housekeeping.detail}
           secondaryInfo={housekeeping.secondaryInfo}
           tone={housekeeping.tone}
-          value={housekeeping.primaryStatus}
+          value={translateStaffLabel(housekeeping.primaryStatus, translate)}
         />
       )}
-      status={<OperationalStatusPill label={housekeeping.primaryStatus} tone={housekeeping.tone} emphasis />}
-      title="Work"
+      status={<OperationalStatusPill label={translateStaffLabel(housekeeping.primaryStatus, translate)} tone={housekeeping.tone} emphasis />}
+      title={translate("work")}
     />
   );
 }

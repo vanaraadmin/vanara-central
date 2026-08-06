@@ -1,4 +1,6 @@
 import type { TurnoverPresentation } from "../../config/turnoverPresentation";
+import { useLanguage } from "../../providers/language.context";
+import { translateStaffLabel } from "../../utils/staff-i18n-labels";
 import OperationalStatusPill from "./OperationalStatusPill";
 import RoomDomainCard, { OperationalStateBlock } from "./RoomDomainCard";
 
@@ -8,11 +10,12 @@ type TurnoverCardProps = {
 };
 
 function TurnoverState({ turnover }: { turnover: TurnoverPresentation }) {
+  const { translate } = useLanguage();
   return (
     <OperationalStateBlock
       detail={turnover.detail}
       tone={turnover.tone}
-      value={turnover.label}
+      value={translateStaffLabel(turnover.label, translate)}
     />
   );
 }
@@ -21,14 +24,15 @@ export default function TurnoverCard({
   roomId,
   turnover,
 }: TurnoverCardProps) {
+  const { translate } = useLanguage();
   return (
     <RoomDomainCard
       className="turnover-card"
-      eyebrow="Turnover"
+      eyebrow={translate("turnover")}
       headingId={`turnover-card-${roomId}`}
       state={<TurnoverState turnover={turnover} />}
-      status={<OperationalStatusPill label={turnover.label} tone={turnover.tone} emphasis />}
-      title="Current State"
+      status={<OperationalStatusPill label={translateStaffLabel(turnover.label, translate)} tone={turnover.tone} emphasis />}
+      title={translate("currentState")}
     />
   );
 }

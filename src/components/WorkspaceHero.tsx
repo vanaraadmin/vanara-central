@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useLanguage } from "../providers/language.context";
 
 const WORKSPACE_HOME_ROUTE = "/staff";
 
@@ -16,11 +17,13 @@ export default function WorkspaceHero({
   logoSrc,
   title,
 }: WorkspaceHeroProps) {
+  const { translate } = useLanguage();
+
   return (
     <>
       <header className="workspace-masthead">
         <div className="workspace-masthead__identity">
-          <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label="Back to Home">
+          <Link className="workspace-masthead__brand" to={WORKSPACE_HOME_ROUTE} aria-label={translate("back")}>
             <span className="workspace-masthead__logo-slot" aria-hidden="true">
               <img src={logoSrc} alt="Vanara" className="workspace-masthead__logo" />
             </span>
@@ -40,7 +43,7 @@ export default function WorkspaceHero({
       </header>
 
       <section className="workspace-intro" aria-labelledby="workspace-title">
-        <p className="workspace-intro__eyebrow">Staff page</p>
+        <p className="workspace-intro__eyebrow">{translate("staffPage")}</p>
         <div className="workspace-intro__title-row">
           <h1 id="workspace-title">{title}</h1>
           {action ? <div className="workspace-intro__action">{action}</div> : null}

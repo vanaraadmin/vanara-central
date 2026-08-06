@@ -15,20 +15,24 @@ import {
 import { addRoomNote, createRoomMaintenanceTicket, createRoomOnDemandCleaning, loadRoomDetail, updateRoomHousekeeping, updateRoomOperationalAvailability } from "../services/room-detail.service";
 import type { MaintenancePriority } from "../types/maintenance";
 import type { OperationalAvailabilityStatus, RoomCurrentStay, RoomDetail, RoomHousekeepingTask, RoomReadyState, RoomTimelineEvent } from "../types/room-detail";
+import { useLanguage } from "../providers/language.context";
+import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/RoomDetailPage.css";
 
 const MAINTENANCE_PRIORITIES: MaintenancePriority[] = ["Low", "Normal", "High"];
 
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+type Translate = ReturnType<typeof useLanguage>["translate"];
+
+function formatDate(date: string, language = "en") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
   }).format(new Date(date + "T12:00:00+07:00"));
 }
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDateTime(value: string, language = "en") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -37,8 +41,8 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatTime(value: string, language = "en") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",
     minute: "2-digit",
@@ -49,62 +53,62 @@ function statusTone(value: string): string {
   return value.toLowerCase().replaceAll(" ", "-");
 }
 
-function CurrentStay({ stay }: { stay: RoomCurrentStay | null }) {
+function CurrentStay({ language, stay, translate }: { language: string; stay: RoomCurrentStay | null; translate: Translate }) {
   if (!stay) {
     return (
-      <section className="room-section room-current-stay" aria-label="Guest information">
-        <header><UserIcon /><h2>Guest Information</h2></header>
-        <div className="room-empty-state">Vacant</div>
+      <section className="room-section room-current-stay" aria-label={translate("guestInformation")}>
+        <header><UserIcon /><h2>{translate("guestInformation")}</h2></header>
+        <div className="room-empty-state">{translate("noGuestInRoom")}</div>
       </section>
     );
   }
 
   return (
-    <section className="room-section room-current-stay" aria-label="Guest information">
-      <header><UserIcon /><h2>Guest Information</h2></header>
+    <section className="room-section room-current-stay" aria-label={translate("guestInformation")}>
+      <header><UserIcon /><h2>{translate("guestInformation")}</h2></header>
       <article className="stay-card">
         <strong>{stay.guestName}</strong>
         <dl>
-          <div><dt>Arrival</dt><dd>{formatDate(stay.arrival)}</dd></div>
-          <div><dt>Departure</dt><dd>{formatDate(stay.departure)}</dd></div>
-          <div><dt>Adults</dt><dd>{stay.adults}</dd></div>
-          <div><dt>Children</dt><dd>{stay.children}</dd></div>
-          <div><dt>Source</dt><dd>{stay.bookingSource}</dd></div>
-          <div><dt>Reference</dt><dd>{stay.bookingReference ?? "Not available"}</dd></div>
+          <div><dt>{translate("checkIn")}</dt><dd>{formatDate(stay.arrival, language)}</dd></div>
+          <div><dt>{translate("checkOut")}</dt><dd>{formatDate(stay.departure, language)}</dd></div>
+          <div><dt>{translate("adults")}</dt><dd>{stay.adults}</dd></div>
+          <div><dt>{translate("children")}</dt><dd>{stay.children}</dd></div>
+          <div><dt>{translate("source")}</dt><dd>{stay.bookingSource}</dd></div>
+          <div><dt>{translate("reference")}</dt><dd>{stay.bookingReference ?? translate("notAvailable")}</dd></div>
         </dl>
       </article>
     </section>
   );
 }
 
-function RoomHeader({ room }: { room: RoomDetail }) {
+function RoomHeader({ language, room, translate }: { language: string; room: RoomDetail; translate: Translate }) {
   const stay = room.currentStay;
 
   return (
-    <section className="room-hero-card" aria-label="Room status">
+    <section className="room-hero-card" aria-label={translate("status")}>
       <div className="room-hero-card__icon" aria-hidden="true">
         <AccommodationTypeIcon type={room.accommodationType} />
       </div>
       <div>
         <span>{room.accommodationType}</span>
         <strong>{room.roomName}</strong>
-        <small>{stay ? stay.guestName : "No guest in room"}</small>
-        <small>{room.arrival ? `Arrival ${formatDate(room.arrival)}` : "No arrival"} · {room.departure ? `Departure ${formatDate(room.departure)}` : "No departure"}</small>
+        <small>{stay ? stay.guestName : translate("vacant")}</small>
+        <small>{room.arrival ? `${translate("checkIn")} ${formatDate(room.arrival, language)}` : translate("noArrival")} · {room.departure ? `${translate("checkOut")} ${formatDate(room.departure, language)}` : translate("noDeparture")}</small>
       </div>
       <div className="room-hero-card__status">
-        <span className={`room-status-badge is-${statusTone(room.roomStatus)}`}>{room.roomStatus}</span>
-        <span>{room.occupancyStatus}</span>
+        <span className={`room-status-badge is-${statusTone(room.roomStatus)}`}>{translateStaffLabel(room.roomStatus, translate)}</span>
+        <span>{translateStaffLabel(room.occupancyStatus, translate)}</span>
       </div>
     </section>
   );
 }
 
-function RoomBadges({ room }: { room: RoomDetail }) {
+function RoomBadges({ room, translate }: { room: RoomDetail; translate: Translate }) {
   return (
-    <section className="room-badges" aria-label="Room badges">
-      <span><RoomIcon />{room.operationalAvailability.label}</span>
-      <span><RoomIcon />{room.occupancyStatus}</span>
-      <span><HousekeepingIcon />{room.housekeeping.primaryStatus}</span>
+    <section className="room-badges" aria-label={translate("details")}>
+      <span><RoomIcon />{translateStaffLabel(room.operationalAvailability.label, translate)}</span>
+      <span><RoomIcon />{translateStaffLabel(room.occupancyStatus, translate)}</span>
+      <span><HousekeepingIcon />{translateStaffLabel(room.housekeeping.primaryStatus, translate)}</span>
     </section>
   );
 }
@@ -116,72 +120,72 @@ function roomTaskCompletePayload(task: RoomHousekeepingTask) {
   return { standardCleaningCompleted: true };
 }
 
-function TaskExecutionSteps({ task }: { task: RoomHousekeepingTask }) {
+function TaskExecutionSteps({ task, translate }: { task: RoomHousekeepingTask; translate: Translate }) {
   return (
-    <div className="room-task-checklist" aria-label={`Checklist for ${task.title}`}>
-      <span>Checklist</span>
-      <p>{task.taskType === "WATER_REFILL" ? "Water delivery ready for completion." : "Cleaning ready for completion."}</p>
+    <div className="room-task-checklist" aria-label={translate("arrivalChecklist")}>
+      <span>{translate("arrivalChecklist")}</span>
+      <p>{task.taskType === "WATER_REFILL" ? translate("waterDeliveryReady") : translate("cleaningReadyForCompletion")}</p>
     </div>
   );
 }
 
-function taskStatusLabel(task: RoomHousekeepingTask): string {
-  if (task.status === "AVAILABLE_FOR_CLAIM") return "Available";
-  if (task.status === "CLAIMED") return task.assignee ? `Assigned to ${task.assignee.name}` : "Assigned";
-  if (task.status === "IN_PROGRESS") return "In progress";
-  if (task.status === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
-  if (task.status === "READY") return "Clean";
+function taskStatusLabel(task: RoomHousekeepingTask, translate: Translate): string {
+  if (task.status === "AVAILABLE_FOR_CLAIM") return translate("availableOperational");
+  if (task.status === "CLAIMED") return task.assignee ? translate("assignedToName", { name: task.assignee.name }) : translate("assigned");
+  if (task.status === "IN_PROGRESS") return translate("inProgress");
+  if (task.status === "WAITING_FOR_RECEPTION") return translate("waitingForCheckout");
+  if (task.status === "READY") return translate("clean");
   return task.status.replaceAll("_", " ");
 }
 
-function taskDetailLabel(task: RoomHousekeepingTask): string {
-  if (task.taskType === "TURNOVER") return "Turnover Cleaning";
-  if (task.taskType === "LINEN_CHANGE") return "Full Cleaning";
-  if (task.taskType === "STANDARD_CLEANING") return "Cleaning";
-  if (task.taskType === "ON_DEMAND_CLEANING") return "Cleaning";
-  if (task.taskType === "WATER_REFILL") return "Water Refill";
+function taskDetailLabel(task: RoomHousekeepingTask, translate: Translate): string {
+  if (task.taskType === "TURNOVER") return translate("turnover");
+  if (task.taskType === "LINEN_CHANGE") return translate("fullCleaning");
+  if (task.taskType === "STANDARD_CLEANING") return translate("cleaning");
+  if (task.taskType === "ON_DEMAND_CLEANING") return translate("onDemandCleaning");
+  if (task.taskType === "WATER_REFILL") return translate("waterRefill");
   return task.title;
 }
 
-function taskExecutionStatus(task: RoomHousekeepingTask): string {
-  if (task.taskType === "WATER_REFILL") return task.status === "IN_PROGRESS" ? "Water In Progress" : "Water Due";
-  if (task.status === "IN_PROGRESS" || task.status === "CHECKLIST_COMPLETE" || task.status === "READY_FOR_INSPECTION") return "Cleaning In Progress";
-  if (task.capabilities.canStart || task.status === "AVAILABLE_FOR_CLAIM" || task.status === "CLAIMED") return "Dirty";
-  if (task.status === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
-  if (task.status === "READY") return "Clean";
-  return "Cleaning In Progress";
+function taskExecutionStatus(task: RoomHousekeepingTask, translate: Translate): string {
+  if (task.taskType === "WATER_REFILL") return task.status === "IN_PROGRESS" ? translate("waterInProgress") : translate("waterDue");
+  if (task.status === "IN_PROGRESS" || task.status === "CHECKLIST_COMPLETE" || task.status === "READY_FOR_INSPECTION") return translate("cleaningInProgress");
+  if (task.capabilities.canStart || task.status === "AVAILABLE_FOR_CLAIM" || task.status === "CLAIMED") return translate("roomDirty");
+  if (task.status === "WAITING_FOR_RECEPTION") return translate("waitingForCheckout");
+  if (task.status === "READY") return translate("clean");
+  return translate("cleaningInProgress");
 }
 
 function executionChecklist(task: RoomHousekeepingTask): string[] {
-  if (task.taskType === "WATER_REFILL") return ["Water delivered"];
+  if (task.taskType === "WATER_REFILL") return ["waterDelivered"];
   if (task.taskType === "TURNOVER") return [];
   if (task.taskType === "LINEN_CHANGE") {
-    return ["General room cleaning", "Bed linen changed", "Amenities checked"];
+    return ["generalRoomCleaningPlain", "bedLinenChanged", "amenitiesChecked"];
   }
-  return ["General room cleaning", "Amenities checked"];
+  return ["generalRoomCleaningPlain", "amenitiesChecked"];
 }
 
-function primaryTaskActionLabel(task: RoomHousekeepingTask): string {
-  if (task.taskType === "WATER_REFILL") return "Complete Water";
-  if (task.capabilities.canStart) return "Start Cleaning";
-  return "Finish Cleaning";
+function primaryTaskActionLabel(task: RoomHousekeepingTask, translate: Translate): string {
+  if (task.taskType === "WATER_REFILL") return translate("completeWater");
+  if (task.capabilities.canStart) return translate("startCleaning");
+  return translate("finishCleaning");
 }
 
-function TaskExecutionChecklist({ task }: { task: RoomHousekeepingTask }) {
+function TaskExecutionChecklist({ task, translate }: { task: RoomHousekeepingTask; translate: Translate }) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   return (
-    <section className="task-execution-checklist" aria-label="Checklist">
-      <h2>Checklist</h2>
+    <section className="task-execution-checklist" aria-label={translate("arrivalChecklist")}>
+      <h2>{translate("arrivalChecklist")}</h2>
       <div>
-        {executionChecklist(task).map((label) => (
-          <label key={label}>
+        {executionChecklist(task).map((key) => (
+          <label key={key}>
             <input
-              checked={checked[label] === true}
-              onChange={(event) => setChecked((current) => ({ ...current, [label]: event.target.checked }))}
+              checked={checked[key] === true}
+              onChange={(event) => setChecked((current) => ({ ...current, [key]: event.target.checked }))}
               type="checkbox"
             />
-            <span>{label}</span>
+            <span>{translate(key)}</span>
           </label>
         ))}
       </div>
@@ -189,7 +193,7 @@ function TaskExecutionChecklist({ task }: { task: RoomHousekeepingTask }) {
   );
 }
 
-function TaskExecutionPrimaryAction({ action, task }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask }) {
+function TaskExecutionPrimaryAction({ action, task, translate }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask; translate: Translate }) {
   const canAct = task.capabilities.canStart || task.capabilities.canComplete;
   const completeCleaning = (includeLinen: boolean) => action.mutate(completeHousekeepingTask(task.id, task.version, { standardCleaningCompleted: true, linenChangeCompleted: includeLinen }));
 
@@ -206,8 +210,8 @@ function TaskExecutionPrimaryAction({ action, task }: { action: ReturnType<typeo
   if (task.capabilities.canComplete && task.taskType === "ON_DEMAND_CLEANING") {
     return (
       <div className="task-execution-primary-action">
-        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
-        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">{translate("finishCleaning")}</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">{translate("finishFullCleaning")}</button>
       </div>
     );
   }
@@ -215,23 +219,23 @@ function TaskExecutionPrimaryAction({ action, task }: { action: ReturnType<typeo
   return (
     <div className="task-execution-primary-action">
       <button disabled={!canAct || action.isPending} onClick={submit} type="button">
-        {primaryTaskActionLabel(task)}
+        {primaryTaskActionLabel(task, translate)}
       </button>
     </div>
   );
 }
 
-function TaskExecutionMaintenance({ room }: { room: RoomDetail }) {
+function TaskExecutionMaintenance({ room, translate }: { room: RoomDetail; translate: Translate }) {
   const openTicket = room.maintenance.tickets[0] ?? null;
 
   return (
-    <section className="task-execution-maintenance" aria-label="Maintenance">
+    <section className="task-execution-maintenance" aria-label={translate("maintenance")}>
       <div>
-        <strong>{openTicket ? "Issue reported" : "No issue"}</strong>
-        {openTicket ? <span>{openTicket.title}</span> : <span>Maintenance is clear for this task.</span>}
+        <strong>{openTicket ? translate("issueReported") : translate("noIssue")}</strong>
+        {openTicket ? <span>{openTicket.title}</span> : <span>{translate("maintenanceClearForTask")}</span>}
       </div>
       <Link to={openTicket ? `/maintenance/${openTicket.id}` : `/maintenance/new?roomId=${room.unitId}&source=housekeeping`}>
-        {openTicket ? "Open Maintenance" : "Report Issue"}
+        {openTicket ? translate("openMaintenance") : translate("reportIssue")}
       </Link>
     </section>
   );
@@ -239,21 +243,22 @@ function TaskExecutionMaintenance({ room }: { room: RoomDetail }) {
 
 function TaskExecutionPage({ room, roomId, task }: { room: RoomDetail; roomId: string; task: RoomHousekeepingTask | null }) {
   const action = useRoomTaskAction(roomId);
+  const { language, translate } = useLanguage();
 
   if (!task) {
     return (
-      <section className="task-execution-empty" aria-label="Housekeeping task">
+      <section className="task-execution-empty" aria-label={translate("housekeepingTask")}>
         <AccommodationTypeIcon type={room.accommodationType} />
         <div>
           <strong>{room.roomName}</strong>
-          <span>No active cleaning task</span>
+          <span>{translate("noActiveCleaningTask")}</span>
         </div>
       </section>
     );
   }
 
   return (
-    <div className="task-execution-layout" aria-label="Housekeeping task execution">
+    <div className="task-execution-layout" aria-label={translate("housekeepingTaskExecution")}>
       <header className="task-execution-header">
         <div className="task-execution-header__icon" aria-hidden="true">
           <AccommodationTypeIcon type={room.accommodationType} />
@@ -261,37 +266,37 @@ function TaskExecutionPage({ room, roomId, task }: { room: RoomDetail; roomId: s
         <div>
           <span>{room.accommodationType}</span>
           <strong>{room.roomName}</strong>
-          <p>{taskDetailLabel(task)}</p>
+          <p>{taskDetailLabel(task, translate)}</p>
         </div>
       </header>
 
-      <section className="task-execution-status" aria-label="Task status">
-        <span className={`room-status-badge is-${statusTone(taskExecutionStatus(task))}`}>{taskExecutionStatus(task)}</span>
+      <section className="task-execution-status" aria-label={translate("taskStatus")}>
+        <span className={`room-status-badge is-${statusTone(taskExecutionStatus(task, translate))}`}>{taskExecutionStatus(task, translate)}</span>
         <dl>
-          <div><dt>Assigned</dt><dd>{task.assignee?.name ?? "Unassigned"}</dd></div>
-          {task.startedAt && <div><dt>Started</dt><dd>{formatTime(task.startedAt)}</dd></div>}
+          <div><dt>{translate("assigned")}</dt><dd>{task.assignee?.name ?? translate("unassigned")}</dd></div>
+          {task.startedAt && <div><dt>{translate("started")}</dt><dd>{formatTime(task.startedAt, language)}</dd></div>}
         </dl>
       </section>
 
-      {task.taskType !== "TURNOVER" && <TaskExecutionChecklist task={task} />}
-      <TaskExecutionMaintenance room={room} />
-      <TaskExecutionPrimaryAction action={action} task={task} />
-      {action.isError && <p className="room-form-error">This task changed. The room is refreshing.</p>}
+      {task.taskType !== "TURNOVER" && <TaskExecutionChecklist task={task} translate={translate} />}
+      <TaskExecutionMaintenance room={room} translate={translate} />
+      <TaskExecutionPrimaryAction action={action} task={task} translate={translate} />
+      {action.isError && <p className="room-form-error">{translate("taskChangedRefreshing")}</p>}
     </div>
   );
 }
 
-function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask }) {
+function RoomTaskActions({ action, task, translate }: { action: ReturnType<typeof useRoomTaskAction>; task: RoomHousekeepingTask; translate: Translate }) {
   const completeRegularTask = () => action.mutate(completeHousekeepingTask(task.id, task.version, roomTaskCompletePayload(task)));
   const completeCleaning = (includeLinen: boolean) => action.mutate(completeHousekeepingTask(task.id, task.version, { standardCleaningCompleted: true, linenChangeCompleted: includeLinen }));
 
   if (task.taskType === "WATER_REFILL") {
     return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
+      <div className="room-task-actions" aria-label={translate("actions")}>
         {task.capabilities.canComplete && (
           <button disabled={action.isPending} onClick={completeRegularTask} type="button">
             <CheckIcon />
-            <span>Complete</span>
+            <span>{translate("complete")}</span>
           </button>
         )}
       </div>
@@ -300,25 +305,25 @@ function RoomTaskActions({ action, task }: { action: ReturnType<typeof useRoomTa
 
   if (task.capabilities.canStart) {
     return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(task.id, task.version))} type="button">Start</button>
+      <div className="room-task-actions" aria-label={translate("actions")}>
+        <button disabled={action.isPending} onClick={() => action.mutate(startHousekeepingTask(task.id, task.version))} type="button">{translate("start")}</button>
       </div>
     );
   }
 
   if (task.capabilities.canComplete && task.taskType === "ON_DEMAND_CLEANING") {
     return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">Finish Cleaning</button>
-        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">Finish Full Cleaning</button>
+      <div className="room-task-actions" aria-label={translate("actions")}>
+        <button disabled={action.isPending} onClick={() => completeCleaning(false)} type="button">{translate("finishCleaning")}</button>
+        <button disabled={action.isPending} onClick={() => completeCleaning(true)} type="button">{translate("finishFullCleaning")}</button>
       </div>
     );
   }
 
   if (task.capabilities.canComplete) {
     return (
-      <div className="room-task-actions" aria-label={`Actions for task ${task.id}`}>
-        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning"}</button>
+      <div className="room-task-actions" aria-label={translate("actions")}>
+        <button disabled={action.isPending} onClick={completeRegularTask} type="button">{task.taskType === "LINEN_CHANGE" ? translate("finishFullCleaning") : translate("finishCleaning")}</button>
       </div>
     );
   }
@@ -352,7 +357,7 @@ function TurnoverPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   );
 }
 
-function OperationalAvailabilityPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+function OperationalAvailabilityPanel({ language, room, roomId, translate }: { language: string; room: RoomDetail; roomId: string; translate: Translate }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<OperationalAvailabilityStatus>(room.operationalAvailability.status);
   const [reason, setReason] = useState(room.operationalAvailability.reason ?? "");
@@ -376,14 +381,14 @@ function OperationalAvailabilityPanel({ room, roomId }: { room: RoomDetail; room
   });
 
   return (
-    <section className="room-section" aria-label="Operational availability">
-      <header><RoomIcon /><h2>Operational Availability</h2></header>
+    <section className="room-section" aria-label={translate("operationalAvailabilityAria")}>
+      <header><RoomIcon /><h2>{translate("operationalAvailability")}</h2></header>
       <div className="room-operation-card">
-        <span className={`room-status-badge is-${statusTone(room.operationalAvailability.label)}`}>{room.operationalAvailability.label}</span>
+        <span className={`room-status-badge is-${statusTone(room.operationalAvailability.label)}`}>{translateStaffLabel(room.operationalAvailability.label, translate)}</span>
         <dl>
-          <div><dt>Reason</dt><dd>{room.operationalAvailability.reason ?? "None"}</dd></div>
-          <div><dt>Season</dt><dd>{room.operationalAvailability.seasonalLabel ?? "Not seasonal"}</dd></div>
-          <div><dt>Updated</dt><dd>{room.operationalAvailability.updatedAt ? formatDateTime(room.operationalAvailability.updatedAt) : "Baseline default"}</dd></div>
+          <div><dt>{translate("reason")}</dt><dd>{room.operationalAvailability.reason ?? translate("none")}</dd></div>
+          <div><dt>{translate("season")}</dt><dd>{room.operationalAvailability.seasonalLabel ?? translate("notSeasonal")}</dd></div>
+          <div><dt>{translate("updatedAt")}</dt><dd>{room.operationalAvailability.updatedAt ? formatDateTime(room.operationalAvailability.updatedAt, language) : translate("baselineDefault")}</dd></div>
         </dl>
       </div>
 
@@ -394,35 +399,35 @@ function OperationalAvailabilityPanel({ room, roomId }: { room: RoomDetail; room
         }}>
           <div className="room-form-grid">
             <label>
-              Operational Availability
+              {translate("operationalAvailability")}
               <select onChange={(event) => setStatus(event.target.value as OperationalAvailabilityStatus)} value={status}>
-                <option value="OPERATING">Operating</option>
-                <option value="NOT_OPERATING">Not Operating</option>
+                <option value="OPERATING">{translate("operating")}</option>
+                <option value="NOT_OPERATING">{translate("notOperating")}</option>
               </select>
             </label>
             <label>
-              Reason
-              <input maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="Optional reason" value={reason} />
+              {translate("reason")}
+              <input maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={translate("optionalReason")} value={reason} />
             </label>
             <label>
-              Season Start
+              {translate("seasonStart")}
               <input maxLength={5} onChange={(event) => setSeasonalStart(event.target.value)} placeholder="06-01" value={seasonalStart} />
             </label>
             <label>
-              Season End
+              {translate("seasonEnd")}
               <input maxLength={5} onChange={(event) => setSeasonalEnd(event.target.value)} placeholder="11-20" value={seasonalEnd} />
             </label>
           </div>
-          <button disabled={!changed || mutation.isPending} type="submit">Change Availability</button>
+          <button disabled={!changed || mutation.isPending} type="submit">{translate("changeAvailability")}</button>
         </form>
       )}
 
-      {mutation.isError && <p className="room-form-error">Operational availability could not be changed.</p>}
+      {mutation.isError && <p className="room-form-error">{translate("operationalAvailabilityCouldNotChange")}</p>}
     </section>
   );
 }
 
-function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }) {
+function RoomReadyControl({ room, roomId, translate }: { room: RoomDetail; roomId: string; translate: Translate }) {
   const queryClient = useQueryClient();
   const [readyState, setReadyState] = useState<RoomReadyState>(room.housekeeping.readyState);
   const [readyReason, setReadyReason] = useState("");
@@ -449,25 +454,25 @@ function RoomReadyControl({ room, roomId }: { room: RoomDetail; roomId: string }
       }}>
         <div className="room-form-grid">
           <label>
-            Cleaning Status
+            {translate("cleaningStatus")}
             <select onChange={(event) => setReadyState(event.target.value as RoomReadyState)} value={readyState}>
-              <option value="READY">CLEAN</option>
-              <option value="NOT_READY">DIRTY</option>
+              <option value="READY">{translate("clean")}</option>
+              <option value="NOT_READY">{translate("roomDirty")}</option>
             </select>
           </label>
           <label>
-            Reason
-            <textarea maxLength={500} onChange={(event) => setReadyReason(event.target.value)} placeholder="Optional reason" rows={2} value={readyReason} />
+            {translate("reason")}
+            <textarea maxLength={500} onChange={(event) => setReadyReason(event.target.value)} placeholder={translate("optionalReason")} rows={2} value={readyReason} />
           </label>
         </div>
-        <button disabled={!changed || changeReadyState.isPending} type="submit">Change Cleaning</button>
+        <button disabled={!changed || changeReadyState.isPending} type="submit">{translate("changeCleaning")}</button>
       </form>
-      {changeReadyState.isError && <p className="room-form-error">Cleaning status could not be changed.</p>}
+      {changeReadyState.isError && <p className="room-form-error">{translate("cleaningStatusCouldNotChange")}</p>}
     </>
   );
 }
 
-function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+function HousekeepingPanel({ room, roomId, translate }: { room: RoomDetail; roomId: string; translate: Translate }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
   const taskAction = useRoomTaskAction(roomId);
@@ -488,32 +493,32 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
   const canCreateOnDemand = !hasActiveTask && room.housekeeping.canCreateOnDemandCleaning && Boolean(room.currentStay);
 
   return (
-    <section className="room-section" aria-label="Housekeeping">
-      <header><HousekeepingIcon /><h2>Housekeeping</h2></header>
+    <section className="room-section" aria-label={translate("housekeeping")}>
+      <header><HousekeepingIcon /><h2>{translate("housekeeping")}</h2></header>
       <div className="room-operation-card">
-        <span className={`room-status-badge is-${room.housekeeping.primaryStatusTone}`}>{room.housekeeping.primaryStatus}</span>
+        <span className={`room-status-badge is-${room.housekeeping.primaryStatusTone}`}>{translateStaffLabel(room.housekeeping.primaryStatus, translate)}</span>
         {room.housekeeping.assignedTo && (
           <dl>
-            <div><dt>Assigned</dt><dd>{room.housekeeping.assignedTo}</dd></div>
+            <div><dt>{translate("assigned")}</dt><dd>{room.housekeeping.assignedTo}</dd></div>
           </dl>
         )}
       </div>
 
       {room.housekeeping.canChangeReadyState && (
-        <RoomReadyControl key={`${room.unitId}:${room.housekeeping.readyState}`} room={room} roomId={roomId} />
+        <RoomReadyControl key={`${room.unitId}:${room.housekeeping.readyState}`} room={room} roomId={roomId} translate={translate} />
       )}
 
-      <div className="room-task-list" aria-label="Active housekeeping task">
-        {room.housekeeping.tasks.length === 0 && <div className="room-empty-state">No active Housekeeping</div>}
+      <div className="room-task-list" aria-label={translate("housekeepingTask")}>
+        {room.housekeeping.tasks.length === 0 && <div className="room-empty-state">{translate("noActiveHousekeeping")}</div>}
         {room.housekeeping.tasks.map((task) => (
           <article className="room-task-card" key={task.id}>
             <div>
               <strong>{task.title}</strong>
-              <span>Task Status</span>
-              <b>{taskStatusLabel(task)}</b>
+              <span>{translate("taskStatus")}</span>
+              <b>{taskStatusLabel(task, translate)}</b>
             </div>
-            <TaskExecutionSteps task={task} />
-            <RoomTaskActions action={taskAction} task={task} />
+            <TaskExecutionSteps task={task} translate={translate} />
+            <RoomTaskActions action={taskAction} task={task} translate={translate} />
           </article>
         ))}
       </div>
@@ -524,21 +529,21 @@ function HousekeepingPanel({ room, roomId }: { room: RoomDetail; roomId: string 
           if (canCreateOnDemand) createOnDemand.mutate();
         }}>
           <label>
-            On-Demand Cleaning
-            <textarea maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" rows={2} value={note} />
+            {translate("onDemandCleaning")}
+            <textarea maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder={translate("optionalNote")} rows={2} value={note} />
           </label>
-          <button disabled={!canCreateOnDemand || createOnDemand.isPending || hasOnDemand} type="submit"><PlusIcon />Create On-Demand Cleaning</button>
+          <button disabled={!canCreateOnDemand || createOnDemand.isPending || hasOnDemand} type="submit"><PlusIcon />{translate("createOnDemandCleaning")}</button>
         </form>
       )}
 
-      {hasOnDemand && <p className="room-form-help">An On-Demand Cleaning task is already active.</p>}
-      {taskAction.isError && <p className="room-form-error">This task changed. The room is refreshing.</p>}
-      {createOnDemand.isError && <p className="room-form-error">On-Demand Cleaning could not be created.</p>}
+      {hasOnDemand && <p className="room-form-help">{translate("onDemandCleaningAlreadyActive")}</p>}
+      {taskAction.isError && <p className="room-form-error">{translate("taskChangedRefreshing")}</p>}
+      {createOnDemand.isError && <p className="room-form-error">{translate("onDemandCleaningCouldNotCreate")}</p>}
     </section>
   );
 }
 
-function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+function MaintenancePanel({ room, roomId, translate }: { room: RoomDetail; roomId: string; translate: Translate }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -562,70 +567,70 @@ function MaintenancePanel({ room, roomId }: { room: RoomDetail; roomId: string }
   }
 
   return (
-    <section className="room-section" aria-label="Maintenance summary">
-      <header><MaintenanceIcon /><h2>Maintenance</h2></header>
+    <section className="room-section" aria-label={translate("maintenanceSummary")}>
+      <header><MaintenanceIcon /><h2>{translate("maintenance")}</h2></header>
       <div className="room-section-summary">
-        <strong>{room.maintenance.label}</strong>
-        <span>{room.maintenance.outOfService ? "Maintenance blocks this room." : room.maintenance.highestPriority ? `${room.maintenance.highestPriority.toUpperCase()} priority` : "No maintenance blocking this room."}</span>
-        {room.maintenance.outOfService && <span>Out Of Service</span>}
+        <strong>{translateStaffLabel(room.maintenance.label, translate)}</strong>
+        <span>{room.maintenance.outOfService ? translate("maintenanceBlocksRoom") : room.maintenance.highestPriority ? translateStaffLabel(room.maintenance.highestPriority, translate) : translate("noMaintenanceBlockingRoom")}</span>
+        {room.maintenance.outOfService && <span>{translate("outOfService")}</span>}
       </div>
       <div className="maintenance-ticket-list">
-        {room.maintenance.tickets.length === 0 && <div className="room-empty-state">No open issues</div>}
+        {room.maintenance.tickets.length === 0 && <div className="room-empty-state">{translate("noOpenIssues")}</div>}
         {room.maintenance.tickets.map((ticket) => (
           <Link className="maintenance-ticket-card" key={ticket.id} to={`/maintenance/${ticket.id}`}>
             <div>
               <strong>{ticket.title}</strong>
-              <span>{ticket.status.toUpperCase()}</span>
+              <span>{translateStaffLabel(ticket.status, translate)}</span>
             </div>
-            <span className={`room-status-badge is-${ticket.priority.toLowerCase()}`}>{ticket.priority.toUpperCase()}</span>
-            {ticket.outOfService && <small>Blocking</small>}
-            {ticket.photos.length > 0 && <small>{ticket.photos.length} photo{ticket.photos.length === 1 ? "" : "s"}</small>}
+            <span className={`room-status-badge is-${ticket.priority.toLowerCase()}`}>{translateStaffLabel(ticket.priority, translate)}</span>
+            {ticket.outOfService && <small>{translate("blockingRoom")}</small>}
+            {ticket.photos.length > 0 && <small>{ticket.photos.length} {translate("photos")}</small>}
           </Link>
         ))}
       </div>
       {!hasActiveTicket && (
         <form className="room-ticket-form" onSubmit={submit}>
           <label>
-            Report Issue
-            <input maxLength={140} onChange={(event) => setTitle(event.target.value)} placeholder="Short issue title" required value={title} />
+            {translate("reportIssue")}
+            <input maxLength={140} onChange={(event) => setTitle(event.target.value)} placeholder={translate("shortIssueTitle")} required value={title} />
           </label>
           <label>
-            Description
-            <textarea maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What needs attention?" required rows={3} value={description} />
+            {translate("description")}
+            <textarea maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder={translate("whatNeedsAttention")} required rows={3} value={description} />
           </label>
           <div className="room-form-grid">
             <label>
-              Priority
+              {translate("priority")}
               <select onChange={(event) => setPriority(event.target.value as MaintenancePriority)} value={priority}>
-                {MAINTENANCE_PRIORITIES.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
+                {MAINTENANCE_PRIORITIES.map((item) => <option key={item} value={item}>{translateStaffLabel(item, translate)}</option>)}
               </select>
             </label>
             <label className="room-checkbox-field">
               <input checked={outOfService} onChange={(event) => setOutOfService(event.target.checked)} type="checkbox" />
-              <span>Blocking room</span>
+              <span>{translate("blockingRoom")}</span>
             </label>
           </div>
-          <button disabled={mutation.isPending} type="submit"><PlusIcon />Report Issue</button>
-          {mutation.isError && <p className="room-form-error">Issue could not be created.</p>}
+          <button disabled={mutation.isPending} type="submit"><PlusIcon />{translate("reportIssue")}</button>
+          {mutation.isError && <p className="room-form-error">{translate("issueCouldNotBeCreated")}</p>}
         </form>
       )}
     </section>
   );
 }
 
-function ProcurementPanel({ room }: { room: RoomDetail }) {
+function ProcurementPanel({ room, translate }: { room: RoomDetail; translate: Translate }) {
   return (
-    <section className="room-section" aria-label="Procurement alerts">
-      <header><RefreshIcon /><h2>Procurement</h2></header>
+    <section className="room-section" aria-label={translate("procurementAlerts")}>
+      <header><RefreshIcon /><h2>{translate("procurement")}</h2></header>
       <div className="room-section-summary">
-        <strong>{room.procurement.attentionCount > 0 ? `${room.procurement.attentionCount} supply request${room.procurement.attentionCount === 1 ? "" : "s"} need attention` : "No procurement alerts"}</strong>
-        <span>{room.procurement.latestRequest ?? "Supply requests stay owned by Procurement."}</span>
+        <strong>{room.procurement.attentionCount > 0 ? translate("supplyRequestsNeedAttention", { count: room.procurement.attentionCount }) : translate("noProcurementAlerts")}</strong>
+        <span>{room.procurement.latestRequest ?? translate("procurementOwnsSupplyRequests")}</span>
       </div>
     </section>
   );
 }
 
-function NotesPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
+function NotesPanel({ language, room, roomId, translate }: { language: string; room: RoomDetail; roomId: string; translate: Translate }) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
   const mutation = useMutation({
@@ -642,19 +647,19 @@ function NotesPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   }
 
   return (
-    <section className="room-section" aria-label="Room notes">
-      <header><CheckIcon /><h2>Notes</h2></header>
+    <section className="room-section" aria-label={translate("roomNotes")}>
+      <header><CheckIcon /><h2>{translate("notes")}</h2></header>
       <form className="room-note-form" onSubmit={submit}>
-        <textarea maxLength={2000} onChange={(event) => setBody(event.target.value)} placeholder="Add an operational note" required rows={3} value={body} />
-        <button disabled={mutation.isPending} type="submit">Add note</button>
-        {mutation.isError && <p className="room-form-error">Note could not be saved.</p>}
+        <textarea maxLength={2000} onChange={(event) => setBody(event.target.value)} placeholder={translate("addOperationalNote")} required rows={3} value={body} />
+        <button disabled={mutation.isPending} type="submit">{translate("addNote")}</button>
+        {mutation.isError && <p className="room-form-error">{translate("noteCouldNotBeSaved")}</p>}
       </form>
       <div className="room-note-list">
-        {room.notes.length === 0 && <div className="room-empty-state">No notes yet</div>}
+        {room.notes.length === 0 && <div className="room-empty-state">{translate("noNotesYet")}</div>}
         {room.notes.map((note) => (
           <article className="room-note-card" key={note.id}>
             <strong>{note.authorName}</strong>
-            <span>{formatDateTime(note.createdAt)}</span>
+            <span>{formatDateTime(note.createdAt, language)}</span>
             <p>{note.body}</p>
           </article>
         ))}
@@ -663,19 +668,28 @@ function NotesPanel({ room, roomId }: { room: RoomDetail; roomId: string }) {
   );
 }
 
-function TimelinePanel({ events }: { events: RoomTimelineEvent[] }) {
+function timelineEventTypeLabel(type: string, translate: Translate): string {
+  const normalized = type.replaceAll("-", "_").replaceAll(" ", "_").toLowerCase();
+  if (normalized === "status_changed" || normalized === "status") return translate("maintenanceEventStatusChanged");
+  if (normalized === "assigned" || normalized === "assignment") return translate("maintenanceEventAssigned");
+  if (normalized === "priority_changed" || normalized === "priority") return translate("maintenanceEventPriorityChanged");
+  if (normalized === "blocking_changed" || normalized === "out_of_service_changed" || normalized === "blocking") return translate("maintenanceEventBlockingChanged");
+  return translateStaffLabel(type.replaceAll("_", " "), translate);
+}
+
+function TimelinePanel({ events, language, translate }: { events: RoomTimelineEvent[]; language: string; translate: Translate }) {
   return (
-    <section className="room-section" aria-label="Operational timeline">
-      <header><img alt="" src={warningIcon} /><h2>Timeline</h2></header>
+    <section className="room-section" aria-label={translate("operationalTimeline")}>
+      <header><img alt="" src={warningIcon} /><h2>{translate("timeline")}</h2></header>
       <div className="room-timeline">
-        {events.length === 0 && <div className="room-empty-state">No operational history yet</div>}
+        {events.length === 0 && <div className="room-empty-state">{translate("noOperationalHistory")}</div>}
         {events.map((event) => (
           <article className={`timeline-event is-${event.type}`} key={event.id}>
-            <span>{event.type.replace("-", " ")}</span>
+            <span>{timelineEventTypeLabel(event.type, translate)}</span>
             <div>
               <strong>{event.title}</strong>
               {event.description && <p>{event.description}</p>}
-              <small>{formatDateTime(event.occurredAt)}{event.actorName ? ` · ${event.actorName}` : ""}</small>
+              <small>{formatDateTime(event.occurredAt, language)}{event.actorName ? ` · ${event.actorName}` : ""}</small>
             </div>
           </article>
         ))}
@@ -684,26 +698,26 @@ function TimelinePanel({ events }: { events: RoomTimelineEvent[] }) {
   );
 }
 
-function ChatContextPanel({ room }: { room: RoomDetail }) {
+function ChatContextPanel({ room, translate }: { room: RoomDetail; translate: Translate }) {
   return (
-    <section className="room-section" aria-label="Room chat context">
-      <header><AskIcon /><h2>Chat Context</h2></header>
+    <section className="room-section" aria-label={translate("roomChatContext")}>
+      <header><AskIcon /><h2>{translate("chatContext")}</h2></header>
       <div className="room-section-summary">
-        <strong>Room context prepared</strong>
-        <span>{room.chatContext.conversationId ? "Conversation linked" : "No room conversation yet"}</span>
+        <strong>{translate("roomContextPrepared")}</strong>
+        <span>{room.chatContext.conversationId ? translate("conversationLinked") : translate("noRoomConversation")}</span>
       </div>
     </section>
   );
 }
 
-function OperationalActions() {
+function OperationalActions({ translate }: { translate: Translate }) {
   return (
-    <section className="room-section" aria-label="Future operational actions">
-      <header><CheckIcon /><h2>Actions</h2></header>
+    <section className="room-section" aria-label={translate("futureOperationalActions")}>
+      <header><CheckIcon /><h2>{translate("actions")}</h2></header>
       <div className="room-actions">
-        <button disabled type="button">Checkout Completed</button>
-        <button disabled type="button">Report Issue</button>
-        <button disabled type="button">View Notes</button>
+        <button disabled type="button">{translate("checkoutCompleted")}</button>
+        <button disabled type="button">{translate("reportIssue")}</button>
+        <button disabled type="button">{translate("viewNotes")}</button>
       </div>
     </section>
   );
@@ -712,6 +726,7 @@ function OperationalActions() {
 export default function RoomDetailPage() {
   const { roomId = "" } = useParams();
   const [searchParams] = useSearchParams();
+  const { language, translate } = useLanguage();
   const requestedTaskId = Number(searchParams.get("taskId"));
   const isTaskExecution = Number.isInteger(requestedTaskId) && requestedTaskId > 0;
   const room = useQuery({
@@ -726,7 +741,7 @@ export default function RoomDetailPage() {
 
   return (
     <WorkspaceShell
-      title={isTaskExecution ? "Housekeeping" : room.data?.roomName ?? "Rooms"}
+      title={isTaskExecution ? translate("housekeeping") : room.data?.roomName ?? translate("rooms")}
       workspace={isTaskExecution ? "housekeeping" : "rooms"}
       bodyClassName={`room-detail-page${isTaskExecution ? " task-execution-page" : ""}`}
     >
@@ -734,14 +749,14 @@ export default function RoomDetailPage() {
         <div className="workspace-body-actions">
           <span>{room.data.roomType}</span>
           <button
-            aria-label="Refresh room detail"
+            aria-label={translate("refreshRoomDetail")}
             className="room-refresh"
             disabled={room.isFetching}
             onClick={() => void room.refetch()}
             type="button"
           >
             <RefreshIcon className={room.isFetching ? "is-spinning" : ""} />
-            <span>Refresh</span>
+            <span>{translate("refresh")}</span>
           </button>
         </div>
       )}
@@ -752,18 +767,18 @@ export default function RoomDetailPage() {
           <TaskExecutionPage room={room.data} roomId={roomId} task={executionTask} />
         ) : (
         <>
-          <RoomHeader room={room.data} />
-          <RoomBadges room={room.data} />
-          <CurrentStay stay={room.data.currentStay} />
-          <OperationalAvailabilityPanel room={room.data} roomId={roomId} />
+          <RoomHeader language={language} room={room.data} translate={translate} />
+          <RoomBadges room={room.data} translate={translate} />
+          <CurrentStay language={language} stay={room.data.currentStay} translate={translate} />
+          <OperationalAvailabilityPanel language={language} room={room.data} roomId={roomId} translate={translate} />
           <TurnoverPanel room={room.data} roomId={roomId} />
-          <HousekeepingPanel room={room.data} roomId={roomId} />
-          <MaintenancePanel room={room.data} roomId={roomId} />
-          <ProcurementPanel room={room.data} />
-          <NotesPanel room={room.data} roomId={roomId} />
-          <TimelinePanel events={room.data.timeline.events} />
-          <ChatContextPanel room={room.data} />
-          <OperationalActions />
+          <HousekeepingPanel room={room.data} roomId={roomId} translate={translate} />
+          <MaintenancePanel room={room.data} roomId={roomId} translate={translate} />
+          <ProcurementPanel room={room.data} translate={translate} />
+          <NotesPanel language={language} room={room.data} roomId={roomId} translate={translate} />
+          <TimelinePanel events={room.data.timeline.events} language={language} translate={translate} />
+          <ChatContextPanel room={room.data} translate={translate} />
+          <OperationalActions translate={translate} />
         </>
         )
       )}

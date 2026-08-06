@@ -9,6 +9,7 @@ import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 import { completeHousekeepingTask, startHousekeepingTask, type HousekeepingTaskCompletionPayload } from "../services/housekeeping-v2.service";
 import { createRoomOnDemandCleaning, startRoomStandardCleaning } from "../services/room-detail.service";
 import { loadRoomsWorkspace } from "../services/rooms-workspace.service";
+import { useLanguage } from "../providers/language.context";
 import "../styles/RoomsPage.css";
 import type { RoomHousekeepingCompletionMode } from "../types/rooms-workspace";
 
@@ -24,6 +25,7 @@ function roomActionKey(prefix: string, roomId: number): string {
 }
 
 export default function RoomsPage() {
+  const { translate } = useLanguage();
   const [expandedRoomId, setExpandedRoomId] = useState<number | null>(null);
   const [guestContactRequest, setGuestContactRequest] = useState<VanaraGuestContact | null>(null);
   const [guestContactFeedback, setGuestContactFeedback] = useState<VanaraGuestContactFeedback>(null);
@@ -115,16 +117,16 @@ export default function RoomsPage() {
   const summaryItems = useMemo(() => {
     if (!rooms.data) return [];
     return [
-      { label: "Occupied", value: rooms.data.summary.occupied },
-      { label: "Vacant", value: rooms.data.summary.vacant },
-      { label: "Maintenance", value: rooms.data.summary.maintenanceBlocked },
-      { label: "Closed", value: rooms.data.summary.seasonClosed },
+      { label: translate("occupied"), value: rooms.data.summary.occupied },
+      { label: translate("vacant"), value: rooms.data.summary.vacant },
+      { label: translate("maintenance"), value: rooms.data.summary.maintenanceBlocked },
+      { label: translate("closed"), value: rooms.data.summary.seasonClosed },
     ];
-  }, [rooms.data]);
+  }, [rooms.data, translate]);
 
   return (
     <WorkspaceShell
-      title="Rooms"
+      title={translate("rooms")}
       workspace="rooms"
       bodyClassName="rooms-page"
       suppressStickyNavigation={Boolean(guestContactRequest)}
@@ -133,8 +135,8 @@ export default function RoomsPage() {
       {rooms.isError ? <PageError onRetry={() => void rooms.refetch()} /> : null}
 
       {rooms.data ? (
-        <section className="rooms-home" aria-label="Rooms Home">
-          <header className="rooms-home__summary vc-glass-surface" aria-label="Rooms operational summary">
+        <section className="rooms-home" aria-label={translate("rooms")}>
+          <header className="rooms-home__summary vc-glass-surface" aria-label={translate("roomsSummary")}>
             {summaryItems.map((item) => (
               <span className="rooms-summary-item" key={item.label}>
                 <strong>{item.value}</strong>

@@ -259,7 +259,7 @@ test("free-text translation source guardrails keep Google centralized and preven
   assert.match(service, /entity_type = \?[\s\S]*entity_id = \?[\s\S]*field_name = \?[\s\S]*source_text_hash = \?[\s\S]*target_language = \?/);
   assert.match(migration, /UNIQUE \(entity_type, entity_id, field_name, source_text_hash, target_language\)/);
   assert.match(component, /onClick=\{\(\) => mutation\.mutate\(\)\}/);
-  assert.match(component, /"Translate"/);
+  assert.match(component, /translate\("translate"\)/);
   assert.match(clientService, /\/api\/translations\/free-text/);
   assert.doesNotMatch(service + component + clientService, /openai|OPENAI|fake translation|placeholder translation/i);
   assert.doesNotMatch(component, /useEffect\([\s\S]*translateFreeText/);

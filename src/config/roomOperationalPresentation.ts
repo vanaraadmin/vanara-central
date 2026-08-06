@@ -181,8 +181,12 @@ function maintenanceValue(summary: RoomOperationalSummary): Pick<RoomOperational
 
 function housekeepingWorkLabel(summary: RoomOperationalSummary): string | null {
   const task = summary.housekeeping.activeTaskType ?? "Cleaning";
-  if (summary.housekeeping.workState === "BLOCKED") return `${task} blocked`;
-  if (summary.housekeeping.workState === "AVAILABLE") return `${task} scheduled`;
+  if (summary.housekeeping.workState === "BLOCKED") return "Maintenance blocks this room.";
+  if (summary.housekeeping.workState === "AVAILABLE") {
+    if (task === "Water Refill") return "Water Due";
+    if (task === "Turnover") return "Turnover today";
+    return "To Clean";
+  }
   return null;
 }
 

@@ -145,13 +145,13 @@ test("room-only operational context moved out of the Housekeeping queue", () => 
 test("v2 page starts as summary cards and expands only Priority, Normal or Water lists", () => {
   assert.match(page, /function TaskCard/);
   assert.match(page, /function Section/);
-  assert.match(page, /Housekeeping operational summary/);
+  assert.match(page, /ariaLabel=\{translate\("roomsSummary"\)\}/);
   assert.match(page, /const homeSections/);
   assert.match(page, /useState<HousekeepingV2SectionId \| null>\(null\)/);
   assert.match(page, /activeItemId=\{activeSection\}/);
   assert.match(page, /onItemSelect=\{\(item\) =>/);
   assert.match(page, /expandedSection &&/);
-  assert.match(page, /Housekeeping task queue/);
+  assert.match(page, /translate\("housekeepingTaskQueue"\)/);
   assert.doesNotMatch(page, /housekeeping\.data\.sections\.map/);
   assert.doesNotMatch(page, /Ready \/ No Action Required|No action required/);
   assert.doesNotMatch(page, /Room detail coming later/);
@@ -169,12 +169,12 @@ test("expanded v2 rows link room names to Room Workspace and gate task actions b
   assert.match(page, /OwnerAssignmentControl/);
   assert.match(page, /card\.capabilities\.canReassign/);
   assert.match(page, /loadHousekeepingAssignableUsers/);
-  assert.doesNotMatch(page, /createOnDemandCleaning|on-demand-cleaning|Checklist/);
+  assert.doesNotMatch(page, /createOnDemandCleaning|on-demand-cleaning|Checklist\s*<\/|>\s*Checklist\s*</);
 });
 
 test("v2 task cards avoid staff-facing technical wording and raw task state", () => {
-  assert.match(page, /Today \$\{formatDate\(housekeeping\.data\.operationalDate\)\}/);
-  assert.match(page, /This task changed\. The list is refreshing\./);
+  assert.match(page, /translate\("todayDate"/);
+  assert.match(page, /translate\("taskChangedRefreshing"\)/);
   assert.doesNotMatch(page, /Task #|Operational date|expectedVersion|idempotency|conflict code|state machine/);
   assert.doesNotMatch(page, /card\.taskStatus\.replaceAll/);
   assert.doesNotMatch(page, /housekeeping-v2-card__footer|housekeeping-v2-generation|housekeeping-v2-task-link|showTaskSurface/);
@@ -188,7 +188,7 @@ test("v2 task actions render the next server-authorized step only", () => {
   assert.match(page, /waterRefillCompleted: true/);
   assert.match(page, /card\.taskType === "TURNOVER"[\s\S]*standardCleaningCompleted: true[\s\S]*linenChangeCompleted: true/);
   assert.doesNotMatch(page, /card\.taskType === "ON_DEMAND_CLEANING"\)/);
-  assert.match(page, /<span>Mark Delivered<\/span>/);
+  assert.match(page, /translate\("markDelivered"\)/);
   assert.match(page, /onSettled: \(\) =>/);
   assert.doesNotMatch(page, /Release claim/);
 });
@@ -196,23 +196,23 @@ test("v2 task actions render the next server-authorized step only", () => {
 test("v2 page uses intervention wording and informational help instead of checklists", () => {
   assert.match(page, /type InterventionType = "cleaning" \| "full-cleaning"/);
   assert.match(page, /function InterventionSheet/);
-  assert.match(page, /General room cleaning\./);
-  assert.match(page, /Replace bed linen\./);
-  assert.match(page, /Please also check room amenities before completion\./);
-  assert.match(page, /Finish Cleaning/);
-  assert.match(page, /Finish Full Cleaning/);
+  assert.match(page, /translate\("generalRoomCleaning"\)/);
+  assert.match(page, /translate\("replaceBedLinen"\)/);
+  assert.match(page, /translate\("checkAmenities"\)/);
+  assert.match(page, /translate\("finishCleaning"\)/);
+  assert.match(page, /translate\("finishFullCleaning"\)/);
   assert.doesNotMatch(page, /Finish Turnover/);
   assert.doesNotMatch(page, /card\.taskType === "STANDARD_CLEANING"[\s\S]*finish-full-cleaning/);
 });
 
 test("summary counters render centered count and subordinate room unit", () => {
-  assert.match(page, /function formatRoomCount\(value: number\): string/);
+  assert.match(page, /function formatRoomCount\(value: number, translate: Translate\): string/);
   assert.match(page, /return `\$\{value}/);
-  assert.match(page, /value === 1 \? "Room" : "Rooms"/);
-  assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\]\): VanaraSummaryItem\[\]/);
+  assert.match(page, /value === 1 \? translate\("room"\) : translate\("roomPlural"\)/);
+  assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\], translate: Translate\): VanaraSummaryItem\[\]/);
   assert.match(page, /value: count/);
-  assert.match(page, /unitLabel: count === 1 \? "room" : "rooms"/);
-  assert.match(page, /meta=\{formatRoomCount\(section\.cards\.length\)\}/);
+  assert.match(page, /unitLabel: count === 1 \? translate\("room"\) : translate\("roomPlural"\)/);
+  assert.match(page, /meta=\{formatRoomCount\(section\.cards\.length, translate\)\}/);
   assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
   assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);
 });
@@ -223,12 +223,12 @@ test("water cards stay one-tap and avoid workflow indicators", () => {
   assert.match(page, /function completeWaterRefill/);
   assert.match(page, /completeHousekeepingTask\(card\.taskId, card\.taskVersion, \{ waterRefillCompleted: true \}\)/);
   assert.match(page, /function WaterDeliveryControl/);
-  assert.match(page, /Mark water delivered for \$\{card\.unitName\}/);
-  assert.match(page, /Saving water delivery for \$\{card\.unitName\}/);
-  assert.match(page, /Water delivered for \$\{card\.unitName\}/);
-  assert.match(page, /waterDeliveryStateLabel\(card\)/);
-  assert.match(page, /return "Pending"/);
-  assert.match(page, /return "Delivered"/);
+  assert.match(page, /translate\("markWaterDeliveredFor", \{ room: card\.unitName \}\)/);
+  assert.match(page, /translate\("savingWaterDelivery", \{ room: card\.unitName \}\)/);
+  assert.match(page, /translate\("waterDeliveredFor", \{ room: card\.unitName \}\)/);
+  assert.match(page, /waterDeliveryStateLabel\(card, translate\)/);
+  assert.match(page, /return translate\("pending"\)/);
+  assert.match(page, /return translate\("delivered"\)/);
   assert.doesNotMatch(page, /Complete Water|Start Water/);
 });
 
@@ -238,18 +238,18 @@ test("water refill compact rows expose inline delivery without requiring room ex
 
   assert.match(taskCard, /const isWaterTask = card\.taskType === "WATER_REFILL"/);
   assert.match(taskCard, /housekeeping-v2-task-row--water/);
-  assert.match(taskCard, /isWaterTask \? <WaterDeliveryControl action=\{action\} card=\{card\} \/> : null/);
+  assert.match(taskCard, /isWaterTask \? <WaterDeliveryControl action=\{action\} card=\{card\} translate=\{translate\} \/> : null/);
   assert.match(taskCard, /!\s*isWaterTask \? \(/);
   assert.match(taskCard, /className="housekeeping-v2-task-row__toggle"/);
   assert.match(taskCard, /!\s*isWaterTask && expanded && \(/);
   assert.match(deliveryControl, /disabled=\{disabled\}/);
   assert.match(deliveryControl, /action\.isPending \|\| delivered \|\| !card\.capabilities\.canComplete/);
   assert.match(deliveryControl, /onClick=\{\(\) => completeWaterRefill\(action, card\)\}/);
-  assert.match(deliveryControl, /action\.isPending \? "Saving" : "Mark Delivered"/);
-  assert.match(deliveryControl, /delivered \? "Delivered"/);
+  assert.match(deliveryControl, /action\.isPending \? translate\("saving"\) : translate\("markDelivered"\)/);
+  assert.match(deliveryControl, /delivered \? translate\("delivered"\)/);
   assert.doesNotMatch(deliveryControl, /housekeeping-v2-water-delivery__check|<CheckIcon/);
   assert.match(page, /void queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
-  assert.match(page, /This task changed\. The list is refreshing\./);
+  assert.match(page, /translate\("taskChangedRefreshing"\)/);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{/);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) minmax\(112px, auto\) auto;/);
   assert.match(css, /@media \(max-width: 420px\)[\s\S]*\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*36px minmax\(0, 1fr\);/);
@@ -279,7 +279,7 @@ test("priority escalation is derived from original operational date without ente
   assert.match(service, /return "priority-turnover"/);
   assert.match(service, /return "Was due yesterday"/);
   assert.match(service, /taskBelongsToActiveStay/);
-  assert.match(page, /Was due yesterday/);
+  assert.match(page, /translate\("wasDueYesterday"\)/);
   assert.doesNotMatch(service, /escalation_level|SLA|breach/);
   assert.doesNotMatch(page, /overdue|breach|escalation level|overdue priority/i);
   assert.doesNotMatch(page, /\bSLA\b/);

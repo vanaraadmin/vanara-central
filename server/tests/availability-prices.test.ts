@@ -484,10 +484,10 @@ test("source guardrails prevent live provider calls, price1, reservation writes,
   assert.match(page, /useQuery/);
   assert.match(page, /loadAvailabilityPrices/);
   assert.match(page, /WorkspaceShell/);
-  assert.match(page, /title="Prices"/);
-  assert.match(page, /stickyNavigationTitle="Prices"/);
-  assert.match(page, /Search Prices/);
-  assert.match(page, /Available rooms/);
+  assert.match(page, /title=\{translate\("prices"\)\}/);
+  assert.match(page, /stickyNavigationTitle=\{translate\("prices"\)\}/);
+  assert.match(page, /translate\("searchPrices"\)/);
+  assert.match(page, /translate\("availableRooms"\)/);
   assert.doesNotMatch(page, /room_operational_availability|maintenance_tickets|housekeeping_tasks|room_housekeeping_state|bookings/i);
   assert.match(css, /\.availability-field input\s*\{[\s\S]*box-sizing:\s*border-box;/);
   assert.match(css, /\.availability-search__controls\s*\{[\s\S]*min-width:\s*0;/);
@@ -518,9 +518,9 @@ test("Prices label guardrails keep route and API technical identifiers stable", 
   const router = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
   const visibleSources = [page, staffPage, navigation, en].join("\n");
 
-  assert.match(staffPage, /title:\s*"Prices"/);
+  assert.match(staffPage, /title:\s*"prices"/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
-  assert.match(page, /<WorkspaceShell title="Prices" stickyNavigationTitle="Prices"/);
+  assert.match(page, /<WorkspaceShell title=\{translate\("prices"\)\} stickyNavigationTitle=\{translate\("prices"\)\}/);
   assert.match(navigation, /labelKey:\s*"prices", path:\s*"\/availability-prices"/);
   assert.match(en, /prices:\s*"Prices"/);
   assert.match(router, /path="availability-prices" element=\{<AvailabilityPage \/>}/);

@@ -1,4 +1,5 @@
 import AccommodationTypeIcon from "./AccommodationTypeIcon";
+import { useLanguage } from "../../providers/language.context";
 import type { RoomsWorkspaceRoom } from "../../types/rooms-workspace";
 
 interface RoomHeroProps {
@@ -6,6 +7,7 @@ interface RoomHeroProps {
 }
 
 export default function RoomHero({ room }: RoomHeroProps) {
+  const { translate } = useLanguage();
   const stay = room.currentStay;
 
   return (
@@ -16,7 +18,7 @@ export default function RoomHero({ room }: RoomHeroProps) {
       <div className="vc-sheet-identity__content room-expanded-sheet__identity-copy">
         <span className="vc-sheet-identity__eyebrow room-expanded-sheet__identity-type">{room.accommodationType}</span>
         <strong className="vc-sheet-identity__title room-expanded-sheet__identity-name">{room.roomName}</strong>
-        <p className="vc-sheet-identity__subtitle room-expanded-sheet__identity-guest">{stay ? stay.guestName : "No guest in room"}</p>
+        <p className="vc-sheet-identity__subtitle room-expanded-sheet__identity-guest">{stay ? stay.guestName : translate("vacant")}</p>
         <small className="vc-sheet-identity__meta room-expanded-sheet__identity-stay">{stay ? `${stay.arrivalDate} - ${stay.departureDate}` : room.roomType}</small>
       </div>
     </header>

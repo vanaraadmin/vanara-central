@@ -95,8 +95,8 @@ test("task detail uses intervention help and trust completion instead of detaile
   assert.doesNotMatch(roomService, /missingChecklistItems|Checklist incomplete:/);
   assert.doesNotMatch(roomService, /updateHousekeepingV2ChecklistItem/);
   assert.match(roomService, /canEditChecklist: false/);
-  assert.match(roomWorkspace, /Finish Cleaning/);
-  assert.match(roomWorkspace, /Finish Full Cleaning/);
+  assert.match(roomWorkspace, /translate\("finishCleaning"\)/);
+  assert.match(roomWorkspace, /translate\("finishFullCleaning"\)/);
   assert.doesNotMatch(roomWorkspace, /Finish Turnover/);
   assert.match(roomTaskActions, /task\.capabilities\.canComplete && task\.taskType === "ON_DEMAND_CLEANING"/);
   assert.doesNotMatch(roomTaskActions, /task\.taskType === "TURNOVER" \? "Finish Turnover"/);
@@ -123,7 +123,7 @@ test("Housekeeping UI cannot initiate On-Demand Cleaning", () => {
   assert.match(index, /\/api\/housekeeping\/v2\/rooms\/:unitId\/on-demand-cleaning/);
   assert.match(index, /\/api\/rooms\/:id\/on-demand-cleaning/);
   assert.match(roomClient, /createRoomOnDemandCleaning/);
-  assert.match(roomWorkspace, /Create On-Demand Cleaning/);
+  assert.match(roomWorkspace, /translate\("createOnDemandCleaning"\)/);
   assert.doesNotMatch(homePage, /createOnDemandCleaning|on-demand-cleaning/);
   assert.doesNotMatch(client, /createOnDemandCleaning|on-demand-cleaning/);
 });
@@ -136,7 +136,7 @@ test("Housekeeping no longer owns a duplicate room detail surface", () => {
 });
 
 test("Room Workspace owns active housekeeping task and room operations", () => {
-  assert.match(roomWorkspace, /Task Status/);
+  assert.match(roomWorkspace, /translate\("taskStatus"\)/);
   assert.match(roomWorkspace, /room\.housekeeping\.tasks/);
   assert.match(roomWorkspace, /isTaskExecution \? \(/);
   assert.match(roomWorkspace, /<TaskExecutionPage room=\{room\.data\} roomId=\{roomId\} task=\{executionTask\} \/>/);
@@ -158,14 +158,14 @@ test("Housekeeping task execution page contains only execution UI", () => {
   );
 
   assert.match(roomWorkspace, /function TaskExecutionPage/);
-  assert.match(taskExecutionPage, /taskDetailLabel\(task\)/);
-  assert.match(taskExecutionPage, /taskExecutionStatus\(task\)/);
-  assert.match(taskExecutionPage, /<TaskExecutionChecklist task=\{task\} \/>/);
-  assert.match(taskExecutionPage, /<TaskExecutionPrimaryAction action=\{action\} task=\{task\} \/>/);
+  assert.match(taskExecutionPage, /taskDetailLabel\(task, translate\)/);
+  assert.match(taskExecutionPage, /taskExecutionStatus\(task, translate\)/);
+  assert.match(taskExecutionPage, /<TaskExecutionChecklist task=\{task\} translate=\{translate\} \/>/);
+  assert.match(taskExecutionPage, /<TaskExecutionPrimaryAction action=\{action\} task=\{task\} translate=\{translate\} \/>/);
   assert.match(roomWorkspace, /function TaskExecutionMaintenance/);
-  assert.match(roomWorkspace, /No issue/);
-  assert.match(roomWorkspace, /Report Issue/);
-  assert.doesNotMatch(taskExecutionPage, /Create On-Demand Cleaning/);
+  assert.match(roomWorkspace, /translate\("noIssue"\)/);
+  assert.match(roomWorkspace, /translate\("reportIssue"\)/);
+  assert.doesNotMatch(taskExecutionPage, /createOnDemandCleaning/);
   assert.doesNotMatch(taskExecutionPage, /<TurnoverPanel/);
   assert.doesNotMatch(taskExecutionPage, /<ProcurementPanel/);
   assert.doesNotMatch(taskExecutionPage, /<TimelinePanel/);
@@ -175,8 +175,8 @@ test("Housekeeping task execution page contains only execution UI", () => {
 test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>[\s\S]*<HousekeepingPanel/);
-  assert.match(turnoverCard, /eyebrow="Turnover"/);
-  assert.match(turnoverCard, /title="Current State"/);
+  assert.match(turnoverCard, /eyebrow=\{translate\("turnover"\)\}/);
+  assert.match(turnoverCard, /title=\{translate\("currentState"\)\}/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-in[\s\S]*Room is waiting for today's check-in/);
@@ -188,9 +188,9 @@ test("Housekeeping room path uses Turnover language instead of Reception workflo
 });
 
 test("Room Workspace labels physical housekeeping condition as clean or dirty", () => {
-  assert.match(roomWorkspace, /Cleaning Status/);
-  assert.match(roomWorkspace, /<option value="READY">CLEAN<\/option>/);
-  assert.match(roomWorkspace, /<option value="NOT_READY">DIRTY<\/option>/);
+  assert.match(roomWorkspace, /translate\("cleaningStatus"\)/);
+  assert.match(roomWorkspace, /<option value="READY">\{translate\("clean"\)\}<\/option>/);
+  assert.match(roomWorkspace, /<option value="NOT_READY">\{translate\("roomDirty"\)\}<\/option>/);
   assert.match(roomDetailService, /label:\s*"Clean"/);
   assert.match(roomDetailService, /label:\s*"Dirty"/);
   assert.doesNotMatch(roomWorkspace, />NOT READY<|>READY<|Room Status could not be changed/);
@@ -201,7 +201,7 @@ test("Room Workspace task actions refresh on stale or changed task data", () => 
   assert.match(roomWorkspace, /onSettled: async \(\) =>/);
   assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["room-detail", roomId\] \}\)/);
   assert.match(roomWorkspace, /queryClient\.invalidateQueries\(\{ queryKey: \["housekeeping-v2"\] \}\)/);
-  assert.match(roomWorkspace, /This task changed\. The room is refreshing\./);
+  assert.match(roomWorkspace, /translate\("taskChangedRefreshing"\)/);
   assert.doesNotMatch(roomWorkspace, />Claim<|>Release<|Release claim|claimHousekeepingTask|releaseHousekeepingClaim/);
 });
 

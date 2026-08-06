@@ -5,7 +5,7 @@ import type { Language } from "../i18n";
 export interface LanguageContextValue {
   language: Language;
   changeLanguage: (language: Language) => void;
-  translate: (key: string) => string;
+  translate: (key: string, options?: Record<string, unknown>) => string;
 }
 
 export const LanguageContext = createContext<LanguageContextValue | null>(null);

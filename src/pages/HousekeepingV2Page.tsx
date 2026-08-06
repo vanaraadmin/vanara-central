@@ -9,6 +9,7 @@ import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import VanaraSummaryGrid, { type VanaraSummaryItem } from "../components/vanara/VanaraSummaryGrid";
 import WorkspaceShell from "../components/WorkspaceShell";
+import { useLanguage } from "../providers/language.context";
 import {
   assignHousekeepingTask,
   claimHousekeepingTask,
@@ -21,17 +22,19 @@ import {
 import type { HousekeepingV2Section, HousekeepingV2SectionId, HousekeepingV2TaskCard } from "../types/housekeeping-v2";
 import "../styles/HousekeepingV2Page.css";
 
-const homeSections: Array<{ id: HousekeepingV2SectionId; label: string }> = [
-  { id: "priority-turnover", label: "Priority" },
-  { id: "normal-cleaning", label: "Normal" },
-  { id: "water-refill", label: "Water" },
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+const homeSections: Array<{ id: HousekeepingV2SectionId; labelKey: string }> = [
+  { id: "priority-turnover", labelKey: "priorityTurnover" },
+  { id: "normal-cleaning", labelKey: "normalCleaning" },
+  { id: "water-refill", labelKey: "waterRefill" },
 ];
 
 type InterventionType = "cleaning" | "full-cleaning";
 type TaskTone = "clean" | "progress" | "warning" | "critical" | "maintenance" | "neutral";
 
-function interventionLabel(type: InterventionType): string {
-  return type === "cleaning" ? "Cleaning" : "Full Cleaning";
+function interventionLabel(type: InterventionType, translate: Translate): string {
+  return type === "cleaning" ? translate("cleaning") : translate("fullCleaning");
 }
 
 function interventionForCard(card: HousekeepingV2TaskCard): InterventionType | null {
@@ -40,25 +43,25 @@ function interventionForCard(card: HousekeepingV2TaskCard): InterventionType | n
   return null;
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "Not scheduled";
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDate(value: string | null, language: "en" | "th", translate: Translate): string {
+  if (!value) return translate("notScheduled");
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
   }).format(new Date(`${value}T00:00:00+07:00`));
 }
 
-function taskLabel(card: HousekeepingV2TaskCard): string {
-  if (card.taskType === "TURNOVER") return "Turnover";
-  if (card.taskType === "STANDARD_CLEANING") return "Cleaning";
-  if (card.taskType === "LINEN_CHANGE") return "Full Cleaning";
-  if (card.taskType === "WATER_REFILL") return card.waterQuantity ? `${card.waterQuantity} bottles` : "Water refill";
-  return "Operational task";
+function taskLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
+  if (card.taskType === "TURNOVER") return translate("turnover");
+  if (card.taskType === "STANDARD_CLEANING") return translate("cleaning");
+  if (card.taskType === "LINEN_CHANGE") return translate("fullCleaning");
+  if (card.taskType === "WATER_REFILL") return card.waterQuantity ? `${card.waterQuantity} ${card.waterQuantity === 1 ? translate("bottle") : translate("bottles")}` : translate("waterRefill");
+  return translate("operationalTask");
 }
 
-function formatRoomCount(value: number): string {
-  return `${value} ${value === 1 ? "Room" : "Rooms"}`;
+function formatRoomCount(value: number, translate: Translate): string {
+  return `${value} ${value === 1 ? translate("room") : translate("roomPlural")}`;
 }
 
 function summaryToneForSection(sectionId: HousekeepingV2SectionId, count: number): VanaraSummaryItem["tone"] {
@@ -76,76 +79,76 @@ function taskTone(card: HousekeepingV2TaskCard): TaskTone {
   return "neutral";
 }
 
-function taskStateDescription(card: HousekeepingV2TaskCard): string {
-  if (card.isBlocked) return card.blockReason ?? "Task cannot continue yet.";
-  if (card.taskStatus === "WAITING_FOR_RECEPTION") return "Reception has not released this room.";
-  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return "Ready for an operator to claim.";
-  if (card.taskStatus === "CLAIMED") return card.assignee ? `Assigned to ${card.assignee}.` : "Assigned and waiting to start.";
-  if (card.taskStatus === "IN_PROGRESS") return "Work is currently in progress.";
-  if (card.taskStatus === "CHECKLIST_COMPLETE") return "Cleaning checklist has been completed.";
-  if (card.taskStatus === "READY_FOR_INSPECTION") return "Ready for inspection.";
-  if (card.taskStatus === "READY") return "Ready to close.";
-  if (card.taskStatus === "COMPLETED") return "Task completed.";
-  if (card.taskStatus === "SKIPPED") return "Task skipped.";
-  if (card.taskStatus === "CANCELLED") return "Task cancelled.";
-  return "Task is active.";
+function taskStateDescription(card: HousekeepingV2TaskCard, translate: Translate): string {
+  if (card.isBlocked) return card.blockReason ?? translate("taskCannotContinue");
+  if (card.taskStatus === "WAITING_FOR_RECEPTION") return translate("receptionNotReleased");
+  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return translate("readyForClaim");
+  if (card.taskStatus === "CLAIMED") return card.assignee ? `${translate("assigned")} ${card.assignee}.` : translate("assignedWaitingStart");
+  if (card.taskStatus === "IN_PROGRESS") return translate("cleaningInProgress");
+  if (card.taskStatus === "CHECKLIST_COMPLETE") return translate("cleaningChecklistComplete");
+  if (card.taskStatus === "READY_FOR_INSPECTION") return translate("readyForInspection");
+  if (card.taskStatus === "READY") return translate("readyToClose");
+  if (card.taskStatus === "COMPLETED") return translate("taskCompleted");
+  if (card.taskStatus === "SKIPPED") return translate("taskSkipped");
+  if (card.taskStatus === "CANCELLED") return translate("taskCancelled");
+  return translate("taskActive");
 }
 
-function sectionSummaryItems(sections: HousekeepingV2Section[]): VanaraSummaryItem[] {
+function sectionSummaryItems(sections: HousekeepingV2Section[], translate: Translate): VanaraSummaryItem[] {
   return homeSections.map((item) => {
     const count = sections.find((section) => section.id === item.id)?.cards.length ?? 0;
     return {
       id: item.id,
-      label: item.label,
+      label: translate(item.labelKey),
       tone: summaryToneForSection(item.id, count),
       value: count,
-      unitLabel: count === 1 ? "room" : "rooms",
+      unitLabel: count === 1 ? translate("room") : translate("roomPlural"),
     };
   });
 }
 
-function taskDetails(card: HousekeepingV2TaskCard): VanaraDataGridItem[] {
+function taskDetails(card: HousekeepingV2TaskCard, language: "en" | "th", translate: Translate): VanaraDataGridItem[] {
   return [
-    { label: "Task", value: taskLabel(card) },
-    { label: "Status", value: statusLabel(card) },
-    { label: "Priority", value: card.priority },
-    { label: "Due", value: formatDate(card.operationalDate) },
-    { label: "Assignee", value: card.assignee ?? "Unassigned" },
-    { label: "Reason", value: card.displayReason ?? card.blockReason ?? "Operational work" },
-    ...(card.taskType === "WATER_REFILL" ? [{ label: "Quantity", value: card.waterQuantity ? `${card.waterQuantity} bottles` : "Water refill" }] : []),
+    { label: translate("task"), value: taskLabel(card, translate) },
+    { label: translate("status"), value: statusLabel(card, translate) },
+    { label: translate("priority"), value: card.priority },
+    { label: translate("due"), value: formatDate(card.operationalDate, language, translate) },
+    { label: translate("assignee"), value: card.assignee ?? translate("unassigned") },
+    { label: translate("reason"), value: card.displayReason ?? card.blockReason ?? translate("operationalWork") },
+    ...(card.taskType === "WATER_REFILL" ? [{ label: translate("quantity"), value: card.waterQuantity ? `${card.waterQuantity} ${card.waterQuantity === 1 ? translate("bottle") : translate("bottles")}` : translate("waterRefill") }] : []),
   ];
 }
 
-function reasonLabel(code: string): string {
-  if (code === "standard_cleaning_previous_day") return "Was due yesterday";
-  if (code === "cleaning_due_today") return "Due today";
-  if (code === "linen_required") return "Linen";
-  if (code === "linen_override") return "Override";
-  if (code === "waiting_reception") return "Waiting for Check-out";
-  if (code === "maintenance_block") return "Maintenance Block";
+function reasonLabel(code: string, translate: Translate): string {
+  if (code === "standard_cleaning_previous_day") return translate("wasDueYesterday");
+  if (code === "cleaning_due_today") return translate("dueToday");
+  if (code === "linen_required") return translate("linen");
+  if (code === "linen_override") return translate("override");
+  if (code === "waiting_reception") return translate("waitingForCheckout");
+  if (code === "maintenance_block") return translate("maintenanceBlock");
   return code;
 }
 
-function statusLabel(card: HousekeepingV2TaskCard): string {
-  if (card.taskType === "WATER_REFILL") return waterDeliveryStateLabel(card);
+function statusLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
+  if (card.taskType === "WATER_REFILL") return waterDeliveryStateLabel(card, translate);
   if (card.isBlocked && card.blockReason) return card.blockReason;
-  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return "Available";
-  if (card.taskStatus === "CLAIMED") return card.assignee ? `Assigned to ${card.assignee}` : "Assigned";
-  if (card.taskStatus === "IN_PROGRESS") return "In progress";
-  if (card.taskStatus === "CHECKLIST_COMPLETE" || card.taskStatus === "READY_FOR_INSPECTION" || card.taskStatus === "READY") return "Ready";
-  if (card.taskStatus === "COMPLETED") return "Completed";
-  if (card.taskStatus === "SKIPPED") return "Skipped";
-  if (card.taskStatus === "CANCELLED") return "Cancelled";
-  if (card.taskStatus === "BLOCKED") return "Blocked";
-  if (card.taskStatus === "WAITING_FOR_RECEPTION") return "Waiting for Check-out";
-  return "Active";
+  if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return translate("available");
+  if (card.taskStatus === "CLAIMED") return card.assignee ? `${translate("assigned")} ${card.assignee}` : translate("assigned");
+  if (card.taskStatus === "IN_PROGRESS") return translate("cleaningInProgress");
+  if (card.taskStatus === "CHECKLIST_COMPLETE" || card.taskStatus === "READY_FOR_INSPECTION" || card.taskStatus === "READY") return translate("ready");
+  if (card.taskStatus === "COMPLETED") return translate("completed");
+  if (card.taskStatus === "SKIPPED") return translate("skipped");
+  if (card.taskStatus === "CANCELLED") return translate("cancelled");
+  if (card.taskStatus === "BLOCKED") return translate("blocked");
+  if (card.taskStatus === "WAITING_FOR_RECEPTION") return translate("waitingForCheckout");
+  return translate("active");
 }
 
-function waterDeliveryStateLabel(card: HousekeepingV2TaskCard): string {
-  if (card.taskStatus === "COMPLETED" || card.taskStatus === "READY") return "Delivered";
-  if (card.taskStatus === "SKIPPED") return "Skipped";
-  if (card.isBlocked || card.taskStatus === "BLOCKED") return "Blocked";
-  return "Pending";
+function waterDeliveryStateLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
+  if (card.taskStatus === "COMPLETED" || card.taskStatus === "READY") return translate("delivered");
+  if (card.taskStatus === "SKIPPED") return translate("skipped");
+  if (card.isBlocked || card.taskStatus === "BLOCKED") return translate("blocked");
+  return translate("pending");
 }
 
 function completeWaterRefill(action: ReturnType<typeof useOverviewAction>, card: HousekeepingV2TaskCard) {
@@ -165,17 +168,19 @@ function useOverviewAction() {
 function WaterDeliveryControl({
   action,
   card,
+  translate,
 }: {
   action: ReturnType<typeof useOverviewAction>;
   card: HousekeepingV2TaskCard;
+  translate: Translate;
 }) {
   const delivered = card.taskStatus === "COMPLETED" || card.taskStatus === "READY";
   const disabled = action.isPending || delivered || !card.capabilities.canComplete;
   const ariaLabel = action.isPending
-    ? `Saving water delivery for ${card.unitName}`
+    ? translate("savingWaterDelivery", { room: card.unitName })
     : delivered
-      ? `Water delivered for ${card.unitName}`
-      : `Mark water delivered for ${card.unitName}`;
+      ? translate("waterDeliveredFor", { room: card.unitName })
+      : translate("markWaterDeliveredFor", { room: card.unitName });
 
   return (
     <button
@@ -185,18 +190,18 @@ function WaterDeliveryControl({
       onClick={() => completeWaterRefill(action, card)}
       type="button"
     >
-      <span>{delivered ? "Delivered" : action.isPending ? "Saving" : "Mark Delivered"}</span>
+      <span>{delivered ? translate("delivered") : action.isPending ? translate("saving") : translate("markDelivered")}</span>
     </button>
   );
 }
 
-function CardMeta({ card }: { card: HousekeepingV2TaskCard }) {
+function CardMeta({ card, translate }: { card: HousekeepingV2TaskCard; translate: Translate }) {
   if (card.taskType === "WATER_REFILL") return null;
-  const reasonLabels = card.reasonCodes.map(reasonLabel).filter((label) => label !== card.displayReason);
+  const reasonLabels = card.reasonCodes.map((code) => reasonLabel(code, translate)).filter((label) => label !== card.displayReason);
   const details = [
     card.displayReason,
     card.blockReason,
-    card.assignee ? `Assigned to ${card.assignee}` : null,
+    card.assignee ? `${translate("assigned")} ${card.assignee}` : null,
     ...reasonLabels,
   ].filter((item): item is string => Boolean(item));
 
@@ -208,26 +213,27 @@ function CardMeta({ card }: { card: HousekeepingV2TaskCard }) {
 }
 
 function InterventionSheet({ type, onClose }: { type: InterventionType; onClose: () => void }) {
+  const { translate } = useLanguage();
   return (
     <div className="housekeeping-v2-info-sheet" role="dialog" aria-modal="true" aria-labelledby="housekeeping-v2-info-title">
       <VanaraGlassSheet className="housekeeping-v2-info-sheet__panel">
         <VanaraSectionHeader
-          eyebrow="Intervention"
+          eyebrow={translate("intervention")}
           headingId="housekeeping-v2-info-title"
-          title={interventionLabel(type)}
+          title={interventionLabel(type, translate)}
         />
         <div className="housekeeping-v2-info-sheet__content">
-          <p>General room cleaning.</p>
-          {type === "full-cleaning" && <p>Replace bed linen.</p>}
-          <p>Please also check room amenities before completion.</p>
+          <p>{translate("generalRoomCleaning")}</p>
+          {type === "full-cleaning" && <p>{translate("replaceBedLinen")}</p>}
+          <p>{translate("checkAmenities")}</p>
         </div>
-        <button className="vc-secondary-action" onClick={onClose} type="button">Close</button>
+        <button className="vc-secondary-action" onClick={onClose} type="button">{translate("close")}</button>
       </VanaraGlassSheet>
     </div>
   );
 }
 
-function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard }) {
+function TaskActions({ action, card, translate }: { action: ReturnType<typeof useOverviewAction>; card: HousekeepingV2TaskCard; translate: Translate }) {
   const taskId = card.taskId;
   const version = card.taskVersion;
   const completeRegularTask = () => action.mutate(completeHousekeepingTask(
@@ -239,24 +245,24 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
         ? { linenChangeCompleted: true }
         : { standardCleaningCompleted: true },
   ));
-  const regularFinishLabel = card.taskType === "LINEN_CHANGE" ? "Finish Full Cleaning" : "Finish Cleaning";
+  const regularFinishLabel = card.taskType === "LINEN_CHANGE" ? translate("finishFullCleaning") : translate("finishCleaning");
   const controls = [
     card.capabilities.canClaim ? (
-      <button className="vc-primary-action" disabled={action.isPending} key="claim" onClick={() => action.mutate(claimHousekeepingTask(taskId, version))} type="button">Claim</button>
+      <button className="vc-primary-action" disabled={action.isPending} key="claim" onClick={() => action.mutate(claimHousekeepingTask(taskId, version))} type="button">{translate("claim")}</button>
     ) : null,
     card.capabilities.canReleaseClaim ? (
-      <button className="vc-secondary-action" disabled={action.isPending} key="release" onClick={() => action.mutate(releaseHousekeepingClaim(taskId, version))} type="button">Release</button>
+      <button className="vc-secondary-action" disabled={action.isPending} key="release" onClick={() => action.mutate(releaseHousekeepingClaim(taskId, version))} type="button">{translate("release")}</button>
     ) : null,
     card.capabilities.canStart ? (
-      <button className="vc-primary-action" disabled={action.isPending} key="start" onClick={() => action.mutate(startHousekeepingTask(taskId, version))} type="button">Start</button>
+      <button className="vc-primary-action" disabled={action.isPending} key="start" onClick={() => action.mutate(startHousekeepingTask(taskId, version))} type="button">{translate("start")}</button>
     ) : null,
     card.taskType === "WATER_REFILL" && card.capabilities.canComplete ? (
       <button className="vc-primary-action" disabled={action.isPending} key="water-complete" onClick={() => completeWaterRefill(action, card)} type="button">
-        <span>Mark Delivered</span>
+        <span>{translate("markDelivered")}</span>
       </button>
     ) : null,
     card.capabilities.canComplete && card.taskType === "STANDARD_CLEANING" ? (
-      <button className="vc-primary-action" disabled={action.isPending} key="finish-cleaning" onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true }))} type="button">Finish Cleaning</button>
+      <button className="vc-primary-action" disabled={action.isPending} key="finish-cleaning" onClick={() => action.mutate(completeHousekeepingTask(taskId, version, { standardCleaningCompleted: true }))} type="button">{translate("finishCleaning")}</button>
     ) : null,
     card.capabilities.canComplete && card.taskType !== "STANDARD_CLEANING" && card.taskType !== "WATER_REFILL" ? (
       <button className="vc-primary-action" disabled={action.isPending} key="finish-regular" onClick={completeRegularTask} type="button">{regularFinishLabel}</button>
@@ -271,6 +277,7 @@ function TaskActions({ action, card }: { action: ReturnType<typeof useOverviewAc
 }
 
 function OwnerAssignmentControl({ card }: { card: HousekeepingV2TaskCard }) {
+  const { translate } = useLanguage();
   const queryClient = useQueryClient();
   const [assignedUserId, setAssignedUserId] = useState(card.assigneeId ?? "");
   const users = useQuery({
@@ -298,22 +305,22 @@ function OwnerAssignmentControl({ card }: { card: HousekeepingV2TaskCard }) {
       }}
     >
       <label>
-        <span>Assign Cleaning</span>
+        <span>{translate("assignCleaning")}</span>
         <select
           disabled={users.isLoading || mutation.isPending}
           onChange={(event) => setAssignedUserId(event.target.value)}
           value={assignedUserId}
         >
-          <option value="">Select user</option>
+          <option value="">{translate("selectUser")}</option>
           {options.map((user) => (
             <option key={user.id} value={user.id}>{user.displayName}</option>
           ))}
         </select>
       </label>
       <button className="vc-primary-action" disabled={!assignedUserId || users.isLoading || mutation.isPending} type="submit">
-        Assign Task
+        {translate("assignTask")}
       </button>
-      {(users.isError || mutation.isError) && <p>Assignment not saved.</p>}
+      {(users.isError || mutation.isError) && <p>{translate("assignmentNotSaved")}</p>}
     </form>
   );
 }
@@ -331,10 +338,11 @@ function TaskCard({
   onInterventionInfo: (type: InterventionType) => void;
   onToggle: () => void;
 }) {
+  const { language, translate } = useLanguage();
   const intervention = interventionForCard(card);
   const canReportMaintenance = Boolean(intervention && card.unitId > 0);
   const tone = taskTone(card);
-  const assigneeLabel = card.assignee ? `Assigned ${card.assignee}` : "Unassigned";
+  const assigneeLabel = card.assignee ? `${translate("assigned")} ${card.assignee}` : translate("unassigned");
   const isWaterTask = card.taskType === "WATER_REFILL";
 
   return (
@@ -351,23 +359,23 @@ function TaskCard({
             <strong>{card.unitName}</strong>
           )}
           {intervention ? (
-            <button className="housekeeping-v2-intervention" onClick={() => onInterventionInfo(intervention)} type="button">{taskLabel(card)}</button>
+            <button className="housekeeping-v2-intervention" onClick={() => onInterventionInfo(intervention)} type="button">{taskLabel(card, translate)}</button>
           ) : (
-            <span>{taskLabel(card)}</span>
+            <span>{taskLabel(card, translate)}</span>
           )}
         </div>
 
         <div className="housekeeping-v2-task-row__state">
-          <strong className={`vc-state-${tone}`}>{statusLabel(card)}</strong>
-          <span>{assigneeLabel} · {formatDate(card.operationalDate)}</span>
+          <strong className={`vc-state-${tone}`}>{statusLabel(card, translate)}</strong>
+          <span>{assigneeLabel} · {formatDate(card.operationalDate, language, translate)}</span>
         </div>
 
-        {isWaterTask ? <WaterDeliveryControl action={action} card={card} /> : null}
+        {isWaterTask ? <WaterDeliveryControl action={action} card={card} translate={translate} /> : null}
 
         {!isWaterTask ? (
           <button
             aria-expanded={expanded}
-            aria-label={`${expanded ? "Collapse" : "Open"} ${card.unitName} task`}
+            aria-label={translate(expanded ? "collapseTask" : "openTask", { room: card.unitName })}
             className="housekeeping-v2-task-row__toggle"
             onClick={onToggle}
             type="button"
@@ -385,10 +393,10 @@ function TaskCard({
                 {card.isBlocked ? <AlertIcon /> : <HousekeepingIcon />}
               </div>
               <div className="vc-sheet-identity__content housekeeping-v2-task-identity__copy">
-                <span className="vc-sheet-identity__eyebrow">{taskLabel(card)}</span>
+                <span className="vc-sheet-identity__eyebrow">{taskLabel(card, translate)}</span>
                 <strong className="vc-sheet-identity__title">{card.unitName}</strong>
-                <p className={`vc-sheet-identity__subtitle vc-state-${tone}`}>{statusLabel(card)}</p>
-                <small className="vc-sheet-identity__meta">{formatDate(card.operationalDate)}</small>
+                <p className={`vc-sheet-identity__subtitle vc-state-${tone}`}>{statusLabel(card, translate)}</p>
+                <small className="vc-sheet-identity__meta">{formatDate(card.operationalDate, language, translate)}</small>
               </div>
             </header>
 
@@ -397,14 +405,14 @@ function TaskCard({
               className="housekeeping-v2-task-region"
             >
               <VanaraSectionHeader
-                eyebrow="Task"
+                eyebrow={translate("task")}
                 headingId={`housekeeping-v2-task-state-${card.taskId}`}
-                title="Current State"
+                title={translate("currentState")}
               />
               <div className={`vc-operational-state housekeeping-v2-current-state vc-state-${tone}`}>
-                <span className="vc-operational-state__label">Current state</span>
-                <strong className="vc-operational-state__value">{statusLabel(card)}</strong>
-                <p className="vc-operational-state__description">{taskStateDescription(card)}</p>
+                <span className="vc-operational-state__label">{translate("currentState")}</span>
+                <strong className="vc-operational-state__value">{statusLabel(card, translate)}</strong>
+                <p className="vc-operational-state__description">{taskStateDescription(card, translate)}</p>
               </div>
             </VanaraGlassRegion>
 
@@ -413,16 +421,16 @@ function TaskCard({
               className="housekeeping-v2-task-region"
             >
               <VanaraSectionHeader
-                eyebrow="Assignment"
+                eyebrow={translate("assignee")}
                 headingId={`housekeeping-v2-task-details-${card.taskId}`}
-                title="Task Details"
+                title={translate("taskDetails")}
               />
               <VanaraDataGrid
-                ariaLabel={`${card.unitName} task details`}
+                ariaLabel={`${card.unitName} ${translate("taskDetails")}`}
                 className="housekeeping-v2-task-data"
-                items={taskDetails(card)}
+                items={taskDetails(card, language, translate)}
               />
-              <CardMeta card={card} />
+              <CardMeta card={card} translate={translate} />
             </VanaraGlassRegion>
 
             {canReportMaintenance && (
@@ -431,11 +439,11 @@ function TaskCard({
                 className="housekeeping-v2-task-region"
               >
                 <VanaraSectionHeader
-                  eyebrow="Maintenance"
+                  eyebrow={translate("maintenance")}
                   headingId={`housekeeping-v2-task-maintenance-${card.taskId}`}
-                  title="Maintenance"
+                  title={translate("maintenance")}
                 />
-                <Link className="housekeeping-v2-report-issue vc-secondary-action" to={`/maintenance/new?roomId=${card.unitId}&source=housekeeping`}>Report Issue</Link>
+                <Link className="housekeeping-v2-report-issue vc-secondary-action" to={`/maintenance/new?roomId=${card.unitId}&source=housekeeping`}>{translate("reportIssue")}</Link>
               </VanaraGlassRegion>
             )}
 
@@ -444,12 +452,12 @@ function TaskCard({
               className="housekeeping-v2-task-region"
             >
               <VanaraSectionHeader
-                eyebrow="Actions"
+                eyebrow={translate("actions")}
                 headingId={`housekeeping-v2-task-actions-${card.taskId}`}
-                title="Actions"
+                title={translate("actions")}
               />
               <OwnerAssignmentControl card={card} key={`${card.taskId}:${card.taskVersion}:${card.assigneeId ?? ""}`} />
-              <TaskActions action={action} card={card} />
+              <TaskActions action={action} card={card} translate={translate} />
             </VanaraGlassRegion>
           </VanaraGlassSheet>
         </div>
@@ -471,12 +479,13 @@ function Section({
   onTaskToggle: (taskId: number) => void;
   section: HousekeepingV2Section;
 }) {
+  const { translate } = useLanguage();
   return (
     <section className="housekeeping-v2-section" aria-labelledby={`housekeeping-v2-${section.id}`}>
       <VanaraSectionHeader
-        eyebrow="Housekeeping"
+        eyebrow={translate("housekeeping")}
         headingId={`housekeeping-v2-${section.id}`}
-        meta={formatRoomCount(section.cards.length)}
+        meta={formatRoomCount(section.cards.length, translate)}
         title={section.title}
       />
 
@@ -504,6 +513,7 @@ function Section({
 }
 
 export default function HousekeepingV2Page() {
+  const { language, translate } = useLanguage();
   const [activeSection, setActiveSection] = useState<HousekeepingV2SectionId | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [infoSheet, setInfoSheet] = useState<InterventionType | null>(null);
@@ -514,21 +524,21 @@ export default function HousekeepingV2Page() {
     refetchInterval: 60_000,
   });
   const expandedSection = housekeeping.data?.sections.find((section) => section.id === activeSection) ?? null;
-  const summaryItems = housekeeping.data ? sectionSummaryItems(housekeeping.data.sections) : [];
+  const summaryItems = housekeeping.data ? sectionSummaryItems(housekeeping.data.sections, translate) : [];
 
   return (
-    <WorkspaceShell title="Housekeeping" workspace="housekeeping" bodyClassName="housekeeping-v2-page">
+    <WorkspaceShell title={translate("housekeeping")} workspace="housekeeping" bodyClassName="housekeeping-v2-page">
       <div className="workspace-body-actions">
-        <span>{housekeeping.data ? `Today ${formatDate(housekeeping.data.operationalDate)}` : "Loading work"}</span>
+        <span>{housekeeping.data ? translate("todayDate", { date: formatDate(housekeeping.data.operationalDate, language, translate) }) : translate("loadingWork")}</span>
         <button
-          aria-label="Refresh housekeeping operations"
+          aria-label={translate("refreshHousekeeping")}
           className="housekeeping-v2-refresh vc-secondary-action"
           disabled={housekeeping.isFetching}
           onClick={() => void housekeeping.refetch()}
           type="button"
         >
           <RefreshIcon className={housekeeping.isFetching ? "is-spinning" : ""} />
-          <span>Refresh</span>
+          <span>{translate("refresh")}</span>
         </button>
       </div>
 
@@ -539,7 +549,7 @@ export default function HousekeepingV2Page() {
         <>
           <VanaraSummaryGrid
             activeItemId={activeSection}
-            ariaLabel="Housekeeping operational summary"
+            ariaLabel={translate("roomsSummary")}
             className="housekeeping-v2-summary"
             items={summaryItems}
             onItemSelect={(item) => {
@@ -550,7 +560,7 @@ export default function HousekeepingV2Page() {
           />
 
           {expandedSection && (
-            <div className="housekeeping-v2-sections" aria-label="Housekeeping task queue">
+            <div className="housekeeping-v2-sections" aria-label={translate("housekeepingTaskQueue")}>
               <Section
                 action={action}
                 expandedTaskId={expandedTaskId}
@@ -562,7 +572,7 @@ export default function HousekeepingV2Page() {
           )}
 
           {infoSheet && <InterventionSheet onClose={() => setInfoSheet(null)} type={infoSheet} />}
-          {action.isError && <p className="housekeeping-v2-action-error">This task changed. The list is refreshing.</p>}
+          {action.isError && <p className="housekeeping-v2-action-error">{translate("taskChangedRefreshing")}</p>}
         </>
       )}
     </WorkspaceShell>

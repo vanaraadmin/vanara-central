@@ -1,5 +1,6 @@
 import { useId, type Ref } from "react";
 import VanaraGuestContactTrigger from "../vanara/VanaraGuestContactTrigger";
+import { useLanguage } from "../../providers/language.context";
 import { formatNationalityText } from "../../utils/country-nationality";
 import type { VanaraGuestContact } from "../vanara/VanaraGuestContactSheet";
 import type { RoomCurrentStaySummary } from "../../types/rooms-workspace";
@@ -11,19 +12,19 @@ type GuestCardProps = {
   stay: RoomCurrentStaySummary;
 };
 
-function formatDate(value: string): string {
+function formatDate(value: string, language = "en"): string {
   const date = new Date(`${value}T12:00:00+07:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "numeric",
     month: "short",
   }).format(date);
 }
 
-function formatStay(value: number | null): string | null {
+function formatStay(value: number | null, translate: (key: string, options?: Record<string, unknown>) => string): string | null {
   if (value == null) return null;
-  return `${value} ${value === 1 ? "night" : "nights"}`;
+  return translate(value === 1 ? "nightCount" : "nightCountPlural", { count: value });
 }
 
 function GuestIdentity({
@@ -39,10 +40,11 @@ function GuestIdentity({
   onContactRequest: (contact: VanaraGuestContact) => void;
   stay: RoomCurrentStaySummary;
 }) {
+  const { translate } = useLanguage();
   return (
     <header className="room-expanded-section__header guest-card__identity">
       <div>
-        <span className="room-expanded-section__eyebrow vc-section-eyebrow">Guest</span>
+        <span className="room-expanded-section__eyebrow vc-section-eyebrow">{translate("guest")}</span>
         <h3 className="room-expanded-section__title guest-card__name" id={headingId}>{stay.guestName}</h3>
       </div>
       {contact ? (
@@ -91,11 +93,12 @@ function GuestStayFact({ label, value }: { label: string; value: string | null }
 }
 
 function GuestStaySummary({ stay }: { stay: RoomCurrentStaySummary }) {
+  const { language, translate } = useLanguage();
   return (
     <div className="room-expanded-facts room-expanded-facts--three guest-card__stay">
-      <GuestStayFact label="Arrived" value={formatDate(stay.arrivalDate)} />
-      <GuestStayFact label="Leaving" value={formatDate(stay.departureDate)} />
-      <GuestStayFact label="Stay" value={formatStay(stay.stayNights)} />
+      <GuestStayFact label={translate("checkIn")} value={formatDate(stay.arrivalDate, language)} />
+      <GuestStayFact label={translate("checkOut")} value={formatDate(stay.departureDate, language)} />
+      <GuestStayFact label={translate("stay")} value={formatStay(stay.stayNights, translate)} />
     </div>
   );
 }

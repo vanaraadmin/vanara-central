@@ -6,6 +6,7 @@ import { AlertIcon, MaintenanceIcon, RefreshIcon } from "../components/Operation
 import { useLanguage } from "../providers/language.context";
 import { loadDashboardOverview } from "../services/dashboard.service";
 import type { DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
+import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/DashboardPage.css";
 
 function formatDate(date: string, language: "en" | "th") {
@@ -28,52 +29,54 @@ function iconFor(id: string): string {
   return "•";
 }
 
-function MetricCard({ metric }: { metric: DashboardOverviewMetric }) {
+type Translate = ReturnType<typeof useLanguage>["translate"];
+
+function MetricCard({ metric, translate }: { metric: DashboardOverviewMetric; translate: Translate }) {
   return (
     <Link className={`control-card control-card--${metric.tone}`} to={metric.href}>
       <span aria-hidden="true">{iconFor(metric.id)}</span>
       <div>
         <strong>{metric.value}</strong>
-        <small>{metric.label}</small>
+        <small>{translateStaffLabel(metric.label, translate)}</small>
       </div>
     </Link>
   );
 }
 
-function AlertCard({ item }: { item: DashboardOverviewAlert }) {
+function AlertCard({ item, translate }: { item: DashboardOverviewAlert; translate: Translate }) {
   return (
     <Link className={`control-alert control-alert--${item.tone}`} to={item.href}>
       <AlertIcon />
       <div>
-        <strong>{item.label}</strong>
+        <strong>{translateStaffLabel(item.label, translate)}</strong>
         <span>{item.value}</span>
       </div>
     </Link>
   );
 }
 
-function Section({ title, metrics }: { title: string; metrics: DashboardOverviewMetric[] }) {
+function Section({ title, metrics, translate }: { title: string; metrics: DashboardOverviewMetric[]; translate: Translate }) {
   return (
     <section className="control-section" aria-labelledby={`section-${title.replace(/\s+/g, "-").toLowerCase()}`}>
       <header>
-        <h2 id={`section-${title.replace(/\s+/g, "-").toLowerCase()}`}>{title}</h2>
+        <h2 id={`section-${title.replace(/\s+/g, "-").toLowerCase()}`}>{translate(title)}</h2>
       </header>
       <div className="control-grid">
-        {metrics.map((metric) => <MetricCard key={metric.id} metric={metric} />)}
+        {metrics.map((metric) => <MetricCard key={metric.id} metric={metric} translate={translate} />)}
       </div>
     </section>
   );
 }
 
-function QuickAccess({ links }: { links: DashboardQuickLink[] }) {
+function QuickAccess({ links, translate }: { links: DashboardQuickLink[]; translate: Translate }) {
   return (
-    <section className="control-section" aria-label="Quick access">
-      <header><h2>Quick Access</h2></header>
+    <section className="control-section" aria-label={translate("quickAccess")}>
+      <header><h2>{translate("quickAccess")}</h2></header>
       <div className="quick-access-grid">
         {links.map((link) => (
           <Link key={link.id} to={link.href}>
             <span aria-hidden="true">{iconFor(link.id)}</span>
-            {link.label}
+            {translateStaffLabel(link.label, translate)}
           </Link>
         ))}
       </div>
@@ -82,19 +85,20 @@ function QuickAccess({ links }: { links: DashboardQuickLink[] }) {
 }
 
 function DashboardContent({ data }: { data: DashboardOverview }) {
+  const { translate } = useLanguage();
   return (
     <div className="control-room-dashboard">
-      <section className="control-alerts" aria-label="Operational alerts">
+      <section className="control-alerts" aria-label={translate("operationalAlerts")}>
         {data.alerts.length > 0
-          ? data.alerts.map((item) => <AlertCard item={item} key={item.id} />)
-          : <div className="control-alerts__empty"><MaintenanceIcon /><p>No operational alerts</p></div>}
+          ? data.alerts.map((item) => <AlertCard item={item} key={item.id} translate={translate} />)
+          : <div className="control-alerts__empty"><MaintenanceIcon /><p>{translate("noOperationalAlerts")}</p></div>}
       </section>
 
-      <Section title="Housekeeping" metrics={Object.values(data.housekeeping)} />
-      <Section title="Maintenance" metrics={Object.values(data.maintenance)} />
-      <Section title="Today" metrics={Object.values(data.today)} />
-      <Section title="Staff" metrics={Object.values(data.staff)} />
-      <QuickAccess links={data.quickLinks} />
+      <Section title="housekeeping" metrics={Object.values(data.housekeeping)} translate={translate} />
+      <Section title="maintenance" metrics={Object.values(data.maintenance)} translate={translate} />
+      <Section title="todaySection" metrics={Object.values(data.today)} translate={translate} />
+      <Section title="staff" metrics={Object.values(data.staff)} translate={translate} />
+      <QuickAccess links={data.quickLinks} translate={translate} />
     </div>
   );
 }
@@ -112,13 +116,13 @@ export default function DashboardPage() {
       <header className="dashboard-header">
         <div>
           <span className="dashboard-header__eyebrow">{translate("appName")}</span>
-          <h1>Control Room</h1>
-          <p>{dashboard.data ? formatDate(dashboard.data.date, language) : "Loading operations"}</p>
+          <h1>{translate("controlRoom")}</h1>
+          <p>{dashboard.data ? formatDate(dashboard.data.date, language) : translate("loadingOperations")}</p>
         </div>
         <div className="dashboard-header__actions">
           <LanguageSwitch />
           <a className="dashboard-download" href="/api/owner/tm30/export">
-            Download TM30
+            {translate("downloadTm30")}
           </a>
           <button
             aria-label={translate("refresh")}

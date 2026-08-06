@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type ChangeEvent } from "react";
 import { ApiError } from "../../services/api.client";
+import { useLanguage } from "../../providers/language.context";
 import { saveBookingPassport, classifyPassportForScan, livePassportPreflight, uploadPassportForReview } from "../../services/reception.service";
 import type { BookingPassport, PassportData, PassportLivePreflight } from "../../types/reception";
 import { analyzeCanvasFrame, type PassportQualityResult } from "../../utils/passport-quality";
@@ -63,6 +64,20 @@ type ReadyCaptureCandidate = PassportAutoCaptureCandidate & {
   file: File;
 };
 
+function passportFieldLabel(key: PassportReviewField, translate: (key: string) => string): string {
+  const labels: Record<PassportReviewField, string> = {
+    firstName: translate("firstName"),
+    middleName: translate("middleName"),
+    lastName: translate("lastName"),
+    passportNumber: translate("passportNumber"),
+    nationality: translate("nationality"),
+    gender: translate("gender"),
+    birthDate: translate("birthDate"),
+    expiryDate: translate("expiryDate"),
+  };
+  return labels[key];
+}
+
 const PASSPORT_IMAGE_ACCEPT = "image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif";
 const MIN_CAPTURE_LONG_EDGE = 1000;
 
@@ -76,6 +91,7 @@ export interface PassportWorkflowProps {
 }
 
 export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onSaved, open }: PassportWorkflowProps) {
+  const { translate } = useLanguage();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
   const activeCaptureIdRef = useRef(0);
@@ -234,7 +250,7 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
     <div className="passport-workflow" role="dialog" aria-modal="true" aria-labelledby="passport-workflow-title">
       <header className="passport-workflow__header">
         <div>
-          <span>{reviewingPassport ? "Review Passport" : "Passport Registration"}</span>
+          <span>{reviewingPassport ? translate("reviewPassport") : translate("passportRegistration")}</span>
           <h2 id="passport-workflow-title">{guestName}</h2>
         </div>
       </header>
@@ -253,16 +269,16 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
         {state.phase === "CAPTURED" && (
           <PassportProgressStep
             previewUrl={state.previewUrl}
-            title="Checking passport..."
-            items={["Confirming biodata page", "Checking bottom passport code"]}
+            title={translate("checkingPassport")}
+            items={[translate("confirmingBiodataPage"), translate("checkingBottomPassportCode")]}
             onCancel={cancelWorkflow}
           />
         )}
         {state.phase === "CLASSIFYING" && (
           <PassportProgressStep
             previewUrl={state.previewUrl}
-            title="Checking passport..."
-            items={["Checking document", "Confirming biodata page", "Checking bottom passport code"]}
+            title={translate("checkingPassport")}
+            items={[translate("checkingDocument"), translate("confirmingBiodataPage"), translate("checkingBottomPassportCode")]}
             onCancel={cancelWorkflow}
           />
         )}
@@ -271,8 +287,8 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
             previewUrl={state.previewUrl}
             title={passportMessage("passport.checkFailed")}
             failure={state.reason}
-            primaryLabel="Retake photo"
-            secondaryLabel="Choose another photo"
+            primaryLabel={translate("retakePhoto")}
+            secondaryLabel={translate("chooseAnotherPhoto")}
             onPrimary={retake}
             onSecondary={() => libraryInputRef.current?.click()}
             onCancel={cancelWorkflow}
@@ -282,9 +298,9 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
           <PassportPreviewStep
             debug={state.debug}
             previewUrl={state.previewUrl}
-            title="Passport page recognised"
-            message="The passport biodata page is ready for OCR."
-            primaryLabel="Scan Passport"
+            title={translate("passportPageRecognised")}
+            message={translate("passportBiodataReady")}
+            primaryLabel={translate("scanPassport")}
             onPrimary={() => void scanPassport()}
             onRetake={retake}
             onCancel={cancelWorkflow}
@@ -293,8 +309,8 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
         {state.phase === "OCR_RUNNING" && (
           <PassportProgressStep
             previewUrl={state.previewUrl}
-            title="Scanning passport..."
-            items={["Uploading", "Reading passport", "Verifying details"]}
+            title={translate("scanningPassport")}
+            items={[translate("uploading"), translate("readingPassport"), translate("verifyingDetails")]}
           />
         )}
         {state.phase === "OCR_FAILED" && (
@@ -302,8 +318,8 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
             previewUrl={state.previewUrl}
             title={passportMessage("passport.ocrFailed")}
             failure={state.error}
-            primaryLabel="Retake photo"
-            secondaryLabel="Retry scan"
+            primaryLabel={translate("retakePhoto")}
+            secondaryLabel={translate("retryScan")}
             onPrimary={retake}
             onSecondary={() => void scanPassport()}
             onCancel={cancelWorkflow}
@@ -342,6 +358,7 @@ function PassportCameraStep({
   onChooseFromLibrary: () => void;
   onTakePhoto: () => void;
 }) {
+  const { translate } = useLanguage();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -350,7 +367,7 @@ function PassportCameraStep({
   const [cameraAttempt, setCameraAttempt] = useState(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [liveQuality, setLiveQuality] = useState<PassportQualityResult | null>(null);
-  const [semanticPreflight, setSemanticPreflight] = useState<SemanticPreflightState>({ status: "idle", guidance: "Searching for passport...", ready: false });
+  const [semanticPreflight, setSemanticPreflight] = useState<SemanticPreflightState>({ status: "idle", guidance: translate("searchingForPassport"), ready: false });
   const [readyLatchActive, setReadyLatchActive] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
@@ -381,14 +398,14 @@ function PassportCameraStep({
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setLiveQuality(null);
-    setSemanticPreflight({ status: "idle", guidance: "Searching for passport...", ready: false });
+    setSemanticPreflight({ status: "idle", guidance: translate("searchingForPassport"), ready: false });
     readyLatchedUntilRef.current = 0;
     lastReadyCropRef.current = null;
     lastReadyCandidateRef.current = null;
     setReadyLatchActive(false);
     setTorchAvailable(false);
     setTorchEnabled(false);
-  }, [cancelAutoCaptureTimer]);
+  }, [cancelAutoCaptureTimer, translate]);
 
   function updateCameraState(nextState: CameraStartupState) {
     cameraStateRef.current = nextState;
@@ -403,13 +420,13 @@ function PassportCameraStep({
     async function startCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
         updateCameraState("unavailable");
-        setCameraError("Camera unavailable. Use native camera instead.");
+        setCameraError(translate("cameraUnavailable"));
         return;
       }
       const video = videoRef.current;
       if (!video) {
         updateCameraState("failed");
-        setCameraError("Camera opened but preview could not start. Use native camera instead.");
+        setCameraError(translate("cameraPreviewFailed"));
         return;
       }
       updateCameraState("starting");
@@ -451,7 +468,7 @@ function PassportCameraStep({
         updateCameraState("ready");
       } catch (error) {
         stopCamera();
-        const fallback = cameraErrorMessage(error);
+        const fallback = cameraErrorMessage(error, translate);
         updateCameraState(fallback.status);
         setCameraError(fallback.message);
       }
@@ -462,7 +479,7 @@ function PassportCameraStep({
       cancelled = true;
       stopCamera();
     };
-  }, [cameraAttempt, isMobile, stopCamera]);
+  }, [cameraAttempt, isMobile, stopCamera, translate]);
 
   async function maybeRunSemanticPreflight(video: HTMLVideoElement, quality: PassportQualityResult) {
     const now = Date.now();
@@ -477,13 +494,13 @@ function PassportCameraStep({
         lastReadyCandidateRef.current = null;
         setReadyLatchActive(false);
       }
-      setSemanticPreflight({ status: "not_ready", guidance: localLiveInstruction(quality), ready: false });
+      setSemanticPreflight({ status: "not_ready", guidance: localLiveInstruction(quality, translate), ready: false });
       return;
     }
     if (quality.liveState !== "DOCUMENT_DETECTED") {
       semanticRequestIdRef.current += 1;
       cancelAutoCaptureTimer();
-      setSemanticPreflight({ status: "idle", guidance: "Searching for passport...", ready: false });
+      setSemanticPreflight({ status: "idle", guidance: translate("searchingForPassport"), ready: false });
       return;
     }
     if (semanticInFlightRef.current || now - lastSemanticRequestAtRef.current < 1_700) return;
@@ -491,7 +508,7 @@ function PassportCameraStep({
     semanticRequestIdRef.current = requestId;
     semanticInFlightRef.current = true;
     lastSemanticRequestAtRef.current = now;
-    setSemanticPreflight({ status: "checking", guidance: "Hold steady", ready: false });
+    setSemanticPreflight({ status: "checking", guidance: translate("holdSteady"), ready: false });
     try {
       const file = await semanticFrameFile(video);
       const result = await livePassportPreflight(file);
@@ -507,18 +524,18 @@ function PassportCameraStep({
         window.setTimeout(() => {
           if (!isReadyLatched(readyLatchedUntilRef.current, Date.now())) setReadyLatchActive(false);
         }, readyUntil - Date.now());
-        setSemanticPreflight({ status: "ready", guidance: "Ready", ready: true, preflight: result.preflight });
+        setSemanticPreflight({ status: "ready", guidance: translate("ready"), ready: true, preflight: result.preflight });
       } else {
         const instruction = result.preflight.instruction;
         if (isReadyLatched(readyLatchedUntilRef.current, Date.now()) && instruction === "hold_steady") return;
         cancelAutoCaptureTimer();
-        setSemanticPreflight({ status: "not_ready", guidance: semanticInstruction(result.preflight), ready: false, preflight: result.preflight });
+        setSemanticPreflight({ status: "not_ready", guidance: semanticInstruction(result.preflight, translate), ready: false, preflight: result.preflight });
       }
     } catch (error) {
       if (semanticRequestIdRef.current !== requestId) return;
       setSemanticPreflight({
         status: "failed",
-        guidance: error instanceof ApiError && error.requestId ? `Live check unavailable. Request ID: ${error.requestId}` : "Live check unavailable. Use native camera.",
+        guidance: error instanceof ApiError && error.requestId ? `${translate("cameraUnavailable")} ${error.requestId}` : translate("cameraUnavailable"),
         ready: false,
         requestId: error instanceof ApiError ? error.requestId : undefined,
       });
@@ -586,7 +603,7 @@ function PassportCameraStep({
     await track.applyConstraints({ advanced: [{ torch: nextTorch } as TorchVideoTrackConstraintSet] }).then(() => {
       setTorchEnabled(nextTorch);
     }).catch(() => {
-      setCameraError("Torch is unavailable on this device. Use native camera instead.");
+    setCameraError(translate("cameraUnavailable"));
       setTorchAvailable(false);
     });
   }
@@ -600,7 +617,7 @@ function PassportCameraStep({
       autoCaptureInFlightRef.current = false;
       if (mode === "auto") {
         autoCaptureFailedRef.current = true;
-        setCameraError("Automatic capture failed. Use manual Capture.");
+        setCameraError(translate("automaticCaptureFailed"));
       }
       return;
     }
@@ -608,7 +625,7 @@ function PassportCameraStep({
     if (!liveTrack) {
       autoCaptureInFlightRef.current = false;
       updateCameraState("failed");
-      setCameraError("Camera opened but preview could not start. Use native camera instead.");
+      setCameraError(translate("cameraPreviewFailed"));
       return;
     }
     const canvas = document.createElement("canvas");
@@ -631,14 +648,14 @@ function PassportCameraStep({
       autoCaptureInFlightRef.current = false;
       if (mode === "auto") {
         autoCaptureFailedRef.current = true;
-        setCameraError("Automatic capture failed. Use manual Capture.");
+        setCameraError(translate("automaticCaptureFailed"));
       }
       return;
     }
     const crop = mapped.crop;
     if (Math.max(crop.sw, crop.sh) < MIN_CAPTURE_LONG_EDGE || !isCropAspectRatioValid(crop)) {
       autoCaptureInFlightRef.current = false;
-      setCameraError("The passport area is too small. Move closer and retake the photo.");
+      setCameraError(translate("pleaseRetakePhoto"));
       return;
     }
     canvas.width = Math.max(1, Math.round(crop.sw));
@@ -648,7 +665,7 @@ function PassportCameraStep({
       autoCaptureInFlightRef.current = false;
       if (mode === "auto") {
         autoCaptureFailedRef.current = true;
-        setCameraError("Automatic capture failed. Use manual Capture.");
+        setCameraError(translate("automaticCaptureFailed"));
       }
       return;
     }
@@ -658,7 +675,7 @@ function PassportCameraStep({
         autoCaptureInFlightRef.current = false;
         if (mode === "auto") {
           autoCaptureFailedRef.current = true;
-          setCameraError("Automatic capture failed. Use manual Capture.");
+          setCameraError(translate("automaticCaptureFailed"));
         }
         return;
       }
@@ -698,28 +715,28 @@ function PassportCameraStep({
           <canvas ref={canvasRef} className="passport-camera__analysis" aria-hidden="true" />
           <div className="passport-camera__frame" aria-hidden="true" />
           <p className="passport-camera__guidance">
-            {cameraState === "starting" ? "Starting camera" : semanticPreflight.guidance}
+            {cameraState === "starting" ? translate("startingCamera") : semanticPreflight.guidance}
           </p>
         </div>
       ) : (
         <div className="passport-capture__placeholder">
-          <strong>Select passport photo</strong>
+          <strong>{translate("selectPassportPhoto")}</strong>
         </div>
       )}
       {cameraError && <p className="passport-capture__hint">{cameraError}</p>}
       <div className="passport-workflow__actions">
-        <button onClick={onCancel} type="button">Cancel</button>
-        <button onClick={onChooseFromLibrary} type="button">Choose from library</button>
-        {showFallbackActions && <button onClick={onTakePhoto} type="button">Use native camera</button>}
+        <button onClick={onCancel} type="button">{translate("cancel")}</button>
+        <button onClick={onChooseFromLibrary} type="button">{translate("chooseFromLibrary")}</button>
+        {showFallbackActions && <button onClick={onTakePhoto} type="button">{translate("useNativeCamera")}</button>}
         {cameraState === "failed" || cameraState === "permission_denied" || cameraState === "unavailable" ? (
-          <button onClick={retryCamera} type="button">Retry camera</button>
+          <button onClick={retryCamera} type="button">{translate("retryCamera")}</button>
         ) : cameraReady ? (
           <>
-            {torchAvailable && <button onClick={() => void toggleTorch()} type="button">{torchEnabled ? "Torch off" : "Torch on"}</button>}
-            <button disabled={!canCapture} onClick={() => void captureFromCamera("manual")} type="button">Take photo</button>
+            {torchAvailable && <button onClick={() => void toggleTorch()} type="button">{torchEnabled ? translate("torchOff") : translate("torchOn")}</button>}
+            <button disabled={!canCapture} onClick={() => void captureFromCamera("manual")} type="button">{translate("takePhoto")}</button>
           </>
         ) : !isMobile ? (
-          <button onClick={onChooseFromLibrary} type="button">Select passport photo</button>
+          <button onClick={onChooseFromLibrary} type="button">{translate("selectPassportPhoto")}</button>
         ) : null}
       </div>
     </section>
@@ -745,15 +762,16 @@ function PassportPreviewStep({
   primaryLabel: string;
   title: string;
 }) {
+  const { translate } = useLanguage();
   return (
     <section className="passport-wizard-step" aria-label={title}>
-      <img alt="Captured passport preview" className="passport-capture__preview" src={previewUrl} />
+      <img alt="" className="passport-capture__preview" src={previewUrl} />
       <h3>{title}</h3>
       <p className="passport-capture__hint">{message}</p>
       {import.meta.env.DEV && debug && <CropDiagnostics debug={debug} />}
       <div className="passport-workflow__actions">
-        <button onClick={onCancel} type="button">Cancel</button>
-        <button onClick={onRetake} type="button">Retake photo</button>
+        <button onClick={onCancel} type="button">{translate("cancel")}</button>
+        <button onClick={onRetake} type="button">{translate("retakePhoto")}</button>
         <button onClick={onPrimary} type="button">{primaryLabel}</button>
       </div>
     </section>
@@ -775,16 +793,17 @@ function CropDiagnostics({ debug }: { debug: CaptureDebug }) {
 }
 
 function PassportProgressStep({ items, onCancel, previewUrl, title }: { items: string[]; onCancel?: () => void; previewUrl: string; title: string }) {
+  const { translate } = useLanguage();
   return (
     <section className="passport-wizard-step" aria-label={title}>
-      <img alt="Captured passport preview" className="passport-capture__preview" src={previewUrl} />
+      <img alt="" className="passport-capture__preview" src={previewUrl} />
       <h3>{title}</h3>
       <ol className="passport-capture__progress" aria-label={title}>
         {items.map((item) => <li key={item}>{item}</li>)}
       </ol>
       {onCancel && (
         <div className="passport-workflow__actions passport-workflow__actions--single">
-          <button onClick={onCancel} type="button">Cancel</button>
+          <button onClick={onCancel} type="button">{translate("cancel")}</button>
         </div>
       )}
     </section>
@@ -810,19 +829,20 @@ function PassportFailureStep({
   secondaryLabel: string;
   title: string;
 }) {
+  const { translate } = useLanguage();
   return (
     <section className="passport-wizard-step" aria-label={title}>
-      <img alt="Captured passport preview" className="passport-capture__preview" src={previewUrl} />
+      <img alt="" className="passport-capture__preview" src={previewUrl} />
       <h3>{title}</h3>
       <p className="reception-modal__error" role="alert">{failure.message}</p>
       {failure.requestId && (
         <details className="passport-review__technical">
-          <summary>Technical details</summary>
+          <summary>{translate("details")}</summary>
           <small>Request ID: {failure.requestId}</small>
         </details>
       )}
       <div className="passport-workflow__actions">
-        <button onClick={onCancel} type="button">Cancel</button>
+        <button onClick={onCancel} type="button">{translate("cancel")}</button>
         <button onClick={onSecondary} type="button">{secondaryLabel}</button>
         <button onClick={onPrimary} type="button">{primaryLabel}</button>
       </div>
@@ -845,6 +865,7 @@ function PassportReviewStep({
   onSave: (passport: PassportData) => void;
   passport: PassportData;
 }) {
+  const { translate } = useLanguage();
   const [draft, setDraft] = useState<PassportData>(() => normalizePassportReviewDraft(passport));
 
   const verification = passportVerificationSummary(draft);
@@ -863,11 +884,11 @@ function PassportReviewStep({
     : null;
 
   return (
-    <section className="passport-review passport-wizard-step" aria-label="Review passport OCR">
+    <section className="passport-review passport-wizard-step" aria-label={translate("reviewPassport")}>
       <div className="passport-review__fields">
         {PASSPORT_REVIEW_FIELDS.map((field) => (
           <label key={field.key}>
-            <span>{field.label}</span>
+            <span>{passportFieldLabel(field.key, translate)}</span>
             <input
               onChange={(event) => setDraft(updateDraftField(draft, field.key, event.target.value.trim() || null))}
               value={draft[field.key] ?? ""}
@@ -876,15 +897,15 @@ function PassportReviewStep({
         ))}
       </div>
       {verification && (
-        <section className="passport-review__verification" aria-label="Passport verification">
-          <strong>Passport number: {verification.state.replace(/_/g, " ")}</strong>
+        <section className="passport-review__verification" aria-label={translate("verification")}>
+          <strong>{translate("passportNumber")}: {verification.state.replace(/_/g, " ")}</strong>
           {verifierTimedOut && (
-            <p className="passport-capture__hint">Automatic verification took too long. Please confirm the highlighted field.</p>
+            <p className="passport-capture__hint">{translate("passportCheckTimedOut")}</p>
           )}
           {verification.visualCandidate || verification.mrzCandidate ? (
             <dl className="passport-review__candidates">
-              {verification.visualCandidate && <div><dt>Visual candidate</dt><dd>{verification.visualCandidate}</dd></div>}
-              {verification.mrzCandidate && <div><dt>MRZ candidate</dt><dd>{verification.mrzCandidate}</dd></div>}
+              {verification.visualCandidate && <div><dt>{translate("passportVisualCandidate")}</dt><dd>{verification.visualCandidate}</dd></div>}
+              {verification.mrzCandidate && <div><dt>{translate("passportMrzCandidate")}</dt><dd>{verification.mrzCandidate}</dd></div>}
             </dl>
           ) : null}
           {verification.issues.length > 0 && (
@@ -898,12 +919,12 @@ function PassportReviewStep({
               onClick={() => setDraft(markPassportNumberManuallyVerified(draft))}
               type="button"
             >
-              Confirm Passport Number
+              {translate("confirmPassportNumber")}
             </button>
           )}
           {verifierTimedOut && timing && (
             <details className="passport-review__technical">
-              <summary>Technical details</summary>
+              <summary>{translate("details")}</summary>
               <small>
                 Visual request: {timing.visualOpenAiRequestId ?? "n/a"} · MRZ request: {timing.mrzOpenAiRequestId ?? "n/a"} · Verifier request: {timing.verifierOpenAiRequestId ?? "timeout"}
               </small>
@@ -912,8 +933,8 @@ function PassportReviewStep({
         </section>
       )}
       {nameReview.length > 0 && (
-        <section className="passport-review__verification" aria-label="Name review">
-          <strong>Given names need review</strong>
+        <section className="passport-review__verification" aria-label={translate("passportGivenNamesNeedReview")}>
+          <strong>{translate("passportGivenNamesNeedReview")}</strong>
           <ul>
             {nameReview.map((issue) => <li key={issue}>{issue.replace(/_/g, " ")}</li>)}
           </ul>
@@ -922,10 +943,10 @@ function PassportReviewStep({
       {error && <p className="reception-modal__error" role="alert">{error}</p>}
       {saveDisabledReason && <p className="passport-review__save-reason" role="status">{saveDisabledReason}</p>}
       <div className="passport-workflow__actions passport-review-actions">
-        <button disabled={isPending} onClick={onCancel} type="button">Cancel</button>
-        <button disabled={isPending} onClick={onRetake} type="button">Retake Photo</button>
+        <button disabled={isPending} onClick={onCancel} type="button">{translate("cancel")}</button>
+        <button disabled={isPending} onClick={onRetake} type="button">{translate("retakePhoto")}</button>
         <button disabled={Boolean(saveDisabledReason)} onClick={() => onSave(normalizePassportReviewDraft(draft))} type="button">
-          {isPending ? "Saving..." : "Save Passport"}
+          {isPending ? translate("saving") : translate("savePassport")}
         </button>
       </div>
     </section>
@@ -1064,13 +1085,13 @@ function failureFromError(error: unknown, stage: "classification" | "ocr" | "sav
     return { code: "SAVE_FAILED", message: message || passportMessage("passport.saveFailed"), technical: true, requestId };
   }
   if (stage === "classification") {
-    if (lower.includes("timed out") || lower.includes("timeout")) return { code: "CLASSIFICATION_TIMEOUT", message: "Passport check timed out.", technical: true, requestId };
+    if (lower.includes("timed out") || lower.includes("timeout")) return { code: "CLASSIFICATION_TIMEOUT", message: passportMessage("passport.openAiTimeout"), technical: true, requestId };
     return { code: "CLASSIFICATION_NETWORK_ERROR", message: message || passportMessage("passport.networkProblem"), technical: true, requestId };
   }
-  if (lower.includes("verification") && (lower.includes("timed out") || lower.includes("timeout"))) return { code: "OCR_TIMEOUT", message: "Verification timed out.", technical: true, requestId };
-  if (lower.includes("timed out") || lower.includes("timeout")) return { code: "OCR_TIMEOUT", message: "Passport reading timed out.", technical: true, requestId };
+  if (lower.includes("verification") && (lower.includes("timed out") || lower.includes("timeout"))) return { code: "OCR_TIMEOUT", message: passportMessage("passport.openAiTimeout"), technical: true, requestId };
+  if (lower.includes("timed out") || lower.includes("timeout")) return { code: "OCR_TIMEOUT", message: passportMessage("passport.openAiTimeout"), technical: true, requestId };
   if (lower.includes("malformed") || lower.includes("invalid response") || lower.includes("schema")) {
-    return { code: "OCR_PARSE_ERROR", message: "OCR response could not be validated.", technical: true, requestId };
+    return { code: "OCR_PARSE_ERROR", message: passportMessage("passport.unknownInternal"), technical: true, requestId };
   }
   if (lower.includes("mrz")) {
     return { code: "OCR_VALIDATION_FAILED", message: passportMessage("passport.mrzValidationFailed"), technical: true, requestId };
@@ -1078,7 +1099,7 @@ function failureFromError(error: unknown, stage: "classification" | "ocr" | "sav
   if (lower.includes("verified") || lower.includes("passport number")) {
     return { code: "OCR_VALIDATION_FAILED", message: passportMessage("passport.numberNotVerified"), technical: true, requestId };
   }
-  if (lower.includes("temporarily unavailable")) return { code: "OCR_MODEL_ERROR", message: "OpenAI temporarily unavailable.", technical: true, requestId };
+  if (lower.includes("temporarily unavailable")) return { code: "OCR_MODEL_ERROR", message: passportMessage("passport.openAiTimeout"), technical: true, requestId };
   return { code: "OCR_MODEL_ERROR", message: message || passportMessage("passport.notReadable"), technical: true, requestId };
 }
 
@@ -1222,26 +1243,26 @@ async function readyCaptureCandidate(video: HTMLVideoElement, captureId: number,
   };
 }
 
-function semanticInstruction(preflight: PassportLivePreflight): string {
-  if (preflight.instruction === "ready") return "Ready";
-  if (preflight.instruction === "move_inside_frame") return "Move passport inside the frame";
-  if (preflight.instruction === "open_biodata_page") return "Open the biodata page";
-  if (preflight.instruction === "move_closer") return "Move slightly closer";
-  if (preflight.instruction === "show_bottom_code") return "Show the bottom code";
-  if (preflight.instruction === "hold_steady") return "Hold steady";
-  if (preflight.instruction === "more_light") return "More light needed";
-  if (!preflight.biodataPageDetected) return "Open the biodata page";
-  if (!preflight.documentInsideFrame) return "Move passport inside the frame";
-  if (!preflight.mrzLikelyVisible) return "Show the bottom code";
-  return "Searching for passport...";
+function semanticInstruction(preflight: PassportLivePreflight, translate: (key: string) => string): string {
+  if (preflight.instruction === "ready") return translate("ready");
+  if (preflight.instruction === "move_inside_frame") return translate("movePassportInsideFrame");
+  if (preflight.instruction === "open_biodata_page") return translate("openBiodataPage");
+  if (preflight.instruction === "move_closer") return translate("moveCloser");
+  if (preflight.instruction === "show_bottom_code") return translate("showBottomCode");
+  if (preflight.instruction === "hold_steady") return translate("holdSteady");
+  if (preflight.instruction === "more_light") return translate("moreLightNeeded");
+  if (!preflight.biodataPageDetected) return translate("openBiodataPage");
+  if (!preflight.documentInsideFrame) return translate("movePassportInsideFrame");
+  if (!preflight.mrzLikelyVisible) return translate("showBottomCode");
+  return translate("searchingForPassport");
 }
 
-function localLiveInstruction(quality: PassportQualityResult): string {
-  if (quality.blockingIssue === "IMAGE_TOO_DARK") return "More light needed";
-  if (quality.blockingIssue === "IMAGE_BLURRED") return "Hold steady";
-  if (quality.blockingIssue === "DOCUMENT_TOO_SMALL") return "Move slightly closer";
-  if (quality.blockingIssue === "DOCUMENT_CROPPED") return "Move passport inside the frame";
-  return "Searching for passport...";
+function localLiveInstruction(quality: PassportQualityResult, translate: (key: string) => string): string {
+  if (quality.blockingIssue === "IMAGE_TOO_DARK") return translate("moreLightNeeded");
+  if (quality.blockingIssue === "IMAGE_BLURRED") return translate("holdSteady");
+  if (quality.blockingIssue === "DOCUMENT_TOO_SMALL") return translate("moveCloser");
+  if (quality.blockingIssue === "DOCUMENT_CROPPED") return translate("movePassportInsideFrame");
+  return translate("searchingForPassport");
 }
 
 function waitForVideoEvent(video: HTMLVideoElement, events: string[], timeoutMs: number): Promise<void> {
@@ -1276,15 +1297,15 @@ function waitForLiveVideoFrame(video: HTMLVideoElement, stream: MediaStream, tim
   });
 }
 
-function cameraErrorMessage(error: unknown): { status: CameraStartupState; message: string } {
+function cameraErrorMessage(error: unknown, translate: ReturnType<typeof useLanguage>["translate"]): { status: CameraStartupState; message: string } {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
-    return { status: "permission_denied", message: "Camera permission denied. Use native camera or choose from library." };
+    return { status: "permission_denied", message: translate("cameraUnavailable") };
   }
   if (error instanceof DOMException && (error.name === "NotFoundError" || error.name === "OverconstrainedError")) {
-    return { status: "unavailable", message: "Camera unavailable. Use native camera or choose from library." };
+    return { status: "unavailable", message: translate("cameraUnavailable") };
   }
   if (error instanceof DOMException && error.name === "NotReadableError") {
-    return { status: "failed", message: "Another application may be using the camera. Retry camera or use native camera." };
+    return { status: "failed", message: translate("cameraPreviewFailed") };
   }
-  return { status: "failed", message: "Camera opened but preview could not start. Use native camera instead." };
+  return { status: "failed", message: translate("cameraPreviewFailed") };
 }

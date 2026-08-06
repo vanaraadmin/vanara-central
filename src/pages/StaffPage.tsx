@@ -19,6 +19,7 @@ import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import VanaraSummaryGrid, { type VanaraSummaryItem } from "../components/vanara/VanaraSummaryGrid";
 import { loadStaffOverview } from "../services/staff.service";
 import type { StaffCardId, StaffOverviewCard, StaffOverviewMetric } from "../types/staff";
+import { useLanguage } from "../providers/language.context";
 import "../styles/StaffPage.css";
 
 const WORKSPACE_ORDER: StaffCardId[] = [
@@ -48,25 +49,52 @@ const workspaceIcons: Record<StaffCardId, string> = {
 const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
   id: "availability",
   module: "rooms",
-  title: "Prices",
-  description: "Check availability and verified prices.",
+  title: "prices",
+  description: "pricesDescription",
   href: "/availability-prices",
-  cta: "Open workspace",
+  cta: "openWorkspace",
   metrics: [],
-  summaryLine1: "Arrival / Departure",
-  summaryLine2: "Read-only search",
+  summaryLine1: "availabilitySummaryLine",
+  summaryLine2: "readOnlySearch",
 };
 
 const MESSAGES_WORKSPACE_CARD: StaffOverviewCard = {
   id: "messages",
   module: "messages",
-  title: "Messages",
-  description: "Review guest replies before sending.",
+  title: "messages",
+  description: "messagesDescription",
   href: "/messages",
-  cta: "Open workspace",
+  cta: "openWorkspace",
   metrics: [],
-  summaryLine1: "Human review",
-  summaryLine2: "Review before send",
+  summaryLine1: "humanReview",
+  summaryLine2: "reviewBeforeSend",
+};
+
+const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
+  availability: "prices",
+  housekeeping: "housekeeping",
+  maintenance: "maintenance",
+  messages: "messages",
+  payroll: "payroll",
+  procurement: "procurement",
+  reception: "arrivalsDepartures",
+  rooms: "rooms",
+  social: "socialAutomation",
+};
+
+const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
+  availability: "pricesDescription",
+  messages: "messagesDescription",
+};
+
+const metricLabelKeys: Record<string, string> = {
+  "Cleaning In Progress": "cleaningInProgress",
+  "Maintenance Blocked": "maintenanceBlocked",
+  "Normal To Clean": "toClean",
+  "Priority Turnover": "priorityTurnover",
+  "Season Closed": "seasonClosed",
+  "To Clean": "toClean",
+  "Water Due": "waterDue",
 };
 
 const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {
@@ -107,9 +135,9 @@ function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
 }
 
-function summaryItems(metrics: StaffOverviewMetric[]): VanaraSummaryItem[] {
+function summaryItems(metrics: StaffOverviewMetric[], translate: (key: string) => string): VanaraSummaryItem[] {
   return metrics.map((metric) => ({
-    label: metric.label,
+    label: metricLabelKeys[metric.label] ? translate(metricLabelKeys[metric.label]) : metric.label,
     tone: metricTone[metric.tone],
     value: metric.value,
   }));
@@ -122,9 +150,13 @@ function WorkspaceCard({
   index: number;
   workspace: StaffOverviewCard;
 }) {
+  const { translate } = useLanguage();
   const iconUrl = workspaceIcons[workspace.id];
-  const title = workspace.id === "reception" ? "Check-In / Out" : workspace.title;
-  const metrics = summaryItems(workspace.metrics);
+  const title = workspaceTitleKeys[workspace.id] ? translate(workspaceTitleKeys[workspace.id]!) : workspace.title;
+  const description = workspaceDescriptionKeys[workspace.id] ? translate(workspaceDescriptionKeys[workspace.id]!) : workspace.description;
+  const metrics = summaryItems(workspace.metrics, translate);
+  const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : (workspace.summaryLine1 ?? "-");
+  const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : (workspace.summaryLine2 ?? "-");
 
   return (
     <Link
@@ -148,7 +180,7 @@ function WorkspaceCard({
           </span>
           <span className="staff-workspace__title">{title}</span>
         </span>
-        <span className="staff-workspace__description">{workspace.description}</span>
+        <span className="staff-workspace__description">{description}</span>
 
         {metrics.length > 0 ? (
           <VanaraSummaryGrid
@@ -163,13 +195,13 @@ function WorkspaceCard({
               data-dynamic-field={`${workspace.id}.summaryLine1`}
               aria-label="Dynamic operational summary"
             >
-              {workspace.summaryLine1 ?? "-"}
+              {fallbackSummaryLine1}
             </span>
             <span
               data-dynamic-field={`${workspace.id}.summaryLine2`}
               aria-label="Dynamic operational detail"
             >
-              {workspace.summaryLine2 ?? "-"}
+              {fallbackSummaryLine2}
             </span>
           </span>
         )}
@@ -183,6 +215,7 @@ function WorkspaceCard({
 }
 
 export default function StaffPage() {
+  const { translate } = useLanguage();
   const staff = useQuery({
     queryKey: ["staff", "overview"],
     queryFn: ({ signal }) => loadStaffOverview(signal),
@@ -193,11 +226,11 @@ export default function StaffPage() {
   const name = staff.data ? firstName(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
-  const title = useMemo(() => (name ? `Sawasdee, ${name}` : "Sawasdee"), [name]);
+  const title = useMemo(() => (name ? translate("sawasdeeName", { name }) : translate("sawasdee")), [name, translate]);
   const showWorkspaceSection = Boolean(workspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (
-    <WorkspaceShell title={title} stickyNavigationTitle="Home" workspace="staffHome" bodyClassName="staff-page">
+    <WorkspaceShell title={title} stickyNavigationTitle={translate("home")} workspace="staffHome" bodyClassName="staff-page">
       <RecentBookings
         canViewBookingValue={canViewBookingValue}
         events={bookingEvents}
@@ -209,10 +242,10 @@ export default function StaffPage() {
       {showWorkspaceSection ? (
         <VanaraGlassRegion className="staff-workspaces" ariaLabelledBy="staff-workspaces-title">
           <VanaraSectionHeader
-            eyebrow="Operational"
+            eyebrow={translate("operational")}
             headingId="staff-workspaces-title"
             meta={String(workspaces.length).padStart(2, "0")}
-            title="Workspaces"
+            title={translate("workspaces")}
           />
 
           {staff.isLoading && (
@@ -228,10 +261,10 @@ export default function StaffPage() {
           )}
 
           {staff.data && workspaces.length === 0 && (
-            <section className="staff-empty vc-glass-region" aria-label="No work available">
+            <section className="staff-empty vc-glass-region" aria-label={translate("noWorkAvailable")}>
               <span className="staff-empty__mark" aria-hidden="true" />
-              <h2>Nothing assigned</h2>
-              <p>Your work areas will appear here when access is enabled.</p>
+              <h2>{translate("nothingAssigned")}</h2>
+              <p>{translate("workAreasAppear")}</p>
             </section>
           )}
 

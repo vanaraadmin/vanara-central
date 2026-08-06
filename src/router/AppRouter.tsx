@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import PagePlaceholder, { type PlaceholderLink } from "../components/PagePlaceholder";
@@ -23,6 +24,7 @@ import SocialAutomationPage from "../pages/SocialAutomationPage";
 import StaffPage from "../pages/StaffPage";
 import { ApiError } from "../services/api.client";
 import { loadCurrentUser } from "../services/auth.service";
+import { useLanguage } from "../providers/language.context";
 
 const moreLinks: PlaceholderLink[] = [
   { labelKey: "arrivalsDepartures", to: "/reception" },
@@ -49,6 +51,15 @@ function Placeholder(props: {
 
 function ProtectedLayout() {
   const user = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal), retry: false });
+  const { changeLanguage, language } = useLanguage();
+
+  useEffect(() => {
+    const preferred = user.data?.preferredLanguage;
+    if ((preferred === "en" || preferred === "th") && preferred !== language) {
+      changeLanguage(preferred);
+    }
+  }, [changeLanguage, language, user.data?.preferredLanguage]);
+
   if (user.isLoading) return <PageLoading />;
   if (user.isError) {
     if (user.error instanceof ApiError && user.error.status === 401) {

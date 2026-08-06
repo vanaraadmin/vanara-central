@@ -1,14 +1,17 @@
 import { Fragment } from "react";
 import type { RoomCompactPresentation, RoomCompactSignal } from "../../config/roomOperationalPresentation";
+import { useLanguage } from "../../providers/language.context";
+import { translateStaffLabel } from "../../utils/staff-i18n-labels";
 
 interface RoomCompactSignalsProps {
   presentation: RoomCompactPresentation;
 }
 
 function RoomInlineSignal({ signal }: { signal: RoomCompactSignal }) {
+  const { translate } = useLanguage();
   return (
     <span className={`room-signal room-signal--${signal.tone}`}>
-      {signal.label}
+      {translateStaffLabel(signal.label, translate)}
     </span>
   );
 }
@@ -22,10 +25,11 @@ function SignalSeparator() {
 }
 
 export function RoomTerminalState({ presentation }: RoomCompactSignalsProps) {
+  const { translate } = useLanguage();
   return (
     <span className="room-terminal-state">
       <span className={`room-terminal-state__label room-terminal-state__label--${presentation.primary.tone}`}>
-        {presentation.primary.label}
+        {translateStaffLabel(presentation.primary.label, translate)}
       </span>
       {presentation.primary.detail ? (
         <span className="room-terminal-state__detail">{presentation.primary.detail}</span>

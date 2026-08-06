@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { RoomDomainTone } from "../../types/rooms-workspace";
 import { ArrowRightIcon } from "../OperationsIcons";
+import { useLanguage } from "../../providers/language.context";
 
 type RoomDomainCardProps = {
   eyebrow: string;
@@ -53,9 +54,10 @@ export function RoomSectionHeader({ eyebrow, headingId, status, title }: RoomSec
 }
 
 export function OperationalStateBlock({ detail, label = "Current state", secondaryInfo, tone, value }: OperationalStateBlockProps) {
+  const { translate } = useLanguage();
   return (
     <div className={`room-expanded-current-state room-domain-state room-domain-state--${tone}`}>
-      <span className="room-expanded-current-state__label room-domain-state__label">{label}</span>
+      <span className="room-expanded-current-state__label room-domain-state__label">{label === "Current state" ? translate("currentState") : label}</span>
       <strong className="room-expanded-current-state__value room-domain-state__value">{value}</strong>
       <span className="room-expanded-current-state__description room-domain-state__detail">{detail}</span>
       {secondaryInfo ? <span className="room-expanded-current-state__description room-domain-state__meta">{secondaryInfo}</span> : null}
@@ -64,12 +66,13 @@ export function OperationalStateBlock({ detail, label = "Current state", seconda
 }
 
 export function PrimaryActionRow({ ariaLabel, busy = false, disabled = false, label, onClick, to }: PrimaryActionRowProps) {
+  const { translate } = useLanguage();
   const unavailable = disabled || busy;
   const className = [
     "room-domain-card__primary-action",
     unavailable ? "room-domain-card__primary-action--disabled" : "",
   ].filter(Boolean).join(" ");
-  const actionLabel = busy ? "Working..." : label;
+  const actionLabel = busy ? translate("loading") : label;
   const content = (
     <>
       <span>{actionLabel}</span>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MaintenancePhoto } from "../types/maintenance";
+import { useLanguage } from "../providers/language.context";
 
 function photoSource(photo: MaintenancePhoto): string | null {
   if (photo.url) return photo.url;
@@ -9,12 +10,13 @@ function photoSource(photo: MaintenancePhoto): string | null {
   return null;
 }
 
-function photoLabel(photo: MaintenancePhoto): string {
-  return photo.caption ?? photo.localReference ?? photo.url ?? "Maintenance photo";
+function photoLabel(photo: MaintenancePhoto, fallback: string): string {
+  return photo.caption ?? photo.localReference ?? photo.url ?? fallback;
 }
 
 export function MaintenancePhotoGallery({ photos }: { photos: MaintenancePhoto[] }) {
   const [preview, setPreview] = useState<MaintenancePhoto | null>(null);
+  const { translate } = useLanguage();
 
   useEffect(() => {
     if (!preview) return undefined;
@@ -28,7 +30,7 @@ export function MaintenancePhotoGallery({ photos }: { photos: MaintenancePhoto[]
   }, [preview]);
 
   if (photos.length === 0) {
-    return <p className="maintenance-muted">No photos attached.</p>;
+    return <p className="maintenance-muted">{translate("noPhotosAttached")}</p>;
   }
 
   return (
@@ -39,18 +41,18 @@ export function MaintenancePhotoGallery({ photos }: { photos: MaintenancePhoto[]
           return (
             <button className="maintenance-photo-tile" key={photo.id} onClick={() => setPreview(photo)} type="button">
               {source ? <img alt="" src={source} /> : <span aria-hidden="true" />}
-              <strong>{photoLabel(photo)}</strong>
+              <strong>{photoLabel(photo, translate("photos"))}</strong>
             </button>
           );
         })}
       </div>
 
       {preview && (
-        <div className="maintenance-photo-preview" role="dialog" aria-modal="true" aria-label={photoLabel(preview)}>
-          <button className="maintenance-photo-preview__scrim" onClick={() => setPreview(null)} type="button" aria-label="Dismiss photo preview" />
+        <div className="maintenance-photo-preview" role="dialog" aria-modal="true" aria-label={photoLabel(preview, translate("photos"))}>
+          <button className="maintenance-photo-preview__scrim" onClick={() => setPreview(null)} type="button" aria-label={translate("dismissPhotoPreview")} />
           <div className="maintenance-photo-preview__frame">
-            {photoSource(preview) ? <img alt={photoLabel(preview)} src={photoSource(preview) ?? ""} /> : null}
-            <p>{photoLabel(preview)}</p>
+            {photoSource(preview) ? <img alt={photoLabel(preview, translate("photos"))} src={photoSource(preview) ?? ""} /> : null}
+            <p>{photoLabel(preview, translate("photos"))}</p>
           </div>
         </div>
       )}

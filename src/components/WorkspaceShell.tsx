@@ -9,6 +9,7 @@ import {
   workspaceBackgroundStyle,
   type WorkspaceBackgroundKey,
 } from "../config/workspaceBackgrounds";
+import { useLanguage } from "../providers/language.context";
 import "../styles/WorkspaceShell.css";
 
 const workspaceNumbers = {
@@ -50,8 +51,8 @@ interface WorkspaceShellProps {
   wide?: boolean;
 }
 
-function formatToday() {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatToday(language: "en" | "th") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     weekday: "long",
     day: "2-digit",
@@ -75,11 +76,12 @@ export default function WorkspaceShell({
   wide = false,
   workspace,
 }: WorkspaceShellProps) {
+  const { language, translate } = useLanguage();
   const backgroundKey = workspaceBackgroundKeys[workspace];
   const stickyTriggerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const [progress, setProgress] = useState(0);
-  const today = useMemo(() => formatToday(), []);
+  const today = useMemo(() => formatToday(language), [language]);
   const heroActionNode = workspace === "staffHome" ? heroAction : (heroAction ?? <VanaraStaffHomeAction />);
   const navigationTitle = stickyNavigationTitle ?? title;
 
@@ -137,7 +139,7 @@ export default function WorkspaceShell({
     <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
       <div className="workspace-page__veil" aria-hidden="true" />
 
-      <section className={wide ? "workspace-shell workspace-shell--wide" : "workspace-shell"} aria-label={`${title} workspace`}>
+      <section className={wide ? "workspace-shell workspace-shell--wide" : "workspace-shell"} aria-label={`${title} ${translate("workspace")}`}>
         {!suppressStickyNavigation ? (
           <StickyGlassHeader progress={progress} title={navigationTitle} />
         ) : null}
@@ -146,8 +148,8 @@ export default function WorkspaceShell({
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 
-        <section className="workspace-section-marker" aria-label="Workspace identifier">
-          <span>Workspace</span>
+        <section className="workspace-section-marker" aria-label={translate("workspace")}>
+          <span>{translate("workspace")}</span>
           <span>{workspaceNumbers[workspace]}</span>
         </section>
 

@@ -18,6 +18,7 @@ import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import VanaraSummaryGrid from "../components/vanara/VanaraSummaryGrid";
+import { useLanguage } from "../providers/language.context";
 import { loadCurrentUser } from "../services/auth.service";
 import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
 import type { BookingPassport, PassportData, ReceptionOverview, ReceptionStay } from "../types/reception";
@@ -59,8 +60,8 @@ function bangkokToday() {
   }).format(new Date());
 }
 
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDate(date: string, language = "en") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     weekday: "short",
     day: "2-digit",
@@ -68,8 +69,8 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T12:00:00+07:00`));
 }
 
-function formatFullDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatFullDate(date: string, language = "en") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -95,11 +96,11 @@ function addYears(date: Date, years: number): Date {
   return next;
 }
 
-function stayDuration(arrival: string, departure: string): string {
+function stayDuration(arrival: string, departure: string, translate: (key: string, options?: Record<string, unknown>) => string): string {
   const start = parseDateOnly(arrival).getTime();
   const end = parseDateOnly(departure).getTime();
   const nights = Math.max(0, Math.round((end - start) / 86_400_000));
-  return `${nights} ${nights === 1 ? "night" : "nights"}`;
+  return translate(nights === 1 ? "nightCount" : "nightCountPlural", { count: nights });
 }
 
 function canCompleteReception(user: Awaited<ReturnType<typeof loadCurrentUser>> | undefined): boolean {
@@ -110,7 +111,7 @@ function canCompleteReception(user: Awaited<ReturnType<typeof loadCurrentUser>> 
   );
 }
 
-function bookingSourceLabel(stay: ReceptionStay): string {
+function bookingSourceLabel(stay: ReceptionStay, translate: (key: string) => string): string {
   const raw = stay.bookingSource || stay.bookingReference || "";
   const value = raw.toLowerCase();
   if (value.includes("booking")) return "Booking.com";
@@ -118,8 +119,8 @@ function bookingSourceLabel(stay: ReceptionStay): string {
   if (value.includes("agoda")) return "Agoda";
   if (value.includes("traveloka")) return "Traveloka";
   if (value.includes("trip")) return "Trip.com";
-  if (value.includes("direct")) return "Front Desk";
-  return stay.bookingSource || "Front Desk";
+  if (value.includes("direct")) return translate("frontDesk");
+  return stay.bookingSource || translate("frontDesk");
 }
 
 function receptionStayContact(stay: ReceptionStay): VanaraGuestContact {
@@ -140,17 +141,18 @@ function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
 }
 
 function HousekeepingStatusRow({ roomStatus }: { roomStatus: string }) {
+  const { translate } = useLanguage();
   const cleaningStatus = cleaningStatusFromRoomStatus(roomStatus);
   const housekeepingLabel =
     cleaningStatus === "clean"
-      ? "ROOM CLEAN"
+      ? translate("roomClean")
       : cleaningStatus === "in_progress"
-        ? "CLEANING IN PROGRESS"
-        : "ROOM DIRTY";
+        ? translate("cleaningInProgress")
+        : translate("roomDirty");
 
   return (
     <div
-      aria-label={`Housekeeping status: ${housekeepingLabel}`}
+      aria-label={translate("housekeepingStatusLabel", { status: housekeepingLabel })}
       className={`checkin-card__housekeeping checkin-card__housekeeping--${cleaningStatus}`}
     >
       <img
@@ -165,10 +167,11 @@ function HousekeepingStatusRow({ roomStatus }: { roomStatus: string }) {
 }
 
 function MaintenanceBadge({ stay }: { stay: ReceptionStay }) {
+  const { translate } = useLanguage();
   if (stay.maintenance.openIssues <= 0) return null;
   return (
     <div className={`reception-maintenance-badge${stay.maintenance.outOfService ? " is-blocking" : ""}`}>
-      <span>{stay.maintenance.label ?? "Maintenance Active"}</span>
+      <span>{stay.maintenance.label ?? translate("maintenanceActive")}</span>
       <strong>{stay.maintenance.openIssues}</strong>
     </div>
   );
@@ -237,6 +240,7 @@ function upsertStay(data: ReceptionOverview, updated: ReceptionStay): ReceptionO
 }
 
 function InternalNotesField({ queryKey, stay }: { queryKey: readonly ["reception", string]; stay: ReceptionStay }) {
+  const { translate } = useLanguage();
   const queryClient = useQueryClient();
   const [specialNotes, setSpecialNotes] = useState(stay.specialNotes ?? "");
   const mutation = useMutation({
@@ -254,21 +258,21 @@ function InternalNotesField({ queryKey, stay }: { queryKey: readonly ["reception
 
   return (
     <details className="reception-note-details" onClick={(event) => event.stopPropagation()}>
-      <summary>Internal Notes</summary>
+      <summary>{translate("internalNotes")}</summary>
       <form className="reception-note-form" onSubmit={submit}>
         <label>
           <textarea
             maxLength={2000}
             onChange={(event) => setSpecialNotes(event.target.value)}
-            placeholder="Add internal operational notes"
+            placeholder={translate("addInternalOperationalNotes")}
             rows={2}
             value={specialNotes}
           />
         </label>
         <div className="reception-note-form__actions">
-          <button className="vc-secondary-action" disabled={mutation.isPending} type="submit">{mutation.isPending ? "Saving…" : "Save"}</button>
-          {mutation.isSuccess && <span>Saved</span>}
-          {mutation.isError && <span className="is-error">Note could not be saved.</span>}
+          <button className="vc-secondary-action" disabled={mutation.isPending} type="submit">{mutation.isPending ? translate("saving") : translate("save")}</button>
+          {mutation.isSuccess && <span>{translate("saved")}</span>}
+          {mutation.isError && <span className="is-error">{translate("noteCouldNotBeSaved")}</span>}
         </div>
       </form>
     </details>
@@ -288,17 +292,18 @@ function CompletionAction({
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
+  const { translate } = useLanguage();
   const completed = type === "arrival"
     ? stay.checkIn.guestArrived
     : stay.checkOut.guestLeft || stay.checkOut.roomReleased;
 
   const completedLabel = type === "arrival"
-    ? "Check-In Completed"
-    : "Check-Out Completed";
+    ? translate("checkInCompleted")
+    : translate("checkOutCompleted");
 
   const actionLabel = type === "arrival"
-    ? "Complete Check-In"
-    : "Complete Check-Out";
+    ? translate("completeCheckIn")
+    : translate("completeCheckOut");
 
   if (completed) {
     return (
@@ -345,6 +350,7 @@ function StayCard({
   stay: ReceptionStay;
   type: ReceptionCardType;
 }) {
+  const { language, translate } = useLanguage();
   const nationality = formatNationalityText(stay.nationality);
   const contact = receptionStayContact(stay);
   const completed = type === "arrival"
@@ -377,7 +383,7 @@ function StayCard({
             }}
             type="button"
           >
-            Details
+            {translate("details")}
           </button>
           {stay.roomId && (
             <Link
@@ -385,7 +391,7 @@ function StayCard({
               onClick={(event) => event.stopPropagation()}
               to={`${stay.links.maintenance}&source=reception`}
             >
-              Report Issue
+              {translate("reportIssue")}
             </Link>
           )}
           <VanaraGuestContactTrigger
@@ -403,7 +409,7 @@ function StayCard({
         <div>
           <h3>{stay.guestName}</h3>
           {nationality ? <p className="reception-nationality">{nationality}</p> : null}
-          <p className="reception-booking-source">{bookingSourceLabel(stay)}</p>
+          <p className="reception-booking-source">{bookingSourceLabel(stay, translate)}</p>
           <MaintenanceBadge stay={stay} />
           {type === "arrival" && <HousekeepingStatusRow roomStatus={stay.roomStatus} />}
         </div>
@@ -411,11 +417,11 @@ function StayCard({
 
       {type === "arrival" && (
         <VanaraDataGrid
-          ariaLabel="Stay information"
+          ariaLabel={translate("stayInformation")}
           className="reception-stay-facts"
           items={[
-            { label: "Check-out", value: formatFullDate(stay.departure) },
-            { label: "Stay", value: stayDuration(stay.arrival, stay.departure) },
+            { label: translate("checkOut"), value: formatFullDate(stay.departure, language) },
+            { label: translate("stay"), value: stayDuration(stay.arrival, stay.departure, translate) },
           ]}
         />
       )}
@@ -435,6 +441,7 @@ function ReceptionDatePicker({
   selectedDate: string;
   today: string;
 }) {
+  const { language, translate } = useLanguage();
   const [open, setOpen] = useState(false);
   const selected = parseDateOnly(selectedDate);
   const todayDate = parseDateOnly(today);
@@ -447,8 +454,8 @@ function ReceptionDatePicker({
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <span>Change Date</span>
-        <strong>{formatDate(selectedDate)}</strong>
+        <span>{translate("changeDate")}</span>
+        <strong>{formatDate(selectedDate, language)}</strong>
       </button>
       {open && (
         <div className="reception-date-picker__panel">
@@ -514,10 +521,11 @@ function ReceptionSection({
   title: string;
   type: ReceptionCardType;
 }) {
+  const { translate } = useLanguage();
   return (
     <section className={`reception-section reception-section--${type}`}>
       <VanaraSectionHeader
-        eyebrow={type === "arrival" ? "Arrivals" : "Departures"}
+        eyebrow={type === "arrival" ? translate("arrivals") : translate("departures")}
         title={title}
       />
       <div className="reception-list vc-glass-surface">
@@ -558,6 +566,7 @@ function CompletionModal({
   onDraftChange: (draft: CompletionDraft) => void;
   request: { stay: ReceptionStay; type: ReceptionCardType } | null;
 }) {
+  const { translate } = useLanguage();
   useSheetScrollLock(Boolean(request));
   const queryClient = useQueryClient();
   const isMobilePassportActions = useMobilePassportActions();
@@ -598,8 +607,8 @@ function CompletionModal({
       && (!hasDeposit || draft.depositReturned)
     );
 
-  const title = isArrival ? "Complete Check-In" : "Complete Check-Out";
-  const eyebrow = isArrival ? "Arrival Checklist" : "Departure Checklist";
+  const title = isArrival ? translate("completeCheckIn") : translate("completeCheckOut");
+  const eyebrow = isArrival ? translate("arrivalChecklist") : translate("departureChecklist");
 
   function openPassportFlow() {
     if (passportCount > 0) {
@@ -635,7 +644,7 @@ function CompletionModal({
       role="dialog"
     >
       <button
-        aria-label="Close checklist"
+        aria-label={translate("closeChecklist")}
         className="reception-sheet__scrim"
         disabled={isPending}
         onClick={onCancel}
@@ -681,9 +690,9 @@ function CompletionModal({
               className="reception-workflow-region"
             >
               <VanaraSectionHeader
-                eyebrow="Reception"
+                eyebrow={translate("reception")}
                 headingId="reception-completion-workflow-title"
-                title={isArrival ? "Check-in" : "Check-out"}
+                title={isArrival ? translate("checkIn") : translate("checkOut")}
               />
               <div className="reception-sheet__checks">
                 {isArrival ? (
@@ -692,14 +701,14 @@ function CompletionModal({
                       count={passportCount}
                       disabled={passports.isLoading}
                       isPending={passportWorkflowOpen}
-                      label="Passport registration completed"
-                      missingText="Capture passport image"
+                      label={translate("passportRegistrationCompleted")}
+                      missingText={translate("capturePassportImage")}
                       onClick={openPassportFlow}
                     />
                     <ChecklistRow
                       checked={draft.depositCollected}
                       icon={depositIcon}
-                      label="Deposit collected"
+                      label={translate("depositCollected")}
                       onChange={(checked) => onDraftChange({
                         ...draft,
                         depositCollected: checked,
@@ -712,7 +721,7 @@ function CompletionModal({
                     <ChecklistRow
                       checked={draft.roomInspected}
                       icon={roomInspectedIcon}
-                      label="Room inspected"
+                      label={translate("roomInspected")}
                       onChange={(checked) => onDraftChange({
                         ...draft,
                         roomInspected: checked,
@@ -722,21 +731,21 @@ function CompletionModal({
                     <ChecklistRow
                       checked={draft.keysReturned}
                       icon={keysIcon}
-                      label="Keys returned"
+                      label={translate("keysReturned")}
                       onChange={(checked) => onDraftChange({
                         ...draft,
                         keysReturned: checked,
                       })}
                     />
 
-                    <section className="reception-sheet__deposit" aria-label="Deposit status">
-                      <span>Deposit</span>
+                    <section className="reception-sheet__deposit" aria-label={translate("deposit")}>
+                      <span>{translate("deposit")}</span>
 
                       {hasDeposit ? (
                         <ChecklistRow
                           checked={draft.depositReturned}
                           icon={depositIcon}
-                          label="Deposit returned"
+                          label={translate("depositReturned")}
                           onChange={(checked) => onDraftChange({
                             ...draft,
                             depositReturned: checked,
@@ -746,8 +755,8 @@ function CompletionModal({
                         <div className="reception-sheet__deposit-empty">
                           <span aria-hidden="true" className="reception-sheet__deposit-empty-icon">✓</span>
                           <p>
-                            <strong>No deposit collected</strong>
-                            <span>No refund is required for this booking.</span>
+                            <strong>{translate("noDepositCollected")}</strong>
+                            <span>{translate("noRefundRequired")}</span>
                           </p>
                         </div>
                       )}
@@ -764,10 +773,10 @@ function CompletionModal({
             )}
             <div className="reception-sheet__actions">
               <button className="vc-secondary-action" disabled={isPending} onClick={onCancel} type="button">
-                Cancel
+                {translate("cancel")}
               </button>
               <button className="vc-primary-action" disabled={isPending || !canComplete} onClick={onConfirm} type="button">
-                {isPending ? "Saving..." : title}
+                {isPending ? translate("saving") : title}
               </button>
             </div>
           </>
@@ -799,6 +808,20 @@ const PASSPORT_REVIEW_FIELDS: Array<{ key: PassportReviewField; label: string }>
   { key: "birthDate", label: "Birth date" },
   { key: "expiryDate", label: "Expiry date" },
 ];
+
+function passportFieldLabel(key: PassportReviewField, translate: (key: string) => string): string {
+  const labels: Record<PassportReviewField, string> = {
+    firstName: translate("firstName"),
+    middleName: translate("middleName"),
+    lastName: translate("lastName"),
+    passportNumber: translate("passportNumber"),
+    nationality: translate("nationality"),
+    gender: translate("gender"),
+    birthDate: translate("birthDate"),
+    expiryDate: translate("expiryDate"),
+  };
+  return labels[key];
+}
 function passportDataFromRecord(passport: BookingPassport): PassportData {
   return {
     firstName: passport.firstName,
@@ -827,8 +850,8 @@ function passportVerificationSummary(passport: PassportData): { state: string; i
   };
 }
 
-function formatPassportTimestamp(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatPassportTimestamp(value: string, language = "en"): string {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -837,22 +860,22 @@ function formatPassportTimestamp(value: string): string {
   }).format(new Date(value));
 }
 
-function passportDisplayName(passport: BookingPassport): string {
+function passportDisplayName(passport: BookingPassport, translate: (key: string) => string): string {
   const parts = [passport.firstName, passport.middleName, passport.lastName]
     .map((part) => part?.trim())
     .filter(Boolean);
-  return parts.length > 0 ? parts.join(" ") : "Passport holder";
+  return parts.length > 0 ? parts.join(" ") : translate("passportHolder");
 }
 
-function passportVerificationBadge(passport: BookingPassport): PassportVerificationBadge {
+function passportVerificationBadge(passport: BookingPassport, translate: (key: string) => string): PassportVerificationBadge {
   const verification = passport.fieldVerification;
   if (!verification || typeof verification !== "object" || !("consensus" in verification)) {
-    return { label: "Review unavailable", tone: "muted" };
+    return { label: translate("reviewUnavailable"), tone: "muted" };
   }
   const consensus = verification.consensus as { tm30Ready?: boolean; unresolvedCriticalConflicts?: number };
-  if (consensus.tm30Ready) return { label: "Verified", tone: "ready" };
-  if ((consensus.unresolvedCriticalConflicts ?? 0) > 0) return { label: "Needs review", tone: "warning" };
-  return { label: "Reviewed", tone: "muted" };
+  if (consensus.tm30Ready) return { label: translate("verified"), tone: "ready" };
+  if ((consensus.unresolvedCriticalConflicts ?? 0) > 0) return { label: translate("needsReview"), tone: "warning" };
+  return { label: translate("reviewed"), tone: "muted" };
 }
 
 function PassportManagementPanel({
@@ -868,41 +891,42 @@ function PassportManagementPanel({
   onOpenPassport: (passport: BookingPassport) => void;
   passports: BookingPassport[];
 }) {
+  const { language, translate } = useLanguage();
   return (
-    <section className="passport-management" aria-label="Saved passports">
+    <section className="passport-management" aria-label={translate("savedPassports")}>
       <header>
-        <span>Passport Registration</span>
-        <h3>Saved passports</h3>
+        <span>{translate("passportRegistration")}</span>
+        <h3>{translate("savedPassports")}</h3>
       </header>
 
       <div className="passport-management__list">
         {passports.map((passport) => {
-          const verification = passportVerificationBadge(passport);
+          const verification = passportVerificationBadge(passport, translate);
           const nationality = formatNationalityText(passport.nationality);
           return (
             <article className="passport-management-card" key={passport.id}>
               <div>
-                <strong>{passportDisplayName(passport)}</strong>
-                <span>{passport.passportNumber ?? "Passport number missing"}</span>
+                <strong>{passportDisplayName(passport, translate)}</strong>
+                <span>{passport.passportNumber ?? translate("passportNumberMissing")}</span>
               </div>
               <dl>
                 <div>
-                  <dt>Nationality</dt>
-                  <dd>{nationality ?? "Not available"}</dd>
+                  <dt>{translate("nationality")}</dt>
+                  <dd>{nationality ?? translate("notAvailable")}</dd>
                 </div>
                 <div>
-                  <dt>Verification</dt>
+                  <dt>{translate("verification")}</dt>
                   <dd className={`passport-management-card__status passport-management-card__status--${verification.tone}`}>
                     {verification.label}
                   </dd>
                 </div>
                 <div>
-                  <dt>Created</dt>
-                  <dd>{formatPassportTimestamp(passport.createdAt)}</dd>
+                  <dt>{translate("created")}</dt>
+                  <dd>{formatPassportTimestamp(passport.createdAt, language)}</dd>
                 </div>
               </dl>
               <button className="vc-secondary-action" onClick={() => onOpenPassport(passport)} type="button">
-                Open review
+                {translate("openReview")}
               </button>
             </article>
           );
@@ -910,8 +934,8 @@ function PassportManagementPanel({
       </div>
 
       <div className="reception-sheet__actions">
-        <button className="vc-secondary-action" disabled={isPending} onClick={onBack} type="button">Back</button>
-        <button className="vc-primary-action" disabled={isPending} onClick={onAddAnother} type="button">Add another passport</button>
+        <button className="vc-secondary-action" disabled={isPending} onClick={onBack} type="button">{translate("back")}</button>
+        <button className="vc-primary-action" disabled={isPending} onClick={onAddAnother} type="button">{translate("addAnotherPassport")}</button>
       </div>
     </section>
   );
@@ -928,20 +952,21 @@ function PassportReviewPanel({
   onCancel: () => void;
   state: PassportReviewState;
 }) {
+  const { translate } = useLanguage();
   const [draft] = useState<PassportData>(() => passportDataFromRecord(state.passport));
   const verification = passportVerificationSummary(draft);
 
   return (
-    <section className="passport-review" aria-label="Passport detail">
+    <section className="passport-review" aria-label={translate("passport")}>
       <header>
-        <span>Saved Passport</span>
-        <h3>Passport registration completed</h3>
+        <span>{translate("savedPassport")}</span>
+        <h3>{translate("passportRegistrationCompleted")}</h3>
       </header>
 
       <div className="passport-review__fields">
         {PASSPORT_REVIEW_FIELDS.map((field) => (
           <label key={field.key}>
-            <span>{field.label}</span>
+            <span>{passportFieldLabel(field.key, translate)}</span>
             <input
               readOnly
               value={draft[field.key] ?? ""}
@@ -951,8 +976,8 @@ function PassportReviewPanel({
       </div>
 
       {verification && (
-        <section className="passport-review__verification" aria-label="Passport verification">
-          <strong>Passport number: {verification.state.replace(/_/g, " ")}</strong>
+        <section className="passport-review__verification" aria-label={translate("verification")}>
+          <strong>{translate("passportNumber")}: {verification.state.replace(/_/g, " ")}</strong>
           {verification.issues.length > 0 && (
             <ul>
               {verification.issues.map((issue) => <li key={issue}>{issue.replace(/_/g, " ")}</li>)}
@@ -965,7 +990,7 @@ function PassportReviewPanel({
 
       <div className="reception-sheet__actions">
         <button className="vc-secondary-action" disabled={isPending} onClick={onCancel} type="button">
-          Back
+          {translate("back")}
         </button>
       </div>
     </section>
@@ -989,8 +1014,8 @@ function useMobilePassportActions(): boolean {
 function PassportStatusRow({
   count,
   disabled,
-  label = "Passport Acquired",
-  missingText = "Upload passport image",
+  label,
+  missingText,
   isPending,
   onClick,
 }: {
@@ -1001,7 +1026,10 @@ function PassportStatusRow({
   isPending: boolean;
   onClick: () => void;
 }) {
+  const { translate } = useLanguage();
   const completed = count > 0;
+  const rowLabel = label ?? translate("passportRegistrationCompleted");
+  const rowMissingText = missingText ?? translate("capturePassportImage");
 
   return (
     <button
@@ -1015,8 +1043,8 @@ function PassportStatusRow({
           <SheetIcon src={passportIcon} />
         </span>
         <span className="reception-check-row__label">
-          {label}
-          <small>{completed ? `${count} saved` : missingText}</small>
+          {rowLabel}
+          <small>{completed ? translate("savedPassportCount", { count }) : rowMissingText}</small>
         </span>
       </span>
 
@@ -1046,6 +1074,7 @@ function BookingDetailsSheet({
   stay: ReceptionStay | null;
   today: string;
 }) {
+  const { language, translate } = useLanguage();
   useSheetScrollLock(Boolean(stay));
   const queryClient = useQueryClient();
   const isMobilePassportActions = useMobilePassportActions();
@@ -1073,7 +1102,7 @@ function BookingDetailsSheet({
       queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
     },
     onError: () => {
-      setDepositError("Deposit status could not be saved.");
+      setDepositError(translate("noteCouldNotBeSaved"));
     },
   });
   if (!stay) return null;
@@ -1115,7 +1144,7 @@ function BookingDetailsSheet({
       role="dialog"
     >
       <button
-        aria-label="Close booking details"
+        aria-label={translate("closeBookingDetails")}
         className="reception-sheet__scrim"
         onClick={onCancel}
         type="button"
@@ -1123,12 +1152,12 @@ function BookingDetailsSheet({
 
       <VanaraGlassSheet className="reception-sheet__panel reception-details-sheet__panel">
         <header className="reception-sheet__header">
-          <span>Booking Details</span>
+          <span>{translate("bookingDetails")}</span>
           <h2 id="reception-booking-details-title">{stay.guestName}</h2>
           <p>
             <strong>{stay.roomName}</strong>
             <span aria-hidden="true"> · </span>
-            {bookingSourceLabel(stay)}
+            {bookingSourceLabel(stay, translate)}
           </p>
         </header>
 
@@ -1137,18 +1166,18 @@ function BookingDetailsSheet({
           className="reception-details-region"
         >
           <VanaraSectionHeader
-            eyebrow="Guest"
+            eyebrow={translate("guest")}
             headingId="reception-details-guest-title"
-            title="Guest"
+            title={translate("guest")}
           />
           <VanaraDataGrid
-            ariaLabel="Guest information"
+            ariaLabel={translate("guestInformation")}
             className="reception-details-facts"
             items={[
-              { label: "Nationality", value: nationality ?? "Not available" },
-              { label: "Guests", value: `${stay.adults} adults \u00b7 ${stay.children} children` },
-              { label: "Phone", value: stay.phone ?? "Not available" },
-              { label: "Email", value: stay.email ?? "Not available" },
+              { label: translate("nationality"), value: nationality ?? translate("notAvailable") },
+              { label: translate("guests"), value: translate("adultsChildrenCount", { adults: stay.adults, children: stay.children }) },
+              { label: translate("phone"), value: stay.phone ?? translate("notAvailable") },
+              { label: translate("email"), value: stay.email ?? translate("notAvailable") },
             ]}
           />
         </VanaraGlassRegion>
@@ -1158,20 +1187,20 @@ function BookingDetailsSheet({
           className="reception-details-region"
         >
           <VanaraSectionHeader
-            eyebrow="Booking"
+            eyebrow={translate("bookingDetails")}
             headingId="reception-details-booking-title"
-            title="Booking"
+            title={translate("bookingInformation")}
           />
           <VanaraDataGrid
-            ariaLabel="Booking information"
+            ariaLabel={translate("bookingInformation")}
             className="reception-details-facts"
             items={[
-              { label: "Check-in", value: formatFullDate(stay.arrival) },
-              { label: "Check-out", value: formatFullDate(stay.departure) },
-              { label: "Stay", value: stayDuration(stay.arrival, stay.departure) },
-              { label: "Source", value: bookingSourceLabel(stay) },
-              { label: "Reference", value: stay.bookingReference ?? "Not available" },
-              { label: "Status", value: stay.bookingStatus },
+              { label: translate("checkIn"), value: formatFullDate(stay.arrival, language) },
+              { label: translate("checkOut"), value: formatFullDate(stay.departure, language) },
+              { label: translate("stay"), value: stayDuration(stay.arrival, stay.departure, translate) },
+              { label: translate("source"), value: bookingSourceLabel(stay, translate) },
+              { label: translate("reference"), value: stay.bookingReference ?? translate("notAvailable") },
+              { label: translate("status"), value: stay.bookingStatus },
             ]}
           />
         </VanaraGlassRegion>
@@ -1182,9 +1211,9 @@ function BookingDetailsSheet({
             className="reception-details-region reception-details-checklist"
           >
             <VanaraSectionHeader
-              eyebrow="Reception"
+              eyebrow={translate("reception")}
               headingId="reception-details-checkin-title"
-              title="Check-in"
+              title={translate("checkIn")}
             />
             {passportReview ? (
               <PassportReviewPanel
@@ -1211,7 +1240,7 @@ function BookingDetailsSheet({
                   <ChecklistRow
                     checked={stay.checkIn.depositCollected}
                     icon={depositIcon}
-                    label="Deposit Collected"
+                    label={translate("depositCollected")}
                     onChange={() => deposit.mutate()}
                   />
                   <PassportStatusRow
@@ -1232,16 +1261,16 @@ function BookingDetailsSheet({
           className="reception-details-region"
         >
           <VanaraSectionHeader
-            eyebrow="Alerts"
+            eyebrow={translate("notes")}
             headingId="reception-details-notes-title"
-            title="Internal Notes"
+            title={translate("internalNotes")}
           />
           <InternalNotesField queryKey={queryKey} stay={stay} />
         </VanaraGlassRegion>
 
         <div className="reception-sheet__actions reception-sheet__actions--single">
           <button className="vc-secondary-action" onClick={onCancel} type="button">
-            Close
+            {translate("close")}
           </button>
         </div>
       </VanaraGlassSheet>
@@ -1260,6 +1289,7 @@ function BookingDetailsSheet({
 }
 
 export default function ReceptionPage() {
+  const { translate } = useLanguage();
   const today = bangkokToday();
   const [selectedDate, setSelectedDate] = useState(today);
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
@@ -1301,30 +1331,30 @@ export default function ReceptionPage() {
       setCompletionError(null);
     },
     onError: (error) => {
-      setCompletionError(error instanceof Error ? error.message : "Completion could not be saved.");
+      setCompletionError(error instanceof Error ? error.message : translate("requestNotSaved"));
     },
   });
   const canComplete = canCompleteReception(currentUser.data);
   const isToday = selectedDate === today;
   const summary = reception.data?.summary ?? { arrivals: 0, departures: 0, inHouse: 0 };
-  const arrivalTitle = isToday ? "Today's Check-Ins" : "Check-Ins";
-  const departureTitle = isToday ? "Today's Check-Outs" : "Check-Outs";
+  const arrivalTitle = isToday ? translate("todaysCheckIns") : translate("checkIns");
+  const departureTitle = isToday ? translate("todaysCheckOuts") : translate("checkOuts");
   const showCardSkeletons = reception.isFetching && !reception.data;
 
   return (
     <WorkspaceShell
-      title="Check-In / Out"
+      title={translate("arrivalsDepartures")}
       workspace="reception"
       bodyClassName="reception-page"
       suppressStickyNavigation={Boolean(completionRequest || contactRequest || detailsRequest)}
     >
       <div className="workspace-body-actions reception-date-actions">
-        <button className="reception-today-chip vc-secondary-action" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">Today</button>
+        <button className="reception-today-chip vc-secondary-action" disabled={selectedDate === today} onClick={() => setSelectedDate(today)} type="button">{translate("today")}</button>
         <ReceptionDatePicker onChange={setSelectedDate} selectedDate={selectedDate} today={today} />
       </div>
 
       <VanaraSummaryGrid
-        ariaLabel="Reception Summary"
+        ariaLabel={translate("receptionSummary")}
         className="reception-summary"
         items={[
           { label: arrivalTitle, tone: summary.arrivals > 0 ? "warning" : "clean", value: summary.arrivals },
@@ -1335,8 +1365,8 @@ export default function ReceptionPage() {
       {reception.isError && !reception.data && <PageError onRetry={() => void reception.refetch()} />}
 
       <div className="reception-agenda" aria-busy={reception.isFetching}>
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-ins." isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
-        <ReceptionSection canComplete={canComplete} empty="No scheduled check-outs." isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
+        <ReceptionSection canComplete={canComplete} empty={translate("noScheduledCheckIns")} isToday={isToday} items={reception.data?.arrivals ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={arrivalTitle} type="arrival" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
+        <ReceptionSection canComplete={canComplete} empty={translate("noScheduledCheckOuts")} isToday={isToday} items={reception.data?.departures ?? []} onCompletionRequest={(stay, type) => { setCompletionError(null); setCompletionDraft(emptyCompletionDraft()); setCompletionRequest({ stay, type }); }} queryKey={queryKey} showSkeleton={showCardSkeletons} title={departureTitle} type="departure" onContactRequest={(stay) => { setContactFeedback(null); setContactRequest(stay); }} onDetailsRequest={setDetailsRequest} />
       </div>
 
       <CompletionModal

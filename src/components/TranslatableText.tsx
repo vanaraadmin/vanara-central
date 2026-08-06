@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { translateFreeText } from "../services/translation.service";
 import type { FreeTextEntityType, FreeTextLanguage } from "../types/translation";
+import { useLanguage } from "../providers/language.context";
 import "../styles/TranslatableText.css";
 
 interface TranslatableTextProps {
@@ -29,6 +30,7 @@ export default function TranslatableText({
   originalClassName,
   translationClassName,
 }: TranslatableTextProps) {
+  const { translate } = useLanguage();
   const initialMatchesTarget = Boolean(initialTranslatedText && (!targetLanguage || initialTranslatedLanguage === targetLanguage));
   const [translatedText, setTranslatedText] = useState<string | null>(initialMatchesTarget ? initialTranslatedText ?? null : null);
   const [translatedLanguage, setTranslatedLanguage] = useState<FreeTextLanguage | null>(initialMatchesTarget ? initialTranslatedLanguage ?? null : null);
@@ -64,10 +66,10 @@ export default function TranslatableText({
           onClick={() => mutation.mutate()}
           type="button"
         >
-          {mutation.isPending ? "Translating..." : "Translate"}
+          {mutation.isPending ? translate("translating") : translate("translate")}
         </button>
       ) : null}
-      {mutation.isError ? <p className="free-text-translate__error">Translation unavailable</p> : null}
+      {mutation.isError ? <p className="free-text-translate__error">{translate("translationUnavailable")}</p> : null}
     </div>
   );
 }

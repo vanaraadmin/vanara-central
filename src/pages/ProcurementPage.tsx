@@ -9,10 +9,11 @@ import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { createProcurementRequest, loadCurrentUser, loadProcurementRequests, updateProcurementRequest } from "../services/procurement.service";
 import type { ProcurementRequest } from "../types/procurement";
+import { useLanguage } from "../providers/language.context";
 import "../styles/ProcurementPage.css";
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDate(value: string, language: "en" | "th") {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -21,13 +22,14 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function statusLabel(status: ProcurementRequest["status"]) {
-  if (status === "DONE") return "Bought";
-  if (status === "REJECTED") return "Rejected";
-  return "Pending";
+function statusLabel(status: ProcurementRequest["status"], translate: (key: string) => string) {
+  if (status === "DONE") return translate("bought");
+  if (status === "REJECTED") return translate("rejected");
+  return translate("pending");
 }
 
 function RequestCard({ isOwner, request }: { isOwner: boolean; request: ProcurementRequest }) {
+  const { language, translate } = useLanguage();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (status: "DONE" | "REJECTED") => updateProcurementRequest(request.id, { status }),
@@ -41,9 +43,9 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
       <div className="procurement-card__top">
         <div>
           <strong>{request.requestedByName}</strong>
-          <time dateTime={request.createdAt}>{formatDate(request.createdAt)}</time>
+          <time dateTime={request.createdAt}>{formatDate(request.createdAt, language)}</time>
         </div>
-        <span className="procurement-status">{statusLabel(request.status)}</span>
+        <span className="procurement-status">{statusLabel(request.status, translate)}</span>
       </div>
 
       <TranslatableText
@@ -61,7 +63,9 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
 
       {request.closedAt ? (
         <p className="procurement-card__meta">
-          Closed {formatDate(request.closedAt)}{request.closedByName ? ` by ${request.closedByName}` : ""}
+          {request.closedByName
+            ? translate("closedBy", { date: formatDate(request.closedAt, language), name: request.closedByName })
+            : translate("closedAt", { date: formatDate(request.closedAt, language) })}
         </p>
       ) : null}
 
@@ -73,7 +77,7 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
             onClick={() => mutation.mutate("DONE")}
             type="button"
           >
-            <CheckIcon /> Bought
+            <CheckIcon /> {translate("bought")}
           </button>
           <button
             className="procurement-action procurement-action--reject"
@@ -81,7 +85,7 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
             onClick={() => mutation.mutate("REJECTED")}
             type="button"
           >
-            Reject
+            {translate("reject")}
           </button>
         </div>
       ) : null}
@@ -99,6 +103,7 @@ function EmptyState({ children }: { children: string }) {
 }
 
 export default function ProcurementPage() {
+  const { translate } = useLanguage();
   const [requestText, setRequestText] = useState("");
   const queryClient = useQueryClient();
   const user = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => loadCurrentUser(signal) });
@@ -129,74 +134,74 @@ export default function ProcurementPage() {
   }
 
   if (user.isLoading || requestsQuery.isLoading) {
-    return <WorkspaceShell title="Procurement" workspace="procurement"><PageLoading /></WorkspaceShell>;
+    return <WorkspaceShell title={translate("procurement")} workspace="procurement"><PageLoading /></WorkspaceShell>;
   }
 
   if (user.isError || requestsQuery.isError || !user.data) {
     return (
-      <WorkspaceShell title="Procurement" workspace="procurement">
+      <WorkspaceShell title={translate("procurement")} workspace="procurement">
         <PageError onRetry={() => { void user.refetch(); void requestsQuery.refetch(); }} />
       </WorkspaceShell>
     );
   }
 
   return (
-    <WorkspaceShell title="Procurement" workspace="procurement" bodyClassName="procurement-page">
+    <WorkspaceShell title={translate("procurement")} workspace="procurement" bodyClassName="procurement-page">
       <VanaraGlassRegion className="procurement-compose" ariaLabelledBy="procurement-new-request">
         <VanaraSectionHeader
-          eyebrow="Procurement"
+          eyebrow={translate("procurement")}
           headingId="procurement-new-request"
-          meta={isOwner ? "Owner view" : "Staff request"}
-          title={isOwner ? "Open Requests" : "New Request"}
+          meta={isOwner ? translate("ownerView") : translate("staffRequest")}
+          title={isOwner ? translate("openRequests") : translate("newRequest")}
         />
 
         {!isOwner ? (
           <form className="procurement-form" onSubmit={submit}>
             <label className="procurement-field">
-              <span>What should we buy?</span>
+              <span>{translate("whatShouldWeBuy")}</span>
               <textarea
                 maxLength={2000}
                 onChange={(event) => setRequestText(event.target.value)}
-                placeholder="Write the request here. Thai is okay."
+                placeholder={translate("procurementPlaceholder")}
                 rows={5}
                 value={requestText}
               />
             </label>
-            {createMutation.isError ? <p className="procurement-error">Request was not saved. Please try again.</p> : null}
+            {createMutation.isError ? <p className="procurement-error">{translate("requestNotSaved")}</p> : null}
             <button className="procurement-submit" disabled={!canSubmit} type="submit">
-              <PlusIcon /> Send Request
+              <PlusIcon /> {translate("sendRequest")}
             </button>
           </form>
         ) : (
-          <p className="procurement-owner-note">Read the staff request exactly as written, then mark it Bought or Reject.</p>
+          <p className="procurement-owner-note">{translate("procurementOwnerNote")}</p>
         )}
       </VanaraGlassRegion>
 
       <section className="procurement-section" aria-labelledby="procurement-pending">
         <VanaraSectionHeader
-          eyebrow="Pending"
+          eyebrow={translate("pending")}
           headingId="procurement-pending"
-          meta={`${pending.length} open`}
-          title="Pending Requests"
+          meta={translate("openCount", { count: pending.length })}
+          title={translate("pendingRequests")}
         />
         <div className="procurement-list vc-glass-list">
           {pending.length > 0 ? pending.map((request) => (
             <RequestCard isOwner={isOwner} key={request.id} request={request} />
-          )) : <EmptyState>No pending requests</EmptyState>}
+          )) : <EmptyState>{translate("noPendingRequests")}</EmptyState>}
         </div>
       </section>
 
       <section className="procurement-section" aria-labelledby="procurement-closed">
         <VanaraSectionHeader
-          eyebrow="Closed"
+          eyebrow={translate("closed")}
           headingId="procurement-closed"
-          meta={isOwner ? "All closed" : "7 days"}
-          title="Recent Closed"
+          meta={isOwner ? translate("allClosed") : translate("sevenDays")}
+          title={translate("recentClosed")}
         />
         <div className="procurement-list vc-glass-list">
           {closedRecent.length > 0 ? closedRecent.map((request) => (
             <RequestCard isOwner={isOwner} key={request.id} request={request} />
-          )) : <EmptyState>No recent closed requests</EmptyState>}
+          )) : <EmptyState>{translate("noRecentClosedRequests")}</EmptyState>}
         </div>
       </section>
     </WorkspaceShell>

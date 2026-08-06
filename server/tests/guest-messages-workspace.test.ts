@@ -427,9 +427,9 @@ test("guest messages UI uses only the human review draft endpoints and no AI or 
   const page = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
   const service = readFileSync(new URL("../../src/services/messages.service.ts", import.meta.url), "utf8");
 
-  assert.match(page, /Approve & Send/);
-  assert.match(page, /Retry Send/);
-  assert.match(page, /Save Draft/);
+  assert.match(page, /guestMessagesApproveAndSend/);
+  assert.match(page, /guestMessagesRetrySend/);
+  assert.match(page, /guestMessagesDraftSaved/);
   assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/approve/);
   assert.match(service, /\/api\/messages\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/reject/);
   assert.doesNotMatch(service, /method:\s*["']DELETE["']/);
@@ -445,18 +445,18 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
   assert.match(page, /enabled: Boolean\(activeConversationId\)/);
   assert.match(page, /current === conversationId \? "" : conversationId/);
   assert.match(page, /onClose=\{\(\) => setSelectedConversationId\(""\)\}/);
-  assert.match(page, />\s*Compact\s*<\/button>/);
+  assert.match(page, /guestMessagesCompact/);
   assert.doesNotMatch(page, /<details className="messages-context__details" open>/);
   assert.match(page, /function ConversationSelectionEmpty/);
-  assert.match(page, /Select a conversation/);
+  assert.match(page, /guestMessagesSelectConversation/);
   assert.match(css, /\.messages-selection-empty/);
   assert.match(css, /\.messages-inbox\s*\{[\s\S]*order:\s*1/);
   assert.match(page, /MessagesSkeleton/);
   assert.match(page, /messages-day-separator/);
   assert.match(page, /aria-current/);
-  assert.match(page, /No search results\./);
-  assert.match(page, /No drafts waiting\./);
-  assert.match(page, /No reply required\./);
+  assert.match(page, /guestMessagesNoSearchResults/);
+  assert.match(page, /guestMessagesNoDraftsWaiting/);
+  assert.match(page, /guestMessagesNoReplyRequired/);
   assert.match(css, /\.messages-inbox-row:focus-visible/);
   assert.match(css, /\.messages-skeleton__line/);
   assert.match(css, /prefers-reduced-motion/);

@@ -19,12 +19,13 @@ import type {
   GuestMessageInboxItem,
   GuestMessageTimelineItem,
 } from "../types/messages";
+import { useLanguage } from "../providers/language.context";
 import "../styles/messages.css";
 
-const GROUPS: Array<{ id: GuestMessageInboxGroup; label: string; tone: string }> = [
-  { id: "needsReply", label: "Needs Reply", tone: "orange" },
-  { id: "waitingGuest", label: "Waiting Guest", tone: "grey" },
-  { id: "closed", label: "Closed", tone: "green" },
+const GROUPS: Array<{ id: GuestMessageInboxGroup; labelKey: string; tone: string }> = [
+  { id: "needsReply", labelKey: "guestMessagesNeedsReply", tone: "orange" },
+  { id: "waitingGuest", labelKey: "guestMessagesWaitingGuest", tone: "grey" },
+  { id: "closed", labelKey: "closed", tone: "green" },
 ];
 
 function formatTime(value: string | null): string {
@@ -52,15 +53,18 @@ function formatDay(value: string | null): string {
   }).format(date);
 }
 
-function groupLabel(group: GuestMessageInboxGroup): string {
-  return GROUPS.find((item) => item.id === group)?.label ?? "Messages";
+type Translate = ReturnType<typeof useLanguage>["translate"];
+
+function groupLabel(group: GuestMessageInboxGroup, translate: Translate): string {
+  const key = GROUPS.find((item) => item.id === group)?.labelKey ?? "messages";
+  return translate(key);
 }
 
-function emptyGroupMessage(group: GuestMessageInboxGroup, searching: boolean): string {
-  if (searching) return "No search results.";
-  if (group === "needsReply") return "No drafts waiting.";
-  if (group === "waitingGuest") return "No reply required.";
-  return "No closed conversations.";
+function emptyGroupMessage(group: GuestMessageInboxGroup, searching: boolean, translate: Translate): string {
+  if (searching) return translate("guestMessagesNoSearchResults");
+  if (group === "needsReply") return translate("guestMessagesNoDraftsWaiting");
+  if (group === "waitingGuest") return translate("guestMessagesNoReplyRequired");
+  return translate("guestMessagesNoClosedConversations");
 }
 
 function providerInitial(label: string): string {
@@ -77,6 +81,7 @@ function ConversationRow({
   conversation: GuestMessageInboxItem;
   onSelect: (conversationId: string) => void;
 }) {
+  const { translate } = useLanguage();
   return (
     <button
       type="button"
@@ -97,7 +102,7 @@ function ConversationRow({
         <span className="messages-inbox-row__preview">{conversation.lastMessagePreview}</span>
       </span>
       {conversation.unreadCount > 0 ? (
-        <span className="messages-inbox-row__badge" aria-label={`${conversation.unreadCount} unread messages`}>
+        <span className="messages-inbox-row__badge" aria-label={translate("guestMessagesUnreadCount", { count: conversation.unreadCount })}>
           {conversation.unreadCount}
         </span>
       ) : null}
@@ -120,22 +125,23 @@ function InboxColumn({
   onSelect: (conversationId: string) => void;
   search: string;
 }) {
+  const { translate } = useLanguage();
   return (
     <VanaraGlassRegion className="messages-inbox" ariaLabelledBy="messages-inbox-title">
       <VanaraSectionHeader
-        eyebrow="Inbox"
+        eyebrow={translate("guestMessagesInbox")}
         headingId="messages-inbox-title"
-        meta={loading ? "Syncing" : "Live"}
-        title="Guest Messages"
+        meta={loading ? translate("guestMessagesSyncing") : translate("guestMessagesLive")}
+        title={translate("guestMessages")}
       />
 
       <label className="messages-search">
-        <span className="vc-sr-only">Search conversations</span>
+        <span className="vc-sr-only">{translate("guestMessagesSearchConversations")}</span>
         <input
           value={search}
           onChange={(event) => onSearch(event.target.value)}
-          placeholder="Search guest, room, booking, provider"
-          aria-label="Search guest, room, booking, provider"
+          placeholder={translate("guestMessagesSearchPlaceholder")}
+          aria-label={translate("guestMessagesSearchPlaceholder")}
         />
       </label>
 
@@ -145,7 +151,7 @@ function InboxColumn({
           return (
             <section className="messages-inbox-group" key={group.id}>
               <div className={`messages-inbox-group__heading messages-state--${group.tone}`}>
-                <span>{group.label}</span>
+                <span>{translate(group.labelKey)}</span>
                 <small>{items.length}</small>
               </div>
               {items.length > 0 ? (
@@ -160,7 +166,7 @@ function InboxColumn({
                   ))}
                 </div>
               ) : (
-                <p className="messages-inbox-group__empty">{emptyGroupMessage(group.id, Boolean(search.trim()))}</p>
+                <p className="messages-inbox-group__empty">{emptyGroupMessage(group.id, Boolean(search.trim()), translate)}</p>
               )}
             </section>
           );
@@ -179,8 +185,9 @@ interface DraftActionHandlers {
 }
 
 function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
+  const { translate } = useLanguage();
   return (
-    <div className="messages-skeleton" aria-label="Loading conversations" aria-busy="true">
+    <div className="messages-skeleton" aria-label={translate("guestMessagesLoadingConversations")} aria-busy="true">
       {Array.from({ length: rows }).map((_, index) => (
         <span className="messages-skeleton__line" key={index} />
       ))}
@@ -189,7 +196,8 @@ function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
-  const label = item.kind === "draft" ? "Waraporn Draft" : item.sender;
+  const { translate } = useLanguage();
+  const label = item.kind === "draft" ? translate("guestMessagesDraft") : item.sender;
   const canActOnDraft = item.kind === "draft" && (item.status === "READY" || item.status === "DELIVERY_FAILED");
   return (
     <article className={`messages-bubble messages-bubble--${item.kind}`}>
@@ -199,7 +207,7 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
       </div>
       {item.kind === "draft" ? (
         <div className="messages-bubble__draft-header">
-          <span>Waraporn Draft</span>
+          <span>{translate("guestMessagesDraft")}</span>
           <strong>{item.status}</strong>
         </div>
       ) : null}
@@ -212,6 +220,7 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
 }
 
 function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
+  const { translate } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [draftText, setDraftText] = useState(item.message);
   const [notice, setNotice] = useState("");
@@ -227,15 +236,15 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
       setNotice(success);
       setEditing(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The review action could not be completed.");
+      setError(caught instanceof Error ? caught.message : translate("guestMessagesReviewActionFailed"));
     }
   };
 
   if (!canReview) {
     return (
-      <div className="messages-draft-actions" aria-label="Draft review actions">
+      <div className="messages-draft-actions" aria-label={translate("guestMessagesDraftReviewActions")}>
         <button className="vc-secondary-action" type="button" disabled>
-          Read only
+          {translate("readOnly")}
         </button>
       </div>
     );
@@ -243,11 +252,11 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
   const activeDraftId = draftId!;
 
   return (
-    <div className="messages-draft-actions" aria-label="Draft review actions">
+    <div className="messages-draft-actions" aria-label={translate("guestMessagesDraftReviewActions")}>
       {editing ? (
         <div className="messages-draft-editor">
           <label>
-            <span className="vc-sr-only">Edit Waraporn draft</span>
+            <span className="vc-sr-only">{translate("guestMessagesEditDraft")}</span>
             <textarea
               value={draftText}
               onChange={(event) => setDraftText(event.target.value)}
@@ -259,20 +268,20 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
               className="vc-secondary-action"
               type="button"
               disabled={actions.busy || !draftText.trim()}
-              onClick={() => run(() => actions.onSave(activeDraftId, draftText), "Draft saved.")}
+              onClick={() => run(() => actions.onSave(activeDraftId, draftText), translate("guestMessagesDraftSaved"))}
             >
-              Save Draft
+              {translate("saveDraft")}
             </button>
             <button
               className="vc-primary-action"
               type="button"
               disabled={actions.busy || !draftText.trim()}
-              onClick={() => run(() => actions.onApproveEdited(activeDraftId, draftText), "Edited reply sent.")}
+              onClick={() => run(() => actions.onApproveEdited(activeDraftId, draftText), translate("guestMessagesEditedReplySent"))}
             >
-              Approve & Send
+              {translate("guestMessagesApproveAndSend")}
             </button>
             <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(false)}>
-              Cancel
+              {translate("cancel")}
             </button>
           </div>
         </div>
@@ -282,20 +291,20 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
             className="vc-primary-action"
             type="button"
             disabled={actions.busy}
-            onClick={() => run(() => actions.onApprove(activeDraftId), "Reply sent.")}
+            onClick={() => run(() => actions.onApprove(activeDraftId), translate("guestMessagesReplySent"))}
           >
-            {item.status === "DELIVERY_FAILED" ? "Retry Send" : "Approve"}
+            {item.status === "DELIVERY_FAILED" ? translate("guestMessagesRetrySend") : translate("guestMessagesApprove")}
           </button>
           <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(true)}>
-            Edit
+            {translate("edit")}
           </button>
           <button
             className="vc-secondary-action"
             type="button"
             disabled={actions.busy}
-            onClick={() => run(() => actions.onReject(activeDraftId), "Draft rejected.")}
+            onClick={() => run(() => actions.onReject(activeDraftId), translate("guestMessagesDraftRejected"))}
           >
-            Reject
+            {translate("reject")}
           </button>
         </>
       )}
@@ -318,14 +327,15 @@ function ConversationColumn({
   onClose: () => void;
   onRetry: () => void;
 }) {
+  const { translate } = useLanguage();
   const hasReadyDraft = conversation.some((item) => item.kind === "draft" && item.status === "READY");
 
   if (loading) {
     return (
-      <VanaraGlassSheet className="messages-conversation" ariaLabel="Conversation">
+      <VanaraGlassSheet className="messages-conversation" ariaLabel={translate("guestMessagesConversation")}>
         <div className="messages-conversation__header">
-          <span>Conversation</span>
-          <strong>Loading</strong>
+          <span>{translate("guestMessagesConversation")}</span>
+          <strong>{translate("loading")}</strong>
         </div>
         <MessagesSkeleton rows={5} />
       </VanaraGlassSheet>
@@ -334,12 +344,12 @@ function ConversationColumn({
 
   if (conversation.length === 0) {
     return (
-      <VanaraGlassSheet className="messages-conversation" ariaLabel="Conversation">
+      <VanaraGlassSheet className="messages-conversation" ariaLabel={translate("guestMessagesConversation")}>
         <div className="messages-empty">
-          <h2>No conversation selected</h2>
-          <p>Select a guest message from the inbox.</p>
+          <h2>{translate("guestMessagesNoConversationSelected")}</h2>
+          <p>{translate("guestMessagesSelectFromInbox")}</p>
           <button className="vc-secondary-action" type="button" onClick={onRetry}>
-            Refresh
+            {translate("refresh")}
           </button>
         </div>
       </VanaraGlassSheet>
@@ -347,13 +357,13 @@ function ConversationColumn({
   }
 
   return (
-    <VanaraGlassSheet className="messages-conversation" ariaLabel="Conversation timeline" variant="elevated">
+    <VanaraGlassSheet className="messages-conversation" ariaLabel={translate("guestMessagesConversationTimeline")} variant="elevated">
       <div className="messages-conversation__header">
-        <span>Conversation</span>
+        <span>{translate("guestMessagesConversation")}</span>
         <div className="messages-conversation__header-actions">
-          <strong>{hasReadyDraft ? "Draft Ready" : "Read Only"}</strong>
+          <strong>{hasReadyDraft ? translate("guestMessagesDraftReady") : translate("readOnly")}</strong>
           <button className="vc-secondary-action" type="button" onClick={onClose}>
-            Compact
+            {translate("guestMessagesCompact")}
           </button>
         </div>
       </div>
@@ -374,28 +384,29 @@ function ConversationColumn({
 }
 
 function ContextColumn({ context }: { context: GuestMessageBookingContext | null }) {
+  const { translate } = useLanguage();
   const rows = context ? [
-    ["Guest", context.guest],
-    ["Arrival", context.arrival ?? "-"],
-    ["Departure", context.departure ?? "-"],
-    ["Room", context.room],
-    ["Travel phase", context.travelPhase],
-    ["Provider", context.provider],
-    ["Channel", context.channel],
-    ["Accommodation", context.accommodation],
-    ["Booking status", context.bookingStatus],
+    [translate("guest"), context.guest],
+    [translate("arrival"), context.arrival ?? "-"],
+    [translate("departure"), context.departure ?? "-"],
+    [translate("room"), context.room],
+    [translate("guestMessagesTravelPhase"), context.travelPhase],
+    [translate("provider"), context.provider],
+    [translate("guestMessagesChannel"), context.channel],
+    [translate("guestMessagesAccommodation"), context.accommodation],
+    [translate("guestMessagesBookingStatus"), context.bookingStatus],
   ] : [];
 
   return (
     <VanaraGlassRegion className="messages-context" ariaLabelledBy="messages-context-title">
       <VanaraSectionHeader
-        eyebrow="Read only"
+        eyebrow={translate("readOnly")}
         headingId="messages-context-title"
-        title="Booking Context"
+        title={translate("guestMessagesBookingContext")}
       />
       {context ? (
         <details className="messages-context__details">
-          <summary>Booking details</summary>
+          <summary>{translate("bookingDetails")}</summary>
           <dl className="messages-context__grid">
             {rows.map(([label, value]) => (
               <div key={label}>
@@ -406,25 +417,27 @@ function ContextColumn({ context }: { context: GuestMessageBookingContext | null
           </dl>
         </details>
       ) : (
-        <p className="messages-context__empty">Booking context appears when a conversation is selected.</p>
+        <p className="messages-context__empty">{translate("guestMessagesContextEmpty")}</p>
       )}
     </VanaraGlassRegion>
   );
 }
 
 function ConversationSelectionEmpty() {
+  const { translate } = useLanguage();
   return (
     <VanaraGlassRegion className="messages-selection-empty" ariaLabelledBy="messages-selection-empty-title">
       <div className="messages-empty">
         <span className="messages-empty__mark" aria-hidden="true" />
-        <h2 id="messages-selection-empty-title">Select a conversation</h2>
-        <p>Choose one inbox row to review the guest message and Waraporn draft.</p>
+        <h2 id="messages-selection-empty-title">{translate("guestMessagesSelectConversation")}</h2>
+        <p>{translate("guestMessagesChooseConversation")}</p>
       </div>
     </VanaraGlassRegion>
   );
 }
 
 export default function MessagesPage() {
+  const { translate } = useLanguage();
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const queryClient = useQueryClient();
@@ -489,7 +502,7 @@ export default function MessagesPage() {
 
   if (inboxQuery.isError && !inboxQuery.data) {
     return (
-      <WorkspaceShell title="Messages" workspace="messages" bodyClassName="messages-page" wide>
+      <WorkspaceShell title={translate("messages")} workspace="messages" bodyClassName="messages-page" wide>
         <PageError onRetry={retry} />
       </WorkspaceShell>
     );
@@ -497,16 +510,16 @@ export default function MessagesPage() {
 
   return (
     <WorkspaceShell
-      title="Messages"
-      stickyNavigationTitle="Messages"
+      title={translate("messages")}
+      stickyNavigationTitle={translate("messages")}
       workspace="messages"
       bodyClassName="messages-page"
       wide
     >
       <div className="workspace-body-actions">
-        <span>{detailQuery.data ? groupLabel(detailQuery.data.conversation.group) : "Guest Messages"}</span>
+        <span>{detailQuery.data ? groupLabel(detailQuery.data.conversation.group, translate) : translate("guestMessages")}</span>
         <button className="vc-secondary-action" type="button" onClick={retry}>
-          Refresh
+          {translate("refresh")}
         </button>
       </div>
 

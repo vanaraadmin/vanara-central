@@ -1,4 +1,6 @@
 import type { RoomMaintenanceDomainSummary } from "../../types/rooms-workspace";
+import { useLanguage } from "../../providers/language.context";
+import { translateStaffLabel } from "../../utils/staff-i18n-labels";
 import OperationalStatusPill from "./OperationalStatusPill";
 import RoomDomainCard, { OperationalStateBlock, PrimaryActionRow } from "./RoomDomainCard";
 
@@ -9,30 +11,31 @@ type MaintenanceCardProps = {
 };
 
 export default function MaintenanceCard({ maintenance, roomId, roomName }: MaintenanceCardProps) {
+  const { translate } = useLanguage();
   const action = maintenance.primaryAction;
 
   return (
     <RoomDomainCard
       action={action ? (
         <PrimaryActionRow
-          ariaLabel={`${action.label} for ${roomName}`}
-          label={action.label}
+          ariaLabel={`${translateStaffLabel(action.label, translate)} ${roomName}`}
+          label={translateStaffLabel(action.label, translate)}
           to={action.target}
         />
       ) : null}
       className="maintenance-domain-card"
-      eyebrow="Maintenance"
+      eyebrow={translate("maintenance")}
       headingId={`maintenance-card-${roomId}`}
       state={(
         <OperationalStateBlock
-          detail={maintenance.detail}
+          detail={translateStaffLabel(maintenance.detail, translate)}
           secondaryInfo={maintenance.secondaryInfo}
           tone={maintenance.tone}
-          value={maintenance.primaryStatus}
+          value={translateStaffLabel(maintenance.primaryStatus, translate)}
         />
       )}
-      status={<OperationalStatusPill label={maintenance.primaryStatus} tone={maintenance.tone} emphasis />}
-      title="Technical"
+      status={<OperationalStatusPill label={translateStaffLabel(maintenance.primaryStatus, translate)} tone={maintenance.tone} emphasis />}
+      title={translate("technical")}
     />
   );
 }

@@ -47,7 +47,7 @@ export function LanguageProvider({
     () => ({
       language,
       changeLanguage,
-      translate: (key: string) => t(key),
+      translate: (key: string, options?: Record<string, unknown>) => t(key, options),
     }),
     [language, t],
   );

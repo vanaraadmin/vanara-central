@@ -4,6 +4,7 @@ import whatsappIcon from "../../assets/img/whatsapp-logo-light.svg";
 import VanaraGlassSheet from "./VanaraGlassSheet";
 import { AddressBookIcon } from "./VanaraGuestContactTrigger";
 import { normalizeWhatsappPhone } from "../../utils/guest-contact";
+import { useLanguage } from "../../providers/language.context";
 import "../../styles/VanaraGuestContact.css";
 
 export type VanaraGuestContact = {
@@ -53,6 +54,7 @@ export default function VanaraGuestContactSheet({
   onCancel,
   onFeedback,
 }: VanaraGuestContactSheetProps) {
+  const { translate } = useLanguage();
   const titleId = useId();
   useContactSheetScrollLock(Boolean(contact));
 
@@ -93,7 +95,7 @@ export default function VanaraGuestContactSheet({
       role="dialog"
     >
       <button
-        aria-label="Close contact options"
+        aria-label={translate("closeContactOptions")}
         className="vanara-guest-contact-sheet__scrim"
         onClick={onCancel}
         type="button"
@@ -108,8 +110,8 @@ export default function VanaraGuestContactSheet({
           </span>
 
           <div>
-            <span>Guest Contact</span>
-            <h2 id={titleId}>Contact Guest</h2>
+            <span>{translate("guestContact")}</span>
+            <h2 id={titleId}>{translate("contactGuest")}</h2>
             <p>
               <strong>{contact.guestName}</strong>
               <span aria-hidden="true"> · </span>
@@ -130,7 +132,7 @@ export default function VanaraGuestContactSheet({
 
             <span className="vanara-guest-contact-sheet__action-copy">
               <strong>WhatsApp</strong>
-              <small>{whatsappPhone ? "Open guest conversation" : "Phone number unavailable"}</small>
+              <small>{whatsappPhone ? translate("openGuestConversation") : translate("phoneNumberUnavailable")}</small>
             </span>
 
             <span aria-hidden="true" className="vanara-guest-contact-sheet__action-arrow">›</span>
@@ -147,7 +149,7 @@ export default function VanaraGuestContactSheet({
 
             <span className="vanara-guest-contact-sheet__action-copy">
               <strong>Email</strong>
-              <small>{email ? email : "Email address unavailable"}</small>
+              <small>{email ? email : translate("emailAddressUnavailable")}</small>
             </span>
 
             <span aria-hidden="true" className="vanara-guest-contact-sheet__action-arrow">›</span>
@@ -156,19 +158,19 @@ export default function VanaraGuestContactSheet({
 
         {feedback === "phone" && (
           <p className="vanara-guest-contact-sheet__feedback" role="status">
-            Phone number not available
+            {translate("phoneNotAvailable")}
           </p>
         )}
 
         {feedback === "email" && (
           <p className="vanara-guest-contact-sheet__feedback" role="status">
-            Email not available
+            {translate("emailNotAvailable")}
           </p>
         )}
 
         <div className="vanara-guest-contact-sheet__footer">
           <button className="vc-secondary-action" onClick={onCancel} type="button">
-            Cancel
+            {translate("cancel")}
           </button>
         </div>
       </VanaraGlassSheet>

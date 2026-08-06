@@ -10,8 +10,8 @@ const service = readFileSync(new URL("../src/services/booking-events.service.ts"
 
 test("Booking Pulse keeps the approved shell and Staff Home placement", () => {
   assert.match(component, /className="recent-bookings booking-pulse"/);
-  assert.match(component, />Booking pulse</);
-  assert.match(component, />Recent Bookings</);
+  assert.match(component, /translate\("bookingPulse"\)/);
+  assert.match(component, /translate\("recentBookings"\)/);
   assert.match(component, /recent-bookings__surface booking-pulse__surface/);
   assert.match(staffPage, /<RecentBookings/);
   assert.doesNotMatch(component, /GenericCard|DashboardCard|booking-pulse-card/);
@@ -20,11 +20,11 @@ test("Booking Pulse keeps the approved shell and Staff Home placement", () => {
 test("Booking Pulse collapsed rows keep guest source status and event timing visible", () => {
   assert.match(component, /booking-pulse__guest/);
   assert.match(component, /event\.guestName/);
-  assert.match(component, /bookingSourceLabel\(event\.source\)/);
+  assert.match(component, /bookingSourceLabel\(event\.source, translate\)/);
   assert.match(component, /const detail = source/);
-  assert.match(component, /formatRelativeEventTime\(event\.eventTimestamp\)/);
+  assert.match(component, /formatRelativeEventTime\(event\.eventTimestamp, language, translate\)/);
   assert.match(component, /const timing = eventTime/);
-  assert.match(component, /EVENT_LABELS\[event\.eventType\]/);
+  assert.match(component, /eventLabel\(event\.eventType, translate\)/);
   assert.doesNotMatch(component, /formatArrival\(event\.arrivalDate\)/);
   assert.doesNotMatch(component, /const detail = \[source, stayDates\]/);
 });
@@ -63,7 +63,7 @@ test("Booking Pulse accessibility uses native trigger and conditional detail reg
   assert.match(component, /aria-expanded=\{expanded\}/);
   assert.match(component, /aria-controls=\{detailsId\}/);
   assert.match(component, /role="region"/);
-  assert.match(component, /aria-label=\{`Booking details for \$\{item\.guestName\}`\}/);
+  assert.match(component, /aria-label=\{translate\("bookingDetailsFor", \{ guestName: item\.guestName \}\)\}/);
   assert.match(component, /if \(value == null \|\| value === ""\) return null/);
 });
 
@@ -73,20 +73,20 @@ test("Booking Pulse is self-contained and has no booking navigation action", () 
 });
 
 test("Booking Pulse expanded details keep only the compact informational set", () => {
-  for (const label of ["Guest", "Room", "Room Quantity", "Source", "Arrival", "Departure", "Stay", "Guest Count"]) {
-    assert.match(component, new RegExp(`label="${label}"`));
+  for (const key of ["guest", "room", "roomQuantity", "source", "checkIn", "checkOut", "stay", "guestCountLabel"]) {
+    assert.match(component, new RegExp(`label=\\{translate\\("${key}"\\)`));
   }
   for (const removedLabel of ["Status", "Event", "Event time", "Nationality", "Total"]) {
     assert.doesNotMatch(component, new RegExp(`label="${removedLabel}"`));
   }
   assert.match(component, /guestCount/);
-  assert.match(component, /guest count/i);
+  assert.match(component, /guestCountLabel/);
 });
 
 test("Booking Pulse compact preview excludes room names and maps Direct to Front Desk", () => {
   const row = component.match(/function BookingEventRow[\s\S]*?function RecentBookingsEmpty/)?.[0] ?? "";
   assert.match(component, /function bookingSourceLabel/);
-  assert.match(component, /cleaned\.toLowerCase\(\) === "direct" \? "Front Desk" : cleaned/);
+  assert.match(component, /cleaned\.toLowerCase\(\) === "direct" \? translate\("frontDesk"\) : cleaned/);
   assert.match(row, /const detail = source/);
   assert.match(row, /const timing = eventTime/);
   assert.doesNotMatch(row, /stayDates|formatArrival|Arrives today|Arrives tomorrow/);
@@ -97,7 +97,7 @@ test("Booking Pulse booking value is gated by the server capability and rendered
   assert.match(component, /canViewBookingValue\?: boolean/);
   assert.match(component, /canViewBookingValue = false/);
   assert.match(component, /canViewBookingValue \?/);
-  assert.match(component, /label="Booking Value"/);
+  assert.match(component, /label=\{translate\("bookingValue"\)\}/);
   assert.match(component, /\} THB`/);
   assert.doesNotMatch(component, /label="Currency"/);
   assert.match(staffPage, /canViewBookingValue=\{canViewBookingValue\}/);
