@@ -69,6 +69,7 @@ export const OPENAI_WARAPORN_DRAFT_TIMEOUT_MS = 60_000;
 export const DEFAULT_WARAPORN_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 export const OPENAI_RESPONSES_FILE_SEARCH_INCLUDE = ["file_search_call.results"] as const;
 export const WARAPORN_MAX_TOOL_CALLS = 2;
+export const WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT = 1;
 export const WARAPORN_PROMPT_CACHE_KEY = "waraporn-v4-rc3-payload-optimized";
 export const WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES = [
   "Waraporn_Conversation_Composer.md",
@@ -103,6 +104,8 @@ interface OpenAiResponsesResult {
   elapsedMs: number;
   estimatedCostUsd: number;
 }
+
+type WarapornOpenAiRequestCount = 0 | 1 | 2;
 
 type WarapornDraftErrorWithResult = WarapornDraftError & {
   openAiResult?: OpenAiResponsesResult;
@@ -195,6 +198,23 @@ function inputPair(label: string, value: string | number | null | undefined): Ar
     { type: "input_text", text: label },
     { type: "input_text", text: valueText(value) },
   ];
+}
+
+function boundedRetrievalPolicyText(): string {
+  return [
+    "Use file_search only for one compact retrieval pass.",
+    "Do not search again by filename if any mandatory document is missing.",
+    "After the first retrieval pass, draft from retrieved evidence plus Vanara runtime context.",
+    "If evidence is incomplete, write a cautious practical reply instead of looping retrieval.",
+  ].join("\n");
+}
+
+function noRetrievalFallbackPolicyText(): string {
+  return [
+    "Fallback mode: do not use file_search.",
+    "Draft only from Vanara verified runtime context, conversation context, and the current guest message.",
+    "Keep the reply short, practical, and safe. If knowledge is missing, acknowledge uncertainty without promising Vanara will arrange anything.",
+  ].join("\n");
 }
 
 function compactRuntimeEnvelopeText(context: VerifiedMessageContext): string {
@@ -334,6 +354,7 @@ export function buildWarapornResponsesRequest(
   storeId: string,
 ): JsonRecord {
   const content = [
+    ...inputPair("BACKEND RETRIEVAL SAFETY POLICY", boundedRetrievalPolicyText()),
     ...inputPair("VANARA VERIFIED RUNTIME CONTEXT", compactRuntimeEnvelopeText(context)),
     ...inputPair("CONVERSATION CONTEXT", context.conversationContext),
     ...inputPair("CURRENT GUEST MESSAGE", context.currentGuestMessage),
@@ -361,6 +382,39 @@ export function buildWarapornResponsesRequest(
     prompt_cache_key: WARAPORN_PROMPT_CACHE_KEY,
     prompt_cache_retention: "24h",
     include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
+    input: [{
+      role: "user",
+      content,
+    }],
+    store: true,
+  };
+}
+
+export function buildWarapornNoRetrievalFallbackRequest(
+  promptText: string,
+  context: VerifiedMessageContext,
+): JsonRecord {
+  const content = [
+    ...inputPair("BACKEND FALLBACK POLICY", noRetrievalFallbackPolicyText()),
+    ...inputPair("VANARA VERIFIED RUNTIME CONTEXT", compactRuntimeEnvelopeText(context)),
+    ...inputPair("CONVERSATION CONTEXT", context.conversationContext),
+    ...inputPair("CURRENT GUEST MESSAGE", context.currentGuestMessage),
+  ];
+
+  return {
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    instructions: promptText,
+    reasoning: {
+      effort: "low",
+    },
+    text: {
+      verbosity: "low",
+      format: {
+        type: "text",
+      },
+    },
+    prompt_cache_key: `${WARAPORN_PROMPT_CACHE_KEY}-fallback`,
+    prompt_cache_retention: "24h",
     input: [{
       role: "user",
       content,
@@ -435,12 +489,22 @@ async function acquireDraftLease(env: Pick<WarapornDraftBindings, "DB">, message
     WHERE message_id = ?
       AND state IN ('ASSOCIATED', 'FAILED_MANUAL_RETRY')
       AND association_state = 'LINKED'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM message_drafts
-        WHERE message_id = ?
+      AND (
+        NOT EXISTS (
+          SELECT 1
+          FROM message_drafts
+          WHERE message_id = ?
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM message_drafts
+          WHERE message_id = ?
+            AND status = 'FAILED'
+            AND failure_code = 'openai_tool_call_limit_exceeded'
+            AND openai_request_count = ?
+        )
       )
-  `).bind(now, messageId, messageId).run();
+  `).bind(now, messageId, messageId, messageId, WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT).run();
   return (result.meta?.changes ?? 0) > 0;
 }
 
@@ -475,7 +539,7 @@ async function persistFailedDraftAttempt(
     prompt: Awaited<ReturnType<typeof loadPrompt>> | null;
     context: Awaited<ReturnType<typeof buildMessageContext>> | null;
     storeId: string;
-    openAiRequestCount: 0 | 1;
+    openAiRequestCount: WarapornOpenAiRequestCount;
     openAiResult?: OpenAiResponsesResult | null;
     error: unknown;
   },
@@ -525,7 +589,31 @@ async function persistFailedDraftAttempt(
       updated_at
     )
     VALUES (?, ?, ?, ?, ?, ?, '', 'FAILED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(message_id) DO NOTHING
+    ON CONFLICT(message_id) DO UPDATE SET
+      draft_text = '',
+      status = 'FAILED',
+      model = excluded.model,
+      vector_store_id = excluded.vector_store_id,
+      openai_response_id = excluded.openai_response_id,
+      context_hash = excluded.context_hash,
+      runtime_context_json = excluded.runtime_context_json,
+      retrieval_filenames = excluded.retrieval_filenames,
+      retrieval_result_count = excluded.retrieval_result_count,
+      openai_file_search_call_count = excluded.openai_file_search_call_count,
+      openai_request_count = excluded.openai_request_count,
+      openai_input_tokens = excluded.openai_input_tokens,
+      openai_cached_input_tokens = excluded.openai_cached_input_tokens,
+      openai_output_tokens = excluded.openai_output_tokens,
+      openai_reasoning_tokens = excluded.openai_reasoning_tokens,
+      openai_total_tokens = excluded.openai_total_tokens,
+      openai_elapsed_ms = excluded.openai_elapsed_ms,
+      estimated_cost_usd = excluded.estimated_cost_usd,
+      failure_code = excluded.failure_code,
+      failure_message = excluded.failure_message,
+      updated_at = excluded.updated_at
+    WHERE message_drafts.status = 'FAILED'
+      AND message_drafts.failure_code = 'openai_tool_call_limit_exceeded'
+      AND message_drafts.openai_request_count = 1
   `).bind(
     params.messageId,
     Number(params.context.context.conversationId),
@@ -635,6 +723,34 @@ async function callOpenAiResponses(
   }
 }
 
+function combineUsage(primary: OpenAiUsage, fallback: OpenAiUsage): OpenAiUsage {
+  return {
+    inputTokens: primary.inputTokens + fallback.inputTokens,
+    cachedInputTokens: primary.cachedInputTokens + fallback.cachedInputTokens,
+    outputTokens: primary.outputTokens + fallback.outputTokens,
+    reasoningTokens: primary.reasoningTokens + fallback.reasoningTokens,
+    totalTokens: primary.totalTokens + fallback.totalTokens,
+  };
+}
+
+function combineToolLimitFallbackResult(primary: OpenAiResponsesResult, fallback: OpenAiResponsesResult): OpenAiResponsesResult {
+  const usage = combineUsage(primary.usage, fallback.usage);
+  return {
+    text: fallback.text,
+    responseId: fallback.responseId,
+    retrievalFilenames: primary.retrievalFilenames,
+    retrievalResultCount: primary.retrievalResultCount,
+    fileSearchCallCount: primary.fileSearchCallCount,
+    usage,
+    elapsedMs: primary.elapsedMs + fallback.elapsedMs,
+    estimatedCostUsd: estimateGpt55CostUsd(usage),
+  };
+}
+
+function toolLimitExceededError(): WarapornDraftError {
+  return new WarapornDraftError("OpenAI exceeded the Waraporn file_search call limit.", "openai_tool_call_limit_exceeded", 502);
+}
+
 export async function generateWarapornDraft(
   env: WarapornDraftBindings,
   messageId: number,
@@ -654,7 +770,7 @@ export async function generateWarapornDraft(
   const storeId = vectorStoreId(env);
   let prompt: Awaited<ReturnType<typeof loadPrompt>> | null = null;
   let context: Awaited<ReturnType<typeof buildMessageContext>> | null = null;
-  let openAiRequestCount: 0 | 1 = 0;
+  let openAiRequestCount: WarapornOpenAiRequestCount = 0;
   let openAiResult: OpenAiResponsesResult | null = null;
 
   try {
@@ -670,8 +786,22 @@ export async function generateWarapornDraft(
     openAiRequestCount = 1;
     const generated = await callOpenAiResponses(env, requestBody, options);
     openAiResult = generated;
+    let finalGenerated = generated;
     if (generated.fileSearchCallCount > WARAPORN_MAX_TOOL_CALLS) {
-      throw new WarapornDraftError("OpenAI exceeded the Waraporn file_search call limit.", "openai_tool_call_limit_exceeded", 502);
+      const toolLimitError = toolLimitExceededError();
+      try {
+        openAiRequestCount = 2;
+        const fallbackRequestBody = buildWarapornNoRetrievalFallbackRequest(prompt.text, context.context);
+        const fallback = await callOpenAiResponses(env, fallbackRequestBody, options);
+        finalGenerated = combineToolLimitFallbackResult(generated, fallback);
+        openAiResult = finalGenerated;
+      } catch (fallbackError) {
+        openAiResult = openAiResultFromError(fallbackError)
+          ? combineToolLimitFallbackResult(generated, openAiResultFromError(fallbackError)!)
+          : generated;
+        attachOpenAiResult(toolLimitError, openAiResult);
+        throw toolLimitError;
+      }
     }
 
     const inserted = await env.DB.prepare(`
@@ -705,8 +835,32 @@ export async function generateWarapornDraft(
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-      ON CONFLICT(message_id) DO NOTHING
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET
+        draft_text = excluded.draft_text,
+        status = 'READY',
+        model = excluded.model,
+        vector_store_id = excluded.vector_store_id,
+        openai_response_id = excluded.openai_response_id,
+        context_hash = excluded.context_hash,
+        runtime_context_json = excluded.runtime_context_json,
+        retrieval_filenames = excluded.retrieval_filenames,
+        retrieval_result_count = excluded.retrieval_result_count,
+        openai_file_search_call_count = excluded.openai_file_search_call_count,
+        openai_request_count = excluded.openai_request_count,
+        openai_input_tokens = excluded.openai_input_tokens,
+        openai_cached_input_tokens = excluded.openai_cached_input_tokens,
+        openai_output_tokens = excluded.openai_output_tokens,
+        openai_reasoning_tokens = excluded.openai_reasoning_tokens,
+        openai_total_tokens = excluded.openai_total_tokens,
+        openai_elapsed_ms = excluded.openai_elapsed_ms,
+        estimated_cost_usd = excluded.estimated_cost_usd,
+        failure_code = NULL,
+        failure_message = NULL,
+        updated_at = excluded.updated_at
+      WHERE message_drafts.status = 'FAILED'
+        AND message_drafts.failure_code = 'openai_tool_call_limit_exceeded'
+        AND message_drafts.openai_request_count = 1
     `).bind(
       messageId,
       Number(context.context.conversationId),
@@ -714,22 +868,23 @@ export async function generateWarapornDraft(
       prompt.key,
       prompt.version,
       prompt.checksum,
-      generated.text,
+      finalGenerated.text,
       OPENAI_WARAPORN_DRAFT_MODEL,
       storeId,
-      generated.responseId,
+      finalGenerated.responseId,
       context.contextHash,
       JSON.stringify(context.context),
-      JSON.stringify(generated.retrievalFilenames),
-      generated.retrievalResultCount,
-      generated.fileSearchCallCount,
-      generated.usage.inputTokens,
-      generated.usage.cachedInputTokens,
-      generated.usage.outputTokens,
-      generated.usage.reasoningTokens,
-      generated.usage.totalTokens,
-      generated.elapsedMs,
-      generated.estimatedCostUsd,
+      JSON.stringify(finalGenerated.retrievalFilenames),
+      finalGenerated.retrievalResultCount,
+      finalGenerated.fileSearchCallCount,
+      openAiRequestCount,
+      finalGenerated.usage.inputTokens,
+      finalGenerated.usage.cachedInputTokens,
+      finalGenerated.usage.outputTokens,
+      finalGenerated.usage.reasoningTokens,
+      finalGenerated.usage.totalTokens,
+      finalGenerated.elapsedMs,
+      finalGenerated.estimatedCostUsd,
       now,
       now,
     ).run();
@@ -778,12 +933,19 @@ export async function generatePendingWarapornDrafts(
     FROM messages m
     LEFT JOIN message_drafts d
       ON d.message_id = m.message_id
-    WHERE d.message_draft_id IS NULL
-      AND m.state = 'ASSOCIATED'
-      AND m.association_state = 'LINKED'
+    WHERE m.association_state = 'LINKED'
+      AND (
+        (d.message_draft_id IS NULL AND m.state = 'ASSOCIATED')
+        OR (
+          m.state IN ('ASSOCIATED', 'FAILED_MANUAL_RETRY')
+          AND d.status = 'FAILED'
+          AND d.failure_code = 'openai_tool_call_limit_exceeded'
+          AND d.openai_request_count = ?
+        )
+      )
     ORDER BY m.received_at ASC, m.message_id ASC
     LIMIT ?
-  `).bind(limit).all<MessageDraftTargetRow>();
+  `).bind(WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT, limit).all<MessageDraftTargetRow>();
 
   let generated = 0;
   let reused = 0;

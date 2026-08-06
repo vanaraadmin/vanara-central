@@ -13,6 +13,7 @@ import {
   WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
   WARAPORN_MAX_TOOL_CALLS,
   WARAPORN_PROMPT_CACHE_KEY,
+  WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT,
 } from "../src/services/waraporn-draft.service.ts";
 
 const NOW = "2026-08-04T10:00:00.000Z";
@@ -261,11 +262,17 @@ class FakeWarapornDB {
     if (sql.includes("SELECT m.message_id") && sql.includes("d.message_draft_id IS NULL")) {
       return {
         results: this.messages
-          .filter((message) => !this.drafts.some((draft) => draft.message_id === message.message_id))
-          .filter((message) => sql.includes("m.state = 'ASSOCIATED'") ? message.state === "ASSOCIATED" : true)
+          .filter((message) => {
+            const draft = this.drafts.find((item) => item.message_id === message.message_id) ?? null;
+            if (!draft) return message.state === "ASSOCIATED";
+            return ["ASSOCIATED", "FAILED_MANUAL_RETRY"].includes(message.state)
+              && draft.status === "FAILED"
+              && draft.failure_code === "openai_tool_call_limit_exceeded"
+              && draft.openai_request_count === WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT;
+          })
           .filter((message) => sql.includes("m.association_state = 'LINKED'") ? message.association_state === "LINKED" : true)
           .map((message) => ({ message_id: message.message_id }))
-          .slice(0, Number(params[0])) as T[],
+          .slice(0, Number(params.at(-1))) as T[],
       };
     }
     if (sql.includes("FROM messages m") && sql.includes("WHERE m.message_conversation_id = ?") && sql.includes("m.direction")) {
@@ -307,8 +314,11 @@ class FakeWarapornDB {
     if (sql.includes("UPDATE messages") && sql.includes("state = 'GENERATING'")) {
       const messageId = Number(params[1]);
       const message = this.messages.find((item) => item.message_id === messageId);
-      const hasDraft = this.drafts.some((draft) => draft.message_id === messageId);
-      if (!message || !["ASSOCIATED", "FAILED_MANUAL_RETRY"].includes(message.state) || message.association_state !== "LINKED" || hasDraft) {
+      const draft = this.drafts.find((item) => item.message_id === messageId) ?? null;
+      const retryableToolLimitDraft = draft?.status === "FAILED"
+        && draft.failure_code === "openai_tool_call_limit_exceeded"
+        && draft.openai_request_count === WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT;
+      if (!message || !["ASSOCIATED", "FAILED_MANUAL_RETRY"].includes(message.state) || message.association_state !== "LINKED" || (draft && !retryableToolLimitDraft)) {
         return { meta: { changes: 0, last_row_id: 0 } };
       }
       message.state = "GENERATING";
@@ -317,10 +327,40 @@ class FakeWarapornDB {
     }
     if (sql.includes("INSERT INTO message_drafts")) {
       const messageId = Number(params[0]);
-      if (this.drafts.some((draft) => draft.message_id === messageId)) {
+      const existing = this.drafts.find((draft) => draft.message_id === messageId) ?? null;
+      const insertBeforeConflict = sql.split("ON CONFLICT")[0] ?? sql;
+      const failed = insertBeforeConflict.includes("'FAILED'");
+      if (existing) {
+        if (
+          existing.status === "FAILED"
+          && existing.failure_code === "openai_tool_call_limit_exceeded"
+          && existing.openai_request_count === WARAPORN_TOOL_LIMIT_RETRY_REQUEST_COUNT
+        ) {
+          existing.draft_text = failed ? "" : String(params[6]);
+          existing.status = failed ? "FAILED" : "READY";
+          existing.model = String(params[failed ? 6 : 7]);
+          existing.vector_store_id = String(params[failed ? 7 : 8]);
+          existing.openai_response_id = params[failed ? 8 : 9] as string | null;
+          existing.context_hash = String(params[failed ? 9 : 10]);
+          existing.runtime_context_json = params[failed ? 10 : 11] as string | null;
+          existing.retrieval_filenames = String(params[failed ? 11 : 12]);
+          existing.retrieval_result_count = Number(params[failed ? 12 : 13]);
+          existing.openai_file_search_call_count = Number(params[failed ? 13 : 14]);
+          existing.openai_request_count = Number(params[failed ? 14 : 15]);
+          existing.openai_input_tokens = Number(params[failed ? 15 : 16]);
+          existing.openai_cached_input_tokens = Number(params[failed ? 16 : 17]);
+          existing.openai_output_tokens = Number(params[failed ? 17 : 18]);
+          existing.openai_reasoning_tokens = Number(params[failed ? 18 : 19]);
+          existing.openai_total_tokens = Number(params[failed ? 19 : 20]);
+          existing.openai_elapsed_ms = Number(params[failed ? 20 : 21]);
+          existing.estimated_cost_usd = Number(params[failed ? 21 : 22]);
+          existing.failure_code = failed ? String(params[22]) : null;
+          existing.failure_message = failed ? String(params[23]) : null;
+          existing.updated_at = String(params[failed ? 25 : 24]);
+          return { meta: { changes: 1, last_row_id: existing.message_draft_id } };
+        }
         return { meta: { changes: 0, last_row_id: 0 } };
       }
-      const failed = sql.includes("'FAILED'");
       this.drafts.push({
         message_draft_id: this.nextDraftId++,
         message_id: messageId,
@@ -339,18 +379,18 @@ class FakeWarapornDB {
         retrieval_filenames: String(params[failed ? 11 : 12]),
         retrieval_result_count: Number(params[failed ? 12 : 13]),
         openai_file_search_call_count: Number(params[failed ? 13 : 14]),
-        openai_request_count: failed ? Number(params[14]) : 1,
-        openai_input_tokens: Number(params[failed ? 15 : 15]),
-        openai_cached_input_tokens: Number(params[failed ? 16 : 16]),
-        openai_output_tokens: Number(params[failed ? 17 : 17]),
-        openai_reasoning_tokens: Number(params[failed ? 18 : 18]),
-        openai_total_tokens: Number(params[failed ? 19 : 19]),
-        openai_elapsed_ms: Number(params[failed ? 20 : 20]),
-        estimated_cost_usd: Number(params[failed ? 21 : 21]),
+        openai_request_count: Number(params[failed ? 14 : 15]),
+        openai_input_tokens: Number(params[failed ? 15 : 16]),
+        openai_cached_input_tokens: Number(params[failed ? 16 : 17]),
+        openai_output_tokens: Number(params[failed ? 17 : 18]),
+        openai_reasoning_tokens: Number(params[failed ? 18 : 19]),
+        openai_total_tokens: Number(params[failed ? 19 : 20]),
+        openai_elapsed_ms: Number(params[failed ? 20 : 21]),
+        estimated_cost_usd: Number(params[failed ? 21 : 22]),
         failure_code: failed ? String(params[22]) : null,
         failure_message: failed ? String(params[23]) : null,
-        created_at: String(params[failed ? 24 : 22]),
-        updated_at: String(params[failed ? 25 : 23]),
+        created_at: String(params[failed ? 24 : 23]),
+        updated_at: String(params[failed ? 25 : 24]),
       });
       return { meta: { changes: 1, last_row_id: this.drafts.length } };
     }
@@ -397,7 +437,12 @@ function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status });
 }
 
-function openAiFileSearchPayload(id: string, outputText: string, filenames: readonly string[]): Record<string, unknown> {
+function openAiFileSearchPayload(
+  id: string,
+  outputText: string,
+  filenames: readonly string[],
+  fileSearchCallCount = 1,
+): Record<string, unknown> {
   return {
     id,
     output_text: outputText,
@@ -408,18 +453,18 @@ function openAiFileSearchPayload(id: string, outputText: string, filenames: read
       output_tokens_details: { reasoning_tokens: 40 },
       total_tokens: 1300,
     },
-    output: [{
+    output: Array.from({ length: fileSearchCallCount }, (_item, callIndex) => ({
       id: `fs-${id}`,
       type: "file_search_call",
       status: "completed",
-      queries: ["Waraporn retrieval"],
+      queries: [`Waraporn retrieval ${callIndex + 1}`],
       results: filenames.map((filename, index) => ({
-        file_id: `file-${index + 1}`,
+        file_id: `file-${callIndex + 1}-${index + 1}`,
         filename,
         score: 0.9,
         text: `Retrieved ${filename}`,
       })),
-    }],
+    })),
   };
 }
 
@@ -466,6 +511,51 @@ test("one OTA message creates exactly one bounded OpenAI Responses request", asy
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
     max_num_results: 10,
   }]);
+  assert.equal(body.tool_choice, "required");
+  assert.deepEqual(body.include, [...OPENAI_RESPONSES_FILE_SEARCH_INCLUDE]);
+});
+
+test("tool-limit response triggers one no-file-search fallback and persists READY", async () => {
+  const db = new FakeWarapornDB();
+  const bodies: Array<Record<string, unknown>> = [];
+  const fetcher: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    bodies.push(body);
+    if (bodies.length === 1) {
+      return jsonResponse(200, openAiFileSearchPayload("resp-tool-loop", "Ignored loop text", ["Waraporn_Conversation_Composer.md"], WARAPORN_MAX_TOOL_CALLS + 1));
+    }
+    return jsonResponse(200, {
+      id: "resp-fallback-ready",
+      output_text: READY_DRAFT_TEXT,
+      usage: {
+        input_tokens: 400,
+        input_tokens_details: { cached_tokens: 100 },
+        output_tokens: 60,
+        output_tokens_details: { reasoning_tokens: 10 },
+        total_tokens: 460,
+      },
+      output: [{
+        type: "message",
+        content: [{ type: "output_text", text: READY_DRAFT_TEXT }],
+      }],
+    });
+  };
+
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.equal(draft.state, "READY");
+  assert.equal(draft.body, READY_DRAFT_TEXT);
+  assert.equal(bodies.length, 2);
+  assert.ok("tools" in bodies[0]!);
+  assert.equal("tools" in bodies[1]!, false);
+  assert.equal("tool_choice" in bodies[1]!, false);
+  assert.equal("include" in bodies[1]!, false);
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "READY");
+  assert.equal(db.drafts[0]!.openai_request_count, 2);
+  assert.equal(db.drafts[0]!.openai_file_search_call_count, WARAPORN_MAX_TOOL_CALLS + 1);
+  assert.equal(db.drafts[0]!.openai_response_id, "resp-fallback-ready");
+  assert.equal(db.messages[0]!.state, "DRAFT_READY");
 });
 
 test("additional retrieval remains decision-driven without backend filename retries", async () => {
@@ -763,6 +853,152 @@ test("manual Waraporn generation can recover a linked failed message with no dra
   assert.equal(bodies.length, 1);
 });
 
+test("existing tool-limit FAILED draft is recovered once by updating the same row", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+  db.drafts.push({
+    message_draft_id: db.nextDraftId++,
+    message_id: 1,
+    message_conversation_id: 1,
+    booking_id: 1,
+    prompt_key: "waraporn-general-requests-v4-rc3",
+    prompt_version: "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE",
+    prompt_checksum: getPromptChecksum(),
+    draft_text: "",
+    status: "FAILED",
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    vector_store_id: DEFAULT_WARAPORN_VECTOR_STORE_ID,
+    openai_response_id: "resp-old-tool-limit",
+    context_hash: "hash-old",
+    runtime_context_json: "{}",
+    retrieval_filenames: "[]",
+    retrieval_result_count: 0,
+    openai_file_search_call_count: WARAPORN_MAX_TOOL_CALLS + 1,
+    openai_request_count: 1,
+    openai_input_tokens: 10,
+    openai_cached_input_tokens: 0,
+    openai_output_tokens: 0,
+    openai_reasoning_tokens: 0,
+    openai_total_tokens: 10,
+    openai_elapsed_ms: 1,
+    estimated_cost_usd: 0,
+    failure_code: "openai_tool_call_limit_exceeded",
+    failure_message: "OpenAI exceeded the Waraporn file_search call limit.",
+    created_at: NOW,
+    updated_at: NOW,
+  });
+  const originalDraftId = db.drafts[0]!.message_draft_id;
+  const { fetcher, bodies } = openAiFetcher();
+
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.equal(draft.state, "READY");
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.message_draft_id, originalDraftId);
+  assert.equal(db.drafts[0]!.status, "READY");
+  assert.equal(db.drafts[0]!.failure_code, null);
+  assert.equal(db.drafts[0]!.openai_request_count, 1);
+  assert.equal(bodies.length, 1);
+});
+
+test("pending runner recovers associated messages with an existing tool-limit FAILED draft", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.state = "ASSOCIATED";
+  db.drafts.push({
+    message_draft_id: db.nextDraftId++,
+    message_id: 1,
+    message_conversation_id: 1,
+    booking_id: 1,
+    prompt_key: "waraporn-general-requests-v4-rc3",
+    prompt_version: "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE",
+    prompt_checksum: getPromptChecksum(),
+    draft_text: "",
+    status: "FAILED",
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    vector_store_id: DEFAULT_WARAPORN_VECTOR_STORE_ID,
+    openai_response_id: "resp-old-tool-limit",
+    context_hash: "hash-old",
+    runtime_context_json: "{}",
+    retrieval_filenames: "[]",
+    retrieval_result_count: 0,
+    openai_file_search_call_count: WARAPORN_MAX_TOOL_CALLS + 1,
+    openai_request_count: 1,
+    openai_input_tokens: 10,
+    openai_cached_input_tokens: 0,
+    openai_output_tokens: 0,
+    openai_reasoning_tokens: 0,
+    openai_total_tokens: 10,
+    openai_elapsed_ms: 1,
+    estimated_cost_usd: 0,
+    failure_code: "openai_tool_call_limit_exceeded",
+    failure_message: "OpenAI exceeded the Waraporn file_search call limit.",
+    created_at: NOW,
+    updated_at: NOW,
+  });
+  const { fetcher, bodies } = openAiFetcher();
+
+  const result = await generatePendingWarapornDrafts(env(db, fetcher) as never, { now: NOW });
+
+  assert.equal(result.attempted, 1);
+  assert.equal(result.generated, 1);
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "READY");
+  assert.equal(db.messages[0]!.state, "DRAFT_READY");
+  assert.equal(bodies.length, 1);
+});
+
+test("tool-limit FAILED draft with request_count 2 is not retried", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+  db.drafts.push({
+    message_draft_id: db.nextDraftId++,
+    message_id: 1,
+    message_conversation_id: 1,
+    booking_id: 1,
+    prompt_key: "waraporn-general-requests-v4-rc3",
+    prompt_version: "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE",
+    prompt_checksum: getPromptChecksum(),
+    draft_text: "",
+    status: "FAILED",
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    vector_store_id: DEFAULT_WARAPORN_VECTOR_STORE_ID,
+    openai_response_id: "resp-old-tool-limit",
+    context_hash: "hash-old",
+    runtime_context_json: "{}",
+    retrieval_filenames: "[]",
+    retrieval_result_count: 0,
+    openai_file_search_call_count: WARAPORN_MAX_TOOL_CALLS + 1,
+    openai_request_count: 2,
+    openai_input_tokens: 10,
+    openai_cached_input_tokens: 0,
+    openai_output_tokens: 0,
+    openai_reasoning_tokens: 0,
+    openai_total_tokens: 10,
+    openai_elapsed_ms: 1,
+    estimated_cost_usd: 0,
+    failure_code: "openai_tool_call_limit_exceeded",
+    failure_message: "Fallback failed too.",
+    created_at: NOW,
+    updated_at: NOW,
+  });
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(500, { error: { message: "should not be called" } });
+  };
+
+  await assert.rejects(
+    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
+    /not eligible/i,
+  );
+  const pending = await generatePendingWarapornDrafts(env(db, fetcher) as never, { now: NOW });
+
+  assert.equal(calls, 0);
+  assert.equal(pending.attempted, 0);
+  assert.equal(db.drafts[0]!.status, "FAILED");
+  assert.equal(db.drafts[0]!.openai_request_count, 2);
+});
+
 test("OpenAI failure persists FAILED_MANUAL_RETRY and is not retried by later cron cycles", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
@@ -829,7 +1065,7 @@ test("paid malformed AI response stores a FAILED draft row and becomes terminal 
 
 test("failed draft persistence SQL keeps message draft values aligned with schema", () => {
   const source = readFileSync(new URL("../src/services/waraporn-draft.service.ts", import.meta.url), "utf8");
-  const failedInsert = /INSERT INTO message_drafts \(([\s\S]*?)\)\s*VALUES\s*\(([\s\S]*?'FAILED'[\s\S]*?)\)\s*ON CONFLICT\(message_id\) DO NOTHING/.exec(source);
+  const failedInsert = /INSERT INTO message_drafts \(([\s\S]*?)\)\s*VALUES\s*\(([\s\S]*?'FAILED'[\s\S]*?)\)\s*ON CONFLICT\(message_id\)/.exec(source);
   assert.ok(failedInsert);
   const columns = failedInsert[1]!
     .split("\n")
