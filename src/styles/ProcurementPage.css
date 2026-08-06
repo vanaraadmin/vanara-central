@@ -3,9 +3,15 @@
   padding: var(--vc-space-4) var(--vc-space-4) calc(88px + var(--vc-safe-bottom));
 }
 
+.procurement-page,
+.procurement-page * {
+  box-sizing: border-box;
+}
+
 .procurement-compose,
 .procurement-section {
   width: min(100%, 920px);
+  min-width: 0;
   margin-inline: auto;
 }
 
@@ -13,6 +19,27 @@
   display: grid;
   gap: var(--vc-space-4);
   margin-bottom: var(--vc-space-5);
+}
+
+.procurement-page .vc-section-header {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.procurement-page .vc-section-header__copy,
+.procurement-page .vc-section-header__eyebrow,
+.procurement-page .vc-section-header__title,
+.procurement-page .vc-section-header__meta {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.procurement-page .vc-section-header__meta {
+  flex: 1 1 auto;
+  text-align: right;
+  line-height: 1.25;
 }
 
 .procurement-form {
@@ -32,11 +59,14 @@
   font-size: var(--vc-text-xs);
   font-weight: var(--vc-weight-bold);
   letter-spacing: 0.06em;
+  line-height: 1.25;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .procurement-field textarea {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
   padding: var(--vc-space-4);
@@ -58,9 +88,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--vc-space-2);
+  max-width: 100%;
   border: 0;
   border-radius: var(--vc-radius-pill);
   font-weight: var(--vc-weight-bold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 
 .procurement-submit {
@@ -111,6 +146,8 @@
 .procurement-card {
   display: grid;
   gap: var(--vc-space-3);
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   padding: var(--vc-space-4);
   color: var(--workspace-ink);
@@ -130,10 +167,10 @@
 }
 
 .procurement-card__top {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--vc-space-3);
 }
 
@@ -160,13 +197,19 @@
 }
 
 .procurement-status {
-  flex: 0 0 auto;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
   padding: 0.35rem 0.72rem;
   color: var(--vc-color-jungle-900);
   background: var(--vc-color-jungle-50);
   border-radius: var(--vc-radius-pill);
   font-size: var(--vc-text-xs);
   font-weight: var(--vc-weight-bold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 
 .procurement-card__text {
@@ -177,6 +220,8 @@
 
 .procurement-card__translation {
   margin: 0;
+  min-width: 0;
+  max-width: 100%;
   padding: var(--vc-space-3);
   background: var(--vc-color-sand-50);
   border-radius: var(--vc-radius-lg);
@@ -201,6 +246,7 @@
 .procurement-action {
   width: 100%;
   min-width: 0;
+  max-width: 100%;
   padding: 0 var(--vc-space-3);
 }
 
@@ -217,12 +263,15 @@
 
 .procurement-empty {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   min-height: 8rem;
   place-items: center;
   gap: var(--vc-space-2);
   padding: var(--vc-space-4);
   color: var(--workspace-cream);
   text-align: center;
+  overflow-wrap: anywhere;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--vc-radius-xl);
@@ -240,8 +289,15 @@
     padding-inline: var(--vc-space-3);
   }
 
+  .procurement-page .vc-section-header,
   .procurement-card__top {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--vc-space-2);
+  }
+
+  .procurement-page .vc-section-header__meta {
+    text-align: left;
   }
 
   .procurement-status {

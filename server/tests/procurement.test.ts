@@ -249,3 +249,16 @@ test("procurement source stays MVP-only and translation-ready without fake AI tr
   assert.match(css, /overflow-wrap:\s*anywhere/);
   assert.match(css, /min-width:\s*0/);
 });
+
+test("procurement staff UI layout is mobile-safe for Thai and long request text", () => {
+  const css = readFileSync(new URL("../../src/styles/ProcurementPage.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.procurement-page \.vc-section-header\s*\{[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.procurement-page \.vc-section-header__meta\s*\{[\s\S]*flex:\s*1 1 auto/);
+  assert.match(css, /\.procurement-card\s*\{[\s\S]*max-width:\s*100%/);
+  assert.match(css, /\.procurement-card__top\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(css, /\.procurement-status\s*\{[\s\S]*max-width:\s*100%[\s\S]*white-space:\s*normal/);
+  assert.match(css, /\.procurement-action\s*\{[\s\S]*min-width:\s*0[\s\S]*max-width:\s*100%/);
+  assert.match(css, /@media \(max-width:\s*560px\)[\s\S]*\.procurement-page \.vc-section-header,[\s\S]*\.procurement-card__top[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.doesNotMatch(css, /\.procurement-(?:status|action|card__text|card__translation)[^{]*\{[^}]*white-space:\s*nowrap/);
+});
