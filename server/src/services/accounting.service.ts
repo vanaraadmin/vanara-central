@@ -58,6 +58,7 @@ interface OtaFinancialRow {
   raw_channel_info: string | null;
   created_at: string;
   updated_at: string;
+  guest_name: string | null;
 }
 
 export interface AccountingEntry {
@@ -98,6 +99,7 @@ export interface AccountingOtaRecord {
   rawChannelInfo: string | null;
   createdAt: string;
   updatedAt: string;
+  guestName: string | null;
 }
 
 export interface AccountingOverview {
@@ -211,6 +213,7 @@ function ota(row: OtaFinancialRow): AccountingOtaRecord {
     rawChannelInfo: row.raw_channel_info,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    guestName: row.guest_name,
   };
 }
 
@@ -222,12 +225,15 @@ export async function getAccountingOverview(env: AccountingBindings, today = new
   await rebuildOtaFinancialRecords(env);
   const [otaRows, manualRows] = await Promise.all([
     env.DB.prepare(`
-      SELECT ota_financial_record_id, channel, ota_booking_id, beds24_booking_id, booking_group_id, is_group_master,
-        check_in, check_out, room_count, gross_booking_amount, tax_and_service_charge_amount, ota_fees,
-        expected_net_payout, payment_method, guest_payment_status, source_confidence,
-        raw_rate_description, raw_channel_info, created_at, updated_at
-      FROM ota_financial_records
-      ORDER BY check_in DESC, ota_financial_record_id DESC
+      SELECT f.ota_financial_record_id, f.channel, f.ota_booking_id, f.beds24_booking_id, f.booking_group_id, f.is_group_master,
+        f.check_in, f.check_out, f.room_count, f.gross_booking_amount, f.tax_and_service_charge_amount, f.ota_fees,
+        f.expected_net_payout, f.payment_method, f.guest_payment_status, f.source_confidence,
+        f.raw_rate_description, f.raw_channel_info, f.created_at, f.updated_at,
+        COALESCE(NULLIF(TRIM(b.guest_name), ''), NULLIF(TRIM(COALESCE(b.first_name, '') || ' ' || COALESCE(b.last_name, '')), '')) AS guest_name
+      FROM ota_financial_records f
+      LEFT JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      ORDER BY f.check_in DESC, f.ota_financial_record_id DESC
       LIMIT 160
     `).all<OtaFinancialRow>(),
     env.DB.prepare(`

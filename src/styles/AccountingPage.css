@@ -85,7 +85,10 @@
 .accounting-upload {
   display: grid;
   gap: var(--vc-space-1);
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
   color: var(--vc-text-primary);
   font-weight: var(--vc-weight-bold);
 }
@@ -104,6 +107,25 @@
   color: #163425;
   padding: 0 var(--vc-space-2);
   font: inherit;
+  accent-color: var(--vc-color-jungle-900);
+  color-scheme: light;
+}
+
+.accounting-form input[type="date"],
+.accounting-export-range input[type="date"] {
+  inline-size: 100%;
+  max-width: 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.accounting-form input:focus-visible,
+.accounting-form select:focus-visible,
+.accounting-form textarea:focus-visible,
+.accounting-export-range input:focus-visible {
+  outline: 2px solid var(--vc-focus-glass);
+  border-color: rgba(23, 71, 52, 0.72);
+  box-shadow: 0 0 0 3px rgba(23, 71, 52, 0.12);
 }
 
 .accounting-form textarea {
@@ -146,9 +168,9 @@
 
 .accounting-table [role="row"] {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) repeat(5, minmax(110px, 1fr));
+  grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1.2fr) minmax(110px, 0.9fr) minmax(70px, 0.55fr) repeat(3, minmax(110px, 1fr));
   gap: var(--vc-space-2);
-  min-width: 820px;
+  min-width: 920px;
   padding: var(--vc-space-2) 0;
   border-bottom: 1px solid var(--vc-border-subtle);
 }
@@ -191,6 +213,20 @@
   font-weight: var(--vc-weight-bold);
 }
 
+.workspace-shell--accounting .vc-staff-home-action {
+  color: var(--vc-text-inverse);
+  background: linear-gradient(145deg, rgba(23, 59, 45, 0.96), rgba(31, 106, 77, 0.92));
+  border: 1px solid rgba(244, 237, 223, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(7, 28, 20, 0.16),
+    0 14px 30px rgba(5, 24, 17, 0.24);
+}
+
+.workspace-shell--accounting .vc-staff-home-action span {
+  color: inherit;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+}
+
 @media (max-width: 640px) {
   .accounting-panel__header,
   .accounting-entry-list li {
@@ -199,5 +235,10 @@
 
   .accounting-panel__header .accounting-action {
     width: 100%;
+  }
+
+  .accounting-form,
+  .accounting-export-range {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

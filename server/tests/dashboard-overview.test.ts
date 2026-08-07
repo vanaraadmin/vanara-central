@@ -17,6 +17,20 @@ class FakeStmt {
 class FakeDashboardDB {
   prepare(sql: string) { return new FakeStmt(this, sql); }
 
+  private readonly financialRecords = [
+    { beds24_booking_id: 101, check_in: "2026-08-06", expected_net_payout: 1200 },
+    { beds24_booking_id: 102, check_in: "2026-08-10", expected_net_payout: 2300 },
+    { beds24_booking_id: 103, check_in: "2026-08-06", expected_net_payout: 900 },
+    { beds24_booking_id: 104, check_in: "2026-08-12", expected_net_payout: 700 },
+  ];
+
+  private readonly bookingStates = new Map<number, { status: string; sub_status: string | null }>([
+    [101, { status: "confirmed", sub_status: null }],
+    [102, { status: "confirmed", sub_status: null }],
+    [103, { status: "cancelled", sub_status: null }],
+    [104, { status: "confirmed", sub_status: "provider_deleted" }],
+  ]);
+
   async all<T>(sql: string, params: unknown[]) {
     if (sql.includes("WITH latest_housekeeping")) {
       return {
@@ -148,7 +162,22 @@ class FakeDashboardDB {
     return { results: [] as T[] };
   }
 
-  async first<T>() {
+  async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM ota_financial_records f") && sql.includes("INNER JOIN bookings b")) {
+      const today = String(params[0]);
+      const isFuture = sql.includes("f.check_in > ?");
+      const total = this.financialRecords
+        .filter((record) => isFuture ? record.check_in > today : record.check_in <= today)
+        .filter((record) => {
+          const booking = this.bookingStates.get(record.beds24_booking_id);
+          if (!booking) return false;
+          const status = booking.status.toLowerCase();
+          const subStatus = (booking.sub_status ?? "").toLowerCase();
+          return !["cancelled", "canceled", "deleted"].includes(status) && subStatus !== "provider_deleted";
+        })
+        .reduce((sum, record) => sum + record.expected_net_payout, 0);
+      return { total } as T;
+    }
     return null as T | null;
   }
 }
@@ -168,6 +197,12 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.staff.housekeepingStaff.value, 1);
   assert.equal(data.staff.maintenanceStaff.value, 1);
   assert.equal(data.staff.disabledUsers.value, 1);
+  assert.equal(data.business.expectedNetIncomeToDate.label, "Checked-In Net Revenue");
+  assert.equal(data.business.expectedNetIncomeToDate.value, 1200);
+  assert.match(data.business.expectedNetIncomeToDate.detail, /not bank-received cash/i);
+  assert.equal(data.business.expectedFutureNetIncome.label, "Future Booked Net Forecast");
+  assert.equal(data.business.expectedFutureNetIncome.value, 2300);
+  assert.match(data.business.expectedFutureNetIncome.detail, /cancellable or modifiable/i);
   assert.equal(data.alerts.some((item) => item.id === "high-maintenance"), true);
   assert.equal(data.alerts.some((item) => item.id === "waiting-maintenance"), true);
   assert.equal(data.quickLinks.some((item) => item.href === "/maintenance"), true);

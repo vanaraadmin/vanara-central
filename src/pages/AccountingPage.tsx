@@ -84,7 +84,7 @@ export default function AccountingPage() {
   }
 
   return (
-    <WorkspaceShell title="Accounting" workspace="accounting" wide>
+    <WorkspaceShell title="Accounting" workspace="accounting" bodyClassName="accounting-shell" wide>
       <div className="accounting-page">
         {accounting.isLoading ? <PageLoading /> : null}
         {accounting.isError && !accounting.data ? <PageError onRetry={() => void accounting.refetch()} /> : null}
@@ -101,7 +101,7 @@ export default function AccountingPage() {
               <header className="accounting-panel__header">
                 <div>
                   <h2>Manual entry</h2>
-                  <p>Record income or expenses. Receipt images are stored in long-term Vanara storage.</p>
+                  <p>Record income or expenses. Receipts stay attached for accountant review.</p>
                 </div>
               </header>
               <form className="accounting-form" onSubmit={onSubmit}>
@@ -119,8 +119,8 @@ export default function AccountingPage() {
             <section className="accounting-panel">
               <header className="accounting-panel__header">
                 <div>
-                  <h2>Accountant export</h2>
-                  <p>CSV foundation for fiscal periods. Receipt links remain attached to each entry in Central.</p>
+                  <h2>Export for accountant</h2>
+                  <p>Download income and expense movements for the selected fiscal period.</p>
                 </div>
                 <a className="accounting-action" href={accountingExportUrl(from, to)}>Export CSV</a>
               </header>
@@ -131,13 +131,14 @@ export default function AccountingPage() {
             </section>
 
             <section className="accounting-panel">
-              <header className="accounting-panel__header"><div><h2>Normalized OTA income</h2><p>Source of truth for dashboard revenue. Beds24 raw price is not used directly as revenue.</p></div></header>
-              <div className="accounting-table" role="table" aria-label="Normalized OTA income records">
-                <div role="row"><strong>Stay</strong><strong>Channel</strong><strong>Rooms</strong><strong>Gross</strong><strong>Fees</strong><strong>Expected net</strong></div>
+              <header className="accounting-panel__header"><div><h2>OTA Income</h2><p>Expected payout by booking channel, ready for owner review.</p></div></header>
+              <div className="accounting-table" role="table" aria-label="OTA income records">
+                <div role="row"><strong>Stay</strong><strong>Guest</strong><strong>Channel</strong><strong>Rooms</strong><strong>Gross</strong><strong>Fees</strong><strong>Expected net</strong></div>
                 {latestOta.map((record) => (
                   <div role="row" key={record.id}>
-                    <span>{record.checkIn} to {record.checkOut}<small>Beds24 {record.beds24BookingId}</small></span>
-                    <span>{record.channel}<small>{record.sourceConfidence} confidence</small></span>
+                    <span>{record.checkIn} to {record.checkOut}</span>
+                    <span>{record.guestName ?? "Guest not listed"}</span>
+                    <span>{record.channel}</span>
                     <span>{record.roomCount}</span>
                     <span>{money(record.grossBookingAmount)}</span>
                     <span>{money(record.otaFees)}</span>
@@ -148,7 +149,7 @@ export default function AccountingPage() {
             </section>
 
             <section className="accounting-panel">
-              <header className="accounting-panel__header"><div><h2>Manual entries</h2><p>Recent owner-entered income and expenses.</p></div></header>
+              <header className="accounting-panel__header"><div><h2>Recent Movements</h2><p>Owner-entered income and expenses.</p></div></header>
               <ul className="accounting-entry-list">
                 {manualEntries.map((entry) => (
                   <li key={entry.id}>
@@ -156,7 +157,7 @@ export default function AccountingPage() {
                     <span>{money(entry.amount)}{entry.receipt ? <a href={entry.receipt.downloadUrl}>Receipt</a> : null}</span>
                   </li>
                 ))}
-                {manualEntries.length === 0 ? <li>No manual entries yet.</li> : null}
+                {manualEntries.length === 0 ? <li>No movements yet.</li> : null}
               </ul>
             </section>
           </>

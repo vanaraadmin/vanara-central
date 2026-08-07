@@ -265,14 +265,22 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const bangkokToday = today.date;
   const [incomeToDate, futureIncome, occupiedRooms, totalOperatingRooms, guestOrigins, channels] = await Promise.all([
     env.DB.prepare(`
-      SELECT COALESCE(SUM(expected_net_payout), 0) AS total
-      FROM ota_financial_records
-      WHERE check_in <= ?
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in <= ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
     `).bind(bangkokToday).first<CountRow>(),
     env.DB.prepare(`
-      SELECT COALESCE(SUM(expected_net_payout), 0) AS total
-      FROM ota_financial_records
-      WHERE check_in > ?
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in > ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
     `).bind(bangkokToday).first<CountRow>(),
     env.DB.prepare(`
       SELECT COUNT(*) AS total
@@ -333,8 +341,8 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
     date: today.date,
     alerts,
     business: {
-      expectedNetIncomeToDate: businessMetric("expected-net-to-date", "Expected net income to date", count(incomeToDate), "Normalized OTA payout, not raw Beds24 price.", "success"),
-      expectedFutureNetIncome: businessMetric("future-net-income", "Future net income booked", count(futureIncome), "Confirmed future expected payout.", "info"),
+      expectedNetIncomeToDate: businessMetric("checked-in-net-revenue", "Checked-In Net Revenue", count(incomeToDate), "Expected net payout for checked-in stays, not bank-received cash.", "success"),
+      expectedFutureNetIncome: businessMetric("future-booked-net-forecast", "Future Booked Net Forecast", count(futureIncome), "Expected net payout for future bookings; still cancellable or modifiable.", "info"),
       occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
       guestOrigins: (guestOrigins.results ?? []).map((item) => ({ label: item.label, value: item.value })),
       channels: (channels.results ?? []).map((item) => ({ label: item.label, value: item.value, amount: item.amount })),

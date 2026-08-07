@@ -137,11 +137,17 @@ export default function WorkspaceShell({
     };
   }, []);
 
+  const shellClassName = [
+    "workspace-shell",
+    wide ? "workspace-shell--wide" : "",
+    `workspace-shell--${workspace}`,
+  ].filter(Boolean).join(" ");
+
   return (
     <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
       <div className="workspace-page__veil" aria-hidden="true" />
 
-      <section className={wide ? "workspace-shell workspace-shell--wide" : "workspace-shell"} aria-label={`${title} ${translate("workspace")}`}>
+      <section className={shellClassName} aria-label={`${title} ${translate("workspace")}`}>
         {!suppressStickyNavigation ? (
           <StickyGlassHeader progress={progress} title={navigationTitle} />
         ) : null}

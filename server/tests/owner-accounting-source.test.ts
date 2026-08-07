@@ -11,6 +11,8 @@ const accounting = read("src/services/accounting.service.ts");
 const dashboard = read("src/services/dashboard.service.ts");
 const migration = read("migrations/0043_owner_accounting.sql");
 const staffOverview = read("src/services/staff-overview.service.ts");
+const accountingPage = read("../src/pages/AccountingPage.tsx");
+const accountingCss = read("../src/styles/AccountingPage.css");
 
 test("accounting module is owner-only and staff home card is owner gated", () => {
   assert.match(index, /async function accountingOwner[\s\S]*requireOwner\(user\)[\s\S]*requireModulePermission\(user, "accounting"/);
@@ -31,7 +33,12 @@ test("financial migration stores normalized OTA records and manual receipt refer
 
 test("dashboard uses normalized expected net payout and does not sum raw Beds24 booking price as revenue", () => {
   assert.match(dashboard, /FROM ota_financial_records/);
-  assert.match(dashboard, /SUM\(expected_net_payout\)/);
+  assert.match(dashboard, /SUM\(f\.expected_net_payout\)/);
+  assert.match(dashboard, /INNER JOIN bookings b[\s\S]*b\.beds24_booking_id = f\.beds24_booking_id/);
+  assert.match(dashboard, /f\.check_in <= \?[\s\S]*provider_deleted/);
+  assert.match(dashboard, /f\.check_in > \?[\s\S]*provider_deleted/);
+  assert.match(dashboard, /Checked-In Net Revenue/);
+  assert.match(dashboard, /Future Booked Net Forecast/);
   assert.doesNotMatch(dashboard, /SUM\([^)]*bookings[^)]*price|SUM\(price\)/i);
 });
 
@@ -40,4 +47,15 @@ test("manual accounting receipt upload uses R2 and validates expenses", () => {
   assert.match(accounting, /MAX_RECEIPT_BYTES/);
   assert.match(accounting, /Entry type must be income or expense/);
   assert.match(accounting, /Amount must be greater than zero/);
+});
+
+test("Accounting UI uses business language and keeps date controls contained", () => {
+  assert.match(accountingPage, />OTA Income</);
+  assert.match(accountingPage, />Recent Movements</);
+  assert.match(accountingPage, />Export for accountant</);
+  assert.doesNotMatch(accountingPage, /Normalized OTA income|Normalized income|normalized data|source of truth|Beds24 raw price|Manual entries|manual entries log|backend|log/i);
+  assert.match(accountingCss, /\.accounting-form input\[type="date"\],[\s\S]*\.accounting-export-range input\[type="date"\][\s\S]*inline-size: 100%;[\s\S]*max-width: 100%;[\s\S]*min-inline-size: 0;/);
+  assert.match(accountingCss, /accent-color: var\(--vc-color-jungle-900\)/);
+  assert.match(accountingCss, /\.accounting-form input:focus-visible,[\s\S]*\.accounting-export-range input:focus-visible[\s\S]*border-color: rgba\(23, 71, 52, 0\.72\)/);
+  assert.match(accountingCss, /\.workspace-shell--accounting \.vc-staff-home-action[\s\S]*color: var\(--vc-text-inverse\)[\s\S]*background: linear-gradient/);
 });

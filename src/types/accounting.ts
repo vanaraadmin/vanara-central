@@ -21,6 +21,7 @@ export interface AccountingOtaRecord {
   rawChannelInfo: string | null;
   createdAt: string;
   updatedAt: string;
+  guestName: string | null;
 }
 
 export interface AccountingEntry {

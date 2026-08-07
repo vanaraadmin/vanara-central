@@ -134,7 +134,7 @@ function DashboardContent({ data }: { data: DashboardOverview }) {
           <span aria-hidden="true">ACC</span>
           <div>
             <strong>Accounting</strong>
-            <small>Open normalized records</small>
+            <small>Open ledger</small>
             <p>OTA payouts, manual income, expenses and receipt exports.</p>
           </div>
         </Link>
