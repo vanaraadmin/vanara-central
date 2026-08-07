@@ -7,17 +7,19 @@ const backgroundConfig = readFileSync(new URL("../../src/config/workspaceBackgro
 const shellCss = readFileSync(new URL("../../src/styles/WorkspaceShell.css", import.meta.url), "utf8");
 const staffCss = readFileSync(new URL("../../src/styles/StaffPage.css", import.meta.url), "utf8");
 
-test("global Vanara background is lightweight CSS/SVG instead of raster wallpaper", () => {
-  assert.doesNotMatch(backgroundConfig, /background_.*\.(png|jpe?g|webp)|from "\.\.\/assets\/img\/background_/i);
+test("global Vanara background uses the approved professional forest asset", () => {
+  assert.doesNotMatch(backgroundConfig, /from "\.\.\/assets\/img\/background_/i);
   assert.doesNotMatch(workspaceShell, /background_.*\.(png|jpe?g|webp)|WORKSPACE_BACKGROUNDS/);
   assert.match(backgroundConfig, /workspaceThemes/);
   assert.match(backgroundConfig, /"--workspace-bg-top"/);
-  assert.match(backgroundConfig, /"--workspace-botanical-opacity"/);
-  assert.match(shellCss, /data:image\/svg\+xml/);
-  assert.match(shellCss, /\.workspace-page::before/);
-  assert.match(shellCss, /\.workspace-page::after/);
+  assert.match(backgroundConfig, /"--workspace-background-veil-strength"/);
+  assert.match(shellCss, /#03130f/i);
+  assert.match(shellCss, /#123b2e/i);
+  assert.match(shellCss, /url\("\.\.\/assets\/img\/background_room\.png"\)/);
   assert.match(shellCss, /radial-gradient/);
   assert.match(shellCss, /linear-gradient/);
+  assert.doesNotMatch(shellCss, /data:image\/svg\+xml/);
+  assert.doesNotMatch(shellCss, /%23C9A85D|workspace-gold-outline|\.workspace-page::before|\.workspace-page::after/);
 });
 
 test("module background tuning stays subtle and shared across the same shell", () => {
@@ -33,7 +35,7 @@ test("module background tuning stays subtle and shared across the same shell", (
     "messages",
     "chat",
   ]) {
-    assert.match(backgroundConfig, new RegExp(`${key}: \\{[\\s\\S]*botanical: "0\\.0[1-3]`));
+    assert.match(backgroundConfig, new RegExp(`${key}: \\{[\\s\\S]*veil: "0\\.[7-8]`));
   }
 
   assert.match(workspaceShell, /<main className="workspace-page" style=\{workspaceBackgroundStyle\(backgroundKey\)\}>/);
@@ -44,9 +46,7 @@ test("module background tuning stays subtle and shared across the same shell", (
 
 test("mobile density is reduced before content-heavy cards render over the forest system", () => {
   assert.match(shellCss, /@media \(max-width: 520px\)/);
-  assert.match(shellCss, /--workspace-botanical-opacity: 0\.018/);
-  assert.match(shellCss, /--workspace-contour-opacity: 0\.038/);
-  assert.match(shellCss, /right -248px top 16px/);
+  assert.match(shellCss, /--workspace-background-veil-strength: 0\.84/);
   assert.match(shellCss, /@media \(min-width: 1024px\)/);
   assert.match(shellCss, /@media \(display-mode: standalone\)/);
   assert.doesNotMatch(shellCss, /animation:\s*(?!none)|@keyframes\s+workspace|filter:\s*url\(/);

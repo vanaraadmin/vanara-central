@@ -41,12 +41,11 @@ test("typed workspace background configuration exposes shared CSS variable theme
   assert.match(config, /satisfies Record<WorkspaceBackgroundKey,/);
   assert.match(config, /"--workspace-bg-top"/);
   assert.match(config, /"--workspace-accent"/);
-  assert.match(config, /"--workspace-gold-soft"/);
-  assert.match(config, /"--workspace-botanical-opacity"/);
-  assert.match(config, /"--workspace-contour-opacity"/);
+  assert.match(config, /"--workspace-background-veil-strength"/);
+  assert.match(config, /"--workspace-background-vignette-opacity"/);
 
   for (const key of workspaceBackgroundKeys) {
-    assert.match(config, new RegExp(`${key}: \\{[\\s\\S]*botanical: "0\\.0[1-3]`));
+    assert.match(config, new RegExp(`${key}: \\{[\\s\\S]*veil: "0\\.[7-8]`));
   }
 
   assert.doesNotMatch(config, /import .*background_.* from "\.\.\/assets\/img\//);
@@ -93,18 +92,18 @@ test("workspace background CSS uses the shared forest system without raster wall
   assert.doesNotMatch(staffCss, /background-image:\s*var\(--workspace-background, none\)/);
 
   for (const css of [workspaceCss]) {
-    assert.match(css, /--workspace-bg-deep:\s*#071f18/);
+    assert.match(css, /--workspace-bg-deep:\s*#03130f/);
+    assert.match(css, /#123b2e/i);
+    assert.match(css, /url\("\.\.\/assets\/img\/background_room\.png"\)/);
     assert.match(css, /background-color:\s*var\(--workspace-bg-deep\)/);
     assert.match(css, /background-image:[\s\S]*radial-gradient[\s\S]*linear-gradient/);
-    assert.match(css, /\.workspace-page::before/);
-    assert.match(css, /\.workspace-page::after/);
-    assert.match(css, /data:image\/svg\+xml/);
-    assert.match(css, /var\(--workspace-contour-opacity\)/);
-    assert.match(css, /var\(--workspace-botanical-opacity\)/);
-    assert.match(css, /background-position:\s*center top/);
+    assert.doesNotMatch(css, /\.workspace-page::before|\.workspace-page::after/);
+    assert.doesNotMatch(css, /data:image\/svg\+xml|%23C9A85D|workspace-gold-outline/);
+    assert.match(css, /var\(--workspace-background-veil-strength\)/);
+    assert.match(css, /background-position:[\s\S]*center top/);
     assert.match(css, /background-size:\s*cover/);
     assert.match(css, /background-repeat:\s*no-repeat/);
-    assert.doesNotMatch(css, /--workspace-background|background-image:\s*url\(["']?\.\.\/assets\/img\/background_/);
+    assert.doesNotMatch(css, /background-image:\s*url\(["']?\.\.\/assets\/img\/background_(?!room\.png)/);
     assert.doesNotMatch(css, /background-attachment:\s*fixed|cover fixed no-repeat/);
   }
 });

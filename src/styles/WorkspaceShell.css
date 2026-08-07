@@ -3,14 +3,11 @@
   --workspace-ink: #173429;
   --workspace-line: rgba(244, 237, 223, 0.16);
   --workspace-bg-top: #123b2e;
-  --workspace-bg-mid: #0b2b21;
-  --workspace-bg-deep: #071f18;
+  --workspace-bg-mid: #071f18;
+  --workspace-bg-deep: #03130f;
   --workspace-accent: 95, 174, 155;
-  --workspace-accent-soft: 95, 174, 155;
-  --workspace-gold-soft: 201, 168, 93;
-  --workspace-botanical-opacity: 0.028;
-  --workspace-contour-opacity: 0.058;
-  --workspace-glow-opacity: 0.42;
+  --workspace-background-veil-strength: 0.78;
+  --workspace-background-vignette-opacity: 0.66;
 
   position: relative;
   min-height: 100dvh;
@@ -19,83 +16,37 @@
   background-color: var(--workspace-bg-deep);
   background-image:
     radial-gradient(
-      ellipse at 20% -6%,
-      rgba(var(--workspace-accent-soft), calc(var(--workspace-glow-opacity) * 0.28)) 0%,
-      rgba(var(--workspace-accent-soft), calc(var(--workspace-glow-opacity) * 0.11)) 29%,
-      transparent 58%
-    ),
-    radial-gradient(
-      ellipse at 100% 12%,
-      rgba(var(--workspace-gold-soft), calc(var(--workspace-glow-opacity) * 0.13)) 0%,
-      transparent 43%
+      ellipse at center,
+      rgba(3, 19, 15, calc(var(--workspace-background-veil-strength) * 0.36)) 0%,
+      rgba(3, 19, 15, calc(var(--workspace-background-veil-strength) * 0.24)) 44%,
+      rgba(3, 19, 15, calc(var(--workspace-background-veil-strength) * 0.08)) 72%
     ),
     linear-gradient(
-      168deg,
+      180deg,
+      rgba(3, 19, 15, 0) 0%,
+      rgba(3, 19, 15, calc(var(--workspace-background-vignette-opacity) * 0.32)) 48%,
+      rgba(1, 8, 6, var(--workspace-background-vignette-opacity)) 100%
+    ),
+    url("../assets/img/background_room.png"),
+    linear-gradient(
+      180deg,
       var(--workspace-bg-top) 0%,
-      var(--workspace-bg-mid) 42%,
+      var(--workspace-bg-mid) 52%,
       var(--workspace-bg-deep) 100%
     );
-  background-position: center top;
-  background-size: cover;
-  background-repeat: no-repeat;
-  font-family: var(--vc-font-display);
-}
-
-.workspace-page::before,
-.workspace-page::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.workspace-page::before {
-  opacity: 1;
-  background-image:
-    radial-gradient(
-      ellipse at 14% 20%,
-      transparent 0 26%,
-      rgba(var(--workspace-gold-soft), calc(var(--workspace-contour-opacity) * 0.72)) 26.2% 26.8%,
-      transparent 27.1% 38%,
-      rgba(244, 235, 210, calc(var(--workspace-contour-opacity) * 0.54)) 38.2% 38.7%,
-      transparent 39% 100%
-    ),
-    radial-gradient(
-      ellipse at 94% 70%,
-      transparent 0 29%,
-      rgba(var(--workspace-accent), calc(var(--workspace-contour-opacity) * 0.92)) 29.2% 29.8%,
-      transparent 30.2% 46%,
-      rgba(var(--workspace-gold-soft), calc(var(--workspace-contour-opacity) * 0.34)) 46.2% 46.7%,
-      transparent 47% 100%
-    ),
-    linear-gradient(
-      125deg,
-      transparent 0 12%,
-      rgba(244, 235, 210, calc(var(--workspace-contour-opacity) * 0.5)) 12.2% 12.6%,
-      transparent 13% 44%,
-      rgba(var(--workspace-accent), calc(var(--workspace-contour-opacity) * 0.52)) 44.2% 44.6%,
-      transparent 45% 100%
-    );
   background-position:
-    -34vw -18vh,
-    48vw 26vh,
+    center,
+    center,
+    center top,
     center;
   background-size:
-    118vw 72vh,
-    98vw 86vh,
-    100% 100%;
-  mix-blend-mode: screen;
-}
-
-.workspace-page::after {
-  opacity: var(--workspace-botanical-opacity);
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='520' viewBox='0 0 420 520' fill='none'%3E%3Cpath d='M68 505C104 394 142 300 221 210C279 144 336 90 397 20' stroke='%23C9A85D' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M141 392C121 346 105 300 92 256M184 275C151 246 124 214 103 181M231 207C201 188 176 164 156 137M276 159C251 143 231 123 214 100M320 115C298 101 280 84 267 65M107 435C143 420 178 399 213 371M153 331C190 313 223 288 254 256M205 247C238 229 269 204 298 173M253 191C283 174 311 151 337 125' stroke='%23F4EBD2' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M14 152C66 104 126 72 196 56C265 40 332 47 407 76' stroke='%235FAE9B' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M68 113C98 125 128 132 158 136M129 81C154 102 180 118 209 130M199 57C220 85 245 107 274 123M274 56C290 82 311 104 337 122' stroke='%23C9A85D' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-position:
-    right -156px top 18px;
+    cover,
+    cover,
+    cover,
+    cover;
   background-repeat: no-repeat;
-  background-size: min(58vw, 460px) auto;
+  background-blend-mode: normal, multiply, normal, normal;
+  font-family: var(--vc-font-display);
 }
 
 .workspace-page__veil {
@@ -104,11 +55,17 @@
   z-index: 0;
   pointer-events: none;
   background:
+    radial-gradient(
+      ellipse at center,
+      rgba(3, 19, 15, calc(var(--workspace-background-veil-strength) * 0.58)) 0%,
+      rgba(4, 17, 12, calc(var(--workspace-background-veil-strength) * 0.38)) 42%,
+      transparent 72%
+    ),
     linear-gradient(
       180deg,
-      rgba(4, 17, 12, 0.1) 0%,
-      rgba(5, 22, 15, 0.34) 46%,
-      rgba(4, 17, 12, 0.76) 100%
+      rgba(4, 17, 12, 0.06) 0%,
+      rgba(5, 22, 15, calc(var(--workspace-background-veil-strength) * 0.24)) 44%,
+      rgba(2, 10, 8, var(--workspace-background-vignette-opacity)) 100%
     );
 }
 
@@ -1249,25 +1206,8 @@ input.profile-panel__file-input {
 
 @media (max-width: 520px) {
   .workspace-page {
-    --workspace-botanical-opacity: 0.018;
-    --workspace-contour-opacity: 0.038;
-    --workspace-glow-opacity: 0.34;
-  }
-
-  .workspace-page::before {
-    background-position:
-      -72vw -22vh,
-      58vw 32vh,
-      center;
-    background-size:
-      160vw 72vh,
-      148vw 82vh,
-      100% 100%;
-  }
-
-  .workspace-page::after {
-    background-position: right -248px top 16px;
-    background-size: 350px auto;
+    --workspace-background-veil-strength: 0.84;
+    --workspace-background-vignette-opacity: 0.74;
   }
 }
 
@@ -1307,23 +1247,6 @@ input.profile-panel__file-input {
 }
 
 @media (min-width: 1024px) {
-  .workspace-page::before {
-    background-position:
-      -20vw -20vh,
-      58vw 18vh,
-      center;
-    background-size:
-      88vw 78vh,
-      82vw 92vh,
-      100% 100%;
-  }
-
-  .workspace-page::after {
-    background-position:
-      right -132px top 34px;
-    background-size: min(34vw, 520px) auto;
-  }
-
   .workspace-shell {
     width: min(calc(100% - 72px), 1080px);
     padding-top: calc(var(--vc-safe-top) + 38px);
