@@ -137,6 +137,7 @@ function roomRow(overrides: Partial<Record<string, unknown>>) {
     reception_deposit_returned: 0,
     reception_room_released: 0,
     reception_updated_at: null,
+    reception_passport_record_count: 0,
     passport_completed_at: null,
     deposit_completed_at: null,
     check_in_completed_at: null,
@@ -1226,6 +1227,126 @@ test("stale Reception alerts from a previous released stay are not surfaced", as
   assert.equal(room.reception.phase, "NONE");
   assert.deepEqual(room.reception.alerts, []);
   assert.equal(room.alertSummary, null);
+});
+
+test("guest-specific Reception state follows the booking after a Beds room reassignment while physical room state stays put", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 3,
+      unit_name: "Bungalow 1",
+      ready_state: "NOT_READY",
+    }),
+    roomRow({
+      unit_id: 4,
+      unit_name: "Bungalow 2",
+      booking_id: 81,
+      beds24_booking_id: 91039809,
+      guest_name: "Dominic Bennor",
+      arrival_date: "2026-08-06",
+      departure_date: "2026-08-08",
+      reception_booking_id: 81,
+      reception_beds24_booking_id: 91039809,
+      reception_guest_name: "Dominic Bennor",
+      reception_arrival_date: "2026-08-06",
+      reception_departure_date: "2026-08-08",
+      reception_guest_arrived: 1,
+      reception_passport_collected: 0,
+      reception_deposit_collected: 0,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], {
+    rooms,
+    alerts: [
+      { alert_id: 5, beds24_booking_id: 91039809, unit_id: 3, alert_type: "passport_missing", title: "Passport(s) missing", status: "active" },
+      { alert_id: 6, beds24_booking_id: 91039809, unit_id: 3, alert_type: "deposit_pending", title: "Deposit pending", status: "active" },
+    ],
+  }), "2026-08-07", roomsUser);
+
+  const oldRoom = byName(overview.rooms, "Bungalow 1");
+  const currentRoom = byName(overview.rooms, "Bungalow 2");
+
+  assert.equal(oldRoom.currentStay, null);
+  assert.equal(oldRoom.operational.housekeeping.condition, "NOT_READY");
+  assert.deepEqual(oldRoom.reception.alerts, []);
+  assert.equal(getRoomCompactPresentation(oldRoom).housekeeping?.label, "DIRTY");
+  assert.doesNotMatch(getRoomCompactPresentation(oldRoom).accessibleSummary, /Dominic|PASSPORT|DEPOSIT/i);
+
+  assert.equal(currentRoom.currentStay?.guestName, "Dominic Bennor");
+  assert.equal(currentRoom.operational.occupancy.state, "OCCUPIED");
+  assert.deepEqual(currentRoom.reception.alerts.map((alert) => alert.type), ["passport_missing", "deposit_pending"]);
+  assert.equal(currentRoom.reception.passport.state, "PENDING");
+  assert.equal(currentRoom.reception.deposit.state, "PENDING");
+  assert.deepEqual(getRoomCompactPresentation(currentRoom).secondarySignals.map((signal) => signal.label), [
+    "PASSPORT MISSING",
+    "DEPOSIT PENDING",
+  ]);
+});
+
+test("current in-house stay derives missing passport and deposit alerts even when alert rows are missing", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 4,
+      unit_name: "Bungalow 2",
+      booking_id: 81,
+      beds24_booking_id: 91039809,
+      guest_name: "Dominic Bennor",
+      arrival_date: "2026-08-06",
+      departure_date: "2026-08-08",
+      reception_booking_id: 81,
+      reception_beds24_booking_id: 91039809,
+      reception_guest_name: "Dominic Bennor",
+      reception_arrival_date: "2026-08-06",
+      reception_departure_date: "2026-08-08",
+      reception_guest_arrived: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-07", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 2");
+
+  assert.deepEqual(room.reception.alerts.map((alert) => alert.type), ["passport_missing", "deposit_pending"]);
+  assert.equal(room.alertSummary, "Passport missing · Deposit pending");
+  assert.deepEqual(getRoomCompactPresentation(room).secondarySignals.map((signal) => signal.label), [
+    "PASSPORT MISSING",
+    "DEPOSIT PENDING",
+  ]);
+});
+
+test("saved booking passport suppresses derived passport missing while deposit remains pending", async () => {
+  const rooms = [
+    roomRow({
+      unit_id: 4,
+      unit_name: "Bungalow 2",
+      booking_id: 81,
+      beds24_booking_id: 91039809,
+      guest_name: "Dominic Bennor",
+      arrival_date: "2026-08-06",
+      departure_date: "2026-08-08",
+      reception_booking_id: 81,
+      reception_beds24_booking_id: 91039809,
+      reception_guest_name: "Dominic Bennor",
+      reception_arrival_date: "2026-08-06",
+      reception_departure_date: "2026-08-08",
+      reception_guest_arrived: 1,
+      reception_welcome_completed: 1,
+      reception_keys_delivered: 1,
+      reception_passport_record_count: 1,
+      reception_updated_at: "2026-08-06T12:24:53.885Z",
+    }),
+  ];
+
+  const overview = await getRoomsWorkspaceOverview(env([roomsAccess], { rooms }), "2026-08-07", roomsUser);
+  const room = byName(overview.rooms, "Bungalow 2");
+
+  assert.equal(room.reception.passport.state, "COMPLETE");
+  assert.equal(room.reception.deposit.state, "PENDING");
+  assert.deepEqual(room.reception.alerts.map((alert) => alert.type), ["deposit_pending"]);
+  assert.deepEqual(getRoomCompactPresentation(room).secondarySignals.map((signal) => signal.label), ["DEPOSIT PENDING"]);
 });
 
 test("past checkout dates do not create Reception alerts or cleaning state changes", async () => {

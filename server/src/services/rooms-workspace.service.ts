@@ -82,6 +82,7 @@ interface RoomWorkspaceRow {
   reception_deposit_returned: number | null;
   reception_room_released: number | null;
   reception_updated_at: string | null;
+  reception_passport_record_count: number | null;
   passport_completed_at: string | null;
   deposit_completed_at: string | null;
   check_in_completed_at: string | null;
@@ -164,6 +165,11 @@ export interface RoomReceptionAlertSummary {
 }
 
 type MappedReceptionAlertSummary = RoomReceptionAlertSummary & { bookingId: number | null };
+
+interface ReceptionAlertMaps {
+  byUnit: Map<number, MappedReceptionAlertSummary[]>;
+  byBooking: Map<number, MappedReceptionAlertSummary[]>;
+}
 
 export interface RoomReceptionPrimaryAction {
   type: ReceptionPrimaryActionType;
@@ -472,7 +478,7 @@ function mapReceptionSummary(row: RoomWorkspaceRow, alerts: RoomReceptionAlertSu
   const depositRequired = passportRequired;
   const checkInRequired = phase === "ARRIVAL_DUE" || phase === "IN_HOUSE" || phase === "DEPARTURE_DUE";
   const checkOutRequired = phase === "DEPARTURE_DUE" || phase === "CHECKED_OUT";
-  const passportComplete = flag(row.reception_passport_collected);
+  const passportComplete = flag(row.reception_passport_collected) || (row.reception_passport_record_count ?? 0) > 0;
   const depositComplete = flag(row.reception_deposit_collected);
   const checkInDone = checkInComplete(row);
   const checkOutDone = checkoutComplete(row);
@@ -511,6 +517,20 @@ function alertLabel(type: ReceptionAlertRow["alert_type"], title: string): strin
   return title;
 }
 
+function derivedReceptionAlert(type: ReceptionAlertRow["alert_type"]): MappedReceptionAlertSummary {
+  return {
+    id: type === "passport_missing" ? -1 : -2,
+    bookingId: null,
+    type,
+    label: alertLabel(type, alertTitleForDerivedAlert(type)),
+    tone: "warning",
+  };
+}
+
+function alertTitleForDerivedAlert(type: ReceptionAlertRow["alert_type"]): string {
+  return type === "passport_missing" ? "Passport Missing" : "Deposit Pending";
+}
+
 function alertSummaryLabel(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
@@ -542,23 +562,32 @@ function compactAlertSummary(row: RoomWorkspaceRow, reception: RoomReceptionSumm
   return labels.length > 2 ? `${visible} · +${labels.length - 2}` : visible;
 }
 
-function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, MappedReceptionAlertSummary[]> {
-  const alerts = new Map<number, MappedReceptionAlertSummary[]>();
+function pushMappedAlert(map: Map<number, MappedReceptionAlertSummary[]>, key: number, alert: MappedReceptionAlertSummary): void {
+  const current = map.get(key) ?? [];
+  if (!current.some((item) => item.id === alert.id || item.type === alert.type)) {
+    current.push(alert);
+  }
+  map.set(key, current);
+}
+
+function mapReceptionAlerts(rows: ReceptionAlertRow[]): ReceptionAlertMaps {
+  const byUnit = new Map<number, MappedReceptionAlertSummary[]>();
+  const byBooking = new Map<number, MappedReceptionAlertSummary[]>();
   for (const row of rows) {
-    const current = alerts.get(row.unit_id) ?? [];
-    current.push({
+    const alert = {
       id: row.alert_id,
       bookingId: row.beds24_booking_id,
       type: row.alert_type,
       label: alertLabel(row.alert_type, row.title),
       tone: "warning",
-    });
-    alerts.set(row.unit_id, current);
+    } satisfies MappedReceptionAlertSummary;
+    pushMappedAlert(byUnit, row.unit_id, alert);
+    if (row.beds24_booking_id) pushMappedAlert(byBooking, row.beds24_booking_id, alert);
   }
-  return alerts;
+  return { byUnit, byBooking };
 }
 
-async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<number, MappedReceptionAlertSummary[]>> {
+async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<ReceptionAlertMaps> {
   const rows = await env.DB.prepare(`
     SELECT alert_id, beds24_booking_id, unit_id, alert_type, title
     FROM reception_room_alerts
@@ -566,6 +595,34 @@ async function loadReceptionAlerts(env: RoomsWorkspaceBindings): Promise<Map<num
     ORDER BY created_at ASC, alert_id ASC
   `).all<ReceptionAlertRow>();
   return mapReceptionAlerts(rows.results ?? []);
+}
+
+function mergeReceptionAlerts(...groups: MappedReceptionAlertSummary[][]): MappedReceptionAlertSummary[] {
+  const merged: MappedReceptionAlertSummary[] = [];
+  for (const group of groups) {
+    for (const alert of group) {
+      if (!merged.some((item) => item.id === alert.id || item.type === alert.type)) merged.push(alert);
+    }
+  }
+  return merged;
+}
+
+function deriveCurrentStayReceptionAlerts(row: RoomWorkspaceRow, date: string, existing: MappedReceptionAlertSummary[]): MappedReceptionAlertSummary[] {
+  const phase = receptionPhase(row, date);
+  if (phase !== "IN_HOUSE") return [];
+
+  const derived: MappedReceptionAlertSummary[] = [];
+  const passportRecorded = flag(row.reception_passport_collected) || (row.reception_passport_record_count ?? 0) > 0;
+  const depositRecorded = flag(row.reception_deposit_collected);
+
+  if (!passportRecorded && !existing.some((alert) => alert.type === "passport_missing")) {
+    derived.push(derivedReceptionAlert("passport_missing"));
+  }
+  if (!depositRecorded && !existing.some((alert) => alert.type === "deposit_pending")) {
+    derived.push(derivedReceptionAlert("deposit_pending"));
+  }
+
+  return derived;
 }
 
 function canUseHousekeepingActions(user?: CurrentUser): boolean {
@@ -805,9 +862,13 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSum
   const arrival = operationalArrival(row);
   const departure = operationalDeparture(row);
   const bookingId = operationalBookingId(row);
-  const visibleReceptionAlerts = row.reception_beds24_booking_id
-    ? receptionAlerts.filter((alert) => alert.bookingId === row.reception_beds24_booking_id)
-    : [];
+  const explicitReceptionAlerts = mergeReceptionAlerts(
+    receptionAlerts,
+  );
+  const visibleReceptionAlerts = mergeReceptionAlerts(
+    explicitReceptionAlerts,
+    deriveCurrentStayReceptionAlerts(row, date, explicitReceptionAlerts),
+  );
   const reception = mapReceptionSummary(row, visibleReceptionAlerts.map((alert) => ({
     id: alert.id,
     type: alert.type,
@@ -944,6 +1005,12 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
       COALESCE(rrs.deposit_returned, 0) AS reception_deposit_returned,
       COALESCE(rrs.room_released, 0) AS reception_room_released,
       rrs.updated_at AS reception_updated_at,
+      (
+        SELECT COUNT(*)
+        FROM booking_passports bp
+        WHERE bp.booking_id = rb.booking_id
+          AND bp.source = 'reception_ocr_flow'
+      ) AS reception_passport_record_count,
       (
         SELECT MAX(re.created_at)
         FROM reception_events re
@@ -1106,7 +1173,12 @@ export async function getRoomsWorkspaceOverview(env: RoomsWorkspaceBindings, dat
 
   const receptionAlerts = await loadReceptionAlerts(env);
   const rooms = (rows.results ?? [])
-    .map((row) => mapRoom(row, receptionAlerts.get(row.unit_id) ?? [], date, user))
+    .map((row) => mapRoom(row, mergeReceptionAlerts(
+      row.reception_beds24_booking_id
+        ? (receptionAlerts.byUnit.get(row.unit_id) ?? []).filter((alert) => alert.bookingId === null || alert.bookingId === row.reception_beds24_booking_id)
+        : [],
+      row.reception_beds24_booking_id ? receptionAlerts.byBooking.get(row.reception_beds24_booking_id) ?? [] : [],
+    ), date, user))
     .sort((left, right) =>
       familyRank(left.sortGroup) - familyRank(right.sortGroup)
       || left.sortNumber - right.sortNumber
