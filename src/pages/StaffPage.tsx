@@ -32,6 +32,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "procurement",
   "messages",
   "social",
+  "owner-dashboard",
   "payroll",
   "accounting",
 ];
@@ -45,6 +46,7 @@ const workspaceIcons: Record<StaffCardId, string> = {
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
   social: envelopeIcon,
+  "owner-dashboard": handCoinsIcon,
   payroll: handCoinsIcon,
   accounting: handCoinsIcon,
 };

@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll" | "accounting";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll" | "accounting" | "owner-dashboard";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -61,6 +61,10 @@ function canUsePayroll(user: CurrentUser): boolean {
 
 function canUseAccounting(user: CurrentUser): boolean {
   return isOwner(user) && canAccess(user, "accounting");
+}
+
+function canUseOwnerDashboard(user: CurrentUser): boolean {
+  return isOwner(user) && canAccess(user, "owner-dashboard");
 }
 
 function canUseGuestMessages(user: CurrentUser): boolean {
@@ -247,6 +251,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Payroll",
       metrics: [],
       summaryLine1: "Worker payroll",
+      summaryLine2: "Owner only",
+    }));
+  }
+
+  if (canUseOwnerDashboard(user)) {
+    cards.push(withSummaryLines({
+      id: "owner-dashboard",
+      module: "owner-dashboard",
+      title: "Financial Dashboard",
+      description: "Income, expenses, and owner financial snapshot.",
+      href: "/dashboard",
+      cta: "Open Dashboard",
+      metrics: [],
+      summaryLine1: "Income vs expenses",
       summaryLine2: "Owner only",
     }));
   }

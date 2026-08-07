@@ -595,6 +595,33 @@ test("staff overview exposes Social Automation only to owners with the social mo
   assert.equal(staffOverview.cards.some((card) => card.id === "social"), false);
 });
 
+test("staff overview exposes Financial Dashboard only to owners with the owner-dashboard module", async () => {
+  const ownerOverview = await getStaffOverview(
+    env([ownerDashboardAccess]),
+    currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const ownerCard = ownerOverview.cards.find((card) => card.id === "owner-dashboard");
+  assert.ok(ownerCard);
+  assert.equal(ownerCard.module, "owner-dashboard");
+  assert.equal(ownerCard.title, "Financial Dashboard");
+  assert.equal(ownerCard.href, "/dashboard");
+
+  const ownerWithoutModule = await getStaffOverview(
+    env([]),
+    currentUser([], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  assert.equal(ownerWithoutModule.cards.some((card) => card.id === "owner-dashboard" || card.href === "/dashboard"), false);
+
+  const staffOverview = await getStaffOverview(
+    env([ownerDashboardAccess]),
+    currentUser([{ module: "owner-dashboard", canAccess: true, canEdit: false }], "Operations", ["staff"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  assert.equal(staffOverview.cards.some((card) => card.id === "owner-dashboard" || card.href === "/dashboard"), false);
+});
+
 test("staff overview does not return an empty operational home for active Staff users without explicit module grants", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]));
   assert.equal(overview.cards.length, 5);
