@@ -5,8 +5,9 @@ import { getReceptionOverview, type ReceptionBindings } from "./reception.servic
 import { hasModulePermission, isOwner, type CurrentUser, type ModuleKey } from "./current-user.service.js";
 import { listRecentBookingEvents, type BookingEventsBindings, type BookingPulseItem } from "./booking-events.service.js";
 import { getBangkokDate } from "./today.service.js";
+import { buildFinancialSnapshot, type DashboardBindings } from "./dashboard.service.js";
 
-export interface StaffOverviewBindings extends HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings, RoomsWorkspaceBindings {
+export interface StaffOverviewBindings extends HousekeepingV2Bindings, MaintenanceBindings, ReceptionBindings, BookingEventsBindings, RoomsWorkspaceBindings, DashboardBindings {
   DB: D1Database;
 }
 
@@ -81,6 +82,43 @@ function withSummaryLines(card: StaffOverviewCard): StaffOverviewCard {
     ...card,
     summaryLine1: card.summaryLine1 ?? formatMetric(card.metrics[0]),
     summaryLine2: card.summaryLine2 ?? formatMetric(card.metrics[1]),
+  };
+}
+
+interface CountRow {
+  total: number;
+}
+
+function count(row: CountRow | null): number {
+  return row?.total ?? 0;
+}
+
+async function ownerDashboardBalanceMetric(env: StaffOverviewBindings, bangkokToday: string): Promise<StaffOverviewMetric | null> {
+  const [incomeToDate, futureIncome] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in <= ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+    `).bind(bangkokToday).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in > ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+    `).bind(bangkokToday).first<CountRow>(),
+  ]);
+  const snapshot = await buildFinancialSnapshot(env, bangkokToday, count(incomeToDate), count(futureIncome));
+  return {
+    label: "Balance",
+    value: snapshot.netPosition,
+    tone: snapshot.netPosition >= 0 ? "good" : "attention",
   };
 }
 
@@ -256,6 +294,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canUseOwnerDashboard(user)) {
+    const balanceMetric = await ownerDashboardBalanceMetric(env, date);
     cards.push(withSummaryLines({
       id: "owner-dashboard",
       module: "owner-dashboard",
@@ -263,7 +302,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       description: "Income, expenses, and owner financial snapshot.",
       href: "/dashboard",
       cta: "Open Dashboard",
-      metrics: [],
+      metrics: balanceMetric ? [balanceMetric] : [],
       summaryLine1: "Income vs expenses",
       summaryLine2: "Owner only",
     }));

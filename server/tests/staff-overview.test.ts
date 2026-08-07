@@ -375,6 +375,12 @@ class FakeStaffDB {
         ...USER_ROW,
       } as T;
     }
+    if (sql.includes("SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total") && sql.includes("f.check_in <= ?")) {
+      return { total: 12500 } as T;
+    }
+    if (sql.includes("SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total") && sql.includes("f.check_in > ?")) {
+      return { total: 4800 } as T;
+    }
     if (sql.includes("SELECT * FROM reception_stays WHERE beds24_booking_id")) return null;
     if (sql.includes("SELECT beds24_booking_id FROM bookings WHERE beds24_booking_id")) return { beds24_booking_id: params[0] } as T;
     return null;
@@ -606,6 +612,7 @@ test("staff overview exposes Financial Dashboard only to owners with the owner-d
   assert.equal(ownerCard.module, "owner-dashboard");
   assert.equal(ownerCard.title, "Financial Dashboard");
   assert.equal(ownerCard.href, "/dashboard");
+  assert.deepEqual(ownerCard.metrics, [{ label: "Balance", value: 12500, tone: "good" }]);
 
   const ownerWithoutModule = await getStaffOverview(
     env([]),

@@ -23,7 +23,7 @@ import { useLanguage } from "../providers/language.context";
 import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/StaffPage.css";
 
-const WORKSPACE_ORDER: StaffCardId[] = [
+const STAFF_WORKSPACE_ORDER: StaffCardId[] = [
   "rooms",
   "availability",
   "reception",
@@ -35,6 +35,20 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "owner-dashboard",
   "payroll",
   "accounting",
+];
+
+const OWNER_WORKSPACE_ORDER: StaffCardId[] = [
+  "owner-dashboard",
+  "rooms",
+  "messages",
+  "reception",
+  "availability",
+  "accounting",
+  "payroll",
+  "housekeeping",
+  "maintenance",
+  "procurement",
+  "social",
 ];
 
 const workspaceIcons: Record<StaffCardId, string> = {
@@ -114,10 +128,20 @@ function staffNickname(displayName: string) {
   return cleaned;
 }
 
-function sortWorkspaces(workspaces: StaffOverviewCard[]) {
+function isOwnerRole(role: string | undefined) {
+  return role?.toLowerCase() === "owner";
+}
+
+function workspaceRank(id: StaffCardId, order: StaffCardId[]) {
+  const index = order.indexOf(id);
+  return index === -1 ? order.length : index;
+}
+
+function sortWorkspaces(workspaces: StaffOverviewCard[], role: string | undefined) {
+  const order = isOwnerRole(role) ? OWNER_WORKSPACE_ORDER : STAFF_WORKSPACE_ORDER;
   return [...workspaces].sort(
     (a, b) =>
-      WORKSPACE_ORDER.indexOf(a.id) - WORKSPACE_ORDER.indexOf(b.id),
+      workspaceRank(a.id, order) - workspaceRank(b.id, order),
   );
 }
 
@@ -128,6 +152,15 @@ function withAvailabilityWorkspace(workspaces: StaffOverviewCard[]) {
 
 function iconStyle(iconUrl: string): CSSProperties {
   return { "--staff-icon-url": `url("${iconUrl}")` } as CSSProperties;
+}
+
+function formatOwnerBalance(value: number) {
+  const sign = value >= 0 ? "+" : "-";
+  const absoluteValue = Math.abs(value);
+  const formatted = absoluteValue >= 1000
+    ? `${(absoluteValue / 1000).toFixed(1)}K`
+    : Math.round(absoluteValue).toLocaleString("en-US");
+  return `${sign} THB ${formatted}`;
 }
 
 function summaryItems(metrics: StaffOverviewMetric[], translate: (key: string, options?: Record<string, unknown>) => string): VanaraSummaryItem[] {
@@ -171,6 +204,8 @@ function WorkspaceCard({
   const title = workspaceTitleKeys[workspace.id] ? translate(workspaceTitleKeys[workspace.id]!) : workspace.title;
   const description = workspaceDescriptionKeys[workspace.id] ? translate(workspaceDescriptionKeys[workspace.id]!) : workspace.description;
   const metrics = summaryItems(workspace.metrics, translate);
+  const dashboardBalance = workspace.id === "owner-dashboard" ? workspace.metrics.find((metric) => metric.label === "Balance") : undefined;
+  const visibleMetrics = workspace.id === "owner-dashboard" ? metrics.filter((metric) => metric.label !== "Balance") : metrics;
   const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
   const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
 
@@ -195,14 +230,22 @@ function WorkspaceCard({
             <span className="staff-workspace__glyph" />
           </span>
           <span className="staff-workspace__title">{title}</span>
+          {dashboardBalance ? (
+            <span
+              className={`staff-workspace__balance staff-workspace__balance--${dashboardBalance.value >= 0 ? "positive" : "negative"}`}
+              aria-label={`Current balance ${formatOwnerBalance(dashboardBalance.value)}`}
+            >
+              {formatOwnerBalance(dashboardBalance.value)}
+            </span>
+          ) : null}
         </span>
         <span className="staff-workspace__description">{description}</span>
 
-        {metrics.length > 0 ? (
+        {visibleMetrics.length > 0 ? (
           <VanaraSummaryGrid
             ariaLabel={`${title} operational counters`}
             className="staff-workspace__summary-grid"
-            items={metrics}
+            items={visibleMetrics}
             variant="compact"
           />
         ) : (
@@ -238,7 +281,7 @@ export default function StaffPage() {
     refetchInterval: 60_000,
   });
 
-  const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
+  const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards), staff.data.user.role) : [];
   const name = staff.data ? staffNickname(staff.data.user.displayName) : "";
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;

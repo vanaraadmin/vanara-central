@@ -382,7 +382,7 @@ function addPayrollComponents(buckets: Map<string, number>, row: PayrollFinancia
   addBucket(buckets, "Authorized deductions", -amount(row.authorized_deductions));
 }
 
-async function buildFinancialSnapshot(
+export async function buildFinancialSnapshot(
   env: DashboardBindings,
   bangkokToday: string,
   checkedInNetRevenue: number,

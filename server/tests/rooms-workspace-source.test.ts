@@ -30,6 +30,7 @@ const guestContactSheet = readFileSync(new URL("../../src/components/vanara/Vana
 const guestContactCss = readFileSync(new URL("../../src/styles/VanaraGuestContact.css", import.meta.url), "utf8");
 const staffService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
 const serverService = readFileSync(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
+const staffCss = readFileSync(new URL("../../src/styles/StaffPage.css", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../src/styles/RoomsPage.css", import.meta.url), "utf8");
 
 function sourceBlockBetween(source: string, start: string, end: string): string {
@@ -48,21 +49,33 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Check-In, Housekeeping, Maintenance, Procurement, owner Social Automation, Financial Dashboard and Payroll", () => {
+test("Staff Home hierarchy keeps Booking Pulse fixed and separates staff and owner workspace order", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"messages",\s*"social",\s*"owner-dashboard",\s*"payroll",\s*"accounting",\s*\]/);
+  assert.match(staffPage, /const STAFF_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"messages",\s*"social",\s*"owner-dashboard",\s*"payroll",\s*"accounting",\s*\]/);
+  assert.match(staffPage, /const OWNER_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"owner-dashboard",\s*"rooms",\s*"messages",\s*"reception",\s*"availability",\s*"accounting",\s*"payroll",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*\]/);
+  assert.match(staffPage, /const order = isOwnerRole\(role\) \? OWNER_WORKSPACE_ORDER : STAFF_WORKSPACE_ORDER/);
+  assert.match(staffPage, /return index === -1 \? order\.length : index/);
+  assert.match(staffPage, /sortWorkspaces\(withAvailabilityWorkspace\(staff\.data\.cards\), staff\.data\.user\.role\)/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
   assert.match(staffService, /id:\s*"messages"[\s\S]*href:\s*"\/messages"/);
   assert.match(staffService, /function canUseGuestMessages\(user: CurrentUser\): boolean \{[\s\S]*return isOwner\(user\) && canAccess\(user, "messages"\)/);
   assert.match(staffService, /id:\s*"social"[\s\S]*href:\s*"\/social-automation"/);
   assert.match(staffService, /id:\s*"owner-dashboard"[\s\S]*href:\s*"\/dashboard"/);
   assert.match(staffService, /function canUseOwnerDashboard\(user: CurrentUser\): boolean \{[\s\S]*return isOwner\(user\) && canAccess\(user, "owner-dashboard"\)/);
+  assert.match(staffService, /ownerDashboardBalanceMetric/);
+  assert.match(staffService, /buildFinancialSnapshot\(env, bangkokToday/);
+  assert.match(staffPage, /formatOwnerBalance/);
+  assert.match(staffPage, /\$\{\(absoluteValue \/ 1000\)\.toFixed\(1\)\}K/);
+  assert.match(staffPage, /workspace\.id === "owner-dashboard"[\s\S]*metric\.label === "Balance"/);
+  assert.match(staffCss, /\.staff-workspace__balance[\s\S]*max-width: min\(42%, 8\.6rem\)/);
+  assert.match(staffCss, /\.staff-workspace__balance[\s\S]*text-overflow: ellipsis/);
   assert.match(staffService, /id:\s*"payroll"[\s\S]*href:\s*"\/payroll"/);
   assert.doesNotMatch(staffPage, /href:\s*"\/chat"/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
   assert.ok(recentBookingsIndex < workspacesIndex);
+  assert.doesNotMatch(staffPage, /draggable|long-press|localStorage|userPreferences|user_preferences/i);
   assert.doesNotMatch(staffPage, /<RoomsPage|RoomExpandedWorkspace|RoomOperationalSummaryCard|GuestCard/);
 });
 
