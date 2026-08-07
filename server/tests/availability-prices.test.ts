@@ -488,10 +488,16 @@ test("source guardrails prevent live provider calls, price1, reservation writes,
   assert.match(page, /stickyNavigationTitle=\{translate\("prices"\)\}/);
   assert.match(page, /translate\("searchPrices"\)/);
   assert.match(page, /translate\("availableRooms"\)/);
+  assert.match(page, /DayPicker/);
+  assert.match(page, /mode="range"/);
+  assert.match(page, /maxDeparture = useMemo\(\(\) => addDateDays\(defaultArrival, 45\)/);
+  assert.match(page, /translate\("availability45DaysHelp"\)/);
+  assert.doesNotMatch(page, /type="date"/);
   assert.doesNotMatch(page, /room_operational_availability|maintenance_tickets|housekeeping_tasks|room_housekeeping_state|bookings/i);
-  assert.match(css, /\.availability-field input\s*\{[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(css, /\.availability-range\s*\{[\s\S]*grid-column:\s*1 \/ -1;/);
   assert.match(css, /\.availability-search__controls\s*\{[\s\S]*min-width:\s*0;/);
-  assert.match(css, /\.availability-field input\s*\{[\s\S]*max-width:\s*100%;/);
+  assert.match(css, /\.availability-range__summary\s*\{[\s\S]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/);
+  assert.match(css, /\.availability-range__help\s*\{/);
   assert.match(css, /\.availability-search__action\s*\{[\s\S]*max-width:\s*100%;/);
   assert.match(css, /\.availability-card__summary/);
 });
@@ -500,7 +506,8 @@ test("production sync orchestration populates availability through scheduled and
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const helper = index.match(/async function syncCommercialCaches[\s\S]*?\n}/)?.[0] ?? "";
 
-  assert.match(helper, /const offers = await syncOfferPrices\(env, \{ batchDays: 30, startOffset: 0 \}\);[\s\S]*const availability = await syncAvailabilityCache\(env, \{ batchDays: 30, startOffset: 0 \}\);/);
+  assert.match(index, /const COMMERCIAL_CACHE_WINDOW_DAYS = 45;/);
+  assert.match(helper, /const offers = await syncOfferPrices\(env, \{ batchDays: COMMERCIAL_CACHE_WINDOW_DAYS, startOffset: 0 \}\);[\s\S]*const availability = await syncAvailabilityCache\(env, \{ batchDays: COMMERCIAL_CACHE_WINDOW_DAYS, startOffset: 0 \}\);/);
   assert.match(helper, /return \{ offers, availability \};/);
   assert.doesNotMatch(helper, /\btry\b|\bcatch\b/);
   assert.match(index, /const \{ offers, availability \} = await syncCommercialCaches\(c\.env\);/);
@@ -530,15 +537,20 @@ test("Prices label guardrails keep route and API technical identifiers stable", 
   assert.ok(existsSync(new URL("../src/services/availability-prices.service.ts", import.meta.url)));
 });
 
-test("frontend source prevents invalid date ranges before submit without a custom date picker", () => {
+test("frontend source prevents invalid date ranges before submit with one bounded range picker", () => {
   const page = readFileSync(new URL("../../src/pages/AvailabilityPage.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/styles/AvailabilityPage.css", import.meta.url), "utf8");
 
-  assert.match(page, /min=\{defaultArrival\}/);
-  assert.match(page, /min=\{minimumDeparture\}/);
-  assert.match(page, /if \(departure <= nextArrival\) \{[\s\S]*setDeparture\(nextMinimumDeparture\);/);
+  assert.match(page, /import \{ DayPicker, type DateRange \} from "react-day-picker";/);
+  assert.match(page, /const minimumDate = parseDateOnly\(defaultArrival\) \?\? new Date\(\);/);
+  assert.match(page, /const maximumDate = parseDateOnly\(maxDeparture\) \?\? minimumDate;/);
+  assert.match(page, /disabled=\{\{ before: minimumDate, after: maximumDate \}\}/);
+  assert.match(page, /mode="range"/);
+  assert.match(page, /onSelect=\{updateDateRange\}/);
+  assert.match(page, /selected=\{selectedRange\}/);
+  assert.match(page, /const selectedNights = arrival && departure \? stayNights\(arrival, departure\) : 0;/);
   assert.match(page, /isValidStayRange\(nextRange, defaultArrival\)/);
-  assert.doesNotMatch(page, /react-day-picker|DayPicker|from\s+["']react-day-picker/);
+  assert.doesNotMatch(page, /type="date"|minimumDeparture|if \(departure <= nextArrival\)/);
   assert.doesNotMatch(page, /beds24Get|BEDS24_BASE_URL|BEDS24_LONG_LIFE_TOKEN|\bfetch\s*\(/);
   assert.match(css, /@media \(max-width: 420px\)/);
 });

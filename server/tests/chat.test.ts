@@ -155,10 +155,11 @@ test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => 
   const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
 
   assert.doesNotMatch(floatingTeamChat, /staff-chat__orb-label|aria-hidden="true">Team</);
-  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*border-radius:\s*19px/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*border-radius:\s*999px/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*backdrop-filter:\s*blur\(16px\)/);
   assert.doesNotMatch(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*border-radius:\s*50%/);
-  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*background:\s*linear-gradient\([^;]*#24805c[^;]*#176044[^;]*#0e3d2d/);
-  assert.match(floatingTeamChatCss, /\.staff-chat__orb \.staff-chat-icon__bubble\s*\{[^}]*width:\s*48px[^}]*height:\s*34px/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb\s*\{[^}]*linear-gradient\(145deg, rgba\(36, 128, 92, 0\.94\)[^;]*rgba\(23, 96, 68, 0\.94\)[^;]*rgba\(14, 61, 45, 0\.96\)/);
+  assert.match(floatingTeamChatCss, /\.staff-chat__orb \.staff-chat-icon__bubble\s*\{[^}]*width:\s*35px[^}]*height:\s*26px/);
   assert.match(floatingTeamChatCss, /\.staff-chat-icon__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(floatingTeamChatCss, /\.staff-chat__orb \.staff-chat-icon__bubble span\s*\{[^}]*background:\s*#176044/);
   assert.doesNotMatch(floatingTeamChat + floatingTeamChatCss, />\s*LINE\s*<|line-logo|LINE_New_App_Icon|wechat-logo|whatsapp-logo/i);
@@ -356,7 +357,8 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /replyTarget/);
   assert.match(page, /replyToMessageId/);
   assert.match(page, /chat-composer__reply-preview/);
-  assert.match(page, /chat-composer__focus-row/);
+  assert.match(page, /chat-composer__cancel-focus/);
+  assert.doesNotMatch(page, /chat-composer__focus-row/);
   assert.match(page, /data-chat-message-id/);
   assert.match(page, /scrollIntoView/);
   assert.match(page, /is-highlighted/);
@@ -372,10 +374,10 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(css, /\.chat-thread-message__bubble\s*\{[^}]*background:\s*#fffdf6/);
   assert.match(css, /\.chat-thread-message\.is-outgoing \.chat-thread-message__bubble\s*\{[^}]*color:\s*#fffdf6[^}]*background:\s*linear-gradient\([^;]*#1f6a4d[^;]*#0f3d2d/);
   assert.match(css, /\.chat-composer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
-  assert.match(css, /\.chat-composer\.is-focused\s*\{[^}]*grid-template-rows:\s*auto auto/);
-  assert.match(css, /\.chat-composer__focus-row\s*\{[^}]*grid-column:\s*2 \/ -1/);
+  assert.match(css, /\.chat-thread:has\(\.chat-composer\.is-focused\) \.chat-thread__messages\s*\{[^}]*overscroll-behavior:\s*none/);
+  assert.doesNotMatch(css, /\.chat-composer__focus-row/);
   assert.match(css, /\.chat-composer__field input\s*\{[^}]*-webkit-user-select:\s*text[^}]*user-select:\s*text/);
-  assert.match(css, /\.chat-composer__tools button,\s*\.chat-composer__send\s*\{[^}]*width:\s*46px[^}]*height:\s*46px/);
+  assert.match(css, /\.chat-composer__tools button,\s*\.chat-composer__send\s*\{[^}]*width:\s*40px[^}]*height:\s*40px/);
   assert.match(css, /\.chat-tool-icon\s*\{[^}]*width:\s*26px[^}]*height:\s*26px/);
   assert.match(css, /\.chat-tool-icon--sticker/);
   assert.match(css, /\.chat-tool-icon--send/);

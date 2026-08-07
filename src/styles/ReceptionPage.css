@@ -94,6 +94,16 @@
   justify-content: space-between;
 }
 
+.reception-date-picker__panel .rdp-caption_label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .reception-date-picker__panel .rdp-nav {
   justify-content: flex-end;
 }
@@ -248,13 +258,20 @@
   gap: var(--vc-space-2);
 }
 
+.reception-card__quick-actions .vc-secondary-action,
 .reception-report-issue {
+  display: inline-flex;
+  min-width: 0;
   min-height: var(--vc-touch-min);
+  align-items: center;
+  justify-content: center;
   padding-inline: var(--vc-space-3);
   border-radius: var(--vc-radius-pill);
   font-size: var(--vc-type-utility-xs);
+  line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 .reception-guest {

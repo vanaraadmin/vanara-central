@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useMemo, useState } from "react";
+import { DayPicker, type DateRange } from "react-day-picker";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { CalendarIcon, ChevronDownIcon } from "../components/OperationsIcons";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
@@ -36,6 +37,23 @@ function addDateDays(value: string, days: number): string {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return value;
   return new Date(Date.UTC(year, month - 1, day) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function parseDateOnly(value: string): Date | undefined {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function stayNights(arrival: string, departure: string): number {
+  const start = parseDateOnly(arrival)?.getTime();
+  const end = parseDateOnly(departure)?.getTime();
+  if (!start || !end || end <= start) return 0;
+  return Math.round((end - start) / 86_400_000);
 }
 
 function isValidStayRange(range: SearchRange, minimumArrival: string): boolean {
@@ -132,9 +150,9 @@ function AvailabilityResultCard({
 export default function AvailabilityPage() {
   const { language, translate } = useLanguage();
   const defaultArrival = useMemo(() => bangkokDate(), []);
-  const defaultDeparture = useMemo(() => bangkokDate(1), []);
-  const [arrival, setArrival] = useState(defaultArrival);
-  const [departure, setDeparture] = useState(defaultDeparture);
+  const maxDeparture = useMemo(() => addDateDays(defaultArrival, 45), [defaultArrival]);
+  const [arrival, setArrival] = useState("");
+  const [departure, setDeparture] = useState("");
   const [submittedRange, setSubmittedRange] = useState<SearchRange | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
@@ -150,24 +168,23 @@ export default function AvailabilityPage() {
 
   const result = availability.data;
   const groups = result?.groups ?? [];
-  const minimumDeparture = addDateDays(arrival, 1);
+  const minimumDate = parseDateOnly(defaultArrival) ?? new Date();
+  const maximumDate = parseDateOnly(maxDeparture) ?? minimumDate;
+  const selectedRange: DateRange | undefined = arrival || departure
+    ? { from: parseDateOnly(arrival), to: parseDateOnly(departure) }
+    : undefined;
+  const selectedNights = arrival && departure ? stayNights(arrival, departure) : 0;
   const cacheUnavailable = Boolean(result && result.cacheStatus === "UNAVAILABLE");
   const hasAvailableGroups = groups.some((group) => group.availableCount > 0);
   const noAvailability = Boolean(result && !cacheUnavailable && groups.length > 0 && !hasAvailableGroups);
   const missingPricingGroups = groups.filter((group) => group.availableCount > 0 && group.pricing.status === "MISSING");
 
-  const updateArrival = (nextArrival: string) => {
+  const updateDateRange = (nextRange: DateRange | undefined) => {
+    setSearchError(null);
+    const nextArrival = nextRange?.from ? formatDateOnly(nextRange.from) : "";
+    const nextDeparture = nextRange?.to ? formatDateOnly(nextRange.to) : "";
     setArrival(nextArrival);
-    setSearchError(null);
-    const nextMinimumDeparture = addDateDays(nextArrival, 1);
-    if (departure <= nextArrival) {
-      setDeparture(nextMinimumDeparture);
-    }
-  };
-
-  const updateDeparture = (nextDeparture: string) => {
     setDeparture(nextDeparture);
-    setSearchError(null);
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -206,26 +223,46 @@ export default function AvailabilityPage() {
         />
 
         <form className="availability-search__controls" onSubmit={submitSearch}>
-          <label className="availability-field">
-            <span>{translate("arrival")}</span>
-            <input
-              min={defaultArrival}
-              onChange={(event) => updateArrival(event.target.value)}
-              type="date"
-              value={arrival}
+          <div className="availability-range" aria-invalid={Boolean(searchError)} aria-label={translate("selectDates")}>
+            <div className="availability-range__summary">
+              <span>
+                <small>{translate("arrivalDate")}</small>
+                <strong>{arrival ? formatStayDate(arrival, language) : "-"}</strong>
+              </span>
+              <span>
+                <small>{translate("departureDate")}</small>
+                <strong>{departure ? formatStayDate(departure, language) : "-"}</strong>
+              </span>
+              <span>
+                <small>{translate("stayLength")}</small>
+                <strong>{selectedNights > 0 ? `${selectedNights} ${translate("nights")}` : "-"}</strong>
+              </span>
+            </div>
+            <DayPicker
+              className="availability-range__calendar"
+              disabled={{ before: minimumDate, after: maximumDate }}
+              mode="range"
+              numberOfMonths={1}
+              onSelect={updateDateRange}
+              selected={selectedRange}
+              showOutsideDays
+              startMonth={minimumDate}
+              endMonth={maximumDate}
+              weekStartsOn={1}
             />
-          </label>
-
-          <label className="availability-field">
-            <span>{translate("departure")}</span>
-            <input
-              aria-invalid={Boolean(searchError)}
-              min={minimumDeparture}
-              onChange={(event) => updateDeparture(event.target.value)}
-              type="date"
-              value={departure}
-            />
-          </label>
+            <div className="availability-range__footer">
+              <span>{translate("availability45Days")}</span>
+              <button
+                className="vc-secondary-action"
+                disabled={!arrival && !departure}
+                onClick={() => updateDateRange(undefined)}
+                type="button"
+              >
+                {translate("clearDates")}
+              </button>
+            </div>
+            <p className="availability-range__help">{translate("availability45DaysHelp")}</p>
+          </div>
 
           <button className="vc-primary-action availability-search__action" disabled={availability.isFetching} type="submit">
             {availability.isFetching ? translate("searching") : translate("searchPrices")}

@@ -64,9 +64,9 @@ export interface OfferPricesSyncResult {
   skippedReason?: string;
 }
 
-const HORIZON_DAYS = 30;
-const DEFAULT_BATCH_DAYS = 30;
-const MAX_BATCH_DAYS = 30;
+const HORIZON_DAYS = 45;
+const DEFAULT_BATCH_DAYS = 45;
+const MAX_BATCH_DAYS = 45;
 const CURSOR_NAME = "offer_prices_day_offset";
 const FULL_SYNC_STATE = "offer_prices_full_sync_state";
 

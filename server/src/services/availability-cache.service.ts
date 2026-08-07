@@ -104,9 +104,9 @@ export interface AvailabilityCacheRecord {
   rawJson: string;
 }
 
-const HORIZON_DAYS = 30;
-const DEFAULT_BATCH_DAYS = 30;
-const MAX_BATCH_DAYS = 30;
+const HORIZON_DAYS = 45;
+const DEFAULT_BATCH_DAYS = 45;
+const MAX_BATCH_DAYS = 45;
 const CURSOR_NAME = "availability_cache_day_offset";
 
 function clampBatchDays(value: number | undefined): number {

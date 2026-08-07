@@ -356,9 +356,11 @@ async function guestMessagesReviewer(c: AppContext): Promise<CurrentUser> {
   return user;
 }
 
+const COMMERCIAL_CACHE_WINDOW_DAYS = 45;
+
 async function syncCommercialCaches(env: Bindings) {
-  const offers = await syncOfferPrices(env, { batchDays: 30, startOffset: 0 });
-  const availability = await syncAvailabilityCache(env, { batchDays: 30, startOffset: 0 });
+  const offers = await syncOfferPrices(env, { batchDays: COMMERCIAL_CACHE_WINDOW_DAYS, startOffset: 0 });
+  const availability = await syncAvailabilityCache(env, { batchDays: COMMERCIAL_CACHE_WINDOW_DAYS, startOffset: 0 });
   return { offers, availability };
 }
 
@@ -2247,7 +2249,7 @@ app.post("/sync/properties", async (c) => {
 });
 
 app.post("/sync/offers", async (c) => {
-  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncOfferPrices(c.env, { batchDays: 30, startOffset: 0 })); }
+  try { await owner(c, "edit"); validateSyncConfig(c.env); return c.json(await syncOfferPrices(c.env, { batchDays: COMMERCIAL_CACHE_WINDOW_DAYS, startOffset: 0 })); }
   catch (error) {
     console.error("Offer prices sync failed:", error);
     return c.json({ ok: false, error: errorMessage(error) }, apiErrorStatus(error));

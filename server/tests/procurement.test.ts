@@ -261,7 +261,8 @@ test("procurement staff UI layout is mobile-safe for Thai and long request text"
   assert.match(css, /\.procurement-field span\s*\{[\s\S]*letter-spacing:\s*0[\s\S]*overflow-wrap:\s*anywhere/);
   assert.doesNotMatch(css, /\.procurement-field span\s*\{[\s\S]*text-transform:\s*uppercase/);
   assert.match(css, /\.procurement-field textarea\s*\{[\s\S]*min-height:\s*8\.5rem[\s\S]*background:\s*rgba\(244,\s*237,\s*223,\s*0\.94\)/);
-  assert.match(css, /@media \(min-width:\s*1024px\)[\s\S]*\.procurement-section\s*\{[\s\S]*padding:\s*var\(--vc-space-4\)[\s\S]*overflow:\s*hidden[\s\S]*border-radius:\s*var\(--vc-glass-region-radius\)/);
+  assert.match(css, /\.procurement-section\s*\{[\s\S]*padding:\s*clamp\(var\(--vc-space-3\), 3vw, var\(--vc-space-4\)\)[\s\S]*overflow:\s*hidden[\s\S]*border-radius:\s*var\(--vc-glass-region-radius\)/);
+  assert.match(css, /@media \(min-width:\s*1024px\)[\s\S]*\.procurement-section\s*\{[\s\S]*padding:\s*var\(--vc-space-4\)/);
   assert.match(css, /@media \(min-width:\s*1024px\)[\s\S]*\.procurement-list\s*\{[\s\S]*min-width:\s*0[\s\S]*background:\s*transparent/);
   assert.match(css, /@media \(min-width:\s*1024px\)[\s\S]*\.procurement-list::before\s*\{[\s\S]*content:\s*none/);
   assert.match(css, /\.procurement-card\s*\{[\s\S]*max-width:\s*100%/);

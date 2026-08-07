@@ -212,7 +212,7 @@ export default function PayrollPage() {
       note: eventNote || null,
     }) : Promise.reject(new Error("Select a worker")),
     onSuccess: async () => {
-      setNotice("Event added");
+      setNotice("Adjustment added");
       setEventValue(0);
       setEventNote("");
       await refreshPayroll();
@@ -291,30 +291,30 @@ export default function PayrollPage() {
               <button className="payroll-action" disabled={settingsMutation.isPending} onClick={() => settingsMutation.mutate()} type="button">{settingsMutation.isPending ? "Saving" : "Save settings"}</button>
             </section>
 
-            <section className="payroll-events" aria-label="Monthly payroll events">
-              <h3>Monthly events</h3>
+            <section className="payroll-events" aria-label="Monthly payroll adjustments">
+              <h3>Monthly adjustments</h3>
               <form className="payroll-event-form" onSubmit={submitEvent}>
                 <label className="payroll-field">
-                  <span>Event date</span>
+                  <span>Adjustment date</span>
                   <input disabled={locked} max={eventDateBounds.max} min={eventDateBounds.min} type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
                 </label>
                 <label className="payroll-field">
-                  <span>Event</span>
+                  <span>Adjustment type</span>
                   <select disabled={locked} value={eventType} onChange={(event) => setEventType(event.target.value as PayrollEventType)}>
                     {eventOptions.map((type) => <option key={type} value={type}>{eventLabels[type]}</option>)}
                   </select>
                 </label>
                 <NumberField commitEmptyAsZero disabled={locked} label={eventType === "SALARY_ADVANCE" || eventType === "BONUS_ADDITION" || eventType === "AUTHORIZED_DEDUCTION" ? "Amount THB" : "Quantity"} onChange={setEventValue} value={eventValue} />
                 <label className="payroll-field payroll-field--wide"><span>Note</span><input disabled={locked} value={eventNote} onChange={(event) => setEventNote(event.target.value)} /></label>
-                <button className="payroll-action" disabled={locked || eventMutation.isPending || eventValue <= 0} type="submit">{eventMutation.isPending ? "Adding" : "Add event"}</button>
+                <button className="payroll-action" disabled={locked || eventMutation.isPending || eventValue <= 0} type="submit">{eventMutation.isPending ? "Adding" : "Add adjustment"}</button>
               </form>
               <ul className="payroll-event-list">
-                {selected.events.length === 0 ? <li>No monthly events recorded.</li> : selected.events.map((event) => (
+                {selected.events.length === 0 ? <li>No adjustments recorded for this month.</li> : selected.events.map((event) => (
                   <li key={event.id}>
                     <strong>{eventLabels[event.eventType]}</strong>
                     <span>{event.amount > 0 ? money(event.amount) : event.quantity.toFixed(2)}</span>
                     {event.note ? <small>{event.note}</small> : null}
-                    <small>Event date {new Date(`${event.eventDate}T00:00:00`).toLocaleDateString("en-GB")}</small>
+                    <small>Adjustment date {new Date(`${event.eventDate}T00:00:00`).toLocaleDateString("en-GB")}</small>
                   </li>
                 ))}
               </ul>

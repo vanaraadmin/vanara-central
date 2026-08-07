@@ -724,14 +724,12 @@ function ChatComposer({
             <ChatToolIcon type="send" />
           </button>
         )}
-      </div>
-      {isFocused && (
-        <div className="chat-composer__focus-row">
+        {isFocused && (
           <button type="button" className="chat-composer__cancel-focus" onMouseDown={(event) => event.preventDefault()} onClick={exitFocusMode} aria-label={translate("exitWritingMode")}>
             <ChatToolIcon type="close" />
           </button>
-        </div>
-      )}
+        )}
+      </div>
       {(mutation.isError || uploadMutation.isError || stickerMutation.isError) && <p className="chat-composer__error">{translate("messageNotSaved")}</p>}
     </form>
   );
