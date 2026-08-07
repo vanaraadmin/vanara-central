@@ -24,6 +24,31 @@ interface MaintenanceRow {
   unit_name: string | null;
 }
 
+interface OtaFinancialRow {
+  channel: string | null;
+  expected_net_payout: number | null;
+  check_in: string;
+}
+
+interface ManualAccountingRow {
+  entry_type: "income" | "expense";
+  amount: number;
+  description: string;
+  note: string | null;
+}
+
+interface PayrollFinancialRow {
+  monthly_gross_salary: number;
+  salary_advances_received: number;
+  bonuses_additions: number;
+  authorized_deductions: number;
+  employee_social_security: number;
+  absence_deduction: number;
+  overtime_compensation: number;
+  meal_allowance_advance: number;
+  net_salary_payable: number;
+}
+
 export interface DashboardRoomCard {
   id: string;
   unitName: string;
@@ -98,6 +123,31 @@ export interface DashboardBreakdownItem {
   amount?: number;
 }
 
+export interface DashboardFinancialSegment {
+  id: string;
+  label: string;
+  amount: number;
+  percentage: number;
+  kind: "income" | "expense" | "forecast" | "reduction";
+}
+
+export interface DashboardFinancialSnapshot {
+  totalIncome: number;
+  totalExpenses: number;
+  netPosition: number;
+  checkedInNetRevenue: number;
+  futureBookedNetForecast: number;
+  manualIncomeTotal: number;
+  manualExpenseTotal: number;
+  payrollTotal: number;
+  topLevel: DashboardFinancialSegment[];
+  incomeComposition: DashboardFinancialSegment[];
+  expenseComposition: DashboardFinancialSegment[];
+  otaChannels: DashboardFinancialSegment[];
+  manualIncome: DashboardFinancialSegment[];
+  payrollComponents: DashboardFinancialSegment[];
+}
+
 export interface DashboardOverview {
   date: string;
   alerts: DashboardOverviewAlert[];
@@ -107,6 +157,7 @@ export interface DashboardOverview {
     occupancy: DashboardBusinessMetric;
     guestOrigins: DashboardBreakdownItem[];
     channels: DashboardBreakdownItem[];
+    financialSnapshot: DashboardFinancialSnapshot;
   };
   housekeeping: {
     roomsToClean: DashboardOverviewMetric;
@@ -254,6 +305,153 @@ function alert(id: string, label: string, value: number, href: string, tone: Das
   return value > 0 ? { id, label, value, href, tone } : null;
 }
 
+function amount(value: number | null | undefined): number {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function percent(part: number, total: number): number {
+  return total === 0 ? 0 : Math.round((part / total) * 1000) / 10;
+}
+
+function categoryFromNote(note: string | null, fallback: string): string {
+  const match = note?.match(/(?:^|;)\s*category:\s*([^;]+)/i);
+  const category = match?.[1]?.trim();
+  return category || fallback;
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+}
+
+function addBucket(buckets: Map<string, number>, label: string, value: number): void {
+  if (value === 0) return;
+  buckets.set(label, (buckets.get(label) ?? 0) + value);
+}
+
+function segmentsFromBuckets(
+  buckets: Map<string, number>,
+  total: number,
+  kind: DashboardFinancialSegment["kind"],
+): DashboardFinancialSegment[] {
+  return [...buckets.entries()]
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || a[0].localeCompare(b[0]))
+    .map(([label, bucketAmount]) => ({
+      id: slug(label),
+      label,
+      amount: Math.round(bucketAmount * 100) / 100,
+      percentage: percent(bucketAmount, total),
+      kind: bucketAmount < 0 ? "reduction" : kind,
+    }));
+}
+
+function payrollCost(row: PayrollFinancialRow): number {
+  return amount(row.net_salary_payable) + amount(row.salary_advances_received) + amount(row.employee_social_security);
+}
+
+function addPayrollComponents(buckets: Map<string, number>, row: PayrollFinancialRow): void {
+  const baseAfterSso = Math.max(0, amount(row.monthly_gross_salary) - amount(row.employee_social_security));
+  addBucket(buckets, "Base wages", baseAfterSso);
+  addBucket(buckets, "Social security / SSO", amount(row.employee_social_security));
+  addBucket(buckets, "Meal allowance", amount(row.meal_allowance_advance));
+  addBucket(buckets, "Bonuses / additions", amount(row.bonuses_additions));
+  addBucket(buckets, "Overtime", amount(row.overtime_compensation));
+  addBucket(buckets, "Unpaid absence reduction", -amount(row.absence_deduction));
+  addBucket(buckets, "Authorized deductions", -amount(row.authorized_deductions));
+}
+
+async function buildFinancialSnapshot(
+  env: DashboardBindings,
+  bangkokToday: string,
+  checkedInNetRevenue: number,
+  futureBookedNetForecast: number,
+): Promise<DashboardFinancialSnapshot> {
+  const bangkokMonth = bangkokToday.slice(0, 7);
+  const [otaRows, manualRows, payrollRows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT f.channel, f.expected_net_payout, f.check_in
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+    `).all<OtaFinancialRow>(),
+    env.DB.prepare(`
+      SELECT entry_type, amount, description, note
+      FROM manual_accounting_entries
+      WHERE entry_date <= ?
+    `).bind(bangkokToday).all<ManualAccountingRow>(),
+    env.DB.prepare(`
+      SELECT monthly_gross_salary, salary_advances_received, bonuses_additions,
+        authorized_deductions, employee_social_security, absence_deduction,
+        overtime_compensation, meal_allowance_advance, net_salary_payable
+      FROM payroll_records
+      WHERE status = 'FINALIZED'
+        AND payroll_month <= ?
+    `).bind(bangkokMonth).all<PayrollFinancialRow>(),
+  ]);
+
+  const otaChannels = new Map<string, number>();
+  for (const row of otaRows.results ?? []) {
+    if (row.check_in > bangkokToday) continue;
+    addBucket(otaChannels, row.channel || "Unknown OTA", amount(row.expected_net_payout));
+  }
+
+  const manualIncomeBuckets = new Map<string, number>([
+    ["INCASSI PER STANZE", 0],
+    ["INCASSI RISTORANTE / BAR", 0],
+    ["INCASSI AFFITTO MOTORINO", 0],
+  ]);
+  const manualExpenseBuckets = new Map<string, number>();
+  for (const row of manualRows.results ?? []) {
+    const label = categoryFromNote(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses");
+    if (row.entry_type === "income") {
+      addBucket(manualIncomeBuckets, label, amount(row.amount));
+    } else {
+      addBucket(manualExpenseBuckets, label, amount(row.amount));
+    }
+  }
+
+  const payrollBuckets = new Map<string, number>();
+  let payrollTotal = 0;
+  for (const row of payrollRows.results ?? []) {
+    payrollTotal += payrollCost(row);
+    addPayrollComponents(payrollBuckets, row);
+  }
+
+  const manualIncomeTotal = [...manualIncomeBuckets.values()].reduce((sum, value) => sum + value, 0);
+  const manualExpenseTotal = [...manualExpenseBuckets.values()].reduce((sum, value) => sum + value, 0);
+  const totalIncome = checkedInNetRevenue + manualIncomeTotal;
+  const totalExpenses = manualExpenseTotal + payrollTotal;
+  const netPosition = totalIncome - totalExpenses;
+  const incomeBuckets = new Map<string, number>([
+    ["OTA income", checkedInNetRevenue],
+    ["Manual income", manualIncomeTotal],
+  ]);
+  const expenseBuckets = new Map<string, number>([
+    ...manualExpenseBuckets.entries(),
+    ["Payroll / Wages", payrollTotal],
+  ]);
+
+  return {
+    totalIncome: Math.round(totalIncome * 100) / 100,
+    totalExpenses: Math.round(totalExpenses * 100) / 100,
+    netPosition: Math.round(netPosition * 100) / 100,
+    checkedInNetRevenue,
+    futureBookedNetForecast,
+    manualIncomeTotal: Math.round(manualIncomeTotal * 100) / 100,
+    manualExpenseTotal: Math.round(manualExpenseTotal * 100) / 100,
+    payrollTotal: Math.round(payrollTotal * 100) / 100,
+    topLevel: segmentsFromBuckets(new Map([["Income", totalIncome], ["Expenses", totalExpenses]]), totalIncome + totalExpenses, "income")
+      .map((segment) => segment.label === "Expenses" ? { ...segment, kind: "expense" } : segment),
+    incomeComposition: segmentsFromBuckets(incomeBuckets, totalIncome, "income"),
+    expenseComposition: segmentsFromBuckets(expenseBuckets, totalExpenses, "expense"),
+    otaChannels: segmentsFromBuckets(otaChannels, checkedInNetRevenue, "income"),
+    manualIncome: segmentsFromBuckets(manualIncomeBuckets, manualIncomeTotal, "income"),
+    payrollComponents: segmentsFromBuckets(payrollBuckets, payrollTotal, "expense"),
+  };
+}
+
 export async function getDashboardOverview(env: DashboardBindings): Promise<DashboardOverview> {
   await rebuildOtaFinancialRecords(env);
   const [housekeeping, maintenanceTickets, today, users] = await Promise.all([
@@ -303,12 +501,17 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       LIMIT 6
     `).all<{ label: string; value: number }>(),
     env.DB.prepare(`
-      SELECT channel AS label, COUNT(*) AS value, COALESCE(SUM(expected_net_payout), 0) AS amount
-      FROM ota_financial_records
-      GROUP BY channel
+      SELECT f.channel AS label, COUNT(*) AS value, COALESCE(SUM(f.expected_net_payout), 0) AS amount
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in <= ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+      GROUP BY f.channel
       ORDER BY amount DESC, value DESC
       LIMIT 6
-    `).all<{ label: string; value: number; amount: number }>(),
+    `).bind(bangkokToday).all<{ label: string; value: number; amount: number }>(),
   ]);
 
   const roomsToClean = housekeeping.summary.cleanFirst + housekeeping.summary.cleanToday;
@@ -328,6 +531,11 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const disabledUsers = users.filter((user) => user.status === "disabled");
   const housekeepingStaff = activeUsers.filter((user) => user.role === "Housekeeping").length;
   const maintenanceStaff = activeUsers.filter((user) => user.role === "Maintenance").length;
+  const checkedInNetRevenue = count(incomeToDate);
+  const futureBookedNetForecast = count(futureIncome);
+  const [financialSnapshot] = await Promise.all([
+    buildFinancialSnapshot(env, bangkokToday, checkedInNetRevenue, futureBookedNetForecast),
+  ]);
   const occupancyPercent = count(totalOperatingRooms) > 0 ? Math.round((count(occupiedRooms) / count(totalOperatingRooms)) * 100) : 0;
 
   const alerts = [
@@ -346,6 +554,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
       guestOrigins: (guestOrigins.results ?? []).map((item) => ({ label: item.label, value: item.value })),
       channels: (channels.results ?? []).map((item) => ({ label: item.label, value: item.value, amount: item.amount })),
+      financialSnapshot,
     },
     housekeeping: {
       roomsToClean: metric("rooms-to-clean", "Rooms To Clean", roomsToClean, "/housekeeping?filter=to-clean", roomsToClean > 0 ? "warning" : "success"),

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import LanguageSwitch from "../components/LanguageSwitch";
 import { PageError, PageLoading } from "../components/AsyncState";
@@ -6,7 +7,7 @@ import { AlertIcon, MaintenanceIcon, RefreshIcon } from "../components/Operation
 import ProfilePanel from "../components/ProfilePanel";
 import { useLanguage } from "../providers/language.context";
 import { loadDashboardOverview } from "../services/dashboard.service";
-import type { DashboardBreakdownItem, DashboardBusinessMetric, DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
+import type { DashboardBreakdownItem, DashboardBusinessMetric, DashboardFinancialSegment, DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
 import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/DashboardPage.css";
 
@@ -69,6 +70,185 @@ function Breakdown({ title, items, amount }: { title: string; items: DashboardBr
   );
 }
 
+type FinancialView = "overview" | "income" | "expenses" | "ota" | "manual-income" | "payroll";
+
+function segmentColor(segment: DashboardFinancialSegment, index: number): string {
+  if (segment.kind === "reduction") return "rgba(163, 63, 54, 0.74)";
+  if (segment.kind === "expense") return index % 2 === 0 ? "rgba(146, 91, 60, 0.86)" : "rgba(178, 138, 70, 0.86)";
+  return index % 2 === 0 ? "rgba(44, 106, 77, 0.9)" : "rgba(54, 95, 83, 0.82)";
+}
+
+function donutStyle(segments: DashboardFinancialSegment[]) {
+  const total = segments.reduce((sum, segment) => sum + Math.abs(segment.amount), 0);
+  if (total <= 0) {
+    return { background: "conic-gradient(rgba(44, 106, 77, 0.18) 0 360deg)" };
+  }
+  let cursor = 0;
+  const stops = segments.map((segment, index) => {
+    const size = Math.abs(segment.amount) / total * 360;
+    const start = cursor;
+    cursor += size;
+    return `${segmentColor(segment, index)} ${start}deg ${cursor}deg`;
+  });
+  return { background: `conic-gradient(${stops.join(", ")})` };
+}
+
+function segmentTotal(segments: DashboardFinancialSegment[]): number {
+  return segments.reduce((sum, segment) => sum + segment.amount, 0);
+}
+
+function FinancialList({ segments, empty }: { segments: DashboardFinancialSegment[]; empty: string }) {
+  const visible = segments.filter((segment) => segment.amount !== 0);
+  if (visible.length === 0) return <p className="financial-dashboard__empty">{empty}</p>;
+  return (
+    <ul className="financial-dashboard__list">
+      {visible.map((segment, index) => (
+        <li key={segment.id}>
+          <span className="financial-dashboard__dot" style={{ backgroundColor: segmentColor(segment, index) }} aria-hidden="true" />
+          <div>
+            <strong>{segment.label}</strong>
+            <small>{segment.percentage}%</small>
+          </div>
+          <b className={segment.kind === "reduction" ? "is-reduction" : undefined}>{money(segment.amount)}</b>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FinancialDashboard({ data }: { data: DashboardOverview }) {
+  const [view, setView] = useState<FinancialView>("overview");
+  const snapshot = data.business.financialSnapshot;
+  const config = useMemo(() => {
+    if (view === "income") {
+      return {
+        title: "Income Composition",
+        subtitle: "Checked-in OTA revenue plus manual income.",
+        totalLabel: "Total income",
+        total: snapshot.totalIncome,
+        segments: snapshot.incomeComposition,
+        empty: "No income recorded yet.",
+      };
+    }
+    if (view === "expenses") {
+      return {
+        title: "Expenses Composition",
+        subtitle: "Manual expenses plus finalized payroll and wages.",
+        totalLabel: "Total expenses",
+        total: snapshot.totalExpenses,
+        segments: snapshot.expenseComposition,
+        empty: "No expenses recorded yet.",
+      };
+    }
+    if (view === "ota") {
+      return {
+        title: "OTA Income",
+        subtitle: "Channel split from normalized expected net payout.",
+        totalLabel: "OTA income",
+        total: snapshot.checkedInNetRevenue,
+        segments: snapshot.otaChannels,
+        empty: "No checked-in OTA income yet.",
+      };
+    }
+    if (view === "manual-income") {
+      return {
+        title: "Manual Income",
+        subtitle: "Owner-entered income categories.",
+        totalLabel: "Manual income",
+        total: snapshot.manualIncomeTotal,
+        segments: snapshot.manualIncome,
+        empty: "No manual income recorded yet.",
+      };
+    }
+    if (view === "payroll") {
+      return {
+        title: "Payroll / Wages",
+        subtitle: "Finalized payroll components. Salary advances are not counted as extra cost.",
+        totalLabel: "Payroll expense",
+        total: snapshot.payrollTotal,
+        segments: snapshot.payrollComponents,
+        empty: "No finalized payroll expense yet.",
+      };
+    }
+    return {
+      title: "Financial Snapshot",
+      subtitle: "Clean income and expenses from accounting, OTA normalization and finalized payroll.",
+      totalLabel: "Net position",
+      total: snapshot.netPosition,
+      segments: snapshot.topLevel,
+      empty: "No financial activity recorded yet.",
+    };
+  }, [snapshot, view]);
+
+  return (
+    <section className="financial-dashboard" aria-labelledby="financial-dashboard-title">
+      <header className="financial-dashboard__header">
+        <div>
+          <span>Owner finance</span>
+          <h2 id="financial-dashboard-title">{config.title}</h2>
+          <p>{config.subtitle}</p>
+        </div>
+        <Link to="/accounting">Open Accounting</Link>
+      </header>
+
+      <div className="financial-dashboard__summary">
+        <div className="financial-dashboard__donut" style={donutStyle(config.segments)} aria-hidden="true">
+          <div>
+            <span>{config.totalLabel}</span>
+            <strong>{money(config.total)}</strong>
+          </div>
+        </div>
+        <div className="financial-dashboard__metrics">
+          <article>
+            <span>Total income</span>
+            <strong>{money(snapshot.totalIncome)}</strong>
+          </article>
+          <article>
+            <span>Total expenses</span>
+            <strong>{money(snapshot.totalExpenses)}</strong>
+          </article>
+          <article>
+            <span>Future booked net forecast</span>
+            <strong>{money(snapshot.futureBookedNetForecast)}</strong>
+          </article>
+        </div>
+      </div>
+
+      <nav className="financial-dashboard__tabs" aria-label="Financial dashboard drill-down">
+        {([
+          ["overview", "Overview"],
+          ["income", "Income"],
+          ["expenses", "Expenses"],
+          ["ota", "OTA"],
+          ["manual-income", "Manual income"],
+          ["payroll", "Payroll / Wages"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={view === key ? "is-active" : undefined}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <FinancialList segments={config.segments} empty={config.empty} />
+      {view === "overview" && (
+        <p className="financial-dashboard__note">
+          Checked-in revenue means expected net payout for stays already started. It is not bank-received cash.
+        </p>
+      )}
+      {view === "payroll" && segmentTotal(snapshot.payrollComponents) !== snapshot.payrollTotal && (
+        <p className="financial-dashboard__note">
+          Reductions lower the finalized payroll cost; salary advances are cash timing only.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function MetricCard({ metric, translate }: { metric: DashboardOverviewMetric; translate: Translate }) {
   return (
     <Link className={`control-card control-card--${metric.tone}`} to={metric.href}>
@@ -126,6 +306,8 @@ function DashboardContent({ data }: { data: DashboardOverview }) {
   const { translate } = useLanguage();
   return (
     <div className="control-room-dashboard">
+      <FinancialDashboard data={data} />
+
       <section className="business-grid" aria-label="Business snapshot">
         <BusinessCard metric={data.business.expectedNetIncomeToDate} />
         <BusinessCard metric={data.business.expectedFutureNetIncome} />

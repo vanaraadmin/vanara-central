@@ -39,7 +39,34 @@ test("dashboard uses normalized expected net payout and does not sum raw Beds24 
   assert.match(dashboard, /f\.check_in > \?[\s\S]*provider_deleted/);
   assert.match(dashboard, /Checked-In Net Revenue/);
   assert.match(dashboard, /Future Booked Net Forecast/);
+  assert.match(dashboard, /financialSnapshot/);
+  assert.match(dashboard, /manual_accounting_entries/);
+  assert.match(dashboard, /payroll_records[\s\S]*status = 'FINALIZED'/);
+  assert.match(dashboard, /salaryAdvances|salary_advances_received/);
+  assert.match(dashboard, /Payroll \/ Wages/);
+  assert.match(dashboard, /Social security \/ SSO/);
   assert.doesNotMatch(dashboard, /SUM\([^)]*bookings[^)]*price|SUM\(price\)/i);
+});
+
+test("owner financial dashboard remains business-facing and owner scoped", () => {
+  const dashboardPage = read("../src/pages/DashboardPage.tsx");
+  const dashboardCss = read("../src/styles/DashboardPage.css");
+  assert.match(dashboardPage, /FinancialDashboard/);
+  assert.match(dashboardPage, /Owner finance/);
+  assert.match(dashboardPage, /Income Composition/);
+  assert.match(dashboardPage, /Expenses Composition/);
+  assert.match(dashboardPage, /Payroll \/ Wages/);
+  assert.match(dashboardPage, /Salary advances are not counted as extra cost/);
+  assert.match(dashboardPage, /financial-dashboard__donut/);
+  assert.match(dashboardPage, /financial-dashboard__metrics/);
+  assert.match(dashboardPage, /Future booked net forecast/);
+  assert.match(dashboardPage, /financial-dashboard__list/);
+  assert.doesNotMatch(dashboardPage, /normalized data|backend|debug|raw Beds24/i);
+  assert.doesNotMatch(dashboardPage, /<table|<thead|<tbody/i);
+  assert.match(dashboardCss, /\.financial-dashboard[\s\S]*overflow: hidden/);
+  assert.match(dashboardCss, /\.financial-dashboard__tabs[\s\S]*overflow-x: auto/);
+  assert.match(dashboardCss, /\.financial-dashboard__list b[\s\S]*max-width: 44%/);
+  assert.match(dashboardCss, /grid-template-columns: minmax\(220px, 320px\) minmax\(0, 1fr\)/);
 });
 
 test("manual accounting receipt upload uses R2 and validates expenses", () => {

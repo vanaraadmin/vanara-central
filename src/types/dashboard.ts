@@ -89,6 +89,31 @@ export interface DashboardBreakdownItem {
   amount?: number;
 }
 
+export interface DashboardFinancialSegment {
+  id: string;
+  label: string;
+  amount: number;
+  percentage: number;
+  kind: "income" | "expense" | "forecast" | "reduction";
+}
+
+export interface DashboardFinancialSnapshot {
+  totalIncome: number;
+  totalExpenses: number;
+  netPosition: number;
+  checkedInNetRevenue: number;
+  futureBookedNetForecast: number;
+  manualIncomeTotal: number;
+  manualExpenseTotal: number;
+  payrollTotal: number;
+  topLevel: DashboardFinancialSegment[];
+  incomeComposition: DashboardFinancialSegment[];
+  expenseComposition: DashboardFinancialSegment[];
+  otaChannels: DashboardFinancialSegment[];
+  manualIncome: DashboardFinancialSegment[];
+  payrollComponents: DashboardFinancialSegment[];
+}
+
 export interface DashboardOverview {
   date: string;
   alerts: DashboardOverviewAlert[];
@@ -98,6 +123,7 @@ export interface DashboardOverview {
     occupancy: DashboardBusinessMetric;
     guestOrigins: DashboardBreakdownItem[];
     channels: DashboardBreakdownItem[];
+    financialSnapshot: DashboardFinancialSnapshot;
   };
   housekeeping: Record<string, DashboardOverviewMetric>;
   maintenance: Record<string, DashboardOverviewMetric>;
