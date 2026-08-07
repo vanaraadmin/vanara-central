@@ -689,7 +689,7 @@ const en = {
   fileNoLongerAvailable: "File no longer available",
   payroll: "Payroll",
   accounting: "Accounting",
-  accountingDescription: "Normalized OTA income and manual entries.",
+  accountingDescription: "Income, expenses, and accountant export.",
   staffPayroll: "Staff Payroll",
   payrollMonth: "Payroll month",
   workerDetail: "Worker Detail",

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
@@ -67,8 +67,6 @@ export default function AccountingPage() {
 
   const canSubmit = entryDate && Number(amount) > 0 && description.trim().length > 0;
   const totals = accounting.data?.totals;
-  const latestOta = useMemo(() => accounting.data?.otaRecords.slice(0, 24) ?? [], [accounting.data?.otaRecords]);
-  const manualEntries = useMemo(() => accounting.data?.manualEntries.slice(0, 24) ?? [], [accounting.data?.manualEntries]);
 
   async function onReceipt(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -91,10 +89,10 @@ export default function AccountingPage() {
         {accounting.data ? (
           <>
             <section className="accounting-kpis" aria-label="Accounting totals">
-              <article><span>Expected net to date</span><strong>{money(totals?.expectedNetIncomeToDate)}</strong></article>
-              <article><span>Future booked net</span><strong>{money(totals?.expectedFutureNetIncome)}</strong></article>
-              <article><span>Manual income</span><strong>{money(totals?.manualIncome)}</strong></article>
-              <article><span>Manual expenses</span><strong>{money(totals?.manualExpenses)}</strong></article>
+              <article><span>Checked-in net</span><strong>{money(totals?.expectedNetIncomeToDate)}</strong></article>
+              <article><span>Future net forecast</span><strong>{money(totals?.expectedFutureNetIncome)}</strong></article>
+              <article><span>Owner income</span><strong>{money(totals?.manualIncome)}</strong></article>
+              <article><span>Owner expenses</span><strong>{money(totals?.manualExpenses)}</strong></article>
             </section>
 
             <section className="accounting-panel">
@@ -128,37 +126,6 @@ export default function AccountingPage() {
                 <label><span>From</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
                 <label><span>To</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
               </div>
-            </section>
-
-            <section className="accounting-panel">
-              <header className="accounting-panel__header"><div><h2>OTA Income</h2><p>Expected payout by booking channel, ready for owner review.</p></div></header>
-              <div className="accounting-table" role="table" aria-label="OTA income records">
-                <div role="row"><strong>Stay</strong><strong>Guest</strong><strong>Channel</strong><strong>Rooms</strong><strong>Gross</strong><strong>Fees</strong><strong>Expected net</strong></div>
-                {latestOta.map((record) => (
-                  <div role="row" key={record.id}>
-                    <span>{record.checkIn} to {record.checkOut}</span>
-                    <span>{record.guestName ?? "Guest not listed"}</span>
-                    <span>{record.channel}</span>
-                    <span>{record.roomCount}</span>
-                    <span>{money(record.grossBookingAmount)}</span>
-                    <span>{money(record.otaFees)}</span>
-                    <span>{money(record.expectedNetPayout)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="accounting-panel">
-              <header className="accounting-panel__header"><div><h2>Recent Movements</h2><p>Owner-entered income and expenses.</p></div></header>
-              <ul className="accounting-entry-list">
-                {manualEntries.map((entry) => (
-                  <li key={entry.id}>
-                    <span><strong>{entry.description}</strong><small>{entry.date} / {entry.type}</small></span>
-                    <span>{money(entry.amount)}{entry.receipt ? <a href={entry.receipt.downloadUrl}>Receipt</a> : null}</span>
-                  </li>
-                ))}
-                {manualEntries.length === 0 ? <li>No movements yet.</li> : null}
-              </ul>
             </section>
           </>
         ) : null}

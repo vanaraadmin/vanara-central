@@ -689,7 +689,7 @@ const th = {
   fileNoLongerAvailable: "ไฟล์นี้เปิดไม่ได้แล้ว",
   payroll: "เงินเดือนพนักงาน",
   accounting: "Accounting",
-  accountingDescription: "Normalized OTA income and manual entries.",
+  accountingDescription: "Income, expenses, and accountant export.",
   staffPayroll: "เงินเดือนพนักงาน",
   payrollMonth: "เดือนเงินเดือน",
   workerDetail: "รายละเอียดพนักงาน",

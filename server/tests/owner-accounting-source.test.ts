@@ -11,6 +11,8 @@ const accounting = read("src/services/accounting.service.ts");
 const dashboard = read("src/services/dashboard.service.ts");
 const migration = read("migrations/0043_owner_accounting.sql");
 const staffOverview = read("src/services/staff-overview.service.ts");
+const englishCopy = read("../src/i18n/en.ts");
+const thaiCopy = read("../src/i18n/th.ts");
 const accountingPage = read("../src/pages/AccountingPage.tsx");
 const accountingCss = read("../src/styles/AccountingPage.css");
 
@@ -77,12 +79,22 @@ test("manual accounting receipt upload uses R2 and validates expenses", () => {
 });
 
 test("Accounting UI uses business language and keeps date controls contained", () => {
-  assert.match(accountingPage, />OTA Income</);
-  assert.match(accountingPage, />Recent Movements</);
+  assert.match(accountingPage, />Manual entry</);
   assert.match(accountingPage, />Export for accountant</);
-  assert.doesNotMatch(accountingPage, /Normalized OTA income|Normalized income|normalized data|source of truth|Beds24 raw price|Manual entries|manual entries log|backend|log/i);
+  assert.match(accountingPage, />Checked-in net</);
+  assert.match(accountingPage, />Future net forecast</);
+  const afterExport = accountingPage.slice(accountingPage.indexOf(">Export for accountant<"));
+  assert.doesNotMatch(afterExport, /<section className="accounting-panel"[\s\S]*<h2>/);
+  assert.match(`${englishCopy}\n${thaiCopy}\n${staffOverview}`, /Income, expenses, and accountant export\./);
+  assert.doesNotMatch(
+    `${accountingPage}\n${englishCopy}\n${thaiCopy}\n${staffOverview}`,
+    /Other income|Expected payable by booking channel|Revenue review|Recent Movements?|Owner entered income and expenses|OTA Income|Normalized OTA income|Normalized income|normalized data|source of truth|Beds24 raw price|Manual entries|manual entries log|backend|debug|raw manual/i,
+  );
+  assert.doesNotMatch(accountingPage, /latestOta|manualEntries|accounting-table|accounting-entry-list/);
+  assert.doesNotMatch(accountingCss, /\.accounting-table|\.accounting-entry-list/);
   assert.match(accountingCss, /\.accounting-form input\[type="date"\],[\s\S]*\.accounting-export-range input\[type="date"\][\s\S]*inline-size: 100%;[\s\S]*max-width: 100%;[\s\S]*min-inline-size: 0;/);
   assert.match(accountingCss, /accent-color: var\(--vc-color-jungle-900\)/);
+  assert.match(accountingCss, /::-webkit-calendar-picker-indicator[\s\S]*color: var\(--vc-color-jungle-900\)/);
   assert.match(accountingCss, /\.accounting-form input:focus-visible,[\s\S]*\.accounting-export-range input:focus-visible[\s\S]*border-color: rgba\(23, 71, 52, 0\.72\)/);
   assert.match(accountingCss, /\.workspace-shell--accounting \.vc-staff-home-action[\s\S]*color: var\(--vc-text-inverse\)[\s\S]*background: linear-gradient/);
 });

@@ -274,7 +274,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       id: "accounting",
       module: "accounting",
       title: "Accounting",
-      description: "Normalized OTA income and manual entries.",
+      description: "Income, expenses, and accountant export.",
       href: "/accounting",
       cta: "Open Accounting",
       metrics: [],
