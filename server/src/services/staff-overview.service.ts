@@ -10,7 +10,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll" | "accounting";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -57,6 +57,10 @@ function canUseSocialAutomation(user: CurrentUser): boolean {
 
 function canUsePayroll(user: CurrentUser): boolean {
   return isOwner(user) && canAccess(user, "payroll");
+}
+
+function canUseAccounting(user: CurrentUser): boolean {
+  return isOwner(user) && canAccess(user, "accounting");
 }
 
 function canUseGuestMessages(user: CurrentUser): boolean {
@@ -243,6 +247,20 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Payroll",
       metrics: [],
       summaryLine1: "Worker payroll",
+      summaryLine2: "Owner only",
+    }));
+  }
+
+  if (canUseAccounting(user)) {
+    cards.push(withSummaryLines({
+      id: "accounting",
+      module: "accounting",
+      title: "Accounting",
+      description: "Normalized OTA income and manual entries.",
+      href: "/accounting",
+      cta: "Open Accounting",
+      metrics: [],
+      summaryLine1: "Expected net payout",
       summaryLine2: "Owner only",
     }));
   }

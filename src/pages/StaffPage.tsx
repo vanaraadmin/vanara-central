@@ -33,6 +33,7 @@ const WORKSPACE_ORDER: StaffCardId[] = [
   "messages",
   "social",
   "payroll",
+  "accounting",
 ];
 
 const workspaceIcons: Record<StaffCardId, string> = {
@@ -45,6 +46,7 @@ const workspaceIcons: Record<StaffCardId, string> = {
   procurement: shoppingCartIcon,
   social: envelopeIcon,
   payroll: handCoinsIcon,
+  accounting: handCoinsIcon,
 };
 
 const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
@@ -64,6 +66,7 @@ const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
   housekeeping: "housekeeping",
   maintenance: "maintenance",
   messages: "messages",
+  accounting: "accounting",
   payroll: "payroll",
   procurement: "procurement",
   reception: "arrivalsDepartures",
@@ -76,6 +79,7 @@ const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   housekeeping: "housekeepingDescription",
   maintenance: "maintenanceDescription",
   messages: "messagesDescription",
+  accounting: "accountingDescription",
   procurement: "procurementDescription",
   reception: "movementsDescription",
   rooms: "roomsDescription",

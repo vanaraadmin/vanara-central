@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { getDashboard, getDashboardOverview } from "./services/dashboard.service.js";
+import { createManualAccountingEntry, exportAccountingCsv, getAccountingOverview, getAccountingReceipt, normalizeManualAccountingInput, normalizeReceiptInput, type AccountingBindings } from "./services/accounting.service.js";
 import { getStaffOverview, type StaffOverviewBindings } from "./services/staff-overview.service.js";
 import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, normalizeStartRoomStandardCleaningInput, startRoomStandardCleaning, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./services/rooms-workspace.service.js";
@@ -76,7 +77,7 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, NotificationBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, AccountingBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, NotificationBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   GOOGLE_TRANSLATE_API_KEY?: string;
@@ -343,6 +344,13 @@ async function payrollOwner(c: AppContext, action: "access" | "edit" = "access")
   const user = await resolveCurrentUser(c);
   requireOwner(user);
   requireModulePermission(user, "payroll", action);
+  return user;
+}
+
+async function accountingOwner(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+  const user = await resolveCurrentUser(c);
+  requireOwner(user);
+  requireModulePermission(user, "accounting", action);
   return user;
 }
 
@@ -765,6 +773,62 @@ app.get("/api/owner/tm30/export", async (c) => {
     return c.body(body);
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/accounting/overview", async (c) => {
+  try {
+    await accountingOwner(c, "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getAccountingOverview(c.env) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/accounting/entries", async (c) => {
+  try {
+    const user = await accountingOwner(c, "edit");
+    const payload = await c.req.json().catch(() => null);
+    const entry = await createManualAccountingEntry(c.env, normalizeManualAccountingInput(payload), normalizeReceiptInput(payload), user);
+    return c.json({ success: true, data: entry }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/accounting/entries/:entryId/receipt", async (c) => {
+  try {
+    await accountingOwner(c, "access");
+    const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
+    const receipt = await getAccountingReceipt(c.env, entryId);
+    if (!receipt) return c.json({ success: false, error: "Receipt not found." }, 404);
+    return new Response(receipt.object.body, {
+      headers: {
+        "Content-Type": receipt.contentType,
+        "Content-Disposition": `inline; filename="${receipt.fileName.replace(/"/g, "")}"`,
+        "Cache-Control": "private, max-age=300",
+      },
+    });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/accounting/export.csv", async (c) => {
+  try {
+    await accountingOwner(c, "access");
+    const from = c.req.query("from") ?? new Date().toISOString().slice(0, 10);
+    const to = c.req.query("to") ?? from;
+    const csv = await exportAccountingCsv(c.env, from, to);
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="vanara-accounting-${from}-to-${to}.csv"`,
+      },
+    });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
 

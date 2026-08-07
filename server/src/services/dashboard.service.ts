@@ -2,8 +2,9 @@ import { getHousekeepingOverview, type HousekeepingBindings } from "./housekeepi
 import { listUsers, type AuthBindings } from "./current-user.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getTodayDashboard, type TodayBindings, type TodayReservation } from "./today.service.js";
+import { rebuildOtaFinancialRecords, type OtaFinancialBindings } from "./ota-financial-normalization.service.js";
 
-export interface DashboardBindings extends TodayBindings, HousekeepingBindings, MaintenanceBindings, AuthBindings {
+export interface DashboardBindings extends TodayBindings, HousekeepingBindings, MaintenanceBindings, AuthBindings, OtaFinancialBindings {
   DB: D1Database;
 }
 
@@ -83,9 +84,30 @@ export interface DashboardQuickLink {
   href: string;
 }
 
+export interface DashboardBusinessMetric {
+  id: string;
+  label: string;
+  value: number | string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger" | "info";
+}
+
+export interface DashboardBreakdownItem {
+  label: string;
+  value: number;
+  amount?: number;
+}
+
 export interface DashboardOverview {
   date: string;
   alerts: DashboardOverviewAlert[];
+  business: {
+    expectedNetIncomeToDate: DashboardBusinessMetric;
+    expectedFutureNetIncome: DashboardBusinessMetric;
+    occupancy: DashboardBusinessMetric;
+    guestOrigins: DashboardBreakdownItem[];
+    channels: DashboardBreakdownItem[];
+  };
   housekeeping: {
     roomsToClean: DashboardOverviewMetric;
     cleaning: DashboardOverviewMetric;
@@ -224,16 +246,61 @@ function metric(id: string, label: string, value: number | string, href: string,
   return { id, label, value, href, tone };
 }
 
+function businessMetric(id: string, label: string, value: number | string, detail: string, tone: DashboardBusinessMetric["tone"] = "neutral"): DashboardBusinessMetric {
+  return { id, label, value, detail, tone };
+}
+
 function alert(id: string, label: string, value: number, href: string, tone: DashboardOverviewAlert["tone"]): DashboardOverviewAlert | null {
   return value > 0 ? { id, label, value, href, tone } : null;
 }
 
 export async function getDashboardOverview(env: DashboardBindings): Promise<DashboardOverview> {
+  await rebuildOtaFinancialRecords(env);
   const [housekeeping, maintenanceTickets, today, users] = await Promise.all([
     getHousekeepingOverview(env),
     listMaintenanceTickets(env, { status: "All" }),
     getTodayDashboard(env),
     listUsers(env),
+  ]);
+  const bangkokToday = today.date;
+  const [incomeToDate, futureIncome, occupiedRooms, totalOperatingRooms, guestOrigins, channels] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(expected_net_payout), 0) AS total
+      FROM ota_financial_records
+      WHERE check_in <= ?
+    `).bind(bangkokToday).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(expected_net_payout), 0) AS total
+      FROM ota_financial_records
+      WHERE check_in > ?
+    `).bind(bangkokToday).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM bookings
+      WHERE arrival_date <= ?
+        AND departure_date > ?
+        AND lower(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+    `).bind(bangkokToday, bangkokToday).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM units
+      WHERE active = 1
+    `).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COALESCE(NULLIF(country_code, ''), NULLIF(country, ''), 'Unknown') AS label, COUNT(*) AS value
+      FROM bookings
+      WHERE lower(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+      GROUP BY label
+      ORDER BY value DESC, label
+      LIMIT 6
+    `).all<{ label: string; value: number }>(),
+    env.DB.prepare(`
+      SELECT channel AS label, COUNT(*) AS value, COALESCE(SUM(expected_net_payout), 0) AS amount
+      FROM ota_financial_records
+      GROUP BY channel
+      ORDER BY amount DESC, value DESC
+      LIMIT 6
+    `).all<{ label: string; value: number; amount: number }>(),
   ]);
 
   const roomsToClean = housekeeping.summary.cleanFirst + housekeeping.summary.cleanToday;
@@ -253,6 +320,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const disabledUsers = users.filter((user) => user.status === "disabled");
   const housekeepingStaff = activeUsers.filter((user) => user.role === "Housekeeping").length;
   const maintenanceStaff = activeUsers.filter((user) => user.role === "Maintenance").length;
+  const occupancyPercent = count(totalOperatingRooms) > 0 ? Math.round((count(occupiedRooms) / count(totalOperatingRooms)) * 100) : 0;
 
   const alerts = [
     alert("high-maintenance", "High Maintenance", highIssues, "/maintenance?priority=High", "danger"),
@@ -264,6 +332,13 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   return {
     date: today.date,
     alerts,
+    business: {
+      expectedNetIncomeToDate: businessMetric("expected-net-to-date", "Expected net income to date", count(incomeToDate), "Normalized OTA payout, not raw Beds24 price.", "success"),
+      expectedFutureNetIncome: businessMetric("future-net-income", "Future net income booked", count(futureIncome), "Confirmed future expected payout.", "info"),
+      occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
+      guestOrigins: (guestOrigins.results ?? []).map((item) => ({ label: item.label, value: item.value })),
+      channels: (channels.results ?? []).map((item) => ({ label: item.label, value: item.value, amount: item.amount })),
+    },
     housekeeping: {
       roomsToClean: metric("rooms-to-clean", "Rooms To Clean", roomsToClean, "/housekeeping?filter=to-clean", roomsToClean > 0 ? "warning" : "success"),
       cleaning: metric("cleaning", "Cleaning", cleaning, "/housekeeping?filter=cleaning", "info"),
@@ -291,6 +366,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       disabledUsers: metric("disabled-users", "Disabled Users", disabledUsers.length, "/settings?section=users&status=disabled", disabledUsers.length > 0 ? "warning" : "neutral"),
     },
     quickLinks: [
+      { id: "accounting", label: "Accounting", href: "/accounting" },
       { id: "housekeeping", label: "Housekeeping", href: "/housekeeping" },
       { id: "maintenance", label: "Maintenance", href: "/maintenance" },
       { id: "rooms", label: "Rooms", href: "/rooms" },

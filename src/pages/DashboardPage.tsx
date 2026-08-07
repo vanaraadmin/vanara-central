@@ -6,7 +6,7 @@ import { AlertIcon, MaintenanceIcon, RefreshIcon } from "../components/Operation
 import ProfilePanel from "../components/ProfilePanel";
 import { useLanguage } from "../providers/language.context";
 import { loadDashboardOverview } from "../services/dashboard.service";
-import type { DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
+import type { DashboardBreakdownItem, DashboardBusinessMetric, DashboardOverview, DashboardOverviewAlert, DashboardOverviewMetric, DashboardQuickLink } from "../types/dashboard";
 import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/DashboardPage.css";
 
@@ -19,18 +19,55 @@ function formatDate(date: string, language: "en" | "th") {
   }).format(new Date(date + "T12:00:00+07:00"));
 }
 
+function money(value: number | string): string {
+  if (typeof value === "string") return value;
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "THB", maximumFractionDigits: 0 }).format(value);
+}
+
 function iconFor(id: string): string {
-  if (id.includes("clean") || id.includes("housekeeping")) return "🧹";
-  if (id.includes("maintenance") || id.includes("issue")) return "🔧";
-  if (id.includes("arrival") || id.includes("check-in")) return "📥";
-  if (id.includes("departure") || id.includes("check-out")) return "📤";
-  if (id.includes("user") || id.includes("staff")) return "👥";
-  if (id.includes("room")) return "🏡";
-  if (id.includes("setting")) return "⚙️";
-  return "•";
+  if (id.includes("income") || id.includes("future")) return "THB";
+  if (id.includes("occupancy")) return "%";
+  if (id.includes("clean") || id.includes("housekeeping")) return "HK";
+  if (id.includes("maintenance") || id.includes("issue")) return "MT";
+  if (id.includes("arrival") || id.includes("check-in")) return "IN";
+  if (id.includes("departure") || id.includes("check-out")) return "OUT";
+  if (id.includes("user") || id.includes("staff")) return "US";
+  if (id.includes("room")) return "RM";
+  return "VC";
 }
 
 type Translate = ReturnType<typeof useLanguage>["translate"];
+
+function BusinessCard({ metric }: { metric: DashboardBusinessMetric }) {
+  return (
+    <article className={`business-card business-card--${metric.tone}`}>
+      <span aria-hidden="true">{iconFor(metric.id)}</span>
+      <div>
+        <strong>{typeof metric.value === "number" ? money(metric.value) : metric.value}</strong>
+        <small>{metric.label}</small>
+        <p>{metric.detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function Breakdown({ title, items, amount }: { title: string; items: DashboardBreakdownItem[]; amount?: boolean }) {
+  return (
+    <section className="breakdown-panel">
+      <h2>{title}</h2>
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item.label}>
+              <span>{item.label}</span>
+              <strong>{amount && item.amount !== undefined ? money(item.amount) : item.value}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : <p>No data yet.</p>}
+    </section>
+  );
+}
 
 function MetricCard({ metric, translate }: { metric: DashboardOverviewMetric; translate: Translate }) {
   return (
@@ -89,16 +126,34 @@ function DashboardContent({ data }: { data: DashboardOverview }) {
   const { translate } = useLanguage();
   return (
     <div className="control-room-dashboard">
+      <section className="business-grid" aria-label="Business snapshot">
+        <BusinessCard metric={data.business.expectedNetIncomeToDate} />
+        <BusinessCard metric={data.business.expectedFutureNetIncome} />
+        <BusinessCard metric={data.business.occupancy} />
+        <Link className="business-card business-card--link" to="/accounting">
+          <span aria-hidden="true">ACC</span>
+          <div>
+            <strong>Accounting</strong>
+            <small>Open normalized records</small>
+            <p>OTA payouts, manual income, expenses and receipt exports.</p>
+          </div>
+        </Link>
+      </section>
+
+      <div className="dashboard-breakdowns">
+        <Breakdown title="Guest origins" items={data.business.guestOrigins} />
+        <Breakdown title="OTA channels" items={data.business.channels} amount />
+      </div>
+
       <section className="control-alerts" aria-label={translate("operationalAlerts")}>
         {data.alerts.length > 0
           ? data.alerts.map((item) => <AlertCard item={item} key={item.id} translate={translate} />)
           : <div className="control-alerts__empty"><MaintenanceIcon /><p>{translate("noOperationalAlerts")}</p></div>}
       </section>
 
-      <Section title="housekeeping" metrics={Object.values(data.housekeeping)} translate={translate} />
-      <Section title="maintenance" metrics={Object.values(data.maintenance)} translate={translate} />
       <Section title="todaySection" metrics={Object.values(data.today)} translate={translate} />
-      <Section title="staff" metrics={Object.values(data.staff)} translate={translate} />
+      <Section title="housekeeping" metrics={Object.values(data.housekeeping).slice(0, 3)} translate={translate} />
+      <Section title="maintenance" metrics={Object.values(data.maintenance).slice(0, 3)} translate={translate} />
       <QuickAccess links={data.quickLinks} translate={translate} />
     </div>
   );
@@ -113,11 +168,11 @@ export default function DashboardPage() {
   });
 
   return (
-    <main className="dashboard-page">
+    <main className="dashboard-page" aria-label={translate("controlRoom")}>
       <header className="dashboard-header">
         <div>
           <span className="dashboard-header__eyebrow">{translate("appName")}</span>
-          <h1>{translate("controlRoom")}</h1>
+          <h1>Owner Dashboard</h1>
           <p>{dashboard.data ? formatDate(dashboard.data.date, language) : translate("loadingOperations")}</p>
         </div>
         <div className="dashboard-header__actions">

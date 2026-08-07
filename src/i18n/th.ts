@@ -688,6 +688,8 @@ const th = {
   closeMessageActions: "ปิดเมนูข้อความ",
   fileNoLongerAvailable: "ไฟล์นี้เปิดไม่ได้แล้ว",
   payroll: "เงินเดือนพนักงาน",
+  accounting: "Accounting",
+  accountingDescription: "Normalized OTA income and manual entries.",
   staffPayroll: "เงินเดือนพนักงาน",
   payrollMonth: "เดือนเงินเดือน",
   workerDetail: "รายละเอียดพนักงาน",

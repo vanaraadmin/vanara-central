@@ -75,9 +75,30 @@ export interface DashboardQuickLink {
   href: string;
 }
 
+export interface DashboardBusinessMetric {
+  id: string;
+  label: string;
+  value: number | string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger" | "info";
+}
+
+export interface DashboardBreakdownItem {
+  label: string;
+  value: number;
+  amount?: number;
+}
+
 export interface DashboardOverview {
   date: string;
   alerts: DashboardOverviewAlert[];
+  business: {
+    expectedNetIncomeToDate: DashboardBusinessMetric;
+    expectedFutureNetIncome: DashboardBusinessMetric;
+    occupancy: DashboardBusinessMetric;
+    guestOrigins: DashboardBreakdownItem[];
+    channels: DashboardBreakdownItem[];
+  };
   housekeeping: Record<string, DashboardOverviewMetric>;
   maintenance: Record<string, DashboardOverviewMetric>;
   today: Record<string, DashboardOverviewMetric>;

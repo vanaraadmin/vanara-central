@@ -688,6 +688,8 @@ const en = {
   closeMessageActions: "Close message actions",
   fileNoLongerAvailable: "File no longer available",
   payroll: "Payroll",
+  accounting: "Accounting",
+  accountingDescription: "Normalized OTA income and manual entries.",
   staffPayroll: "Staff Payroll",
   payrollMonth: "Payroll month",
   workerDetail: "Worker Detail",

@@ -1,0 +1,203 @@
+.accounting-page,
+.accounting-kpis,
+.accounting-panel,
+.accounting-form,
+.accounting-export-range,
+.accounting-table,
+.accounting-entry-list {
+  display: grid;
+  gap: var(--vc-space-3);
+}
+
+.accounting-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.accounting-kpis article,
+.accounting-panel {
+  min-width: 0;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-xl);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.accounting-kpis article {
+  padding: var(--vc-space-3);
+}
+
+.accounting-kpis span,
+.accounting-kpis strong,
+.accounting-panel span,
+.accounting-panel strong,
+.accounting-panel p,
+.accounting-panel small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.accounting-kpis span {
+  display: block;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-kpis strong {
+  display: block;
+  margin-top: var(--vc-space-1);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-2xl);
+  line-height: 1.05;
+}
+
+.accounting-panel {
+  padding: var(--vc-space-3);
+}
+
+.accounting-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+}
+
+.accounting-panel__header h2 {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+}
+
+.accounting-panel__header p,
+.accounting-panel small {
+  margin: var(--vc-space-1) 0 0;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+}
+
+.accounting-form,
+.accounting-export-range {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.accounting-form label,
+.accounting-export-range label,
+.accounting-upload {
+  display: grid;
+  gap: var(--vc-space-1);
+  min-width: 0;
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-form input,
+.accounting-form select,
+.accounting-form textarea,
+.accounting-export-range input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--vc-touch-min);
+  box-sizing: border-box;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-md);
+  background: rgba(255, 255, 255, 0.78);
+  color: #163425;
+  padding: 0 var(--vc-space-2);
+  font: inherit;
+}
+
+.accounting-form textarea {
+  min-height: 88px;
+  padding-top: var(--vc-space-2);
+}
+
+.accounting-form__wide,
+.accounting-upload {
+  grid-column: 1 / -1;
+}
+
+.accounting-action {
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+  padding: 0 var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-pill);
+  background: rgba(44, 106, 77, 0.18);
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+  text-decoration: none;
+}
+
+.accounting-action:disabled {
+  opacity: 0.56;
+}
+
+.accounting-error {
+  color: var(--vc-color-danger);
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-table {
+  overflow-x: auto;
+}
+
+.accounting-table [role="row"] {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(5, minmax(110px, 1fr));
+  gap: var(--vc-space-2);
+  min-width: 820px;
+  padding: var(--vc-space-2) 0;
+  border-bottom: 1px solid var(--vc-border-subtle);
+}
+
+.accounting-table [role="row"]:first-child {
+  color: var(--vc-text-secondary);
+}
+
+.accounting-table span,
+.accounting-table strong {
+  display: block;
+}
+
+.accounting-table small {
+  display: block;
+}
+
+.accounting-entry-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.accounting-entry-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+  padding: var(--vc-space-2) 0;
+  border-bottom: 1px solid var(--vc-border-subtle);
+}
+
+.accounting-entry-list li:last-child {
+  border-bottom: 0;
+}
+
+.accounting-entry-list a {
+  display: block;
+  margin-top: var(--vc-space-1);
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-bold);
+}
+
+@media (max-width: 640px) {
+  .accounting-panel__header,
+  .accounting-entry-list li {
+    flex-direction: column;
+  }
+
+  .accounting-panel__header .accounting-action {
+    width: 100%;
+  }
+}
