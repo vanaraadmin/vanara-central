@@ -1,4 +1,5 @@
 import type { CurrentChatUser } from "./chat.service.js";
+import { notifyMaintenanceBlocking, type NotificationBindings } from "./notifications.service.js";
 
 export type MaintenanceStatus = "Open" | "In Progress" | "Waiting Parts" | "Completed";
 type StoredMaintenanceStatus = "Open" | "Assigned" | "In Progress" | "Waiting Parts" | "Resolved" | "Closed";
@@ -18,7 +19,7 @@ export type MaintenanceCategory =
   | "Other";
 export type MaintenanceAssignmentType = "INTERNAL" | "EXTERNAL";
 
-export interface MaintenanceBindings {
+export interface MaintenanceBindings extends NotificationBindings {
   DB: D1Database;
 }
 
@@ -809,6 +810,14 @@ export async function createMaintenanceTicket(env: MaintenanceBindings, input: C
   if (input.outOfService) await recordEvent(env, id, "out_of_service_changed", "false", "true", user, now);
   const ticket = await getMaintenanceTicket(env, id);
   if (!ticket) throw new Error("Ticket was created but could not be loaded.");
+  if (ticket.outOfService) {
+    await notifyMaintenanceBlocking(env, {
+      ticketId: ticket.id,
+      title: ticket.title,
+      roomName: ticket.roomName,
+      locationArea: ticket.locationArea,
+    });
+  }
   return ticket;
 }
 

@@ -41,6 +41,7 @@ import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentio
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
+import { countActivePushSubscriptions, publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -75,11 +76,14 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, NotificationBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   GOOGLE_TRANSLATE_API_KEY?: string;
   WARAPORN_VECTOR_STORE_ID?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY_JWK?: string;
+  VAPID_SUBJECT?: string;
   WARAPORN_KB_ARCHIVE: R2Bucket;
   VANARA_DATABASE_ENVIRONMENT: string;
   VANARA_DATABASE_NAME: string;
@@ -498,6 +502,47 @@ app.post("/api/current-user/password", async (c) => {
     await changeSelfPassword(c.env, user.id, normalizePasswordChangeInput(payload));
     c.header("Set-Cookie", makeExpiredSessionCookie(new URL(c.req.url).protocol === "https:"));
     return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/notifications/status", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      success: true,
+      data: {
+        vapidPublicKey: publicVapidKey(c.env),
+        subscriptionCount: await countActivePushSubscriptions(c.env, user.id),
+      },
+    });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/notifications/subscriptions", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null) as PushSubscriptionInput | null;
+    if (!payload) throw new Error("Push subscription is required.");
+    await registerPushSubscription(c.env, user, payload, c.req.header("user-agent") ?? null);
+    return c.json({ success: true, data: null }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.delete("/api/notifications/subscriptions", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null) as { endpoint?: unknown } | null;
+    const endpoint = typeof payload?.endpoint === "string" ? payload.endpoint : "";
+    if (!endpoint) throw new Error("Push endpoint is required.");
+    await unregisterPushSubscription(c.env, user, endpoint);
+    return c.json({ success: true, data: null });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }

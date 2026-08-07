@@ -1,0 +1,44 @@
+.vanara-notification-toast {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 1200;
+  display: grid;
+  gap: 4px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border: 1px solid rgba(231, 224, 205, 0.56);
+  border-radius: 18px;
+  background: linear-gradient(140deg, rgba(31, 57, 43, 0.94), rgba(18, 31, 25, 0.94));
+  box-shadow: 0 18px 42px rgba(16, 24, 20, 0.32);
+  color: #fff8e8;
+  text-align: left;
+  overflow-wrap: anywhere;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.vanara-notification-toast strong,
+.vanara-notification-toast span {
+  min-width: 0;
+}
+
+.vanara-notification-toast strong {
+  font-size: 0.92rem;
+  line-height: 1.24;
+}
+
+.vanara-notification-toast span {
+  color: rgba(255, 248, 232, 0.82);
+  font-size: 0.84rem;
+  line-height: 1.32;
+}
+
+@media (max-width: 520px) {
+  .vanara-notification-toast {
+    top: max(12px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    width: auto;
+  }
+}

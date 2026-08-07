@@ -1,12 +1,13 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { chatStickerById } from "./chat-stickers.service.js";
 import { translateFreeText, type FreeTextTranslationBindings } from "./free-text-translation.service.js";
+import { notifyInternalChatMessage, type NotificationBindings } from "./notifications.service.js";
 
 export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping" | "movement";
 export type ChatConversationKind = "GROUP" | "PRIVATE";
 export type ChatLanguage = "en" | "th";
 
-export interface ChatBindings extends FreeTextTranslationBindings {
+export interface ChatBindings extends FreeTextTranslationBindings, NotificationBindings {
   DB: D1Database;
   R2_STORAGE: R2Bucket;
 }
@@ -882,6 +883,12 @@ export async function createChatMessage(
     WHERE conversation_id = ?
       AND user_id = ?
   `).bind(messageId, now, conversationId, user.id).run();
+
+  await notifyInternalChatMessage(env, {
+    conversationId,
+    messageId,
+    authorId: user.id,
+  });
 
   const row = await env.DB.prepare(`
     SELECT

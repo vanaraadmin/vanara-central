@@ -1,4 +1,6 @@
-export interface BookingEventsBindings {
+import { notifyBookingEvent, type NotificationBindings } from "./notifications.service.js";
+
+export interface BookingEventsBindings extends NotificationBindings {
   DB: D1Database;
 }
 
@@ -395,7 +397,7 @@ export async function recordBookingEvent(
   if (!eventType || !current.bookingId) return;
   if (eventType === "updated" && await hasActiveNewEvent(env, current.bookingId, occurredAt)) return;
 
-  await env.DB.prepare(`
+  const result = await env.DB.prepare(`
     INSERT OR IGNORE INTO booking_events (
       event_type,
       booking_id,
@@ -417,6 +419,15 @@ export async function recordBookingEvent(
     occurredAt,
     occurredAt,
   ).run();
+  if ((result.meta.changes ?? 0) !== 1) return;
+
+  const context = [current.accommodation, current.source || current.apiSource || current.channel].filter(Boolean).join(" / ");
+  await notifyBookingEvent(env, {
+    eventType,
+    bookingId: current.bookingId,
+    dedupeKey: bookingEventSignature(eventType, current, previous),
+    context,
+  });
 }
 
 function bookingPulseRowFor(rows: BookingEventRow[]): BookingEventRow {
