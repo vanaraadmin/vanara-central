@@ -86,8 +86,8 @@ test("Dashboard and Movements staff pages translate reachable legacy/control lab
     assert.match(en + th, new RegExp(`${key}:`));
   }
 
-  assert.match(dashboardPage, /translate\("controlRoom"\)/);
-  assert.match(dashboardPage, /translateStaffLabel/);
+  assert.match(dashboardPage, /WorkspaceShell/);
+  assert.doesNotMatch(dashboardPage, /translateStaffLabel|translate\("controlRoom"\)/);
   assert.match(movementsPage, /translate\("verifyDocuments"\)/);
   assert.match(movementsPage, /translateStaffLabel/);
 });

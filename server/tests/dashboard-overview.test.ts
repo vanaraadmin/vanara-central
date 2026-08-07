@@ -257,7 +257,13 @@ test("dashboard overview aggregates existing module services into a compact DTO"
     data.business.financialSnapshot.otaChannels.map((item) => [item.label, item.amount]),
     [["Booking.com", 1200], ["Agoda", 800]],
   );
-  assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "INCASSI RISTORANTE / BAR" && item.amount === 500), true);
+  assert.equal(data.business.financialSnapshot.incomeComposition.some((item) => item.label === "Booking / OTA income" && item.amount === 2000), true);
+  assert.equal(data.business.financialSnapshot.incomeComposition.some((item) => item.label === "Manual income" && item.amount === 750), true);
+  assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Restaurant / Bar income" && item.amount === 500), true);
+  assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Motorbike rental income" && item.amount === 250), true);
+  assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Manual expenses" && item.amount === 500), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Resort Supplies" && item.amount === 300), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Utilities & Connectivity" && item.amount === 200), true);
   assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Payroll / Wages" && item.amount === 13300), true);
   assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Base wages" && item.amount === 11400), true);
   assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Social security / SSO" && item.amount === 600), true);

@@ -145,6 +145,7 @@ export interface DashboardFinancialSnapshot {
   expenseComposition: DashboardFinancialSegment[];
   otaChannels: DashboardFinancialSegment[];
   manualIncome: DashboardFinancialSegment[];
+  manualExpenses: DashboardFinancialSegment[];
   payrollComponents: DashboardFinancialSegment[];
 }
 
@@ -320,6 +321,27 @@ function categoryFromNote(note: string | null, fallback: string): string {
   return category || fallback;
 }
 
+function ownerChannelLabel(value: string | null): string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return "Other";
+  if (normalized.includes("booking")) return "Booking.com";
+  if (normalized.includes("agoda")) return "Agoda";
+  if (normalized.includes("airbnb")) return "Airbnb";
+  if (normalized.includes("expedia")) return "Expedia";
+  if (normalized.includes("trip") || normalized.includes("ctrip")) return "Trip.com";
+  if (normalized.includes("google")) return "Google Ads";
+  if (normalized.includes("direct") || normalized.includes("front desk") || normalized.includes("walk")) return "Direct / Front Desk";
+  return value?.trim() || "Other";
+}
+
+function ownerManualIncomeLabel(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "INCASSI PER STANZE") return "Room income";
+  if (normalized === "INCASSI RISTORANTE / BAR") return "Restaurant / Bar income";
+  if (normalized === "INCASSI AFFITTO MOTORINO") return "Motorbike rental income";
+  return value.trim() || "Other manual income";
+}
+
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
 }
@@ -394,19 +416,19 @@ async function buildFinancialSnapshot(
   const otaChannels = new Map<string, number>();
   for (const row of otaRows.results ?? []) {
     if (row.check_in > bangkokToday) continue;
-    addBucket(otaChannels, row.channel || "Unknown OTA", amount(row.expected_net_payout));
+    addBucket(otaChannels, ownerChannelLabel(row.channel), amount(row.expected_net_payout));
   }
 
   const manualIncomeBuckets = new Map<string, number>([
-    ["INCASSI PER STANZE", 0],
-    ["INCASSI RISTORANTE / BAR", 0],
-    ["INCASSI AFFITTO MOTORINO", 0],
+    ["Room income", 0],
+    ["Restaurant / Bar income", 0],
+    ["Motorbike rental income", 0],
   ]);
   const manualExpenseBuckets = new Map<string, number>();
   for (const row of manualRows.results ?? []) {
     const label = categoryFromNote(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses");
     if (row.entry_type === "income") {
-      addBucket(manualIncomeBuckets, label, amount(row.amount));
+      addBucket(manualIncomeBuckets, ownerManualIncomeLabel(label), amount(row.amount));
     } else {
       addBucket(manualExpenseBuckets, label, amount(row.amount));
     }
@@ -425,11 +447,11 @@ async function buildFinancialSnapshot(
   const totalExpenses = manualExpenseTotal + payrollTotal;
   const netPosition = totalIncome - totalExpenses;
   const incomeBuckets = new Map<string, number>([
-    ["OTA income", checkedInNetRevenue],
+    ["Booking / OTA income", checkedInNetRevenue],
     ["Manual income", manualIncomeTotal],
   ]);
   const expenseBuckets = new Map<string, number>([
-    ...manualExpenseBuckets.entries(),
+    ["Manual expenses", manualExpenseTotal],
     ["Payroll / Wages", payrollTotal],
   ]);
 
@@ -448,6 +470,7 @@ async function buildFinancialSnapshot(
     expenseComposition: segmentsFromBuckets(expenseBuckets, totalExpenses, "expense"),
     otaChannels: segmentsFromBuckets(otaChannels, checkedInNetRevenue, "income"),
     manualIncome: segmentsFromBuckets(manualIncomeBuckets, manualIncomeTotal, "income"),
+    manualExpenses: segmentsFromBuckets(manualExpenseBuckets, manualExpenseTotal, "expense"),
     payrollComponents: segmentsFromBuckets(payrollBuckets, payrollTotal, "expense"),
   };
 }

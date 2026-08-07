@@ -111,6 +111,7 @@ export interface DashboardFinancialSnapshot {
   expenseComposition: DashboardFinancialSegment[];
   otaChannels: DashboardFinancialSegment[];
   manualIncome: DashboardFinancialSegment[];
+  manualExpenses: DashboardFinancialSegment[];
   payrollComponents: DashboardFinancialSegment[];
 }
 
