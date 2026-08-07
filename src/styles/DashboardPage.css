@@ -90,7 +90,7 @@
   margin: var(--vc-space-1) 0 0;
   color: rgba(255, 251, 241, 0.98);
   font-family: var(--vc-font-display);
-  font-size: clamp(1.22rem, 5.4vw, 1.78rem);
+  font-size: clamp(1.1rem, 4.8vw, 1.58rem);
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: 0;
@@ -174,13 +174,22 @@
 }
 
 .financial-dashboard__segment {
-  min-height: 72px;
-  display: grid;
-  align-content: center;
-  gap: var(--vc-space-1);
-  padding: 10px var(--vc-space-2);
-  border-radius: 16px;
-  text-align: left;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--vc-radius-pill);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .financial-dashboard__segment--income {
@@ -202,9 +211,48 @@
 }
 
 .financial-dashboard__segment strong {
-  font-size: clamp(0.86rem, 3.8vw, 1.06rem);
+  font-size: clamp(0.78rem, 3.2vw, 0.94rem);
   line-height: 1.08;
   overflow-wrap: anywhere;
+}
+
+.financial-dashboard__segment span {
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.financial-dashboard__segment b {
+  flex: 0 0 auto;
+  color: rgba(255, 251, 241, 0.9);
+  font-size: 0.7rem;
+  font-weight: var(--vc-weight-heavy);
+  line-height: 1;
+}
+
+.financial-dashboard__segment em {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: rgba(255, 251, 241, 0.92);
+  background: rgba(255, 251, 241, 0.12);
+  font-style: normal;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.financial-dashboard__segment:hover,
+.financial-dashboard__segment:focus-visible {
+  border-color: rgba(244, 237, 223, 0.34);
+  background: rgba(244, 237, 223, 0.12);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  transform: translateY(-1px);
 }
 
 .financial-dashboard__metrics {
@@ -382,7 +430,7 @@
 
   .financial-dashboard__segment {
     grid-row: 2;
-    min-height: 62px;
+    min-height: 46px;
   }
 }
 

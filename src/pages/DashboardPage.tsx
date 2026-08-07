@@ -133,6 +133,7 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
   const [view, setView] = useState<FinancialView>("overview");
   const snapshot = data.business.financialSnapshot;
   const topSegments = useMemo(() => snapshot.topLevel, [snapshot.topLevel]);
+  const topTotal = useMemo(() => totalAbs(topSegments), [topSegments]);
   const activeDrill = drillConfig(data, view);
 
   return (
@@ -150,11 +151,13 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
           <div className="financial-dashboard__donut-wrap">
             <button
               className="financial-dashboard__segment financial-dashboard__segment--income"
+              aria-label={`Open income details. Total income ${money(snapshot.totalIncome)}`}
               type="button"
               onClick={() => setView("income")}
             >
               <span>Income</span>
-              <strong>{money(snapshot.totalIncome)}</strong>
+              <b>{percentOf(snapshot.totalIncome, topTotal)}%</b>
+              <em aria-hidden="true">›</em>
             </button>
             <div className="financial-dashboard__donut" style={donutStyle(topSegments)} aria-hidden="true">
               <div>
@@ -164,11 +167,13 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
             </div>
             <button
               className="financial-dashboard__segment financial-dashboard__segment--expenses"
+              aria-label={`Open expenses details. Total expenses ${money(snapshot.totalExpenses)}`}
               type="button"
               onClick={() => setView("expenses")}
             >
               <span>Expenses</span>
-              <strong>{money(snapshot.totalExpenses)}</strong>
+              <b>{percentOf(snapshot.totalExpenses, topTotal)}%</b>
+              <em aria-hidden="true">›</em>
             </button>
           </div>
 

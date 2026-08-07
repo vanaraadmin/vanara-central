@@ -67,6 +67,13 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardPage, /financial-dashboard__donut/);
   assert.match(dashboardPage, /financial-dashboard__metrics/);
   assert.match(dashboardPage, /Future forecast/);
+  assert.match(dashboardPage, /aria-label=\{`Open income details\. Total income \$\{money\(snapshot\.totalIncome\)\}`\}/);
+  assert.match(dashboardPage, /aria-label=\{`Open expenses details\. Total expenses \$\{money\(snapshot\.totalExpenses\)\}`\}/);
+  assert.match(dashboardPage, /const topTotal = useMemo\(\(\) => totalAbs\(topSegments\), \[topSegments\]\)/);
+  assert.match(dashboardPage, /<b>\{percentOf\(snapshot\.totalIncome, topTotal\)\}%<\/b>[\s\S]*<em aria-hidden="true">›<\/em>/);
+  assert.match(dashboardPage, /<b>\{percentOf\(snapshot\.totalExpenses, topTotal\)\}%<\/b>[\s\S]*<em aria-hidden="true">›<\/em>/);
+  assert.doesNotMatch(dashboardPage, /financial-dashboard__segment--income[\s\S]{0,220}<strong>\{money\(snapshot\.totalIncome\)\}/);
+  assert.doesNotMatch(dashboardPage, /financial-dashboard__segment--expenses[\s\S]{0,220}<strong>\{money\(snapshot\.totalExpenses\)\}/);
   assert.match(dashboardPage, /financial-dashboard__list/);
   assert.match(dashboardPage, /setView\("income"\)/);
   assert.match(dashboardPage, /setView\("expenses"\)/);
@@ -79,7 +86,11 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardCss, /\.financial-dashboard[\s\S]*overflow: hidden/);
   assert.doesNotMatch(dashboardCss, /\.dashboard-header|\.financial-dashboard__tabs|\.business-grid|\.dashboard-breakdowns|\.quick-access-grid|\.control-alerts|\.control-section|\.control-card/);
   assert.doesNotMatch(dashboardCss, /146,\s*91,\s*60|178,\s*138,\s*70/);
-  assert.match(dashboardCss, /\.financial-dashboard__header h2[\s\S]*font-size: clamp\(1\.22rem, 5\.4vw, 1\.78rem\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__header h2[\s\S]*font-size: clamp\(1\.1rem, 4\.8vw, 1\.58rem\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment[\s\S]*border-radius: var\(--vc-radius-pill\)[\s\S]*white-space: nowrap[\s\S]*overflow: hidden/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment span[\s\S]*font-size: 0\.68rem[\s\S]*text-overflow: ellipsis/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment em[\s\S]*border-radius: 50%/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment:hover,[\s\S]*\.financial-dashboard__segment:focus-visible[\s\S]*transform: translateY\(-1px\)/);
   assert.match(dashboardCss, /\.financial-dashboard__donut-wrap[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(168px, 224px\) minmax\(0, 1fr\)/);
   assert.match(dashboardCss, /\.financial-dashboard__donut[\s\S]*width: min\(100%, 224px\)/);
   assert.match(dashboardCss, /\.financial-dashboard__metrics[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(104px, 1fr\)\)/);
