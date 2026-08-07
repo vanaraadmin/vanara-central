@@ -133,6 +133,11 @@ async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, length:
   return (await hmac(prk, input)).slice(0, length);
 }
 
+export async function deriveWebPushIkm(authSecret: Uint8Array, sharedSecret: Uint8Array, keyInfo: Uint8Array): Promise<Uint8Array> {
+  const prkKey = await hmac(authSecret, sharedSecret);
+  return hmac(prkKey, concatBytes(keyInfo, new Uint8Array([1])));
+}
+
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
   const out = new Uint8Array(length);
@@ -166,8 +171,8 @@ async function encryptPushPayload(subscription: PushSubscriptionRow, payload: No
   const clientPublic = await crypto.subtle.importKey("raw", toArrayBuffer(base64UrlToBytes(subscription.p256dh)), { name: "ECDH", namedCurve: "P-256" }, false, []);
   const sharedSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: clientPublic }, serverKeys.privateKey, 256));
   const authSecret = base64UrlToBytes(subscription.auth);
-  const info = concatBytes(new TextEncoder().encode("WebPush: info\0"), base64UrlToBytes(subscription.p256dh), serverPublic);
-  const ikm = await hmac(await hmac(authSecret, sharedSecret), info);
+  const keyInfo = concatBytes(new TextEncoder().encode("WebPush: info\0"), base64UrlToBytes(subscription.p256dh), serverPublic);
+  const ikm = await deriveWebPushIkm(authSecret, sharedSecret, keyInfo);
   const cek = await hkdf(salt, ikm, new TextEncoder().encode("Content-Encoding: aes128gcm\0"), 16);
   const nonce = await hkdf(salt, ikm, new TextEncoder().encode("Content-Encoding: nonce\0"), 12);
   const key = await crypto.subtle.importKey("raw", toArrayBuffer(cek), { name: "AES-GCM" }, false, ["encrypt"]);

@@ -78,6 +78,13 @@ test("service worker handles push and clicks without caching operational API dat
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
 });
 
+test("Web Push encryption derives IKM with the RFC 8291 key-info counter byte", () => {
+  assert.match(notificationService, /export async function deriveWebPushIkm/);
+  assert.match(notificationService, /concatBytes\(keyInfo, new Uint8Array\(\[1\]\)\)/);
+  assert.match(notificationService, /const ikm = await deriveWebPushIkm\(authSecret, sharedSecret, keyInfo\)/);
+  assert.doesNotMatch(notificationService, /const ikm = await hmac\(await hmac\(authSecret, sharedSecret\), info\)/);
+});
+
 test("ProfilePanel exposes real user-action notification opt-in through PWA service", () => {
   assert.match(profilePanel, /enablePhoneNotifications/);
   assert.match(profilePanel, /checkPhoneNotificationStatus/);
