@@ -155,13 +155,14 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
               type="button"
               onClick={() => setView("income")}
             >
-              <span>Income</span>
-              <b>{percentOf(snapshot.totalIncome, topTotal)}%</b>
-              <em aria-hidden="true">›</em>
+              <i className="financial-dashboard__segment-dot" aria-hidden="true" />
+              <span className="financial-dashboard__segment-label">Income</span>
+              <b className="financial-dashboard__segment-percent">{percentOf(snapshot.totalIncome, topTotal)}%</b>
+              <em className="financial-dashboard__segment-arrow" aria-hidden="true">›</em>
             </button>
             <div className="financial-dashboard__donut" style={donutStyle(topSegments)} aria-hidden="true">
               <div>
-                <span>Net position</span>
+                <span>Balance</span>
                 <strong>{money(snapshot.netPosition)}</strong>
               </div>
             </div>
@@ -171,9 +172,10 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
               type="button"
               onClick={() => setView("expenses")}
             >
-              <span>Expenses</span>
-              <b>{percentOf(snapshot.totalExpenses, topTotal)}%</b>
-              <em aria-hidden="true">›</em>
+              <i className="financial-dashboard__segment-dot" aria-hidden="true" />
+              <span className="financial-dashboard__segment-label">Expenses</span>
+              <b className="financial-dashboard__segment-percent">{percentOf(snapshot.totalExpenses, topTotal)}%</b>
+              <em className="financial-dashboard__segment-arrow" aria-hidden="true">›</em>
             </button>
           </div>
 
