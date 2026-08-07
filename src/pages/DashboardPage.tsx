@@ -142,7 +142,7 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
           <div>
             <span>Owner finance</span>
             <h2 id="financial-dashboard-title">Financial Dashboard</h2>
-            <p>Expected net income and owner-entered costs, focused on decisions.</p>
+            <p>Tap Income or Expenses to explore.</p>
           </div>
         </header>
 
@@ -182,7 +182,7 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
               <strong>{money(snapshot.totalExpenses)}</strong>
             </button>
             <article>
-              <span>Future booked net forecast</span>
+              <span>Future forecast</span>
               <strong>{money(snapshot.futureBookedNetForecast)}</strong>
             </article>
           </div>

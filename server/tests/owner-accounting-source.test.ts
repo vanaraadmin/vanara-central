@@ -66,7 +66,7 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardPage, /Salary advances are not counted as extra cost/);
   assert.match(dashboardPage, /financial-dashboard__donut/);
   assert.match(dashboardPage, /financial-dashboard__metrics/);
-  assert.match(dashboardPage, /Future booked net forecast/);
+  assert.match(dashboardPage, /Future forecast/);
   assert.match(dashboardPage, /financial-dashboard__list/);
   assert.match(dashboardPage, /setView\("income"\)/);
   assert.match(dashboardPage, /setView\("expenses"\)/);
@@ -79,7 +79,12 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardCss, /\.financial-dashboard[\s\S]*overflow: hidden/);
   assert.doesNotMatch(dashboardCss, /\.dashboard-header|\.financial-dashboard__tabs|\.business-grid|\.dashboard-breakdowns|\.quick-access-grid|\.control-alerts|\.control-section|\.control-card/);
   assert.doesNotMatch(dashboardCss, /146,\s*91,\s*60|178,\s*138,\s*70/);
-  assert.match(dashboardCss, /\.financial-dashboard__donut-wrap[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(132px, 176px\) minmax\(0, 1fr\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__header h2[\s\S]*font-size: clamp\(1\.22rem, 5\.4vw, 1\.78rem\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut-wrap[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(168px, 224px\) minmax\(0, 1fr\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut[\s\S]*width: min\(100%, 224px\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__metrics[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(104px, 1fr\)\)/);
+  assert.doesNotMatch(dashboardCss, /\.financial-dashboard__metrics\s*{[\s\S]*grid-template-columns: 1fr/);
+  assert.doesNotMatch(dashboardCss, /min-height: 104px|min-height: 82px/);
   assert.match(dashboardCss, /\.financial-dashboard__list b[\s\S]*max-width: 42%/);
   assert.match(dashboardCss, /\.dashboard-finance-stack[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(220px, 320px\)/);
 });
