@@ -51,6 +51,12 @@ function emptyCompletionDraft(): CompletionDraft {
   };
 }
 
+function receptionCompletionErrorText(error: unknown, translate: ReturnType<typeof useLanguage>["translate"]): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/Cannot return deposit because no deposit was collected/i.test(message)) return translate("cannotReturnDepositNoCollected");
+  return message || translate("requestNotSaved");
+}
+
 function bangkokToday() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Bangkok",
@@ -1331,7 +1337,7 @@ export default function ReceptionPage() {
       setCompletionError(null);
     },
     onError: (error) => {
-      setCompletionError(error instanceof Error ? error.message : translate("requestNotSaved"));
+      setCompletionError(receptionCompletionErrorText(error, translate));
     },
   });
   const canComplete = canCompleteReception(currentUser.data);

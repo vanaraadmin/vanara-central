@@ -76,6 +76,21 @@ test("profile panel uses styled photo controls and preserves create-user input w
   assert.match(profilePanel, /window\.confirm/);
 });
 
+test("owner New staff and New owner actions open a focused create-user form", () => {
+  assert.match(profilePanel, /createUserFormRef/);
+  assert.match(profilePanel, /scrollIntoView\(\{ block: "nearest", behavior: "smooth" \}\)/);
+  assert.match(profilePanel, /querySelector<HTMLInputElement>\("input\[name='firstName'\]"\)\?\.focus\(\)/);
+  assert.match(profilePanel, /onClick=\{\(\) => startCreate\(false\)\}>New staff/);
+  assert.match(profilePanel, /onClick=\{\(\) => startCreate\(true\)\}>New owner/);
+  assert.match(profilePanel, /showUserForm && userForm\.role !== "Owner" \? "is-active" : ""/);
+  assert.match(profilePanel, /showUserForm && userForm\.role === "Owner" \? "is-active" : ""/);
+  assert.match(profilePanel, /<form ref=\{createUserFormRef\} className="profile-panel__user-form profile-panel__user-form--active"/);
+  assert.match(profilePanel, /name="firstName"/);
+
+  const ownerSection = profilePanel.match(/\{tab === "owner" && owner \? \([\s\S]*?\) : null\}/)?.[0] ?? "";
+  assert.ok(ownerSection.indexOf("profile-panel__user-form profile-panel__user-form--active") < ownerSection.indexOf("profile-panel__user-list"));
+});
+
 test("profile popup is mobile-safe and keeps avatar circle-safe", () => {
   assert.match(workspaceCss, /\.profile-panel__overlay/);
   assert.match(workspaceCss, /max-height:\s*min\(720px,\s*calc\(100dvh - var\(--vc-safe-top\) - var\(--vc-safe-bottom\) - 28px\)\)/);
@@ -85,6 +100,8 @@ test("profile popup is mobile-safe and keeps avatar circle-safe", () => {
   assert.match(workspaceCss, /\.profile-panel__sheet[\s\S]*scrollbar-width:\s*thin/);
   assert.match(workspaceCss, /\.profile-panel__tabs[\s\S]*grid-template-columns:\s*repeat\(auto-fit, minmax\(112px, 1fr\)\)/);
   assert.match(workspaceCss, /\.profile-panel__tabs button,[\s\S]*white-space:\s*normal/);
+  assert.match(workspaceCss, /\.profile-panel__subheader button\.is-active/);
+  assert.match(workspaceCss, /\.profile-panel__user-form--active[\s\S]*scroll-margin:\s*18px/);
   assert.match(workspaceCss, /\.profile-panel__notice,[\s\S]*overflow-wrap:\s*anywhere/);
   assert.match(workspaceCss, /input\.profile-panel__file-input[\s\S]*width:\s*1px[\s\S]*min-height:\s*1px[\s\S]*clip-path:\s*inset\(50%\)/);
   assert.match(workspaceCss, /\.profile-panel__avatar[\s\S]*border-radius:\s*999px/);

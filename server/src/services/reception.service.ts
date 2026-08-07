@@ -572,6 +572,7 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
     if (!checkOutInput.roomInspected) completionError("Room inspection is required.");
     if (!checkOutInput.keysReturned) completionError("Keys returned is required.");
     if (local.deposit_collected === 1 && checkOutInput.depositReturned !== true) completionError("Deposit return is required.");
+    if (local.deposit_collected !== 1 && checkOutInput.depositReturned === true) completionError("Cannot return deposit because no deposit was collected.");
     await env.DB.prepare(`
       UPDATE reception_stays
       SET guest_left = 1, keys_returned = 1, deposit_returned = ?, room_released = 1, updated_at = ?

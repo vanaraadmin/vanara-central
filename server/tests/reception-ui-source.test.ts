@@ -320,3 +320,12 @@ test("passport OCR upload sends full image plus passport number and MRZ crops", 
 test("deposit collected uses existing reception check-in persistence", () => {
   assert.match(receptionPage, /updateReceptionCheckIn\(stay\.bookingId, "depositCollected", !stay\.checkIn\.depositCollected\)/);
 });
+
+test("check-out deposit return is blocked and localized when no deposit was collected", () => {
+  assert.match(receptionPage, /function receptionCompletionErrorText/);
+  assert.match(receptionPage, /Cannot return deposit because no deposit was collected/i);
+  assert.match(receptionPage, /translate\("cannotReturnDepositNoCollected"\)/);
+  assert.match(receptionPage, /depositReturned: stay\.checkIn\.depositCollected \|\| completionDraft\.depositCollected \? completionDraft\.depositReturned : undefined/);
+  assert.match(serverReceptionService, /local\.deposit_collected !== 1 && checkOutInput\.depositReturned === true/);
+  assert.match(serverReceptionService, /completionError\("Cannot return deposit because no deposit was collected\."\)/);
+});

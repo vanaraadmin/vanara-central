@@ -1869,6 +1869,38 @@ test("complete check-out enforces inspection keys and collected deposit return",
   assert.equal(db.stays.get(9001)?.room_released, 1);
 });
 
+test("complete check-out rejects returned deposit when no deposit was collected", async () => {
+  const data = env([movementsAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
+  const db = data.DB as unknown as FakeReceptionDB;
+  db.stays.set(9001, {
+    beds24_booking_id: 9001,
+    guest_arrived: 1,
+    passport_collected: 1,
+    deposit_collected: 0,
+    welcome_completed: 1,
+    keys_delivered: 1,
+    guest_left: 0,
+    keys_returned: 0,
+    deposit_returned: 0,
+    room_released: 0,
+    special_notes: null,
+    created_at: "2026-07-31T00:00:00.000Z",
+    updated_at: "2026-07-31T00:00:00.000Z",
+  });
+
+  const response = await request("/api/reception/stays/9001/check-out-completed", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({ roomInspected: true, keysReturned: true, depositReturned: true }),
+  }, data);
+
+  assert.equal(response.status, 409);
+  assert.equal(db.stays.get(9001)?.guest_left, 0);
+  assert.equal(db.stays.get(9001)?.keys_returned, 0);
+  assert.equal(db.stays.get(9001)?.deposit_returned, 0);
+  assert.equal(db.stays.get(9001)?.room_released, 0);
+});
+
 test("reception completion rejects future booking dates server-side", async () => {
   const data = env([movementsAccess], true, [], { ...BOOKING, arrival_date: TOMORROW, departure_date: addDateOnlyDays(TOMORROW, 2) });
   const response = await request("/api/reception/stays/9001/check-in-completed", {

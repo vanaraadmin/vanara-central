@@ -231,7 +231,9 @@ test("housekeeping generation uses internal booking ids while UI still exposes B
 
 test("housekeeping and room read models resolve internal unit codes into readable room labels", () => {
   assert.match(roomDisplayLabelService, /function looksLikeInternalUnitCode/);
+  assert.match(roomDisplayLabelService, /function internalUnitCodeNumber/);
   assert.match(roomDisplayLabelService, /\[4,\s*"Bungalow 2"\]/);
+  assert.match(roomDisplayLabelService, /if \(codeNumber\) return `\$\{family\} \$\{codeNumber\}`/);
   assert.match(roomDisplayLabelService, /export function readableUnitName/);
 
   assert.match(overviewService, /import \{ readableUnitName \} from "\.\/room-display-label\.service\.js"/);

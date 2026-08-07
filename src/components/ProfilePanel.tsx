@@ -107,6 +107,7 @@ export default function ProfilePanel() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const createUserFormRef = useRef<HTMLFormElement | null>(null);
 
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
@@ -135,6 +136,14 @@ export default function ProfilePanel() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!showUserForm) return;
+    window.requestAnimationFrame(() => {
+      createUserFormRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      createUserFormRef.current?.querySelector<HTMLInputElement>("input[name='firstName']")?.focus();
+    });
+  }, [showUserForm]);
 
   const saveProfile = useMutation({
     mutationFn: () => updateCurrentUserProfile(profileDraft),
@@ -234,6 +243,7 @@ export default function ProfilePanel() {
     next.actionPermissions = [{ action: "can_complete_checkin_checkout", allowed: owner }];
     setUserForm(next);
     setUserPhotoName("");
+    setNotice(null);
     setShowUserForm(true);
   }
 
@@ -371,27 +381,15 @@ export default function ProfilePanel() {
                     </div>
                     <a aria-label="Download TM30" className="profile-panel__download" href="/api/owner/tm30/export"><DownloadIcon /><span>{translate("downloadTm30")}</span></a>
                   </div>
-                  <header className="profile-panel__subheader profile-panel__subheader--users"><h3>Manage Users</h3><div><button type="button" onClick={() => startCreate(false)}>New staff</button><button type="button" onClick={() => startCreate(true)}>New owner</button></div></header>
-                  <div className="profile-panel__user-list">
-                    {(usersQuery.data ?? []).map((item) => (
-                      <article className="profile-panel__user-row" key={item.id}>
-                        <UserAvatar user={item} />
-                        <div><strong>{item.displayName}</strong><span>{item.fullName}</span><small>{item.role} / {item.preferredLanguage.toUpperCase()} / {item.status}</small></div>
-                        <div className="profile-panel__user-actions">
-                          <button disabled={item.id === currentUser?.id || item.status === "disabled"} onClick={() => window.confirm(`Freeze ${item.displayName}?`) && freezeUser.mutate(item.id)} type="button">Freeze</button>
-                          <button disabled={item.id === currentUser?.id} onClick={() => window.confirm(`Delete ${item.displayName}? This cannot be undone.`) && removeUser.mutate(item.id)} type="button">Delete</button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  {showUserForm ? <form className="profile-panel__user-form" onSubmit={onSubmitUser}>
+                  <header className="profile-panel__subheader profile-panel__subheader--users"><h3>Manage Users</h3><div><button className={showUserForm && userForm.role !== "Owner" ? "is-active" : ""} type="button" onClick={() => startCreate(false)}>New staff</button><button className={showUserForm && userForm.role === "Owner" ? "is-active" : ""} type="button" onClick={() => startCreate(true)}>New owner</button></div></header>
+                  {showUserForm ? <form ref={createUserFormRef} className="profile-panel__user-form profile-panel__user-form--active" onSubmit={onSubmitUser}>
                     <h4>Create user</h4>
                     <div className="profile-panel__role-toggle" role="group" aria-label="Role">
                       <button className={userForm.role !== "Owner" ? "is-active" : ""} onClick={() => setUserRole(false)} type="button">Staff</button>
                       <button className={userForm.role === "Owner" ? "is-active" : ""} onClick={() => setUserRole(true)} type="button">Owner</button>
                     </div>
                     <div className="profile-panel__form-grid">
-                      <label><span>First name</span><input value={userForm.firstName} onChange={(event) => setUserForm({ ...userForm, firstName: event.target.value })} required /></label>
+                      <label><span>First name</span><input name="firstName" value={userForm.firstName} onChange={(event) => setUserForm({ ...userForm, firstName: event.target.value })} required /></label>
                       <label><span>Last name</span><input value={userForm.lastName} onChange={(event) => setUserForm({ ...userForm, lastName: event.target.value })} required /></label>
                       <label><span>Nickname</span><input value={userForm.displayName} onChange={(event) => setUserForm({ ...userForm, displayName: event.target.value })} required /></label>
                       <label><span>Username</span><input value={userForm.username} onChange={(event) => setUserForm({ ...userForm, username: event.target.value })} required /></label>
@@ -409,6 +407,18 @@ export default function ProfilePanel() {
                     </div>
                     <div className="profile-panel__form-actions"><button className="profile-panel__secondary" onClick={() => setShowUserForm(false)} type="button">Cancel</button><button className="profile-panel__primary" disabled={saveUser.isPending} type="submit">{saveUser.isPending ? "Saving" : "Create user"}</button></div>
                   </form> : null}
+                  <div className="profile-panel__user-list">
+                    {(usersQuery.data ?? []).map((item) => (
+                      <article className="profile-panel__user-row" key={item.id}>
+                        <UserAvatar user={item} />
+                        <div><strong>{item.displayName}</strong><span>{item.fullName}</span><small>{item.role} / {item.preferredLanguage.toUpperCase()} / {item.status}</small></div>
+                        <div className="profile-panel__user-actions">
+                          <button disabled={item.id === currentUser?.id || item.status === "disabled"} onClick={() => window.confirm(`Freeze ${item.displayName}?`) && freezeUser.mutate(item.id)} type="button">Freeze</button>
+                          <button disabled={item.id === currentUser?.id} onClick={() => window.confirm(`Delete ${item.displayName}? This cannot be undone.`) && removeUser.mutate(item.id)} type="button">Delete</button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
                 </section>
               ) : null}
 

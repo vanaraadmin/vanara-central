@@ -371,7 +371,8 @@
 }
 
 .profile-panel__tabs button.is-active,
-.profile-panel__segments button.is-active {
+.profile-panel__segments button.is-active,
+.profile-panel__subheader button.is-active {
   color: #173429;
   background: #f4eddf;
 }
@@ -692,6 +693,10 @@ input.profile-panel__file-input {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.profile-panel__user-form--active {
+  scroll-margin: 18px;
 }
 
 .profile-panel__user-row {

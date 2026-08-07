@@ -352,7 +352,7 @@ test("passport and deposit alerts map to final compact reception signals", () =>
 
   assert.deepEqual(passport.secondarySignals.map((signal) => signal.label), ["PASSPORT MISSING"]);
   assert.deepEqual(deposit.secondarySignals.map((signal) => signal.label), ["DEPOSIT PENDING"]);
-  assert.deepEqual(combined.secondarySignals.map((signal) => signal.label), ["RECEPTION ATTENTION"]);
+  assert.deepEqual(combined.secondarySignals.map((signal) => signal.label), ["PASSPORT MISSING", "DEPOSIT PENDING"]);
 });
 
 test("secondary signals preserve every operational alert for wrapping rows", () => {

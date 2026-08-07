@@ -80,14 +80,14 @@ function mapCompactGuestWaiting(room: RoomsWorkspaceRoom): RoomCompactSignal | n
   return null;
 }
 
-function mapCompactReceptionAlert(room: RoomsWorkspaceRoom): RoomCompactSignal | null {
+function mapCompactReceptionAlerts(room: RoomsWorkspaceRoom): RoomCompactSignal[] {
   const passportMissing = room.reception.alerts.some((alert) => alert.type === "passport_missing");
   const depositPending = room.reception.alerts.some((alert) => alert.type === "deposit_pending");
+  const alerts: RoomCompactSignal[] = [];
 
-  if (passportMissing && depositPending) return compactSignal("reception-attention", "RECEPTION ATTENTION", "attention");
-  if (passportMissing) return compactSignal("passport-missing", "PASSPORT MISSING", "attention");
-  if (depositPending) return compactSignal("deposit-pending", "DEPOSIT PENDING", "attention");
-  return null;
+  if (passportMissing) alerts.push(compactSignal("passport-missing", "PASSPORT MISSING", "attention"));
+  if (depositPending) alerts.push(compactSignal("deposit-pending", "DEPOSIT PENDING", "attention"));
+  return alerts;
 }
 
 function monthDayShort(value: string | null): string | null {
@@ -150,7 +150,7 @@ export function getRoomCompactPresentation(room: RoomsWorkspaceRoom): RoomCompac
     mapCompactGuestWaiting(room),
     mapCompactMaintenance(room.operational),
     mapCompactTurnover(room),
-    mapCompactReceptionAlert(room),
+    ...mapCompactReceptionAlerts(room),
   ].filter((item): item is RoomCompactSignal => item !== null);
 
   return {

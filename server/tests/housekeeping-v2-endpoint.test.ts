@@ -446,10 +446,10 @@ test("housekeeping v2 tasks returns 200 when repeated water refill creation repl
 test("water refill cards use readable Vanara unit labels instead of internal room codes", async () => {
   const db = new FakeHousekeepingV2DB();
   db.unitRows = [
-    { unit_id: 4, unit_name: "E2", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 2 },
+    { unit_id: 99, unit_name: "E2", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: null },
   ];
   db.bookings = [
-    { ...booking(104, 900104, 4, "Water Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
+    { ...booking(104, 900104, 99, "Water Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
   ];
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);

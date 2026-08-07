@@ -34,6 +34,13 @@ function looksLikeInternalUnitCode(value: string): boolean {
   return /^[A-Z]{1,3}\d{1,3}$/i.test(normalized) && !/\b(?:bungalow|villa|tent|yurt|room)\b/i.test(normalized);
 }
 
+function internalUnitCodeNumber(value: string): number | null {
+  const match = value.trim().match(/^[A-Z]{1,3}(\d{1,3})$/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function familyLabel(unit: UnitDisplaySource): string | null {
   const source = `${unit.unit_type ?? ""} ${unit.room_type_name ?? ""} ${unit.room_name ?? ""}`.toLowerCase();
   if (source.includes("bungalow")) return "Bungalow";
@@ -51,6 +58,10 @@ export function readableUnitName(unit: UnitDisplaySource): string {
 
   const family = familyLabel(unit);
   if (family && unit.position && unit.position > 0) return `${family} ${unit.position}`;
+  if (family) {
+    const codeNumber = internalUnitCodeNumber(raw);
+    if (codeNumber) return `${family} ${codeNumber}`;
+  }
 
   return raw || family || "Room not assigned";
 }
