@@ -53,6 +53,13 @@ const migratedWorkspaceCss = [
   "src/styles/MaintenancePage.css",
   "src/styles/StickyGlassHeader.css",
 ].map(readSource).join("\n");
+const operationalWorkspaceCss = [
+  "src/styles/RoomsPage.css",
+  "src/styles/HousekeepingV2Page.css",
+  "src/styles/MaintenancePage.css",
+  "src/styles/StickyGlassHeader.css",
+].map(readSource).join("\n");
+const staffPageCss = readSource("src/styles/StaffPage.css");
 
 test("Vanara shared components expose stable typed contracts and documentation", () => {
   for (const path of vanaraComponents) {
@@ -125,7 +132,8 @@ test("Vanara Glass Physics v1 centralizes press and release material behaviour",
   assert.match(migratedWorkspaceCss, /sticky-glass-nav-return\[data-pressed="true"\]/);
   assert.match(migratedWorkspaceCss, /sticky-glass-nav-home\[data-pressed="true"\]/);
   assert.doesNotMatch(vanaraUi, /:active[\s\S]{0,120}scale/);
-  assert.doesNotMatch(migratedWorkspaceCss, /:active[\s\S]{0,120}transform/);
+  assert.doesNotMatch(operationalWorkspaceCss, /:active[\s\S]{0,120}transform/);
+  assert.match(staffPageCss, /\.staff-workspace:active\s*\{[\s\S]{0,120}transform/);
 });
 
 test("Floating navigation appears calmly without hero logo morphing", () => {

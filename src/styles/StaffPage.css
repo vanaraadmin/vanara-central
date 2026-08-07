@@ -26,7 +26,9 @@
   transition:
     background var(--vc-duration-fast) var(--vc-ease-standard),
     border-color var(--vc-duration-fast) var(--vc-ease-standard),
-    transform var(--vc-duration-fast) var(--vc-ease-standard);
+    box-shadow 180ms ease,
+    transform 240ms cubic-bezier(0.22, 1.22, 0.36, 1);
+  will-change: transform;
 }
 
 .staff-workspace:hover,
@@ -38,6 +40,11 @@
 .staff-workspace:focus-visible {
   outline: 2px solid var(--vc-focus-glass);
   outline-offset: 3px;
+}
+
+.staff-workspace:active {
+  transform: translateY(2px) scale(0.988);
+  transition-duration: 90ms;
 }
 
 .staff-workspace__identity {
@@ -310,5 +317,10 @@
 @media (prefers-reduced-motion: reduce) {
   .staff-workspace {
     transition: none;
+    will-change: auto;
+  }
+
+  .staff-workspace:active {
+    transform: none;
   }
 }

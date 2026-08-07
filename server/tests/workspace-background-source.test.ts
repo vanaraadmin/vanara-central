@@ -12,46 +12,19 @@ const workspaceCss = readFileSync(new URL("../../src/styles/WorkspaceShell.css",
 const wranglerConfig = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
 const passportWorkflow = readFileSync(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const pagesRoot = fileURLToPath(new URL("../../src/pages", import.meta.url));
-const assetsRoot = fileURLToPath(new URL("../../src/assets/img", import.meta.url));
 
-const mappings = {
-  staffHome: {
-    importName: "backgroundHomeStaff",
-    fileName: "background_home_staff.png",
-  },
-  reception: {
-    importName: "backgroundCheckinCheckout",
-    fileName: "background_checkin_checkout.png",
-  },
-  rooms: {
-    importName: "backgroundRooms",
-    fileName: "background_room.png",
-  },
-  housekeeping: {
-    importName: "backgroundHousekeeping",
-    fileName: "background_housekeeping.png",
-  },
-  maintenance: {
-    importName: "backgroundMaintenance",
-    fileName: "background_maintenance.png",
-  },
-  procurement: {
-    importName: "backgroundProcurement",
-    fileName: "background_procurement.png",
-  },
-  social: {
-    importName: "backgroundProcurement",
-    fileName: "background_procurement.png",
-  },
-  messages: {
-    importName: "backgroundRooms",
-    fileName: "background_room.png",
-  },
-  chat: {
-    importName: "backgroundChat",
-    fileName: "background_chat.png",
-  },
-} as const;
+const workspaceBackgroundKeys = [
+  "staffHome",
+  "reception",
+  "rooms",
+  "housekeeping",
+  "maintenance",
+  "procurement",
+  "social",
+  "payroll",
+  "messages",
+  "chat",
+] as const;
 
 function pageFiles(path: string): string[] {
   return readdirSync(path).flatMap((entry) => {
@@ -62,17 +35,21 @@ function pageFiles(path: string): string[] {
   });
 }
 
-test("typed workspace background configuration imports canonical source image assets", () => {
+test("typed workspace background configuration exposes shared CSS variable themes", () => {
   assert.match(config, /export type WorkspaceBackgroundKey/);
-  assert.match(config, /WORKSPACE_BACKGROUNDS = \{/);
-  assert.match(config, /satisfies Record<WorkspaceBackgroundKey, string>/);
+  assert.match(config, /const workspaceThemes = \{/);
+  assert.match(config, /satisfies Record<WorkspaceBackgroundKey,/);
+  assert.match(config, /"--workspace-bg-top"/);
+  assert.match(config, /"--workspace-accent"/);
+  assert.match(config, /"--workspace-gold-soft"/);
+  assert.match(config, /"--workspace-botanical-opacity"/);
+  assert.match(config, /"--workspace-contour-opacity"/);
 
-  for (const [key, mapping] of Object.entries(mappings)) {
-    assert.match(config, new RegExp(`${key}: ${mapping.importName}`));
-    assert.match(config, new RegExp(`import ${mapping.importName} from "\\.\\./assets/img/${mapping.fileName}"`));
-    assert.equal(statSync(join(assetsRoot, mapping.fileName)).isFile(), true);
+  for (const key of workspaceBackgroundKeys) {
+    assert.match(config, new RegExp(`${key}: \\{[\\s\\S]*botanical: "0\\.0[1-3]`));
   }
 
+  assert.doesNotMatch(config, /import .*background_.* from "\.\.\/assets\/img\//);
   assert.doesNotMatch(config, /"\/assets\/img\//);
   assert.doesNotMatch(config, /Background_|background1\.png/);
 });
@@ -112,16 +89,22 @@ test("implemented workspaces map to the correct shared shell background keys", (
   assert.match(readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8"), /workspace="messages"/);
 });
 
-test("workspace background CSS uses the variable, cover rules and dark fallback", () => {
+test("workspace background CSS uses the shared forest system without raster wallpaper", () => {
   assert.doesNotMatch(staffCss, /background-image:\s*var\(--workspace-background, none\)/);
 
   for (const css of [workspaceCss]) {
-    assert.match(css, /--workspace-background-fallback:\s*#0c241a/);
-    assert.match(css, /background-color:\s*var\(--workspace-background-fallback, #031c15\)/);
-    assert.match(css, /background-image:\s*var\(--workspace-background, none\)/);
+    assert.match(css, /--workspace-bg-deep:\s*#071f18/);
+    assert.match(css, /background-color:\s*var\(--workspace-bg-deep\)/);
+    assert.match(css, /background-image:[\s\S]*radial-gradient[\s\S]*linear-gradient/);
+    assert.match(css, /\.workspace-page::before/);
+    assert.match(css, /\.workspace-page::after/);
+    assert.match(css, /data:image\/svg\+xml/);
+    assert.match(css, /var\(--workspace-contour-opacity\)/);
+    assert.match(css, /var\(--workspace-botanical-opacity\)/);
     assert.match(css, /background-position:\s*center top/);
     assert.match(css, /background-size:\s*cover/);
     assert.match(css, /background-repeat:\s*no-repeat/);
+    assert.doesNotMatch(css, /--workspace-background|background-image:\s*url\(["']?\.\.\/assets\/img\/background_/);
     assert.doesNotMatch(css, /background-attachment:\s*fixed|cover fixed no-repeat/);
   }
 });
