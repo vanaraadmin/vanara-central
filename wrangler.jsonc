@@ -6,7 +6,7 @@
   "observability": {
     "enabled": true
   },
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     {
       "pattern": "central.vanararetreat.com",

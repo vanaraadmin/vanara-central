@@ -23,6 +23,7 @@ import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHo
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTranslationBindings } from "./services/free-text-translation.service.js";
+import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { addPayrollEvent, finalizePayroll, generatePayrollStatementPdf, getPayrollOverview, getPayrollWorker, normalizePayrollEventInput, normalizePayrollMonth, normalizePayrollSettingsInput, savePayrollDraft, savePayrollSettings, type PayrollBindings } from "./services/payroll.service.js";
@@ -41,6 +42,7 @@ import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentio
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
+import { assertLoginAllowed, loginClientIp, LoginRateLimitError, recordLoginFailure, recordLoginSuccess, type LoginRateLimitBindings } from "./services/login-rate-limit.service.js";
 import {
   AuthenticationError,
   ForbiddenError,
@@ -75,15 +77,19 @@ import {
   type ModuleKey,
 } from "./services/current-user.service.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, NotificationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, LoginRateLimitBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   GOOGLE_TRANSLATE_API_KEY?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY_JWK?: string;
+  VAPID_SUBJECT?: string;
   WARAPORN_VECTOR_STORE_ID?: string;
   WARAPORN_KB_ARCHIVE: R2Bucket;
   VANARA_DATABASE_ENVIRONMENT: string;
   VANARA_DATABASE_NAME: string;
   VANARA_DATABASE_ID: string;
+  VANARA_ENABLE_OWNER_BOOTSTRAP?: string;
   DB: D1Database;
   ASSETS: { fetch: typeof fetch };
 }
@@ -363,45 +369,22 @@ async function syncCommercialCaches(env: Bindings) {
 }
 
 async function healthHandler(c: AppContext) {
-  let d1: { status: "ok" } | { status: "error"; message: string };
-
   try {
     await c.env.DB.prepare("SELECT 1 AS ok").first();
-    d1 = { status: "ok" };
   } catch (error) {
-    d1 = {
-      status: "error",
-      message: `${errorMessage(error)}. The runtime must connect to the configured production D1 database; local fallback databases are disabled.`,
-    };
+    console.warn(JSON.stringify({ event: "health_check_failed", error: errorMessage(error) }));
+    return c.json({ ok: false, worker: "ok", api: "ok", d1: "error" }, 503);
   }
 
   const baseUrl = c.env.BEDS24_BASE_URL?.trim() || DEFAULT_BEDS24_BASE_URL;
-  const baseUrlValid = (() => {
-    try {
-      new URL(baseUrl);
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  try {
+    new URL(baseUrl);
+  } catch {
+    console.warn(JSON.stringify({ event: "health_config_invalid", config: "BEDS24_BASE_URL" }));
+    return c.json({ ok: false, worker: "ok", api: "ok", d1: "ok" }, 503);
+  }
 
-  const ok = d1.status === "ok" && baseUrlValid;
-
-  return c.json({
-    ok,
-    worker: "ok",
-    api: "ok",
-    d1,
-    config: {
-      beds24BaseUrl: baseUrlValid ? "configured" : "invalid",
-      beds24Token: configured(c.env.BEDS24_LONG_LIFE_TOKEN) ? "configured" : "missing-local-only",
-      databaseEnvironment: c.env.VANARA_DATABASE_ENVIRONMENT,
-      databaseName: c.env.VANARA_DATABASE_NAME,
-      databaseId: c.env.VANARA_DATABASE_ID,
-      databaseBinding: "DB",
-      databaseType: "Cloudflare D1",
-    },
-  }, ok ? 200 : 503);
+  return c.json({ ok: true, worker: "ok", api: "ok", d1: "ok" });
 }
 
 async function loadTm30Template(c: AppContext): Promise<ArrayBuffer> {
@@ -431,6 +414,9 @@ app.all("/api/webhooks/beds24", async (c) => {
 });
 app.post("/api/auth/bootstrap-owner", async (c) => {
   try {
+    if (c.env.VANARA_ENABLE_OWNER_BOOTSTRAP !== "true") {
+      return c.json({ success: false, error: "Owner bootstrap is disabled." }, 404);
+    }
     const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM users").first<{ total: number }>();
     if ((count?.total ?? 0) > 0) throw new ForbiddenError("Bootstrap is available only before the first user exists.");
     const payload = await c.req.json().catch(() => null);
@@ -455,10 +441,21 @@ app.post("/api/auth/bootstrap-owner", async (c) => {
 app.post("/api/auth/login", async (c) => {
   try {
     const payload = await c.req.json().catch(() => null);
-    const session = await login(c.env, normalizeLoginInput(payload));
+    const input = normalizeLoginInput(payload);
+    const clientIp = loginClientIp(c.req.raw.headers);
+    await assertLoginAllowed(c.env, input.username, clientIp);
+    let session: Awaited<ReturnType<typeof login>>;
+    try {
+      session = await login(c.env, input);
+    } catch (error) {
+      if (error instanceof AuthenticationError) await recordLoginFailure(c.env, input.username, clientIp);
+      throw error;
+    }
+    await recordLoginSuccess(c.env, input.username, clientIp);
     c.header("Set-Cookie", makeSessionCookie(session.token, session.expiresAt, new URL(c.req.url).protocol === "https:"));
     return c.json({ success: true, data: publicCurrentUser(session.user) });
   } catch (error) {
+    if (error instanceof LoginRateLimitError) return c.json({ success: false, error: error.message }, 429);
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
   }
 });
@@ -495,6 +492,42 @@ app.post("/api/current-user/password", async (c) => {
     const payload = await c.req.json().catch(() => null);
     await changeSelfPassword(c.env, user.id, normalizePasswordChangeInput(payload));
     c.header("Set-Cookie", makeExpiredSessionCookie(new URL(c.req.url).protocol === "https:"));
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/notifications/push/public-key", async (c) => {
+  try {
+    await resolveCurrentUser(c);
+    c.header("Cache-Control", "no-store");
+    const key = publicVapidKey(c.env);
+    return c.json({ success: true, data: { publicKey: key, configured: Boolean(key && c.env.VAPID_PRIVATE_KEY_JWK) } });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.post("/api/notifications/push/subscriptions", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null) as PushSubscriptionInput | null;
+    if (!payload || typeof payload !== "object") throw new Error("Push subscription payload is required.");
+    await registerPushSubscription(c.env, user, payload, c.req.header("user-agent") ?? null);
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.delete("/api/notifications/push/subscriptions", async (c) => {
+  try {
+    const user = await resolveCurrentUser(c);
+    const payload = await c.req.json().catch(() => null) as { endpoint?: unknown } | null;
+    const endpoint = typeof payload?.endpoint === "string" ? payload.endpoint : "";
+    if (!endpoint.trim()) throw new Error("Push subscription endpoint is required.");
+    await unregisterPushSubscription(c.env, user, endpoint);
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));

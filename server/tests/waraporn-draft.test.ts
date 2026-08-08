@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import worker from "../src/index.ts";
@@ -89,6 +90,16 @@ type BookingRow = {
   unit_id: number | null;
   room_type_id: number;
 };
+type NotificationEventRow = {
+  notification_event_id: number;
+  dedupe_key: string;
+  notification_type: string;
+  entity_type: string;
+  entity_id: string;
+  audience: string;
+  payload_json: string;
+  created_at: string;
+};
 
 const OWNER_ROW = {
   session_id: "session-1",
@@ -122,6 +133,7 @@ class FakeStmt {
 class FakeWarapornDB {
   messages: MessageRow[] = [];
   drafts: DraftRow[] = [];
+  notificationEvents: NotificationEventRow[] = [];
   conversations: ConversationRow[] = [{ message_conversation_id: 1, state: "OPEN", updated_at: NOW }];
   bookings: BookingRow[] = [{
     booking_id: 1,
@@ -138,6 +150,7 @@ class FakeWarapornDB {
     room_type_id: 1,
   }];
   nextDraftId = 1;
+  nextNotificationEventId = 1;
   authenticated = true;
   owner = true;
 
@@ -211,6 +224,11 @@ class FakeWarapornDB {
         room_type_name: booking ? "Garden Bungalow" : null,
         room_name: booking ? "Bungalow" : null,
       } as T;
+    }
+    if (sql.includes("SELECT notification_event_id") && sql.includes("FROM notification_events")) {
+      const dedupeKey = String(params[0]);
+      const event = this.notificationEvents.find((item) => item.dedupe_key === dedupeKey);
+      return (event ? { notification_event_id: event.notification_event_id, dedupe_key: event.dedupe_key } : null) as T | null;
     }
     return null;
   }
@@ -299,6 +317,9 @@ class FakeWarapornDB {
         }) as T[],
       };
     }
+    if (sql.includes("FROM push_subscriptions")) {
+      return { results: [] as T[] };
+    }
     return { results: [] as T[] };
   }
 
@@ -307,7 +328,7 @@ class FakeWarapornDB {
       const messageId = Number(params[1]);
       const message = this.messages.find((item) => item.message_id === messageId);
       const hasDraft = this.drafts.some((draft) => draft.message_id === messageId);
-      if (!message || message.state !== "ASSOCIATED" || message.association_state !== "LINKED" || hasDraft) {
+      if (!message || !["ASSOCIATED", "FAILED_MANUAL_RETRY"].includes(message.state) || message.association_state !== "LINKED" || hasDraft) {
         return { meta: { changes: 0, last_row_id: 0 } };
       }
       message.state = "GENERATING";
@@ -352,6 +373,23 @@ class FakeWarapornDB {
         updated_at: String(params[failed ? 25 : 23]),
       });
       return { meta: { changes: 1, last_row_id: this.drafts.length } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO notification_events")) {
+      const dedupeKey = String(params[0]);
+      if (this.notificationEvents.some((event) => event.dedupe_key === dedupeKey)) {
+        return { meta: { changes: 0, last_row_id: 0 } };
+      }
+      this.notificationEvents.push({
+        notification_event_id: this.nextNotificationEventId++,
+        dedupe_key: dedupeKey,
+        notification_type: String(params[1]),
+        entity_type: String(params[2]),
+        entity_id: String(params[3]),
+        audience: String(params[4]),
+        payload_json: String(params[5]),
+        created_at: String(params[6]),
+      });
+      return { meta: { changes: 1, last_row_id: this.notificationEvents.length } };
     }
     if (sql.includes("UPDATE messages") && sql.includes("state = 'FAILED_MANUAL_RETRY'")) {
       const message = this.messages.find((item) => item.message_id === Number(params[1]));
@@ -506,6 +544,14 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(db.drafts[0]!.estimated_cost_usd, 0.0081);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
   assert.equal(db.conversations[0]!.state, "DRAFT_READY");
+  assert.equal(db.notificationEvents.length, 1);
+  assert.equal(db.notificationEvents[0]!.notification_type, "guest_message.draft_ready");
+  assert.equal(db.notificationEvents[0]!.dedupe_key, "guest-message:draft-ready:1:1");
+  assert.equal(db.notificationEvents[0]!.audience, "owners");
+  assert.match(db.notificationEvents[0]!.payload_json, /Waraporn reply ready for review/);
+  assert.match(db.notificationEvents[0]!.payload_json, /"\/messages"/);
+  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+  assert.equal(db.notificationEvents.length, 1);
   assert.equal(bodies.length, 1);
 });
 
@@ -748,6 +794,20 @@ test("pending Waraporn generation ignores terminal failed messages without calli
   assert.equal(calls, 0);
 });
 
+test("manual Waraporn generation can recover a linked failed message with no draft", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+  const { fetcher, bodies } = openAiFetcher();
+
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.equal(draft.state, "READY");
+  assert.equal(draft.body, READY_DRAFT_TEXT);
+  assert.equal(db.messages[0]!.state, "DRAFT_READY");
+  assert.equal(db.drafts.length, 1);
+  assert.equal(bodies.length, 1);
+});
+
 test("OpenAI failure persists FAILED_MANUAL_RETRY and is not retried by later cron cycles", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
@@ -774,10 +834,20 @@ test("OpenAI failure persists FAILED_MANUAL_RETRY and is not retried by later cr
   assert.equal(calls, 1);
 });
 
-test("malformed AI response becomes terminal without retrying", async () => {
+test("paid malformed AI response stores a FAILED draft row and becomes terminal without retrying", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
-  const fetcher: typeof fetch = async () => jsonResponse(200, { output: [] });
+  const fetcher: typeof fetch = async () => jsonResponse(200, {
+    id: "resp-paid-invalid",
+    output: [],
+    usage: {
+      input_tokens: 700,
+      input_tokens_details: { cached_tokens: 100 },
+      output_tokens: 25,
+      output_tokens_details: { reasoning_tokens: 5 },
+      total_tokens: 725,
+    },
+  });
   const countingFetcher: typeof fetch = async (input, init) => {
     calls += 1;
     return fetcher(input, init);
@@ -792,6 +862,33 @@ test("malformed AI response becomes terminal without retrying", async () => {
   assert.equal(db.messages[0]!.state, "FAILED_MANUAL_RETRY");
   assert.equal(db.drafts.length, 1);
   assert.equal(db.drafts[0]!.status, "FAILED");
+  assert.equal(db.drafts[0]!.openai_response_id, "resp-paid-invalid");
+  assert.equal(db.drafts[0]!.openai_request_count, 1);
+  assert.equal(db.drafts[0]!.openai_input_tokens, 700);
+  assert.equal(db.drafts[0]!.openai_cached_input_tokens, 100);
+  assert.equal(db.drafts[0]!.openai_output_tokens, 25);
+  assert.equal(db.drafts[0]!.openai_reasoning_tokens, 5);
+  assert.equal(db.drafts[0]!.openai_total_tokens, 725);
+  assert.equal(db.drafts[0]!.failure_code, "openai_invalid_response");
+});
+
+test("failed draft persistence SQL keeps message draft values aligned with schema", () => {
+  const source = readFileSync(new URL("../src/services/waraporn-draft.service.ts", import.meta.url), "utf8");
+  const failedInsert = /INSERT INTO message_drafts \(([\s\S]*?)\)\s*VALUES\s*\(([\s\S]*?'FAILED'[\s\S]*?)\)\s*ON CONFLICT\(message_id\) DO NOTHING/.exec(source);
+  assert.ok(failedInsert);
+  const columns = failedInsert[1]!
+    .split("\n")
+    .map((line) => line.trim().replace(/,$/, ""))
+    .filter(Boolean);
+  const values = failedInsert[2]!
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const placeholders = failedInsert[2]!.match(/\?/g)?.length ?? 0;
+
+  assert.equal(columns.length, 28);
+  assert.equal(values.length, columns.length);
+  assert.equal(placeholders, 26);
 });
 
 test("GET /api/messages reports draft status without exposing draft body", async () => {

@@ -39,6 +39,22 @@ test("profile panel exposes app update and logout while keeping owner actions se
   assert.match(profilePanel, /tab === "owner" && owner/);
 });
 
+test("profile panel exposes user-action notification opt-in with Somkiat-approved labels", () => {
+  const english = readFileSync(new URL("../../src/i18n/en.ts", import.meta.url), "utf8");
+  const thai = readFileSync(new URL("../../src/i18n/th.ts", import.meta.url), "utf8");
+
+  assert.match(profilePanel, /enablePushNotifications/);
+  assert.match(profilePanel, /checkPushNotificationStatus/);
+  assert.match(profilePanel, /profile-panel__notifications/);
+  assert.match(profilePanel, /translate\("enableNotifications"\)/);
+  assert.match(pwaService, /Notification\.requestPermission\(\)/);
+  assert.match(pwaService, /pushManager\.subscribe/);
+  assert.match(pwaService, /\/api\/notifications\/push\/subscriptions/);
+  assert.match(english, /enableNotifications: "Enable notifications"/);
+  assert.match(thai, /enableNotifications: "เปิดแจ้งเตือน"/);
+  assert.match(thai, /notificationsUnsupportedDevice: "เครื่องนี้ใช้แจ้งเตือนไม่ได้"/);
+});
+
 test("Vanara Central is installable as a PWA without caching operational API data", () => {
   const parsed = JSON.parse(manifest) as { name?: string; start_url?: string; scope?: string; display?: string; icons?: Array<{ src: string; sizes: string; purpose: string }> };
 
@@ -54,6 +70,8 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.ok(parsed.icons?.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
   assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
   assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
+  assert.match(serviceWorker, /self\.addEventListener\("push"/);
+  assert.match(serviceWorker, /self\.addEventListener\("notificationclick"/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
 });
 

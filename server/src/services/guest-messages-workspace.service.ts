@@ -48,6 +48,8 @@ interface TimelineMessageRow {
   received_at: string;
   guest_message: string;
   state: string;
+  association_state: string;
+  draft_count: number | null;
 }
 
 interface TimelineDraftRow {
@@ -93,6 +95,7 @@ export interface GuestMessageTimelineItem {
   status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT";
   draftId?: string;
   canReview?: boolean;
+  canGenerateDraft?: boolean;
 }
 
 export interface GuestMessageBookingContext {
@@ -377,11 +380,16 @@ async function loadConversationHeader(
   `).bind(conversationId).first<ConversationHeaderRow>();
 }
 
-function toMessageTimelineItem(row: TimelineMessageRow): GuestMessageTimelineItem {
+function toMessageTimelineItem(row: TimelineMessageRow, canReviewDrafts: boolean): GuestMessageTimelineItem {
   const isOutbound = row.direction === "OUTBOUND";
   const sender = isOutbound
     ? row.author === "WARAPORN" ? "Waraporn" : "Staff"
     : "Guest";
+  const canGenerateDraft = !isOutbound
+    && canReviewDrafts
+    && row.state === "FAILED_MANUAL_RETRY"
+    && row.association_state === "LINKED"
+    && Number(row.draft_count ?? 0) === 0;
   return {
     id: `message:${row.message_id}`,
     kind: isOutbound ? "sent" : "guest",
@@ -389,6 +397,7 @@ function toMessageTimelineItem(row: TimelineMessageRow): GuestMessageTimelineIte
     timestamp: row.received_at,
     message: row.guest_message,
     status: isOutbound ? "SENT" : undefined,
+    canGenerateDraft,
   };
 }
 
@@ -463,14 +472,26 @@ export async function getGuestMessageConversation(
 
   const [messages, drafts] = await Promise.all([
     env.DB.prepare(`
-      SELECT message_id, direction, author, received_at, guest_message, state
-      FROM messages
-      WHERE message_conversation_id = ?
+      SELECT
+        m.message_id,
+        m.direction,
+        m.author,
+        m.received_at,
+        m.guest_message,
+        m.state,
+        m.association_state,
+        (
+          SELECT COUNT(*)
+          FROM message_drafts d
+          WHERE d.message_id = m.message_id
+        ) AS draft_count
+      FROM messages m
+      WHERE m.message_conversation_id = ?
         AND (
-          (direction = 'INBOUND' AND author = 'GUEST')
-          OR (direction = 'OUTBOUND' AND state = 'SENT')
+          (m.direction = 'INBOUND' AND m.author = 'GUEST')
+          OR (m.direction = 'OUTBOUND' AND m.state = 'SENT')
         )
-      ORDER BY received_at ASC, message_id ASC
+      ORDER BY m.received_at ASC, m.message_id ASC
     `).bind(conversationId).all<TimelineMessageRow>(),
     env.DB.prepare(`
       SELECT
@@ -501,7 +522,7 @@ export async function getGuestMessageConversation(
   ]);
 
   const timeline = [
-    ...(messages.results ?? []).map(toMessageTimelineItem),
+    ...(messages.results ?? []).map((message) => toMessageTimelineItem(message, canReviewDrafts)),
     ...(drafts.results ?? []).flatMap((draft) => toDraftTimelineItems(draft, canReviewDrafts)),
   ].sort(sortTimeline);
 

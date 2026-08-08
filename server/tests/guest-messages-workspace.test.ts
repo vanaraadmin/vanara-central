@@ -29,6 +29,7 @@ type MessageRow = {
   received_at: string;
   guest_message: string;
   state: string;
+  association_state: "LINKED" | "UNLINKED";
 };
 
 type DraftRow = {
@@ -250,7 +251,11 @@ class FakeGuestMessagesDB {
         results: this.messages
           .filter((message) => message.message_conversation_id === conversationId)
           .filter((message) => (message.direction === "INBOUND" && message.author === "GUEST") || (message.direction === "OUTBOUND" && message.state === "SENT"))
-          .sort((left, right) => left.received_at.localeCompare(right.received_at) || left.message_id - right.message_id) as T[],
+          .sort((left, right) => left.received_at.localeCompare(right.received_at) || left.message_id - right.message_id)
+          .map((message) => ({
+            ...message,
+            draft_count: this.drafts.filter((draft) => draft.message_id === message.message_id).length,
+          })) as T[],
       };
     }
     if (sql.includes("FROM message_drafts")) {
@@ -312,6 +317,7 @@ function messageRow(
     received_at: receivedAt,
     guest_message: body,
     state,
+    association_state: "LINKED",
   };
 }
 
@@ -396,6 +402,45 @@ test("guest message conversation detail keeps failed delivery drafts visible for
   assert.equal(detail.timeline[1]!.kind, "draft");
   assert.equal(detail.timeline[1]!.status, "DELIVERY_FAILED");
   assert.equal(detail.timeline[1]!.canReview, true);
+});
+
+test("guest message conversation detail exposes owner retry for linked failed messages without drafts", async () => {
+  const db = new FakeGuestMessagesDB();
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+  db.drafts = [];
+
+  const detail = await getGuestMessageConversation({ DB: db } as never, 1, {
+    ...USER_ROW,
+    id: USER_ROW.user_id,
+    displayName: USER_ROW.full_name,
+    fullName: USER_ROW.full_name,
+    role: "Owner",
+    view: "owner",
+    views: ["owner"],
+    permissions: [{ module: "messages", canAccess: true, canEdit: true }],
+    actionPermissions: [],
+  } as never);
+
+  assert.ok(detail);
+  assert.equal(detail.timeline[0]!.kind, "guest");
+  assert.equal(detail.timeline[0]!.canGenerateDraft, true);
+});
+
+test("guest message conversation detail does not expose retry for staff or messages with drafts", async () => {
+  const staffDetail = await getGuestMessageConversation({ DB: new FakeGuestMessagesDB() } as never, 1, {
+    ...USER_ROW,
+    id: USER_ROW.user_id,
+    displayName: USER_ROW.full_name,
+    fullName: USER_ROW.full_name,
+    role: "Operations",
+    view: "staff",
+    views: ["staff"],
+    permissions: [],
+    actionPermissions: [],
+  } as never);
+
+  assert.ok(staffDetail);
+  assert.equal(staffDetail.timeline[0]!.canGenerateDraft, false);
 });
 
 test("guest message booking context is read-only and complete for linked bookings", async () => {

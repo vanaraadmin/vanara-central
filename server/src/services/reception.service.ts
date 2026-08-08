@@ -6,8 +6,9 @@ import { getBangkokDate } from "./today.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 import { loadRoomHousekeepingStateForUnit } from "./room-housekeeping-state.service.js";
 import { ensureTurnoverReleasedForCheckout } from "./housekeeping-task-domain.service.js";
+import { notifyReceptionCompleted, type NotificationBindings } from "./notifications.service.js";
 
-export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings {
+export interface ReceptionBindings extends HousekeepingBindings, MaintenanceBindings, NotificationBindings {
   DB: D1Database;
 }
 
@@ -566,6 +567,9 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
     } else {
       await upsertReceptionAlert(env, bookingId, booking.unit_id, "deposit_pending", user, now);
     }
+    await notifyReceptionCompleted(env, { type, bookingId, roomName: booking.unit_name ?? booking.room_type_name }).catch((error: unknown) => {
+      console.warn(JSON.stringify({ message: "Reception push notification failed", error: error instanceof Error ? error.message : "unknown", bookingId, type }));
+    });
   } else {
     if (local.guest_left === 1 || local.room_released === 1) completionError("Check-out has already been completed.");
     const checkOutInput = input as CompleteReceptionCheckOutInput;
@@ -589,6 +593,9 @@ export async function completeReceptionEvent(env: ReceptionBindings, bookingId: 
     if (local.deposit_collected !== 1) {
       await resolveReceptionAlert(env, bookingId, "deposit_pending", user, now);
     }
+    await notifyReceptionCompleted(env, { type, bookingId, roomName: booking.unit_name ?? booking.room_type_name }).catch((error: unknown) => {
+      console.warn(JSON.stringify({ message: "Reception push notification failed", error: error instanceof Error ? error.message : "unknown", bookingId, type }));
+    });
   }
 
   return mapStay(env, booking);

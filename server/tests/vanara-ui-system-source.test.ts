@@ -176,7 +176,12 @@ test("Vanara UI tap sound is removed from the active application path", () => {
   assert.equal(existsSync(new URL("../../src/hooks/useUiTapSound.ts", import.meta.url)), false);
   assert.equal(existsSync(new URL("../../src/services/uiSound.service.ts", import.meta.url)), false);
   assert.equal(existsSync(new URL("../../public/audio/", import.meta.url)), false);
-  assert.equal(existsSync(new URL("../../src/assets/sounds/", import.meta.url)), false);
+  const soundRoot = new URL("../../src/assets/sounds/", import.meta.url);
+  const approvedNotificationSounds = new Set(["event_alert_notification.mp3", "notification_chat_message.mp3"]);
+  const soundFiles = existsSync(soundRoot)
+    ? readdirSync(soundRoot).filter((name) => /\.(mp3|wav|ogg)$/i.test(name))
+    : [];
+  assert.deepEqual([...soundFiles].sort(), [...approvedNotificationSounds].sort());
 
   assert.doesNotMatch(appSources, /useUiTapSound/);
   assert.doesNotMatch(appSources, /playUiTap/);
@@ -184,7 +189,6 @@ test("Vanara UI tap sound is removed from the active application path", () => {
   assert.doesNotMatch(appSources, /\bAudio\(/);
   assert.doesNotMatch(appSources, /preload\s*=/);
   assert.doesNotMatch(appSources, /\/audio\//);
-  assert.doesNotMatch(appSources, /assets\/sounds/);
-  assert.doesNotMatch(appSources, /\.(mp3|wav|ogg)/);
+  assert.doesNotMatch(appSources, /navigation-sound|uiSound|tapSound/i);
   assert.doesNotMatch(appRoot, /useUiTapSound\(\)/);
 });

@@ -183,6 +183,7 @@ interface OperationalContext {
 const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
 const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
 const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
+const ACTIVE_NOW_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "WATER_REFILL", "ON_DEMAND_CLEANING"]);
 const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING"]);
 const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -379,6 +380,11 @@ function taskBelongsToRoomReadyOverride(task: HousekeepingTask): boolean {
   return task.source === "manual" && task.onDemandSource === ROOM_READY_OVERRIDE_SOURCE;
 }
 
+function taskCountsAsActiveNow(task: HousekeepingTask): boolean {
+  if (taskBelongsToRoomReadyOverride(task)) return false;
+  return ACTIVE_NOW_TASK_TYPES.has(task.taskType) && IN_PROGRESS_STATUSES.has(task.status);
+}
+
 function cardFromContext(context: OperationalContext, task: HousekeepingTask, maintenanceBlocked: boolean, user: CurrentUser): HousekeepingV2TaskCard {
   const taskType = task.taskType;
   const releaseState = releaseStateFor(context, taskType);
@@ -431,7 +437,7 @@ function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2Ta
   const cleaningCards = cards.filter((card) => CLEANING_TASK_TYPES.has(card.taskType));
   return {
     toClean: cleaningCards.filter((card) => !IN_PROGRESS_STATUSES.has(card.taskStatus) && !card.isBlocked).length,
-    cleaningInProgress: cleaningCards.filter((card) => IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
+    cleaningInProgress: tasks.filter((task) => taskCountsAsActiveNow(task)).length,
     completedCleaningToday: tasks.filter((task) => COMPLETED_CLEANING_TASK_TYPES.has(task.taskType) && taskCompletedOn(task, date)).length,
     waterDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,
   };

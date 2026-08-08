@@ -1227,9 +1227,10 @@ test("room workspace on-demand cleaning stays out of Housekeeping queues", async
   assert.equal(created.status, 200, await created.text());
 
   const afterCreate = await request("/api/housekeeping/v2/tasks?date=2026-08-01", db);
-  const createdBody = await afterCreate.json() as { success: boolean; data: { summary: { toClean: number }; tasks: Array<{ taskId: number; taskType: string }>; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
+  const createdBody = await afterCreate.json() as { success: boolean; data: { summary: { toClean: number; cleaningInProgress: number }; tasks: Array<{ taskId: number; taskType: string }>; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string }> }> } };
   assert.equal(afterCreate.status, 200, JSON.stringify(createdBody));
   assert.equal(createdBody.data.summary.toClean, 0);
+  assert.equal(createdBody.data.summary.cleaningInProgress, 1);
   const normal = createdBody.data.sections.find((section) => section.id === "normal-cleaning");
   assert.equal(normal?.cards.some((card) => card.taskType === "ON_DEMAND_CLEANING"), false);
   assert.equal(createdBody.data.tasks.some((card) => card.taskType === "ON_DEMAND_CLEANING"), false);

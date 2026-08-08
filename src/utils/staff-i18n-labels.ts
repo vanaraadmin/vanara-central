@@ -2,6 +2,7 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 const roomLabelKeys: Record<string, string> = {
   ACTIVE: "maintenanceActive",
+  "ACTIVE NOW": "activeNow",
   ALL: "all",
   "ARRIVAL DUE": "arrivalDue",
   ARRIVAL: "checkIn",

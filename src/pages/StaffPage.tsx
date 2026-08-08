@@ -79,6 +79,7 @@ const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
 };
 
 const metricLabelKeys: Record<string, string> = {
+  "Active Now": "activeNow",
   "Cleaning In Progress": "cleaningInProgress",
   "Maintenance Blocked": "maintenanceBlocked",
   "Normal To Clean": "toClean",

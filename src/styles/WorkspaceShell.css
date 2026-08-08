@@ -390,6 +390,28 @@
   font-weight: 800;
 }
 
+.profile-panel__section-heading {
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profile-panel__section-heading span {
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(244, 237, 223, 0.15);
+  border-radius: 999px;
+  color: rgba(244, 237, 223, 0.76);
+  background: rgba(244, 237, 223, 0.06);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
 .profile-panel__facts {
   display: grid;
   gap: 10px;
@@ -505,6 +527,19 @@ input.profile-panel__file-input {
   margin-top: 12px;
   color: rgba(244, 237, 223, 0.86);
   background: rgba(244, 237, 223, 0.06);
+}
+
+.profile-panel__inline-actions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.profile-panel__inline-actions .profile-panel__primary,
+.profile-panel__inline-actions .profile-panel__secondary {
+  margin-top: 0;
 }
 
 .profile-panel__logout {

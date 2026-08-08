@@ -99,6 +99,10 @@ test("summary exposes only the approved actionable Housekeeping counters and fix
   assert.doesNotMatch(service, /tasksClaimed:/);
   assert.doesNotMatch(service, /procurementAttention,/);
   assert.match(service, /taskCompletedOn\(task, date\)/);
+  assert.match(service, /ACTIVE_NOW_TASK_TYPES/);
+  assert.match(service, /taskCountsAsActiveNow/);
+  assert.match(service, /"ON_DEMAND_CLEANING"/);
+  assert.match(service, /cleaningInProgress: tasks\.filter\(\(task\) => taskCountsAsActiveNow\(task\)\)\.length/);
   assert.match(service, /completed_at IS NOT NULL AND substr\(completed_at, 1, 10\) = \?/);
   assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
   assert.doesNotMatch(service, /"ready", "procurement"/);

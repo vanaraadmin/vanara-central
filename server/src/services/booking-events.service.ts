@@ -1,3 +1,5 @@
+import { notifyBookingEvent, type NotificationBindings } from "./notifications.service.js";
+
 export interface BookingEventsBindings {
   DB: D1Database;
 }
@@ -386,7 +388,7 @@ async function hasActiveNewEvent(env: BookingEventsBindings, bookingId: number, 
 }
 
 export async function recordBookingEvent(
-  env: BookingEventsBindings,
+  env: BookingEventsBindings & NotificationBindings,
   previous: BookingEventSnapshot | null,
   current: BookingEventSnapshot,
   occurredAt: string,
@@ -394,8 +396,9 @@ export async function recordBookingEvent(
   const eventType = bookingEventType(previous, current);
   if (!eventType || !current.bookingId) return;
   if (eventType === "updated" && await hasActiveNewEvent(env, current.bookingId, occurredAt)) return;
+  const signature = bookingEventSignature(eventType, current, previous);
 
-  await env.DB.prepare(`
+  const result = await env.DB.prepare(`
     INSERT OR IGNORE INTO booking_events (
       event_type,
       booking_id,
@@ -413,10 +416,22 @@ export async function recordBookingEvent(
     current.beds24BookingId,
     current.accommodation,
     current.source,
-    bookingEventSignature(eventType, current, previous),
+    signature,
     occurredAt,
     occurredAt,
   ).run();
+  if ((result.meta.changes ?? 0) !== 1) return;
+
+  await notifyBookingEvent(env, {
+    eventType,
+    bookingId: current.bookingId,
+    dedupeKey: `${eventType}:${current.bookingId}:${signature}`,
+    accommodation: current.accommodation,
+    source: current.source,
+    arrivalDate: current.arrivalDate,
+  }).catch((error: unknown) => {
+    console.warn(JSON.stringify({ message: "Booking push notification failed", error: error instanceof Error ? error.message : "unknown", bookingId: current.bookingId, eventType }));
+  });
 }
 
 function bookingPulseRowFor(rows: BookingEventRow[]): BookingEventRow {

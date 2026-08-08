@@ -88,23 +88,23 @@ function staffHousekeepingPresentation(overview: HousekeepingV2Overview): { metr
       metrics: [
         { label: "Priority Turnover", value: priorityTurnover, tone: "urgent" },
         { label: "Normal To Clean", value: normalToClean, tone: normalToClean > 0 ? "attention" : "good" },
-        { label: "Cleaning In Progress", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
+        { label: "Active Now", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
         { label: "Water Due", value: overview.summary.waterDue, tone: overview.summary.waterDue > 0 ? "attention" : "good" },
       ],
       summaryLine1: `${priorityTurnover} Priority Turnover / ${normalToClean} Normal To Clean`,
-      summaryLine2: `${overview.summary.cleaningInProgress} Cleaning In Progress / ${overview.summary.waterDue} Water Due`,
+      summaryLine2: `${overview.summary.cleaningInProgress} Active Now / ${overview.summary.waterDue} Water Due`,
     };
   }
 
   const metrics: StaffOverviewMetric[] = [
     { label: "To Clean", value: overview.summary.toClean, tone: overview.summary.toClean > 0 ? "attention" : "good" },
-    { label: "Cleaning In Progress", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
+    { label: "Active Now", value: overview.summary.cleaningInProgress, tone: overview.summary.cleaningInProgress > 0 ? "attention" : "neutral" },
     { label: "Completed Cleaning Today", value: overview.summary.completedCleaningToday, tone: "good" },
     { label: "Water Due", value: overview.summary.waterDue, tone: overview.summary.waterDue > 0 ? "attention" : "good" },
   ];
   return {
     metrics,
-    summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Cleaning In Progress`,
+    summaryLine1: `${metrics[0].value} To Clean / ${metrics[1].value} Active Now`,
     summaryLine2: `${metrics[2].value} Completed Cleaning Today / ${metrics[3].value} Water Due`,
   };
 }

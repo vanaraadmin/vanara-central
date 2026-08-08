@@ -126,6 +126,7 @@ export interface GuestMessageTimelineItem {
   status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT";
   draftId?: string;
   canReview?: boolean;
+  canGenerateDraft?: boolean;
 }
 
 export interface GuestMessageBookingContext {

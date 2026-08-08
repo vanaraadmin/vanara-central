@@ -120,6 +120,7 @@ test("staff label helper preserves operational meaning for compact statuses", ()
     'VACANT: "vacant"',
     'OCCUPIED: "occupied"',
     'ACTIVE: "maintenanceActive"',
+    '"ACTIVE NOW": "activeNow"',
     'CLEAR: "maintenanceClear"',
     '"COMPLETED CLEANING TODAY": "completedCleaningToday"',
     '"CLEANING IN PROGRESS": "cleaningInProgress"',

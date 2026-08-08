@@ -10,7 +10,7 @@ import {
   logout,
   updateCurrentUserProfile,
 } from "../services/auth.service";
-import { applyVanaraUpdate, checkVanaraUpdate, type PwaUpdateStatus } from "../services/pwa.service";
+import { applyVanaraUpdate, checkPushNotificationStatus, checkVanaraUpdate, enablePushNotifications, type PushNotificationStatus, type PwaUpdateStatus } from "../services/pwa.service";
 import { useLanguage } from "../providers/language.context";
 import { DownloadIcon, SettingsGearIcon } from "./OperationsIcons";
 import type { CurrentUserView, ManagedUser, ModuleKey, ModulePermission, SaveUserPayload } from "../types/auth";
@@ -104,7 +104,9 @@ export default function ProfilePanel() {
   const [showUserForm, setShowUserForm] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
+  const [pushStatus, setPushStatus] = useState<PushNotificationStatus>("idle");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [checkingPush, setCheckingPush] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const userPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -266,6 +268,44 @@ export default function ProfilePanel() {
     }
   }
 
+  async function onCheckPushStatus() {
+    setCheckingPush(true);
+    try {
+      setPushStatus(await checkPushNotificationStatus());
+    } catch {
+      setPushStatus("error");
+    } finally {
+      setCheckingPush(false);
+    }
+  }
+
+  async function onEnablePush() {
+    setCheckingPush(true);
+    try {
+      setPushStatus(await enablePushNotifications());
+    } catch {
+      setPushStatus("error");
+    } finally {
+      setCheckingPush(false);
+    }
+  }
+
+  function pushStatusLabel() {
+    if (pushStatus === "enabled") return translate("notificationsEnabledCompact");
+    if (pushStatus === "blocked") return translate("notificationsBlockedCompact");
+    if (pushStatus === "unsupported" || pushStatus === "unconfigured") return translate("notificationsUnsupportedCompact");
+    return translate("checkNotificationStatusCompact");
+  }
+
+  function pushStatusText() {
+    if (pushStatus === "enabled") return translate("notificationsEnabledDetail");
+    if (pushStatus === "blocked") return translate("notificationPermissionDenied");
+    if (pushStatus === "unsupported") return translate("notificationsUnsupportedDevice");
+    if (pushStatus === "unconfigured") return translate("notificationsCouldNotBeEnabled");
+    if (pushStatus === "error") return translate("notificationsCouldNotBeEnabled");
+    return translate("enableNotificationsPrompt");
+  }
+
   const owner = currentUser?.isOwner === true;
   const tabs: Array<{ id: PanelTab; label: string; ownerOnly?: boolean }> = [
     { id: "profile", label: translate("profile") },
@@ -338,7 +378,14 @@ export default function ProfilePanel() {
                     {profileError ? <p className="profile-panel__error">{profileError}</p> : null}
                     <button className="profile-panel__primary" disabled={saveProfile.isPending || !profileDraft.displayName.trim()} onClick={() => saveProfile.mutate()} type="button">{saveProfile.isPending ? translate("saving") : translate("save")}</button>
                   </section>
-                  <section className="profile-panel__section" aria-label={translate("notifications")}><h3>{translate("notifications")}</h3><p className="profile-panel__empty">{translate("notificationsPlaceholder")}</p></section>
+                  <section className="profile-panel__section profile-panel__notifications" aria-label={translate("notifications")}>
+                    <header className="profile-panel__section-heading"><h3>{translate("notifications")}</h3><span>{pushStatusLabel()}</span></header>
+                    <p className="profile-panel__empty">{pushStatusText()}</p>
+                    <div className="profile-panel__inline-actions">
+                      <button className="profile-panel__primary" disabled={checkingPush || pushStatus === "enabled" || pushStatus === "unsupported" || pushStatus === "blocked"} onClick={() => void onEnablePush()} type="button">{checkingPush ? translate("loading") : translate("enableNotifications")}</button>
+                      <button className="profile-panel__secondary" disabled={checkingPush} onClick={() => void onCheckPushStatus()} type="button">{translate("checkNotificationStatus")}</button>
+                    </div>
+                  </section>
                   <button className="profile-panel__logout" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()} type="button">{translate("logout")}</button>
                 </>
               ) : null}

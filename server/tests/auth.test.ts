@@ -30,6 +30,16 @@ type SessionRecord = {
   expires_at: string;
 };
 
+type LoginRateLimitRecord = {
+  rate_limit_key: string;
+  username: string;
+  ip_hash: string;
+  failed_count: number;
+  window_started_at: string;
+  last_failed_at: string;
+  blocked_until: string | null;
+};
+
 class FakeStmt {
   private params: unknown[] = [];
   constructor(private db: FakeAuthDB, private sql: string) {}
@@ -47,6 +57,7 @@ class FakeAuthDB {
   views = new Map<string, Set<string>>();
   permissions = new Map<string, Array<{ module_key: ModuleKey; can_access: number; can_edit: number }>>();
   sessions = new Map<string, SessionRecord>();
+  loginRateLimits = new Map<string, LoginRateLimitRecord>();
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
   async batch(stmts: Array<{ run: () => Promise<unknown> }>) {
@@ -84,6 +95,10 @@ class FakeAuthDB {
     }
     if (sql.includes("SELECT * FROM users WHERE user_id")) {
       return (this.users.get(String(params[0])) ?? null) as T | null;
+    }
+    if (sql.includes("FROM login_rate_limits")) {
+      const row = this.loginRateLimits.get(String(params[0])) ?? null;
+      return row as T | null;
     }
     return null;
   }
@@ -150,6 +165,22 @@ class FakeAuthDB {
     if (sql.includes("DELETE FROM user_sessions WHERE user_id")) {
       const userId = String(params[0]);
       for (const [id, session] of this.sessions) if (session.user_id === userId) this.sessions.delete(id);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("DELETE FROM login_rate_limits")) {
+      this.loginRateLimits.delete(String(params[0]));
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("INSERT INTO login_rate_limits")) {
+      this.loginRateLimits.set(String(params[0]), {
+        rate_limit_key: String(params[0]),
+        username: String(params[1]),
+        ip_hash: String(params[2]),
+        failed_count: Number(params[3]),
+        window_started_at: String(params[4]),
+        last_failed_at: String(params[5]),
+        blocked_until: params[6] as string | null,
+      });
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("DELETE FROM user_views")) {
@@ -228,6 +259,15 @@ function env(db = new FakeAuthDB()) {
     DB: db as unknown as D1Database,
     BEDS24_BASE_URL: "https://api.beds24.com/v2",
     BEDS24_LONG_LIFE_TOKEN: "test",
+    VANARA_ENABLE_OWNER_BOOTSTRAP: "true",
+  };
+}
+
+function productionLikeEnv(db = new FakeAuthDB()) {
+  return {
+    DB: db as unknown as D1Database,
+    BEDS24_BASE_URL: "https://api.beds24.com/v2",
+    BEDS24_LONG_LIFE_TOKEN: "test",
   };
 }
 
@@ -248,6 +288,15 @@ async function bootstrap(data = env()) {
   assert.equal(response.status, 201);
   return data;
 }
+
+test("owner bootstrap is disabled unless explicitly enabled", async () => {
+  const response = await request("/api/auth/bootstrap-owner", {
+    method: "POST",
+    body: JSON.stringify({ fullName: "Owner", username: "owner", password: "owner-password", preferredLanguage: "en" }),
+    headers: { "content-type": "application/json" },
+  }, productionLikeEnv());
+  assert.equal(response.status, 404);
+});
 
 async function loginOwner(data: ReturnType<typeof env>) {
   const response = await request("/api/auth/login", {
@@ -293,6 +342,32 @@ test("auth smoke: bootstrap, login, current-user, logout and reuse protection", 
 
   const afterLogout = await request("/api/current-user", { headers: { cookie } }, data);
   assert.equal(afterLogout.status, 401);
+});
+
+test("login throttling blocks repeated invalid passwords without affecting successful sessions", async () => {
+  const data = await bootstrap();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const badLogin = await request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "owner", password: "wrong" }),
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.15" },
+    }, data);
+    assert.equal(badLogin.status, 401);
+  }
+
+  const blocked = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "owner", password: "owner-password" }),
+    headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.15" },
+  }, data);
+  assert.equal(blocked.status, 429);
+
+  const differentDevice = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "owner", password: "owner-password" }),
+    headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.16" },
+  }, data);
+  assert.equal(differentDevice.status, 200);
 });
 
 test("expired sessions are rejected and removed", async () => {

@@ -1,10 +1,11 @@
 import { beds24Get, type Beds24Bindings, type Beds24RequestOptions } from "./beds24-client.service.js";
 import { sanitizeLogMessage } from "./log-safety.service.js";
+import { notifyGuestMessageInbound, type NotificationBindings } from "./notifications.service.js";
 import { acquireSyncLock, recordSkippedSyncRun, releaseSyncLock, type SyncLockBindings } from "./sync-lock.service.js";
 import { SyncMetrics } from "./sync-metrics.service.js";
 import type { Channel, DraftState, ImportedMessage, MessageAssociationState, Provider } from "../types/messages.js";
 
-export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings {
+export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings, NotificationBindings {
   DB: D1Database;
   fetcher?: Fetcher;
 }
@@ -387,7 +388,7 @@ async function insertMessage(
   message: NormalizedGuestMessage,
   booking: BookingAssociationRow | null,
   now: string,
-): Promise<"inserted" | "duplicate"> {
+): Promise<{ status: "inserted"; messageId: number } | { status: "duplicate" }> {
   const associationState: MessageAssociationState = booking ? "LINKED" : "UNLINKED";
   const channel = normalizeChannel(booking?.channel ?? booking?.api_source ?? message.channel);
   const language = message.language;
@@ -434,7 +435,15 @@ async function insertMessage(
     now,
   ).run();
 
-  return (result.meta?.changes ?? 0) > 0 ? "inserted" : "duplicate";
+  if ((result.meta?.changes ?? 0) === 0) return { status: "duplicate" };
+
+  const row = await env.DB.prepare(`
+    SELECT message_id
+    FROM messages
+    WHERE provider = ? AND provider_message_id = ?
+  `).bind(PROVIDER, message.providerMessageId).first<{ message_id: number }>();
+  if (!row) throw new Error("Unable to resolve message after insert.");
+  return { status: "inserted", messageId: row.message_id };
 }
 
 function toImportedMessage(row: MessageRow): ImportedMessage {
@@ -591,12 +600,18 @@ export async function syncMessages(
         const result = await insertMessage(env, conversationId, normalized, booking, startedAt);
         await resolveMessageIssue(env, normalized.providerMessageId, startedAt);
 
-        if (result === "duplicate") {
+        if (result.status === "duplicate") {
           deduplicated += 1;
           continue;
         }
 
         metrics.written();
+        await notifyGuestMessageInbound(env, {
+          messageId: result.messageId,
+          conversationId,
+        }).catch((error: unknown) => {
+          console.warn(JSON.stringify({ message: "Guest message push notification failed", error: error instanceof Error ? error.message : "unknown", messageId: result.messageId }));
+        });
         if (booking) linked += 1;
         else unlinked += 1;
         latestReceivedAt = maxIso(latestReceivedAt, normalized.receivedAt);

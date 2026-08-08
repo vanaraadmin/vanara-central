@@ -451,15 +451,53 @@ test("staff overview housekeeping summary derives from the Housekeeping V2 task 
 
   assert.deepEqual(card.metrics, [
     { label: "To Clean", value: 0, tone: "good" },
-    { label: "Cleaning In Progress", value: 1, tone: "attention" },
+    { label: "Active Now", value: 1, tone: "attention" },
     { label: "Completed Cleaning Today", value: 0, tone: "good" },
     { label: "Water Due", value: 1, tone: "attention" },
   ]);
   assert.equal(card.metrics.length, 4);
   assert.equal(card.metrics.some((metric) => metric.label === "Blocked"), false);
   assert.equal(card.metrics.some((metric) => metric.label === "Completed Today"), false);
-  assert.equal(card.summaryLine1, "0 To Clean / 1 Cleaning In Progress");
+  assert.equal(card.summaryLine1, "0 To Clean / 1 Active Now");
   assert.equal(card.summaryLine2, "0 Completed Cleaning Today / 1 Water Due");
+});
+
+test("staff overview Active Now includes in-progress on-demand cleaning without adding it to To Clean", async () => {
+  const overview = await getStaffOverview(
+    env([housekeepingAccess], {
+      housekeepingTasks: [
+        taskRow({
+          task_id: 51,
+          task_type: "ON_DEMAND_CLEANING",
+          status: "IN_PROGRESS",
+          priority: "NORMAL",
+          source: "guest_request",
+          started_at: "2026-08-03T04:00:00.000Z",
+        }),
+        taskRow({
+          task_id: 52,
+          task_type: "STANDARD_CLEANING",
+          status: "COMPLETED",
+          completed_at: "2026-08-03T02:00:00.000Z",
+        }),
+        taskRow({
+          task_id: 53,
+          task_type: "WATER_REFILL",
+          status: "COMPLETED",
+          completed_at: "2026-08-03T02:30:00.000Z",
+        }),
+      ],
+    }),
+    currentUser([{ module: "housekeeping", canAccess: true, canEdit: false }]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const card = overview.cards.find((item) => item.id === "housekeeping");
+  assert.ok(card);
+
+  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.value, 0);
+  assert.equal(card.metrics.find((metric) => metric.label === "Active Now")?.value, 1);
+  assert.equal(card.metrics.find((metric) => metric.label === "Water Due")?.value, 0);
+  assert.equal(card.summaryLine1, "0 To Clean / 1 Active Now");
 });
 
 test("staff overview surfaces released priority turnover as actionable cleaning work", async () => {
@@ -491,7 +529,7 @@ test("staff overview surfaces released priority turnover as actionable cleaning 
   assert.equal(card.metrics.some((metric) => metric.label === "To Clean"), false);
   assert.equal(card.summaryLine1, "1 Priority Turnover / 0 Normal To Clean");
   assert.equal(card.summaryLine1.includes("1 Priority Turnover"), true);
-  assert.equal(card.summaryLine2, "0 Cleaning In Progress / 0 Water Due");
+  assert.equal(card.summaryLine2, "0 Active Now / 0 Water Due");
 });
 
 test("staff overview priority turnover presentation does not own checkout release behavior", () => {
@@ -644,6 +682,6 @@ test("staff overview API enforces authentication and staff view", async () => {
   assert.ok(housekeeping);
   assert.equal(housekeeping.href, "/housekeeping");
   assert.equal(housekeeping.metrics.find((metric) => metric.label === "To Clean")?.value, 0);
-  assert.equal(housekeeping.metrics.find((metric) => metric.label === "Cleaning In Progress")?.value, 1);
+  assert.equal(housekeeping.metrics.find((metric) => metric.label === "Active Now")?.value, 1);
   assert.equal(housekeeping.metrics.find((metric) => metric.label === "Water Due")?.value, 1);
 });

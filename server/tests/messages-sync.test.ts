@@ -77,6 +77,16 @@ type SyncIssueRow = {
   created_at: string;
   updated_at: string;
 };
+type NotificationEventRow = {
+  notification_event_id: number;
+  dedupe_key: string;
+  notification_type: string;
+  entity_type: string;
+  entity_id: string;
+  audience: string;
+  payload_json: string;
+  created_at: string;
+};
 
 const NOW = "2026-08-04T10:00:00.000Z";
 
@@ -115,11 +125,13 @@ class FakeMessagesDB {
   messages: MessageRow[] = [];
   syncRuns: SyncRunRow[] = [];
   issues: SyncIssueRow[] = [];
+  notificationEvents: NotificationEventRow[] = [];
   cursors = new Map<string, { cursor_value: string | null; updated_at: string }>();
   authenticated = true;
   owner = true;
   nextConversationId = 1;
   nextMessageId = 1;
+  nextNotificationEventId = 1;
 
   constructor(options: { bookings?: BookingRow[]; authenticated?: boolean; owner?: boolean } = {}) {
     this.bookings = options.bookings ?? [];
@@ -147,6 +159,17 @@ class FakeMessagesDB {
       const conversation = this.conversations.find((item) => item.provider === provider && item.provider_conversation_id === key);
       return (conversation ? { message_conversation_id: conversation.message_conversation_id } : null) as T | null;
     }
+    if (sql.includes("SELECT message_id") && sql.includes("FROM messages") && sql.includes("provider_message_id = ?")) {
+      const provider = String(params[0]);
+      const providerMessageId = String(params[1]);
+      const message = this.messages.find((item) => item.provider === provider && item.provider_message_id === providerMessageId);
+      return (message ? { message_id: message.message_id } : null) as T | null;
+    }
+    if (sql.includes("SELECT notification_event_id") && sql.includes("FROM notification_events")) {
+      const dedupeKey = String(params[0]);
+      const event = this.notificationEvents.find((item) => item.dedupe_key === dedupeKey);
+      return (event ? { notification_event_id: event.notification_event_id, dedupe_key: event.dedupe_key } : null) as T | null;
+    }
     return null;
   }
 
@@ -168,6 +191,9 @@ class FakeMessagesDB {
           .slice(0, limit)
           .map((message) => ({ ...message, draft_id: null, draft_status: null })) as T[],
       };
+    }
+    if (sql.includes("FROM push_subscriptions")) {
+      return { results: [] as T[] };
     }
     return { results: [] as T[] };
   }
@@ -252,6 +278,23 @@ class FakeMessagesDB {
         updated_at: String(params[15]),
       });
       return { meta: { changes: 1, last_row_id: this.messages.length } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO notification_events")) {
+      const dedupeKey = String(params[0]);
+      if (this.notificationEvents.some((event) => event.dedupe_key === dedupeKey)) {
+        return { meta: { changes: 0, last_row_id: 0 } };
+      }
+      this.notificationEvents.push({
+        notification_event_id: this.nextNotificationEventId++,
+        dedupe_key: dedupeKey,
+        notification_type: String(params[1]),
+        entity_type: String(params[2]),
+        entity_id: String(params[3]),
+        audience: String(params[4]),
+        payload_json: String(params[5]),
+        created_at: String(params[6]),
+      });
+      return { meta: { changes: 1, last_row_id: this.notificationEvents.length } };
     }
     if (sql.includes("INSERT INTO sync_record_issues")) {
       const providerRecordId = String(params[1]);
@@ -488,6 +531,29 @@ test("duplicate provider messages are ignored by provider_message_id", async () 
   assert.equal(db.messages.length, 1);
   assert.equal(replay.recordsWritten, 0);
   assert.equal(replay.recordsDeduplicated, 1);
+});
+
+test("new guest messages emit one owner notification and sync replay does not duplicate it", async () => {
+  const db = new FakeMessagesDB({
+    bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Booking.com", api_source: "Booking.com", language_code: "en" }],
+  });
+  const { fetcher } = messagesFetcher([guestMessage("msg-notify", 9001, "We arrive late tonight.")]);
+
+  await syncMessages(env(db) as never, {
+    now: NOW,
+    requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
+  });
+  await syncMessages(env(db) as never, {
+    now: NOW,
+    requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
+  });
+
+  assert.equal(db.notificationEvents.length, 1);
+  assert.equal(db.notificationEvents[0]!.notification_type, "guest_message.inbound");
+  assert.equal(db.notificationEvents[0]!.dedupe_key, "guest-message:inbound:1");
+  assert.equal(db.notificationEvents[0]!.audience, "owners");
+  assert.match(db.notificationEvents[0]!.payload_json, /Guest message needs review/);
+  assert.match(db.notificationEvents[0]!.payload_json, /"\/messages"/);
 });
 
 test("provider retry succeeds after a transient Beds24 failure", async () => {
