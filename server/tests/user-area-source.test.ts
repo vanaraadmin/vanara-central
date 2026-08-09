@@ -49,6 +49,9 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(profilePanel, /translate\("enableNotifications"\)/);
   assert.match(pwaService, /Notification\.requestPermission\(\)/);
   assert.match(pwaService, /pushManager\.subscribe/);
+  assert.match(pwaService, /refreshExistingPushSubscription/);
+  assert.match(pwaService, /pushManager\.getSubscription\(\)/);
+  assert.match(pwaService, /syncPushSubscription\(subscription\)/);
   assert.match(pwaService, /\/api\/notifications\/push\/subscriptions/);
   assert.match(english, /enableNotifications: "Enable notifications"/);
   assert.match(thai, /enableNotifications: "เปิดแจ้งเตือน"/);

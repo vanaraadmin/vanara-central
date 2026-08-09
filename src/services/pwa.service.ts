@@ -26,6 +26,23 @@ async function pushPublicKey(): Promise<{ publicKey: string | null; configured: 
   return { publicKey: body.data?.publicKey ?? null, configured: body.data?.configured === true };
 }
 
+async function syncPushSubscription(subscription: PushSubscription): Promise<boolean> {
+  const response = await fetch("/api/notifications/push/subscriptions", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(subscription.toJSON()),
+  });
+  return response.ok;
+}
+
+async function refreshExistingPushSubscription(registration: ServiceWorkerRegistration): Promise<void> {
+  if (!pushAvailable() || Notification.permission !== "granted") return;
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return;
+  await syncPushSubscription(subscription);
+}
+
 export function registerVanaraServiceWorker(onUpdate?: UpdateCallback): void {
   if (!serviceWorkersAvailable()) return;
 
@@ -38,6 +55,9 @@ export function registerVanaraServiceWorker(onUpdate?: UpdateCallback): void {
           worker.addEventListener("statechange", () => {
             if (worker.state === "installed" && navigator.serviceWorker.controller) onUpdate?.();
           });
+        });
+        void refreshExistingPushSubscription(registration).catch(() => {
+          // Push health refresh is best-effort and must never block app startup.
         });
       })
       .catch(() => {
@@ -79,6 +99,7 @@ export async function checkPushNotificationStatus(): Promise<PushNotificationSta
   const registration = await navigator.serviceWorker.getRegistration("/");
   if (!registration) return "ready";
   const subscription = await registration.pushManager.getSubscription();
+  if (subscription) await syncPushSubscription(subscription);
   return subscription ? "enabled" : "ready";
 }
 
@@ -90,16 +111,12 @@ export async function enablePushNotifications(): Promise<PushNotificationStatus>
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission !== "granted") return "blocked";
   const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToArrayBuffer(key.publicKey),
-  });
-  const response = await fetch("/api/notifications/push/subscriptions", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify(subscription.toJSON()),
-  });
-  if (!response.ok) return "error";
+  const subscription = await registration.pushManager.getSubscription()
+    ?? await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToArrayBuffer(key.publicKey),
+    });
+  const synced = await syncPushSubscription(subscription);
+  if (!synced) return "error";
   return "enabled";
 }
