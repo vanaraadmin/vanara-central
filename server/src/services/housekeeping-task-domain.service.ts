@@ -313,7 +313,7 @@ export async function ensureTurnoverReleasedForCheckout(
     stayId: checkout.beds24BookingId,
     operationalDate: checkout.departureDate,
     dueCycleDate: checkout.departureDate,
-    priority: "URGENT",
+    priority: "NORMAL",
     source: "reception_release",
     idempotencyKey: `housekeeping:v2:turnover:${checkout.unitId}:${checkout.beds24BookingId}:${checkout.departureDate}`,
     receptionReleased: true,
@@ -438,7 +438,11 @@ async function markRoomReadyAfterCompletion(env: HousekeepingTaskBindings, task:
 
 export async function applyCompletionCounters(env: HousekeepingTaskBindings, task: HousekeepingTask, completion: HousekeepingCompletionInput, now = new Date().toISOString()): Promise<void> {
   const completedAt = completion.completedAt ?? task.completedAt ?? now;
-  const updateStandard = task.taskType === "STANDARD_CLEANING" || task.taskType === "TURNOVER" ? completion.standardCleaningCompleted !== false : completion.standardCleaningCompleted === true;
+  const updateStandard = task.taskType === "TURNOVER"
+    ? true
+    : task.taskType === "STANDARD_CLEANING"
+      ? completion.standardCleaningCompleted !== false
+      : completion.standardCleaningCompleted === true;
   const updateLinen = task.taskType === "TURNOVER" || task.taskType === "LINEN_CHANGE" || completion.linenChangeCompleted === true;
 
   if (!updateStandard && !updateLinen) return;

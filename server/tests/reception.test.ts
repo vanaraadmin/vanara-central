@@ -1671,7 +1671,7 @@ test("staff operational access completes reception events and preserves actor au
   assert.equal(checkOutDb.events.at(-1)?.actor_name, ACTIVE_RECEPTION_USER.full_name);
 });
 
-test("completed checkout immediately creates released priority turnover work", async () => {
+test("completed checkout immediately creates released normal turnover work when no arrival is imminent", async () => {
   const data = env([movementsAccess, housekeepingAccess], true, [], { ...BOOKING, arrival_date: YESTERDAY, departure_date: TODAY });
   const db = data.DB as unknown as FakeReceptionDB;
 
@@ -1695,12 +1695,12 @@ test("completed checkout immediately creates released priority turnover work", a
   };
 
   assert.equal(tasks.status, 200, JSON.stringify(body));
-  const priority = body.data?.sections.find((section) => section.id === "priority-turnover");
-  assert.equal(priority?.cards.length, 1);
-  const card = priority?.cards[0];
+  const normal = body.data?.sections.find((section) => section.id === "normal-cleaning");
+  assert.equal(normal?.cards.length, 1);
+  const card = normal?.cards[0];
   assert.equal(card?.taskType, "TURNOVER");
   assert.equal(card?.taskStatus, "AVAILABLE_FOR_CLAIM");
-  assert.equal(card?.currentQueue, "priority-turnover");
+  assert.equal(card?.currentQueue, "normal-cleaning");
   assert.equal(card?.isBlocked, false);
   assert.equal(card?.capabilities.canStart, true);
   assert.equal(body.data?.summary.toClean, 1);
@@ -1743,10 +1743,10 @@ test("completed checkout releases historical turnover linked only by Beds24 stay
   }, data);
   const body = await json(tasks) as { data?: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskStatus: string }> }> } };
   assert.equal(tasks.status, 200, JSON.stringify(body));
-  const priority = body.data?.sections.find((section) => section.id === "priority-turnover");
-  assert.equal(priority?.cards.length, 1);
-  assert.equal(priority?.cards[0]?.taskId, 700);
-  assert.equal(priority?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  const normal = body.data?.sections.find((section) => section.id === "normal-cleaning");
+  assert.equal(normal?.cards.length, 1);
+  assert.equal(normal?.cards[0]?.taskId, 700);
+  assert.equal(normal?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
 });
 
 test("complete check-in creates persistent room alerts and resolving them updates the stay", async () => {

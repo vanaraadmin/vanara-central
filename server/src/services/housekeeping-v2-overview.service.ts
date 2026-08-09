@@ -259,7 +259,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
         stayId: booking.beds24_booking_id,
         operationalDate: date,
         dueCycleDate: date,
-        priority: booking.room_released === 1 ? "URGENT" : "HIGH",
+        priority: booking.room_released === 1 ? "NORMAL" : "HIGH",
         source: "system",
         idempotencyKey: `housekeeping:v2:turnover:${booking.unit_id}:${booking.beds24_booking_id}:${date}`,
       }, user);
@@ -387,11 +387,11 @@ function taskCountsAsActiveNow(task: HousekeepingTask): boolean {
 
 function cardFromContext(context: OperationalContext, task: HousekeepingTask, maintenanceBlocked: boolean, user: CurrentUser): HousekeepingV2TaskCard {
   const taskType = task.taskType;
-  const releaseState = releaseStateFor(context, taskType);
+  const releaseState = releaseStateFor(context, task);
   const isWaitingRelease = releaseState === "waiting_for_reception";
   const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, maintenanceBlocked);
   const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, maintenanceBlocked);
-  const currentQueue = visibleQueueForTask(task, reasonCodes, isWaitingRelease, maintenanceBlocked);
+  const currentQueue = visibleQueueForTask(context, task, reasonCodes, isWaitingRelease, maintenanceBlocked);
 
   return {
     unitId: context.unit.unit_id,
@@ -522,6 +522,12 @@ function standardCleaningDueCycle(booking: BookingRow, counter: CounterRow | nul
   return dueDate <= date ? dueDate : null;
 }
 
+function linenChangeDueCycle(counter: CounterRow | null, date: string): string | null {
+  if (counter?.linen_required_override === 1) return date;
+  const dueDate = counter?.next_linen_change_due_date ?? null;
+  return dueDate && dueDate <= date ? dueDate : null;
+}
+
 function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, taskType: HousekeepingTaskType, waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2ReasonCode[] {
   const codes: HousekeepingV2ReasonCode[] = [];
   if (waitingRelease) codes.push("waiting_reception");
@@ -530,24 +536,30 @@ function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, tas
     if (task.operationalDate < context.date) codes.push("standard_cleaning_previous_day");
     else if (task.dueCycleDate === context.date || task.operationalDate === context.date) codes.push("cleaning_due_today");
   }
-  if (taskType === "LINEN_CHANGE" || context.counter?.linen_required_override === 1) {
+  if (taskType === "LINEN_CHANGE" || context.counter?.linen_required_override === 1 || (taskType === "STANDARD_CLEANING" && linenChangeDueCycle(context.counter, context.date))) {
     codes.push("linen_required");
     if (context.counter?.linen_required_override === 1) codes.push("linen_override");
   }
   return [...new Set(codes)];
 }
 
-function releaseStateFor(context: OperationalContext, taskType: HousekeepingTaskType): HousekeepingV2ReceptionReleaseState {
-  if (taskType !== "TURNOVER") return "not_required";
-  return context.departure?.room_released === 1 ? "released" : "waiting_for_reception";
+function releaseStateFor(context: OperationalContext, task: HousekeepingTask): HousekeepingV2ReceptionReleaseState {
+  if (task.taskType !== "TURNOVER") return "not_required";
+  if (context.departure && taskMatchesBooking(task, context.departure)) {
+    return context.departure.room_released === 1 ? "released" : "waiting_for_reception";
+  }
+  return task.status === "WAITING_FOR_RECEPTION" ? "waiting_for_reception" : "released";
 }
 
 function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
   return card.currentQueue;
 }
 
-function visibleQueueForTask(task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
-  if (task.taskType === "TURNOVER") return "priority-turnover";
+function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
+  if (task.taskType === "TURNOVER") {
+    if (waitingRelease || task.status === "BLOCKED" || hasImminentArrival(context)) return "priority-turnover";
+    return "normal-cleaning";
+  }
   if (task.taskType === "WATER_REFILL") return "water-refill";
   if (reasonCodes.includes("standard_cleaning_previous_day")) return "priority-turnover";
   void maintenanceBlocked;
@@ -579,7 +591,7 @@ function waterTaskBelongsToEligibleStay(context: OperationalContext, task: House
 
 function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {
   if (task.taskType !== "TURNOVER") return false;
-  if (!context.departure) return false;
+  if (!context.departure) return task.operationalDate <= context.date && ACTIVE_TASK_STATUSES.has(task.status);
   return taskMatchesBooking(task, context.departure);
 }
 
@@ -587,6 +599,19 @@ function taskMatchesBooking(task: HousekeepingTask, booking: BookingRow): boolea
   if (task.bookingId !== null) return task.bookingId === booking.booking_id;
   if (task.stayId !== null) return task.stayId === booking.beds24_booking_id;
   return false;
+}
+
+function hasImminentArrival(context: OperationalContext): boolean {
+  if (!context.nextArrival) return false;
+  const days = daysBetween(context.date, context.nextArrival.arrival_date);
+  return days >= 0 && days <= 1;
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const start = Date.parse(`${startDate}T00:00:00.000Z`);
+  const end = Date.parse(`${endDate}T00:00:00.000Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return Number.POSITIVE_INFINITY;
+  return Math.round((end - start) / 86_400_000);
 }
 
 function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isWaitingRelease: boolean, maintenanceBlocked: boolean) {

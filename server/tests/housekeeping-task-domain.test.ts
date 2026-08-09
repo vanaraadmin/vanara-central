@@ -506,6 +506,31 @@ test("turnover completion from in-progress resets both standard and linen counte
   assert.equal(db.counters[0]?.next_linen_change_due_date, "2026-08-04");
 });
 
+test("turnover always means a full room reset even if a partial completion payload is sent", async () => {
+  const db = new FakeHousekeepingTaskDB();
+  db.receptionRelease.set(100, 1);
+  const data = env(db);
+  const task = await createHousekeepingTask(data, { taskType: "TURNOVER", unitId: 1, bookingId: 100, stayId: 10, operationalDate: "2026-08-01", receptionReleased: true }, actor());
+  const started = await transitionHousekeepingTask(data, task.id, { action: "start", expectedVersion: task.version, actor: actor() });
+
+  const completed = await transitionHousekeepingTask(data, started.id, {
+    action: "complete",
+    expectedVersion: started.version,
+    actor: actor(),
+    completion: {
+      standardCleaningCompleted: false,
+      linenChangeCompleted: false,
+      completedAt: "2026-08-01T09:00:00.000Z",
+    },
+  });
+
+  assert.equal(completed.status, "COMPLETED");
+  assert.equal(db.counters[0]?.last_standard_cleaning_task_id, completed.id);
+  assert.equal(db.counters[0]?.last_linen_change_task_id, completed.id);
+  assert.equal(db.counters[0]?.next_standard_cleaning_due_date, "2026-08-04");
+  assert.equal(db.counters[0]?.next_linen_change_due_date, "2026-08-04");
+});
+
 test("counter updates keep standard cleaning, linen, and water refill independent", async () => {
   const standard = await createTask("STANDARD_CLEANING", new FakeHousekeepingTaskDB());
   await applyCompletionCounters(standard.data, standard.task, { standardCleaningCompleted: true, completedAt: "2026-08-01T09:00:00.000Z" });
@@ -564,4 +589,37 @@ test("on-demand cleaning resets counters only after explicit completion choice",
   });
   assert.equal(onDemand.db.counters[0]?.last_standard_cleaning_task_id, onDemand.task.id);
   assert.equal(onDemand.db.counters[0]?.last_linen_change_task_id, onDemand.task.id);
+});
+
+test("on-demand cleaning without linen resets only the cleaning cycle and preserves linen timing", async () => {
+  const onDemand = await createTask("ON_DEMAND_CLEANING", new FakeHousekeepingTaskDB(), { onDemandSource: "HOUSEKEEPING_MANUAL" });
+  onDemand.db.counters.push({
+    counter_id: 1,
+    unit_id: 1,
+    active_booking_id: 100,
+    active_stay_id: 10,
+    last_standard_cleaning_at: "2026-08-01T09:00:00.000Z",
+    last_standard_cleaning_task_id: 90,
+    next_standard_cleaning_due_date: "2026-08-04",
+    standard_cleaning_interval_days: 3,
+    last_linen_change_at: "2026-08-01T09:00:00.000Z",
+    last_linen_change_task_id: 91,
+    next_linen_change_due_date: "2026-08-04",
+    linen_interval_days: 3,
+    linen_required_override: 0,
+    linen_override_reason: null,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+  });
+
+  await applyCompletionCounters(onDemand.data, onDemand.task, {
+    standardCleaningCompleted: true,
+    linenChangeCompleted: false,
+    completedAt: "2026-08-02T09:00:00.000Z",
+  });
+
+  assert.equal(onDemand.db.counters[0]?.last_standard_cleaning_task_id, onDemand.task.id);
+  assert.equal(onDemand.db.counters[0]?.next_standard_cleaning_due_date, "2026-08-05");
+  assert.equal(onDemand.db.counters[0]?.last_linen_change_task_id, 91);
+  assert.equal(onDemand.db.counters[0]?.next_linen_change_due_date, "2026-08-04");
 });

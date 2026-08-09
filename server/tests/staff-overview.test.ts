@@ -500,7 +500,7 @@ test("staff overview Active Now includes in-progress on-demand cleaning without 
   assert.equal(card.summaryLine1, "0 To Clean / 1 Active Now");
 });
 
-test("staff overview surfaces released priority turnover as actionable cleaning work", async () => {
+test("staff overview surfaces released turnover without imminent arrival as normal cleaning work", async () => {
   const overview = await getStaffOverview(
     env([housekeepingAccess], {
       housekeepingTasks: [
@@ -508,7 +508,7 @@ test("staff overview surfaces released priority turnover as actionable cleaning 
           task_id: 41,
           task_type: "TURNOVER",
           status: "AVAILABLE_FOR_CLAIM",
-          priority: "URGENT",
+          priority: "NORMAL",
           source: "reception_release",
         }),
         taskRow({
@@ -523,13 +523,11 @@ test("staff overview surfaces released priority turnover as actionable cleaning 
   );
   const card = overview.cards.find((item) => item.id === "housekeeping");
   assert.ok(card);
-  assert.equal(card.metrics.find((metric) => metric.label === "Priority Turnover")?.value, 1);
-  assert.equal(card.metrics.find((metric) => metric.label === "Priority Turnover")?.tone, "urgent");
-  assert.equal(card.metrics.find((metric) => metric.label === "Normal To Clean")?.value, 0);
-  assert.equal(card.metrics.some((metric) => metric.label === "To Clean"), false);
-  assert.equal(card.summaryLine1, "1 Priority Turnover / 0 Normal To Clean");
-  assert.equal(card.summaryLine1.includes("1 Priority Turnover"), true);
-  assert.equal(card.summaryLine2, "0 Active Now / 0 Water Due");
+  assert.equal(card.metrics.find((metric) => metric.label === "Priority Turnover")?.value ?? 0, 0);
+  assert.equal(card.metrics.find((metric) => metric.label === "To Clean")?.value, 1);
+  assert.equal(card.summaryLine1, "1 To Clean / 0 Active Now");
+  assert.equal(card.summaryLine1.includes("1 To Clean"), true);
+  assert.equal(card.summaryLine2, "0 Completed Cleaning Today / 0 Water Due");
 });
 
 test("staff overview priority turnover presentation does not own checkout release behavior", () => {

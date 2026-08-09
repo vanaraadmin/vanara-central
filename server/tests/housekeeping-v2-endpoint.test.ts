@@ -518,12 +518,69 @@ test("released turnover sync matches historical tasks linked by Beds24 stay id",
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(db.tasks.find((task) => task.task_id === 88)?.status, "AVAILABLE_FOR_CLAIM");
+  const normal = body.data.sections.find((section) => section.id === "normal-cleaning");
+  assert.equal(normal?.cards.length, 1);
+  assert.equal(normal?.cards[0]?.taskId, 88);
+  assert.equal(normal?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(normal?.cards[0]?.currentQueue, "normal-cleaning");
+  assert.equal(normal?.cards[0]?.capabilities.canStart, true);
+});
+
+test("released turnover becomes Priority only when the next arrival is imminent", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(302, 930302, 1, "Departing Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-03", room_released: 1 },
+    { ...booking(303, 930303, 1, "Incoming Guest", 2, 0), arrival_date: "2026-08-03", departure_date: "2026-08-05", guest_arrived: 0, room_released: 0 },
+  ];
+  db.tasks.push(storedTask({
+    task_id: 89,
+    task_type: "TURNOVER",
+    unit_id: 1,
+    booking_id: 302,
+    stay_id: 930302,
+    operational_date: "2026-08-03",
+    due_cycle_date: "2026-08-03",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-03", db);
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string }> }> } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
   const priority = body.data.sections.find((section) => section.id === "priority-turnover");
   assert.equal(priority?.cards.length, 1);
-  assert.equal(priority?.cards[0]?.taskId, 88);
-  assert.equal(priority?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(priority?.cards[0]?.taskId, 89);
   assert.equal(priority?.cards[0]?.currentQueue, "priority-turnover");
-  assert.equal(priority?.cards[0]?.capabilities.canStart, true);
+});
+
+test("unfinished checkout turnover remains visible the following day as normal cleaning when no arrival is imminent", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(304, 930304, 1, "Departed Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-03", room_released: 1 },
+  ];
+  db.tasks.push(storedTask({
+    task_id: 90,
+    task_type: "TURNOVER",
+    unit_id: 1,
+    booking_id: 304,
+    stay_id: 930304,
+    operational_date: "2026-08-03",
+    due_cycle_date: "2026-08-03",
+    status: "AVAILABLE_FOR_CLAIM",
+    priority: "NORMAL",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-04", db);
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string; taskStatus: string }> }>; summary: { toClean: number } } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const normal = body.data.sections.find((section) => section.id === "normal-cleaning");
+  assert.equal(normal?.cards.length, 1);
+  assert.equal(normal?.cards[0]?.taskId, 90);
+  assert.equal(normal?.cards[0]?.currentQueue, "normal-cleaning");
+  assert.equal(normal?.cards[0]?.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(body.data.summary.toClean, 1);
 });
 
 test("arrival-day water task already stored is not published and the next full day generates water", async () => {
@@ -651,6 +708,37 @@ test("standard cleaning due today stays in Normal with original operational date
   assert.equal(standard.reasonCodes.includes("cleaning_due_today"), true);
   assert.equal(priority.some((card) => card.taskType === "STANDARD_CLEANING"), false);
   assert.equal(body.data.summary.toClean, 1);
+});
+
+test("linen due does not create a standalone task and attaches to the next real standard cleaning", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(321, 930321, 1, "Long Stay Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-10" },
+  ];
+  db.counters = [{
+    unit_id: 1,
+    active_booking_id: 321,
+    active_stay_id: 930321,
+    next_standard_cleaning_due_date: "2026-08-05",
+    standard_cleaning_interval_days: 3,
+    next_linen_change_due_date: "2026-08-04",
+    linen_required_override: 0,
+    linen_override_reason: null,
+  }];
+
+  const linenOnlyDay = await request("/api/housekeeping/v2/tasks?date=2026-08-04", db);
+  const linenOnlyBody = await linenOnlyDay.json() as { success: boolean; data: { summary: { toClean: number }; tasks: Array<{ taskType: string }> } };
+  assert.equal(linenOnlyDay.status, 200, JSON.stringify(linenOnlyBody));
+  assert.equal(linenOnlyBody.data.tasks.some((card) => card.taskType === "LINEN_CHANGE" || card.taskType === "STANDARD_CLEANING"), false);
+  assert.equal(linenOnlyBody.data.summary.toClean, 0);
+
+  const standardDay = await request("/api/housekeeping/v2/tasks?date=2026-08-05", db);
+  const standardBody = await standardDay.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskType: string; reasonCodes: string[] }> }>; summary: { toClean: number } } };
+  assert.equal(standardDay.status, 200, JSON.stringify(standardBody));
+  const normal = standardBody.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
+  assert.equal(normal.some((card) => card.taskType === "STANDARD_CLEANING" && card.reasonCodes.includes("linen_required")), true);
+  assert.equal(normal.some((card) => card.taskType === "LINEN_CHANGE"), false);
+  assert.equal(standardBody.data.summary.toClean, 1);
 });
 
 test("standard cleaning can be completed as Full Cleaning and updates cleaning plus linen counters", async () => {
@@ -1079,7 +1167,7 @@ test("turnover remains Priority and keeps Reception release gate unchanged", asy
   assert.equal(priority.some((card) => card.taskType === "TURNOVER" && card.currentQueue === "priority-turnover" && card.reasonCodes.includes("waiting_reception")), true);
 });
 
-test("released turnover can start from Housekeeping Priority without opening room detail first", async () => {
+test("released turnover without an imminent arrival starts from normal cleaning without opening room detail first", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
     { ...booking(402, 940402, 1, "Released Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", room_released: 1 },
@@ -1100,7 +1188,7 @@ test("released turnover can start from Housekeeping Priority without opening roo
   const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; taskVersion: number; taskType: string; taskStatus: string; reasonCodes: string[]; capabilities: { canStart: boolean } }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
-  const turnover = body.data.sections.find((section) => section.id === "priority-turnover")?.cards.find((card) => card.taskId === 93);
+  const turnover = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards.find((card) => card.taskId === 93);
   assert.ok(turnover);
   assert.equal(turnover.taskType, "TURNOVER");
   assert.equal(turnover.taskStatus, "AVAILABLE_FOR_CLAIM");
@@ -1153,7 +1241,7 @@ test("in-progress turnover finish capability is identical for Housekeeping queue
     const overviewResponse = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
     const overview = await overviewResponse.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; capabilities: { canComplete: boolean } }> }> } };
     assert.equal(overviewResponse.status, 200, JSON.stringify(overview));
-    const card = overview.data.sections.find((section) => section.id === "priority-turnover")?.cards.find((item) => item.taskId === 94);
+    const card = overview.data.sections.find((section) => section.id === "normal-cleaning")?.cards.find((item) => item.taskId === 94);
     assert.ok(card);
 
     const roomResponse = await request("/api/housekeeping/v2/rooms/1?date=2026-08-02", db);
@@ -1277,4 +1365,44 @@ test("room-owned on-demand completion resets the Standard Cleaning counter witho
   assert.equal(afterCounterReset.status, 200, JSON.stringify(resetBody));
   assert.equal(resetBody.data.tasks.some((card) => card.taskType === "STANDARD_CLEANING"), false);
   assert.equal(resetBody.data.summary.toClean, 0);
+
+  const nextDue = await request("/api/housekeeping/v2/tasks?date=2026-08-05", db);
+  const nextDueBody = await nextDue.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskType: string; currentQueue: string; reasonCodes: string[] }> }>; summary: { toClean: number } } };
+  assert.equal(nextDue.status, 200, JSON.stringify(nextDueBody));
+  const normal = nextDueBody.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
+  assert.equal(normal.some((card) => card.taskType === "STANDARD_CLEANING" && card.currentQueue === "normal-cleaning" && card.reasonCodes.includes("cleaning_due_today")), true);
+  assert.equal(nextDueBody.data.summary.toClean, 1);
+});
+
+test("room-owned on-demand full cleaning resets both standard and linen cycles", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(502, 950502, 1, "Long Stay Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-10" },
+  ];
+
+  const created = await post("/api/rooms/1/on-demand-cleaning?date=2026-08-02", db, {
+    source: "ROOM_WORKSPACE",
+    priority: "normal",
+    note: "Guest asked for full cleaning",
+  });
+  assert.equal(created.status, 200, await created.text());
+
+  const task = db.tasks.find((item) => item.task_type === "ON_DEMAND_CLEANING" && item.unit_id === 1);
+  assert.ok(task);
+
+  const completed = await post(`/api/housekeeping/v2/tasks/${task.task_id}/complete`, db, {
+    expectedVersion: task.version,
+    completion: { standardCleaningCompleted: true, linenChangeCompleted: true, completedAt: "2026-08-02T09:00:00.000Z" },
+  });
+  assert.equal(completed.status, 200, await completed.text());
+
+  const counter = db.counters.find((item) => item.unit_id === 1);
+  assert.equal(counter?.next_standard_cleaning_due_date, "2026-08-05");
+  assert.equal(counter?.next_linen_change_due_date, "2026-08-05");
+
+  const beforeNextCycle = await request("/api/housekeeping/v2/tasks?date=2026-08-04", db);
+  const beforeBody = await beforeNextCycle.json() as { success: boolean; data: { tasks: Array<{ taskType: string }>; summary: { toClean: number } } };
+  assert.equal(beforeNextCycle.status, 200, JSON.stringify(beforeBody));
+  assert.equal(beforeBody.data.tasks.some((card) => card.taskType === "STANDARD_CLEANING" || card.taskType === "LINEN_CHANGE"), false);
+  assert.equal(beforeBody.data.summary.toClean, 0);
 });
