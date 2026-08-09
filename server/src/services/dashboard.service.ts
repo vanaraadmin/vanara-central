@@ -49,6 +49,11 @@ interface PayrollFinancialRow {
   net_salary_payable: number;
 }
 
+export interface DashboardDateRange {
+  fromDate?: string | null;
+  toDate?: string | null;
+}
+
 export interface DashboardRoomCard {
   id: string;
   unitName: string;
@@ -151,6 +156,12 @@ export interface DashboardFinancialSnapshot {
 
 export interface DashboardOverview {
   date: string;
+  dateRange: {
+    mode: "full" | "custom";
+    fromDate: string | null;
+    toDate: string | null;
+    label: string;
+  };
   alerts: DashboardOverviewAlert[];
   business: {
     expectedNetIncomeToDate: DashboardBusinessMetric;
@@ -311,6 +322,58 @@ function amount(value: number | null | undefined): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanDate(value: string | null | undefined): string | null {
+  const date = typeof value === "string" ? value.trim() : "";
+  return DATE_RE.test(date) ? date : null;
+}
+
+function normalizeDateRange(input?: DashboardDateRange | null): Required<DashboardDateRange> | null {
+  const fromDate = cleanDate(input?.fromDate ?? null);
+  const toDate = cleanDate(input?.toDate ?? null);
+  if (!fromDate && !toDate) return null;
+  if (fromDate && toDate && fromDate > toDate) return { fromDate: toDate, toDate: fromDate };
+  return { fromDate, toDate };
+}
+
+function dateRangeLabel(range: Required<DashboardDateRange> | null): string {
+  if (!range) return "Full view";
+  if (range.fromDate && range.toDate) return `${range.fromDate} to ${range.toDate}`;
+  if (range.fromDate) return `From ${range.fromDate}`;
+  return `Until ${range.toDate}`;
+}
+
+function dateRangeCondition(column: string, range: Required<DashboardDateRange> | null): { sql: string; params: string[] } {
+  if (!range) return { sql: "", params: [] };
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (range.fromDate) {
+    clauses.push(`${column} >= ?`);
+    params.push(range.fromDate);
+  }
+  if (range.toDate) {
+    clauses.push(`${column} <= ?`);
+    params.push(range.toDate);
+  }
+  return { sql: clauses.length ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
+function payrollRangeCondition(range: Required<DashboardDateRange> | null, bangkokMonth: string): { sql: string; params: string[] } {
+  if (!range) return { sql: "AND payroll_month <= ?", params: [bangkokMonth] };
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (range.fromDate) {
+    clauses.push("payroll_month >= ?");
+    params.push(range.fromDate.slice(0, 7));
+  }
+  if (range.toDate) {
+    clauses.push("payroll_month <= ?");
+    params.push(range.toDate.slice(0, 7));
+  }
+  return { sql: clauses.length ? `AND ${clauses.join(" AND ")}` : "", params };
+}
+
 function percent(part: number, total: number): number {
   return total === 0 ? 0 : Math.round((part / total) * 1000) / 10;
 }
@@ -387,8 +450,15 @@ export async function buildFinancialSnapshot(
   bangkokToday: string,
   checkedInNetRevenue: number,
   futureBookedNetForecast: number,
+  dateRangeInput?: DashboardDateRange | null,
 ): Promise<DashboardFinancialSnapshot> {
   const bangkokMonth = bangkokToday.slice(0, 7);
+  const dateRange = normalizeDateRange(dateRangeInput);
+  const otaRange = dateRangeCondition("f.check_in", dateRange);
+  const manualRange = dateRange
+    ? dateRangeCondition("entry_date", dateRange)
+    : { sql: " AND entry_date <= ?", params: [bangkokToday] };
+  const payrollRange = payrollRangeCondition(dateRange, bangkokMonth);
   const [otaRows, manualRows, payrollRows] = await Promise.all([
     env.DB.prepare(`
       SELECT f.channel, f.expected_net_payout, f.check_in
@@ -397,20 +467,22 @@ export async function buildFinancialSnapshot(
         ON b.beds24_booking_id = f.beds24_booking_id
       WHERE lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
         AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
-    `).all<OtaFinancialRow>(),
+        ${otaRange.sql}
+    `).bind(...otaRange.params).all<OtaFinancialRow>(),
     env.DB.prepare(`
       SELECT entry_type, amount, description, note
       FROM manual_accounting_entries
-      WHERE entry_date <= ?
-    `).bind(bangkokToday).all<ManualAccountingRow>(),
+      WHERE 1 = 1
+        ${manualRange.sql}
+    `).bind(...manualRange.params).all<ManualAccountingRow>(),
     env.DB.prepare(`
       SELECT monthly_gross_salary, salary_advances_received, bonuses_additions,
         authorized_deductions, employee_social_security, absence_deduction,
         overtime_compensation, meal_allowance_advance, net_salary_payable
       FROM payroll_records
       WHERE status = 'FINALIZED'
-        AND payroll_month <= ?
-    `).bind(bangkokMonth).all<PayrollFinancialRow>(),
+        ${payrollRange.sql}
+    `).bind(...payrollRange.params).all<PayrollFinancialRow>(),
   ]);
 
   const otaChannels = new Map<string, number>();
@@ -475,7 +547,7 @@ export async function buildFinancialSnapshot(
   };
 }
 
-export async function getDashboardOverview(env: DashboardBindings): Promise<DashboardOverview> {
+export async function getDashboardOverview(env: DashboardBindings, options: { dateRange?: DashboardDateRange | null } = {}): Promise<DashboardOverview> {
   await rebuildOtaFinancialRecords(env);
   const [housekeeping, maintenanceTickets, today, users] = await Promise.all([
     getHousekeepingOverview(env),
@@ -484,6 +556,12 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
     listUsers(env),
   ]);
   const bangkokToday = today.date;
+  const dateRange = normalizeDateRange(options.dateRange);
+  const checkedInRange = dateRangeCondition("f.check_in", dateRange);
+  const guestOriginRange = dateRangeCondition("arrival_date", dateRange);
+  const channelRange = dateRangeCondition("f.check_in", dateRange);
+  const occupancyRangeStart = dateRange?.fromDate ?? bangkokToday;
+  const occupancyRangeEnd = dateRange?.toDate ?? occupancyRangeStart;
   const [incomeToDate, futureIncome, occupiedRooms, totalOperatingRooms, guestOrigins, channels] = await Promise.all([
     env.DB.prepare(`
       SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
@@ -493,7 +571,8 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       WHERE f.check_in <= ?
         AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
         AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
-    `).bind(bangkokToday).first<CountRow>(),
+        ${checkedInRange.sql}
+    `).bind(bangkokToday, ...checkedInRange.params).first<CountRow>(),
     env.DB.prepare(`
       SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
       FROM ota_financial_records f
@@ -502,14 +581,28 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       WHERE f.check_in > ?
         AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
         AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
-    `).bind(bangkokToday).first<CountRow>(),
+        ${checkedInRange.sql}
+    `).bind(bangkokToday, ...checkedInRange.params).first<CountRow>(),
     env.DB.prepare(`
-      SELECT COUNT(*) AS total
-      FROM bookings
-      WHERE arrival_date <= ?
-        AND departure_date > ?
-        AND lower(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
-    `).bind(bangkokToday, bangkokToday).first<CountRow>(),
+      WITH RECURSIVE dashboard_dates(stay_date) AS (
+        SELECT ?
+        UNION ALL
+        SELECT date(stay_date, '+1 day')
+        FROM dashboard_dates
+        WHERE stay_date < ?
+      ),
+      occupied_by_day AS (
+        SELECT dashboard_dates.stay_date, COUNT(DISTINCT bookings.unit_id) AS occupied
+        FROM dashboard_dates
+        LEFT JOIN bookings
+          ON bookings.arrival_date <= dashboard_dates.stay_date
+          AND bookings.departure_date > dashboard_dates.stay_date
+          AND lower(COALESCE(bookings.status, '')) NOT IN ('cancelled', 'canceled')
+        GROUP BY dashboard_dates.stay_date
+      )
+      SELECT COALESCE(AVG(occupied), 0) AS total
+      FROM occupied_by_day
+    `).bind(occupancyRangeStart, occupancyRangeEnd).first<CountRow>(),
     env.DB.prepare(`
       SELECT COUNT(*) AS total
       FROM units
@@ -519,10 +612,11 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       SELECT COALESCE(NULLIF(country_code, ''), NULLIF(country, ''), 'Unknown') AS label, COUNT(*) AS value
       FROM bookings
       WHERE lower(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+        ${guestOriginRange.sql}
       GROUP BY label
       ORDER BY value DESC, label
       LIMIT 6
-    `).all<{ label: string; value: number }>(),
+    `).bind(...guestOriginRange.params).all<{ label: string; value: number }>(),
     env.DB.prepare(`
       SELECT f.channel AS label, COUNT(*) AS value, COALESCE(SUM(f.expected_net_payout), 0) AS amount
       FROM ota_financial_records f
@@ -531,10 +625,11 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       WHERE f.check_in <= ?
         AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
         AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+        ${channelRange.sql}
       GROUP BY f.channel
       ORDER BY amount DESC, value DESC
       LIMIT 6
-    `).bind(bangkokToday).all<{ label: string; value: number; amount: number }>(),
+    `).bind(bangkokToday, ...channelRange.params).all<{ label: string; value: number; amount: number }>(),
   ]);
 
   const roomsToClean = housekeeping.summary.cleanFirst + housekeeping.summary.cleanToday;
@@ -557,9 +652,12 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const checkedInNetRevenue = count(incomeToDate);
   const futureBookedNetForecast = count(futureIncome);
   const [financialSnapshot] = await Promise.all([
-    buildFinancialSnapshot(env, bangkokToday, checkedInNetRevenue, futureBookedNetForecast),
+    buildFinancialSnapshot(env, bangkokToday, checkedInNetRevenue, futureBookedNetForecast, dateRange),
   ]);
   const occupancyPercent = count(totalOperatingRooms) > 0 ? Math.round((count(occupiedRooms) / count(totalOperatingRooms)) * 100) : 0;
+  const occupancyDetail = dateRange
+    ? `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied on average for the selected period.`
+    : `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`;
 
   const alerts = [
     alert("high-maintenance", "High Maintenance", highIssues, "/maintenance?priority=High", "danger"),
@@ -570,11 +668,17 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
 
   return {
     date: today.date,
+    dateRange: {
+      mode: dateRange ? "custom" : "full",
+      fromDate: dateRange?.fromDate ?? null,
+      toDate: dateRange?.toDate ?? null,
+      label: dateRangeLabel(dateRange),
+    },
     alerts,
     business: {
       expectedNetIncomeToDate: businessMetric("checked-in-net-revenue", "Checked-In Net Revenue", count(incomeToDate), "Expected net payout for checked-in stays, not bank-received cash.", "success"),
       expectedFutureNetIncome: businessMetric("future-booked-net-forecast", "Future Booked Net Forecast", count(futureIncome), "Expected net payout for future bookings; still cancellable or modifiable.", "info"),
-      occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
+      occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, occupancyDetail, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
       guestOrigins: (guestOrigins.results ?? []).map((item) => ({ label: item.label, value: item.value })),
       channels: (channels.results ?? []).map((item) => ({ label: item.label, value: item.value, amount: item.amount })),
       financialSnapshot,

@@ -69,6 +69,11 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.doesNotMatch(dashboardPage, />Net position</);
   assert.match(dashboardPage, /financial-dashboard__metrics/);
   assert.match(dashboardPage, /Future forecast/);
+  assert.match(dashboardPage, /DashboardRangeFilter/);
+  assert.match(dashboardPage, /className="dashboard-range-filter"/);
+  assert.match(dashboardPage, /Full view/);
+  assert.match(dashboardPage, /type="date"/);
+  assert.match(dashboardPage, /loadDashboardOverview\(appliedRange, signal\)/);
   assert.match(dashboardPage, /aria-label=\{`Open income details\. Total income \$\{money\(snapshot\.totalIncome\)\}`\}/);
   assert.match(dashboardPage, /aria-label=\{`Open expenses details\. Total expenses \$\{money\(snapshot\.totalExpenses\)\}`\}/);
   assert.match(dashboardPage, /const topTotal = useMemo\(\(\) => totalAbs\(topSegments\), \[topSegments\]\)/);
@@ -91,6 +96,9 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.doesNotMatch(dashboardCss, /\.dashboard-header|\.financial-dashboard__tabs|\.business-grid|\.dashboard-breakdowns|\.quick-access-grid|\.control-alerts|\.control-section|\.control-card/);
   assert.doesNotMatch(dashboardCss, /146,\s*91,\s*60|178,\s*138,\s*70/);
   assert.match(dashboardCss, /\.financial-dashboard__header h2[\s\S]*font-size: clamp\(1\.1rem, 4\.8vw, 1\.58rem\)/);
+  assert.match(dashboardCss, /\.dashboard-range-filter[\s\S]*grid-template-columns: auto minmax\(0, 132px\) minmax\(0, 132px\) auto auto minmax\(0, 1fr\)/);
+  assert.match(dashboardCss, /\.dashboard-range-filter input[\s\S]*width: 100%[\s\S]*accent-color: #5fae9b/);
+  assert.match(dashboardCss, /@media \(max-width: 430px\)[\s\S]*\.dashboard-range-filter[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(dashboardCss, /\.financial-dashboard__donut-wrap[\s\S]*grid-template-columns: repeat\(2, minmax\(0, auto\)\)[\s\S]*justify-content: center/);
   assert.match(dashboardCss, /\.financial-dashboard__donut[\s\S]*grid-column: 1 \/ -1[\s\S]*grid-row: 1/);
   assert.match(dashboardCss, /\.financial-dashboard__donut span[\s\S]*font-size: 0\.58rem/);

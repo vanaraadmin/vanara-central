@@ -1,6 +1,7 @@
 .dashboard-shell,
 .control-room-dashboard,
 .dashboard-finance-stack,
+.dashboard-range-filter,
 .financial-dashboard,
 .financial-dashboard__summary,
 .financial-dashboard__metrics,
@@ -43,6 +44,93 @@
 
 .dashboard-refresh:disabled {
   opacity: 0.62;
+}
+
+.dashboard-range-filter {
+  width: 100%;
+  grid-template-columns: auto minmax(0, 132px) minmax(0, 132px) auto auto minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(244, 237, 223, 0.14);
+  border-radius: 18px;
+  color: rgba(244, 237, 223, 0.86);
+  background: rgba(7, 25, 18, 0.44);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px) saturate(112%);
+}
+
+.dashboard-range-filter label {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dashboard-range-filter label span,
+.dashboard-range-filter__status {
+  color: rgba(244, 237, 223, 0.58);
+  font-size: 0.62rem;
+  font-weight: var(--vc-weight-heavy);
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dashboard-range-filter input,
+.dashboard-range-filter button {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid rgba(244, 237, 223, 0.14);
+  border-radius: var(--vc-radius-pill);
+  color: rgba(255, 251, 241, 0.94);
+  background: rgba(244, 237, 223, 0.07);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: var(--vc-weight-heavy);
+}
+
+.dashboard-range-filter input {
+  width: 100%;
+  padding: 0 9px;
+  color-scheme: dark;
+  accent-color: #5fae9b;
+}
+
+.dashboard-range-filter input:focus-visible,
+.dashboard-range-filter button:focus-visible {
+  outline: 2px solid rgba(95, 174, 155, 0.72);
+  outline-offset: 2px;
+}
+
+.dashboard-range-filter button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  cursor: pointer;
+}
+
+.dashboard-range-filter button:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.dashboard-range-filter__mode.is-active,
+.dashboard-range-filter__apply {
+  border-color: rgba(95, 174, 155, 0.34);
+  background: rgba(95, 174, 155, 0.14);
+}
+
+.dashboard-range-filter__clear {
+  color: rgba(244, 237, 223, 0.72);
+  background: rgba(244, 237, 223, 0.04);
+}
+
+.dashboard-range-filter__status {
+  align-self: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .is-spinning {
@@ -440,6 +528,15 @@
 
   .financial-dashboard {
     padding: 14px;
+  }
+
+  .dashboard-range-filter {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-range-filter__mode,
+  .dashboard-range-filter__status {
+    grid-column: 1 / -1;
   }
 
   .financial-dashboard__donut {

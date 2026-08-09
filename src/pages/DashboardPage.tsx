@@ -4,7 +4,7 @@ import { PageError, PageLoading } from "../components/AsyncState";
 import { RefreshIcon } from "../components/OperationsIcons";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { loadDashboardOverview } from "../services/dashboard.service";
-import type { DashboardFinancialSegment, DashboardOverview } from "../types/dashboard";
+import type { DashboardDateRange, DashboardFinancialSegment, DashboardOverview } from "../types/dashboard";
 import "../styles/DashboardPage.css";
 
 function money(value: number | string): string {
@@ -13,6 +13,7 @@ function money(value: number | string): string {
 }
 
 type FinancialView = "overview" | "income" | "expenses" | "ota" | "manual-income" | "manual-expenses" | "payroll";
+type DashboardRangeDraft = { fromDate: string; toDate: string };
 type FinancialDrill = {
   title: string;
   note: string;
@@ -228,18 +229,107 @@ function FinancialDashboard({ data }: { data: DashboardOverview }) {
   );
 }
 
-function DashboardContent({ data }: { data: DashboardOverview }) {
+function DashboardRangeFilter({
+  activeLabel,
+  disabled,
+  draft,
+  isCustom,
+  onApply,
+  onClear,
+  onDraftChange,
+}: {
+  activeLabel: string;
+  disabled: boolean;
+  draft: DashboardRangeDraft;
+  isCustom: boolean;
+  onApply: () => void;
+  onClear: () => void;
+  onDraftChange: (next: DashboardRangeDraft) => void;
+}) {
+  const hasDraft = Boolean(draft.fromDate || draft.toDate);
+  return (
+    <form
+      className="dashboard-range-filter"
+      aria-label="Dashboard date range"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onApply();
+      }}
+    >
+      <button
+        className={`dashboard-range-filter__mode${isCustom ? "" : " is-active"}`}
+        type="button"
+        onClick={onClear}
+        disabled={disabled && !isCustom}
+      >
+        Full view
+      </button>
+      <label>
+        <span>From</span>
+        <input
+          type="date"
+          value={draft.fromDate}
+          onChange={(event) => onDraftChange({ ...draft, fromDate: event.target.value })}
+        />
+      </label>
+      <label>
+        <span>To</span>
+        <input
+          type="date"
+          value={draft.toDate}
+          onChange={(event) => onDraftChange({ ...draft, toDate: event.target.value })}
+        />
+      </label>
+      <button className="dashboard-range-filter__apply" type="submit" disabled={!hasDraft || disabled}>
+        Apply
+      </button>
+      {isCustom ? (
+        <button className="dashboard-range-filter__clear" type="button" onClick={onClear} disabled={disabled}>
+          Clear
+        </button>
+      ) : null}
+      <span className="dashboard-range-filter__status">{activeLabel}</span>
+    </form>
+  );
+}
+
+function DashboardContent({
+  data,
+  dateDraft,
+  isFetching,
+  onApplyRange,
+  onClearRange,
+  onDateDraftChange,
+}: {
+  data: DashboardOverview;
+  dateDraft: DashboardRangeDraft;
+  isFetching: boolean;
+  onApplyRange: () => void;
+  onClearRange: () => void;
+  onDateDraftChange: (next: DashboardRangeDraft) => void;
+}) {
   return (
     <div className="control-room-dashboard">
+      <DashboardRangeFilter
+        activeLabel={data.dateRange.label}
+        disabled={isFetching}
+        draft={dateDraft}
+        isCustom={data.dateRange.mode === "custom"}
+        onApply={onApplyRange}
+        onClear={onClearRange}
+        onDraftChange={onDateDraftChange}
+      />
       <FinancialDashboard data={data} />
     </div>
   );
 }
 
 export default function DashboardPage() {
+  const [dateDraft, setDateDraft] = useState<DashboardRangeDraft>({ fromDate: "", toDate: "" });
+  const [appliedRange, setAppliedRange] = useState<DashboardDateRange | null>(null);
   const dashboard = useQuery({
-    queryKey: ["dashboard", "overview"],
-    queryFn: ({ signal }) => loadDashboardOverview(signal),
+    queryKey: ["dashboard", "overview", appliedRange?.fromDate ?? "", appliedRange?.toDate ?? ""],
+    queryFn: ({ signal }) => loadDashboardOverview(appliedRange, signal),
     refetchInterval: 60_000,
   });
 
@@ -260,7 +350,22 @@ export default function DashboardPage() {
     <WorkspaceShell title="Financial Dashboard" workspace="ownerDashboard" bodyClassName="dashboard-shell" heroAction={refreshAction} wide>
       {dashboard.isLoading && <PageLoading />}
       {dashboard.isError && !dashboard.data && <PageError onRetry={() => void dashboard.refetch()} />}
-      {dashboard.data && <DashboardContent data={dashboard.data} />}
+      {dashboard.data && (
+        <DashboardContent
+          data={dashboard.data}
+          dateDraft={dateDraft}
+          isFetching={dashboard.isFetching}
+          onApplyRange={() => setAppliedRange({
+            fromDate: dateDraft.fromDate || null,
+            toDate: dateDraft.toDate || null,
+          })}
+          onClearRange={() => {
+            setDateDraft({ fromDate: "", toDate: "" });
+            setAppliedRange(null);
+          }}
+          onDateDraftChange={setDateDraft}
+        />
+      )}
     </WorkspaceShell>
   );
 }

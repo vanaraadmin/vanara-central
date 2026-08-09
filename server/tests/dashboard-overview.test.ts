@@ -33,6 +33,36 @@ class FakeDashboardDB {
     [104, { status: "confirmed", sub_status: "provider_deleted" }],
   ]);
 
+  private sqlRange(sql: string, params: unknown[], column: string, offset = 0) {
+    let index = offset;
+    let fromDate: string | null = null;
+    let toDate: string | null = null;
+    if (sql.includes(`${column} >= ?`)) {
+      fromDate = String(params[index++]);
+    }
+    if (sql.includes(`${column} <= ?`)) {
+      toDate = String(params[index]);
+    }
+    return { fromDate, toDate };
+  }
+
+  private inRange(value: string, range: { fromDate: string | null; toDate: string | null }) {
+    return (!range.fromDate || value >= range.fromDate) && (!range.toDate || value <= range.toDate);
+  }
+
+  private activeFinancialRecords(sql: string, params: unknown[], offset = 0) {
+    const range = this.sqlRange(sql, params, "f.check_in", offset);
+    return this.financialRecords
+      .filter((record) => this.inRange(record.check_in, range))
+      .filter((record) => {
+        const booking = this.bookingStates.get(record.beds24_booking_id);
+        if (!booking) return false;
+        const status = booking.status.toLowerCase();
+        const subStatus = (booking.sub_status ?? "").toLowerCase();
+        return !["cancelled", "canceled", "deleted"].includes(status) && subStatus !== "provider_deleted";
+      });
+  }
+
   async all<T>(sql: string, params: unknown[]) {
     if (sql.includes("WITH latest_housekeeping")) {
       return {
@@ -163,31 +193,27 @@ class FakeDashboardDB {
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: [] as T[] };
     if (sql.includes("SELECT f.channel, f.expected_net_payout, f.check_in")) {
       return {
-        results: this.financialRecords
-          .filter((record) => {
-            const booking = this.bookingStates.get(record.beds24_booking_id);
-            if (!booking) return false;
-            const status = booking.status.toLowerCase();
-            const subStatus = (booking.sub_status ?? "").toLowerCase();
-            return !["cancelled", "canceled", "deleted"].includes(status) && subStatus !== "provider_deleted";
-          })
+        results: this.activeFinancialRecords(sql, params)
           .map(({ channel, expected_net_payout, check_in }) => ({ channel, expected_net_payout, check_in })) as T[],
       };
     }
     if (sql.includes("FROM manual_accounting_entries")) {
+      const range = this.sqlRange(sql, params, "entry_date");
       return {
         results: [
-          { entry_type: "income", amount: 500, description: "Restaurant", note: "category: INCASSI RISTORANTE / BAR" },
-          { entry_type: "income", amount: 250, description: "Motorbike", note: "category: INCASSI AFFITTO MOTORINO" },
-          { entry_type: "expense", amount: 300, description: "Supplies", note: "category: Resort Supplies" },
-          { entry_type: "expense", amount: 200, description: "Internet", note: "category: Utilities & Connectivity" },
-        ] as T[],
+          { entry_date: "2026-08-06", entry_type: "income", amount: 500, description: "Restaurant", note: "category: INCASSI RISTORANTE / BAR" },
+          { entry_date: "2026-08-06", entry_type: "income", amount: 250, description: "Motorbike", note: "category: INCASSI AFFITTO MOTORINO" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 300, description: "Supplies", note: "category: Resort Supplies" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 200, description: "Internet", note: "category: Utilities & Connectivity" },
+        ].filter((row) => this.inRange(row.entry_date, range)) as T[],
       };
     }
     if (sql.includes("FROM payroll_records") && sql.includes("status = 'FINALIZED'")) {
+      const range = this.sqlRange(sql, params, "payroll_month");
       return {
         results: [
           {
+            payroll_month: "2026-08",
             monthly_gross_salary: 12000,
             salary_advances_received: 1000,
             bonuses_additions: 500,
@@ -198,7 +224,7 @@ class FakeDashboardDB {
             meal_allowance_advance: 900,
             net_salary_payable: 11700,
           },
-        ] as T[],
+        ].filter((row) => this.inRange(row.payroll_month, range)) as T[],
       };
     }
     return { results: [] as T[] };
@@ -208,15 +234,8 @@ class FakeDashboardDB {
     if (sql.includes("FROM ota_financial_records f") && sql.includes("INNER JOIN bookings b")) {
       const today = String(params[0]);
       const isFuture = sql.includes("f.check_in > ?");
-      const total = this.financialRecords
+      const total = this.activeFinancialRecords(sql, params, 1)
         .filter((record) => isFuture ? record.check_in > today : record.check_in <= today)
-        .filter((record) => {
-          const booking = this.bookingStates.get(record.beds24_booking_id);
-          if (!booking) return false;
-          const status = booking.status.toLowerCase();
-          const subStatus = (booking.sub_status ?? "").toLowerCase();
-          return !["cancelled", "canceled", "deleted"].includes(status) && subStatus !== "provider_deleted";
-        })
         .reduce((sum, record) => sum + record.expected_net_payout, 0);
       return { total } as T;
     }
@@ -247,6 +266,8 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.match(data.business.expectedFutureNetIncome.detail, /cancellable or modifiable/i);
   assert.equal(data.business.financialSnapshot.checkedInNetRevenue, 2000);
   assert.equal(data.business.financialSnapshot.futureBookedNetForecast, 2300);
+  assert.equal(data.dateRange.mode, "full");
+  assert.equal(data.dateRange.label, "Full view");
   assert.equal(data.business.financialSnapshot.manualIncomeTotal, 750);
   assert.equal(data.business.financialSnapshot.manualExpenseTotal, 500);
   assert.equal(data.business.financialSnapshot.payrollTotal, 13300);
@@ -272,4 +293,24 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.alerts.some((item) => item.id === "high-maintenance"), true);
   assert.equal(data.alerts.some((item) => item.id === "waiting-maintenance"), true);
   assert.equal(data.quickLinks.some((item) => item.href === "/maintenance"), true);
+});
+
+test("dashboard overview can recalculate the financial snapshot for a selected date range", async () => {
+  const data = await getDashboardOverview(
+    { DB: new FakeDashboardDB() as unknown as D1Database },
+    { dateRange: { fromDate: "2026-08-10", toDate: "2026-08-10" } },
+  );
+
+  assert.equal(data.dateRange.mode, "custom");
+  assert.equal(data.dateRange.fromDate, "2026-08-10");
+  assert.equal(data.dateRange.toDate, "2026-08-10");
+  assert.equal(data.dateRange.label, "2026-08-10 to 2026-08-10");
+  assert.equal(data.business.expectedNetIncomeToDate.value, 0);
+  assert.equal(data.business.expectedFutureNetIncome.value, 2300);
+  assert.equal(data.business.financialSnapshot.checkedInNetRevenue, 0);
+  assert.equal(data.business.financialSnapshot.futureBookedNetForecast, 2300);
+  assert.equal(data.business.financialSnapshot.manualIncomeTotal, 0);
+  assert.equal(data.business.financialSnapshot.manualExpenseTotal, 0);
+  assert.equal(data.business.financialSnapshot.payrollTotal, 13300);
+  assert.match(data.business.occupancy.detail, /selected period/i);
 });

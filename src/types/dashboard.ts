@@ -115,8 +115,19 @@ export interface DashboardFinancialSnapshot {
   payrollComponents: DashboardFinancialSegment[];
 }
 
+export interface DashboardDateRange {
+  fromDate?: string | null;
+  toDate?: string | null;
+}
+
 export interface DashboardOverview {
   date: string;
+  dateRange: {
+    mode: "full" | "custom";
+    fromDate: string | null;
+    toDate: string | null;
+    label: string;
+  };
   alerts: DashboardOverviewAlert[];
   business: {
     expectedNetIncomeToDate: DashboardBusinessMetric;

@@ -742,7 +742,15 @@ app.get("/api/dashboard/overview", async (c) => {
   try {
     await authenticated(c, "owner-dashboard", "access");
     c.header("Cache-Control", "no-store");
-    return c.json({ success: true, data: await getDashboardOverview(c.env) });
+    return c.json({
+      success: true,
+      data: await getDashboardOverview(c.env, {
+        dateRange: {
+          fromDate: c.req.query("fromDate") ?? c.req.query("from") ?? null,
+          toDate: c.req.query("toDate") ?? c.req.query("to") ?? null,
+        },
+      }),
+    });
   } catch (error) {
     console.error(JSON.stringify({
       message: "Dashboard overview request failed",
