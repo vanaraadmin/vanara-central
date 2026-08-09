@@ -133,6 +133,26 @@
   white-space: nowrap;
 }
 
+@media (max-width: 720px) {
+  .dashboard-range-filter {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .dashboard-range-filter label,
+  .dashboard-range-filter input,
+  .dashboard-range-filter button {
+    width: 100%;
+  }
+
+  .dashboard-range-filter__status {
+    min-height: 20px;
+    text-align: center;
+  }
+}
+
 .is-spinning {
   animation: vc-spin 900ms linear infinite;
 }
@@ -528,15 +548,6 @@
 
   .financial-dashboard {
     padding: 14px;
-  }
-
-  .dashboard-range-filter {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .dashboard-range-filter__mode,
-  .dashboard-range-filter__status {
-    grid-column: 1 / -1;
   }
 
   .financial-dashboard__donut {

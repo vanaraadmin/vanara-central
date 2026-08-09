@@ -288,7 +288,7 @@ function DashboardRangeFilter({
           Clear
         </button>
       ) : null}
-      <span className="dashboard-range-filter__status">{activeLabel}</span>
+      {isCustom ? <span className="dashboard-range-filter__status">{activeLabel}</span> : null}
     </form>
   );
 }
