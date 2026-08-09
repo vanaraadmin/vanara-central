@@ -51,6 +51,7 @@ const th = {
   staffHome: "หน้าพนักงาน",
   home: "หน้าแรก",
   staffPage: "หน้าพนักงาน",
+  ownerPage: "หน้าเจ้าของ",
   operational: "งานประจำวัน",
   controlRoom: "หน้าควบคุมงาน",
   downloadTm30: "ดาวน์โหลด TM30",

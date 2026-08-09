@@ -51,6 +51,7 @@ const en = {
   staffHome: "Staff Home",
   home: "Home",
   staffPage: "Staff page",
+  ownerPage: "Owner page",
   operational: "Operational",
   controlRoom: "Control Room",
   downloadTm30: "Download TM30",

@@ -591,7 +591,9 @@ function waterTaskBelongsToEligibleStay(context: OperationalContext, task: House
 
 function taskBelongsToDeparture(context: OperationalContext, task: HousekeepingTask): boolean {
   if (task.taskType !== "TURNOVER") return false;
-  if (!context.departure) return task.operationalDate <= context.date && ACTIVE_TASK_STATUSES.has(task.status);
+  if (!context.departure) {
+    return task.status !== "WAITING_FOR_RECEPTION" && task.operationalDate <= context.date && ACTIVE_TASK_STATUSES.has(task.status);
+  }
   return taskMatchesBooking(task, context.departure);
 }
 

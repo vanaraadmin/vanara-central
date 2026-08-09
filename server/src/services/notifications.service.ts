@@ -35,6 +35,7 @@ interface PushSubscriptionRow {
 interface NotificationEventRow {
   notification_event_id: number;
   dedupe_key: string;
+  created_at: string;
 }
 
 export interface PushSubscriptionInput {
@@ -58,6 +59,7 @@ export interface NotificationTemplate {
   entityId: string | number;
   dedupeKey: string;
   audience: NotificationAudience;
+  soundType?: "chat" | "event";
   userIds?: string[];
   data?: Record<string, string | number | boolean | null | undefined>;
   payload: Record<NotificationLanguage, NotificationPayload>;
@@ -200,20 +202,22 @@ export async function unregisterPushSubscription(env: NotificationBindings, user
 }
 
 async function createNotificationEvent(env: NotificationBindings, template: NotificationTemplate, now: string): Promise<NotificationEventRow | null> {
-  const result = await env.DB.prepare(`
-    INSERT OR IGNORE INTO notification_events (dedupe_key, notification_type, entity_type, entity_id, audience, payload_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  const soundType = template.soundType ?? (template.type === "chat.message.created" ? "chat" : "event");
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO notification_events (dedupe_key, notification_type, entity_type, entity_id, audience, sound_type, payload_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     template.dedupeKey,
     template.type,
     template.entityType,
     String(template.entityId),
     template.audience,
+    soundType,
     JSON.stringify({ data: template.data ?? {}, payload: template.payload }),
     now,
   ).run();
-  if ((result.meta.changes ?? 0) !== 1) return null;
-  return env.DB.prepare("SELECT notification_event_id, dedupe_key FROM notification_events WHERE dedupe_key = ?").bind(template.dedupeKey).first<NotificationEventRow>();
+  const row = await env.DB.prepare("SELECT notification_event_id, dedupe_key, created_at FROM notification_events WHERE dedupe_key = ?").bind(template.dedupeKey).first<NotificationEventRow>();
+  return row?.created_at === now ? row : null;
 }
 
 async function loadSubscriptions(env: NotificationBindings, template: NotificationTemplate): Promise<PushSubscriptionRow[]> {

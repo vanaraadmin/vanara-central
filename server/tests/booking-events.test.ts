@@ -87,6 +87,18 @@ type FakeGroupMemberRow = {
   departure_date: string | null;
 };
 
+type FakeNotificationEventRow = {
+  notification_event_id: number;
+  dedupe_key: string;
+  notification_type: string;
+  entity_type: string;
+  entity_id: string;
+  audience: string;
+  sound_type: string;
+  payload_json: string;
+  created_at: string;
+};
+
 function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow {
   return {
     booking_event_id: 1,
@@ -170,7 +182,10 @@ class FakeBookingEventsDB {
     }),
   ];
   groupMembers = new Map<number, FakeGroupMemberRow[]>();
+  notificationEvents: FakeNotificationEventRow[] = [];
   inserted: unknown[][] = [];
+  bookingInsertMetaChanges = 1;
+  nextNotificationEventId = 1;
   private insertedSignatures = new Set<string>();
   deleteStatements = 0;
 
@@ -203,6 +218,8 @@ class FakeBookingEventsDB {
       };
     }
 
+    if (sql.includes("FROM push_subscriptions")) return { results: [] as T[] };
+
     return {
       results: this.rows
         .slice()
@@ -213,6 +230,11 @@ class FakeBookingEventsDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("SELECT notification_event_id") && sql.includes("FROM notification_events")) {
+      const dedupeKey = String(params[0]);
+      const event = this.notificationEvents.find((item) => item.dedupe_key === dedupeKey);
+      return (event ? { notification_event_id: event.notification_event_id, dedupe_key: event.dedupe_key, created_at: event.created_at } : null) as T | null;
+    }
     if (sql.includes("FROM booking_events") && sql.includes("event_type = 'new'")) {
       const bookingId = Number(params[0]);
       const cutoff = String(params[1]);
@@ -247,6 +269,25 @@ class FakeBookingEventsDB {
         event_source: params[4] as string | null,
         occurred_at: String(params[6]),
       }));
+      return { meta: { changes: this.bookingInsertMetaChanges, last_row_id: this.inserted.length } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO notification_events")) {
+      const dedupeKey = String(params[0]);
+      if (this.notificationEvents.some((event) => event.dedupe_key === dedupeKey)) {
+        return { meta: { changes: 0, last_row_id: this.notificationEvents.length } };
+      }
+      this.notificationEvents.push({
+        notification_event_id: this.nextNotificationEventId++,
+        dedupe_key: dedupeKey,
+        notification_type: String(params[1]),
+        entity_type: String(params[2]),
+        entity_id: String(params[3]),
+        audience: String(params[4]),
+        sound_type: String(params[5]),
+        payload_json: String(params[6]),
+        created_at: String(params[7]),
+      });
+      return { meta: { changes: 1, last_row_id: this.notificationEvents.length } };
     }
     if (sql.includes("DELETE")) this.deleteStatements += 1;
     return { meta: { changes: 1, last_row_id: this.inserted.length } };
@@ -380,6 +421,32 @@ test("booking event persistence appends the sync-generated event envelope", asyn
   assert.equal(db.inserted[0]?.[0], "updated");
   assert.equal(db.inserted[0]?.[1], baseSnapshot.bookingId);
   assert.equal(db.inserted[0]?.[3], "Villa 10");
+});
+
+test("booking push notification is not gated by unreliable D1 insert metadata", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [];
+  db.bookingInsertMetaChanges = 0;
+
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    null,
+    baseSnapshot,
+    "2026-07-31T10:00:00.000Z",
+  );
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    null,
+    baseSnapshot,
+    "2026-07-31T10:00:00.000Z",
+  );
+
+  assert.equal(db.notificationEvents.length, 1);
+  assert.equal(db.notificationEvents[0]?.notification_type, "booking.new");
+  assert.equal(db.notificationEvents[0]?.audience, "owners");
+  assert.equal(db.notificationEvents[0]?.sound_type, "event");
+  assert.match(db.notificationEvents[0]?.payload_json ?? "", /New booking received/);
+  assert.match(db.notificationEvents[0]?.payload_json ?? "", /\/staff#booking-pulse/);
 });
 
 test("booking pulse read model returns NEW UPDATED and CANCELLED events", async () => {

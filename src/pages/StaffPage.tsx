@@ -232,6 +232,7 @@ export default function StaffPage() {
 
   const workspaces = staff.data ? sortWorkspaces(withAvailabilityWorkspace(staff.data.cards)) : [];
   const name = staff.data ? staffNickname(staff.data.user.displayName) : "";
+  const isOwnerHome = staff.data?.user.isOwner ?? false;
   const bookingEvents = staff.data?.bookingEvents ?? [];
   const canViewBookingValue = staff.data?.bookingPulseCapabilities?.canViewBookingValue ?? false;
   const title = useMemo(() => {
@@ -241,7 +242,13 @@ export default function StaffPage() {
   const showWorkspaceSection = Boolean(workspaces.length > 0 || staff.isLoading || staff.isError || (staff.data && workspaces.length === 0));
 
   return (
-    <WorkspaceShell title={title} stickyNavigationTitle={translate("home")} workspace="staffHome" bodyClassName="staff-page">
+    <WorkspaceShell
+      title={title}
+      pageLabel={isOwnerHome ? translate("ownerPage") : translate("staffPage")}
+      stickyNavigationTitle={translate("home")}
+      workspace="staffHome"
+      bodyClassName="staff-page"
+    >
       <RecentBookings
         canViewBookingValue={canViewBookingValue}
         events={bookingEvents}

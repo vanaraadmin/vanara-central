@@ -49,6 +49,7 @@ export interface StaffOverview {
   user: {
     id: string;
     displayName: string;
+    isOwner: boolean;
     role: string;
   };
   bookingPulseCapabilities: {

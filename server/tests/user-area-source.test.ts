@@ -6,9 +6,12 @@ const profilePanel = readFileSync(new URL("../../src/components/ProfilePanel.tsx
 const dashboardPage = readFileSync(new URL("../../src/pages/DashboardPage.tsx", import.meta.url), "utf8");
 const indexHtml = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const mainTsx = readFileSync(new URL("../../src/main.tsx", import.meta.url), "utf8");
+const appRouter = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
+const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
 const manifest = readFileSync(new URL("../../public/manifest.webmanifest", import.meta.url), "utf8");
 const pwaService = readFileSync(new URL("../../src/services/pwa.service.ts", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
+const workspaceShell = readFileSync(new URL("../../src/components/WorkspaceShell.tsx", import.meta.url), "utf8");
 const workspaceCss = readFileSync(new URL("../../src/styles/WorkspaceShell.css", import.meta.url), "utf8");
 const currentUserService = readFileSync(new URL("../src/services/current-user.service.ts", import.meta.url), "utf8");
 
@@ -49,6 +52,8 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(profilePanel, /translate\("enableNotifications"\)/);
   assert.match(pwaService, /Notification\.requestPermission\(\)/);
   assert.match(pwaService, /pushManager\.subscribe/);
+  assert.match(pwaService, /document\.readyState === "complete"\)\s*register\(\)/);
+  assert.match(pwaService, /addEventListener\("load", register, \{ once: true \}\)/);
   assert.match(pwaService, /refreshExistingPushSubscription/);
   assert.match(pwaService, /pushManager\.getSubscription\(\)/);
   assert.match(pwaService, /syncPushSubscription\(subscription\)/);
@@ -56,6 +61,14 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(english, /enableNotifications: "Enable notifications"/);
   assert.match(thai, /enableNotifications: "เปิดแจ้งเตือน"/);
   assert.match(thai, /notificationsUnsupportedDevice: "เครื่องนี้ใช้แจ้งเตือนไม่ได้"/);
+});
+
+test("workspace home labels owner and staff contexts without changing the home route", () => {
+  assert.match(appRouter, /<Route index element=\{<Navigate replace to="\/staff" \/>/);
+  assert.match(staffPage, /staff\.data\?\.user\.isOwner/);
+  assert.match(staffPage, /pageLabel=\{isOwnerHome \? translate\("ownerPage"\) : translate\("staffPage"\)\}/);
+  assert.match(workspaceShell, /pageLabel\?: string/);
+  assert.match(workspaceShell, /<WorkspaceHero[\s\S]*pageLabel=\{pageLabel\}/);
 });
 
 test("Vanara Central is installable as a PWA without caching operational API data", () => {

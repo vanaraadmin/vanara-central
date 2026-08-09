@@ -97,6 +97,7 @@ type NotificationEventRow = {
   entity_type: string;
   entity_id: string;
   audience: string;
+  sound_type: string;
   payload_json: string;
   created_at: string;
 };
@@ -228,7 +229,7 @@ class FakeWarapornDB {
     if (sql.includes("SELECT notification_event_id") && sql.includes("FROM notification_events")) {
       const dedupeKey = String(params[0]);
       const event = this.notificationEvents.find((item) => item.dedupe_key === dedupeKey);
-      return (event ? { notification_event_id: event.notification_event_id, dedupe_key: event.dedupe_key } : null) as T | null;
+      return (event ? { notification_event_id: event.notification_event_id, dedupe_key: event.dedupe_key, created_at: event.created_at } : null) as T | null;
     }
     return null;
   }
@@ -386,8 +387,9 @@ class FakeWarapornDB {
         entity_type: String(params[2]),
         entity_id: String(params[3]),
         audience: String(params[4]),
-        payload_json: String(params[5]),
-        created_at: String(params[6]),
+        sound_type: String(params[5]),
+        payload_json: String(params[6]),
+        created_at: String(params[7]),
       });
       return { meta: { changes: 1, last_row_id: this.notificationEvents.length } };
     }
@@ -548,6 +550,7 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(db.notificationEvents[0]!.notification_type, "guest_message.draft_ready");
   assert.equal(db.notificationEvents[0]!.dedupe_key, "guest-message:draft-ready:1:1");
   assert.equal(db.notificationEvents[0]!.audience, "owners");
+  assert.equal(db.notificationEvents[0]!.sound_type, "event");
   assert.match(db.notificationEvents[0]!.payload_json, /Waraporn reply ready for review/);
   assert.match(db.notificationEvents[0]!.payload_json, /"\/messages"/);
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });

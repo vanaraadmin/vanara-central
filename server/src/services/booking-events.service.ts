@@ -398,7 +398,7 @@ export async function recordBookingEvent(
   if (eventType === "updated" && await hasActiveNewEvent(env, current.bookingId, occurredAt)) return;
   const signature = bookingEventSignature(eventType, current, previous);
 
-  const result = await env.DB.prepare(`
+  await env.DB.prepare(`
     INSERT OR IGNORE INTO booking_events (
       event_type,
       booking_id,
@@ -420,7 +420,6 @@ export async function recordBookingEvent(
     occurredAt,
     occurredAt,
   ).run();
-  if ((result.meta.changes ?? 0) !== 1) return;
 
   await notifyBookingEvent(env, {
     eventType,

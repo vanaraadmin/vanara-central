@@ -4,6 +4,7 @@ import test from "node:test";
 
 const notificationService = readFileSync(new URL("../src/services/notifications.service.ts", import.meta.url), "utf8");
 const notificationMigration = readFileSync(new URL("../migrations/0042_push_notifications.sql", import.meta.url), "utf8");
+const notificationSoundMigration = readFileSync(new URL("../migrations/0044_notification_event_sound_type.sql", import.meta.url), "utf8");
 const chatService = readFileSync(new URL("../src/services/chat.service.ts", import.meta.url), "utf8");
 const bookingEventsService = readFileSync(new URL("../src/services/booking-events.service.ts", import.meta.url), "utf8");
 const receptionService = readFileSync(new URL("../src/services/reception.service.ts", import.meta.url), "utf8");
@@ -21,7 +22,12 @@ test("push notifications use a central D1-backed service with subscription and d
   assert.match(notificationMigration, /CREATE TABLE notification_deliveries/);
   assert.match(notificationService, /export async function emitNotification/);
   assert.match(notificationService, /INSERT OR IGNORE INTO notification_events/);
-  assert.match(notificationService, /result\.meta\.changes[\s\S]*return null/);
+  assert.match(notificationSoundMigration, /sound_type TEXT NOT NULL DEFAULT 'event'/);
+  assert.match(notificationService, /audience, sound_type, payload_json, created_at/);
+  assert.match(notificationService, /const soundType = template\.soundType \?\? \(template\.type === "chat\.message\.created" \? "chat" : "event"\)/);
+  assert.match(notificationService, /SELECT notification_event_id, dedupe_key, created_at FROM notification_events WHERE dedupe_key = \?/);
+  assert.match(notificationService, /row\?\.created_at === now \? row : null/);
+  assert.doesNotMatch(notificationService, /result\.meta\.changes[\s\S]*return null/);
   assert.match(notificationService, /JOIN users u ON u\.user_id = ps\.user_id[\s\S]*u\.status = 'active'/);
 });
 
@@ -62,7 +68,7 @@ test("booking notifications are owner-only and cover new updated cancelled event
   assert.match(notificationService, /\/staff#booking-pulse/);
   assert.match(notificationService, /Open Booking Pulse/);
   assert.match(notificationService, /มีการจองใหม่/);
-  assert.match(bookingEventsService, /if \(\(result\.meta\.changes \?\? 0\) !== 1\) return;/);
+  assert.doesNotMatch(bookingEventsService, /result\.meta\.changes[\s\S]*notifyBookingEvent/);
 });
 
 test("reception completion notifications go to all active users only after completion writes", () => {

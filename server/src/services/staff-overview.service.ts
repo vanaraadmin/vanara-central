@@ -34,6 +34,7 @@ export interface StaffOverview {
   user: {
     id: string;
     displayName: string;
+    isOwner: boolean;
     role: string;
   };
   bookingPulseCapabilities: {
@@ -233,6 +234,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
     user: {
       id: user.id,
       displayName: user.displayName,
+      isOwner: isOwner(user),
       role: user.role,
     },
     bookingPulseCapabilities,

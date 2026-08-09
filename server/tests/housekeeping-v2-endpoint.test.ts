@@ -583,6 +583,29 @@ test("unfinished checkout turnover remains visible the following day as normal c
   assert.equal(body.data.summary.toClean, 1);
 });
 
+test("stale waiting-for-checkout turnover is hidden when there is no matching departure", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [];
+  db.tasks.push(storedTask({
+    task_id: 91,
+    task_type: "TURNOVER",
+    unit_id: 1,
+    booking_id: 304,
+    stay_id: 930304,
+    operational_date: "2026-08-05",
+    due_cycle_date: "2026-08-05",
+    status: "WAITING_FOR_RECEPTION",
+    priority: "HIGH",
+  }));
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-09", db);
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string; taskStatus: string }> }>; summary: { toClean: number } } };
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 91), false);
+  assert.equal(body.data.summary.toClean, 0);
+});
+
 test("arrival-day water task already stored is not published and the next full day generates water", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [

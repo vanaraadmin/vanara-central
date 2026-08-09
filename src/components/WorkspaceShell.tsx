@@ -46,6 +46,7 @@ interface WorkspaceShellProps {
   workspace: WorkspaceKey;
   bodyClassName?: string;
   heroAction?: React.ReactNode;
+  pageLabel?: string;
   stickyNavigationTitle?: string;
   suppressStickyNavigation?: boolean;
   wide?: boolean;
@@ -70,6 +71,7 @@ export default function WorkspaceShell({
   bodyClassName,
   children,
   heroAction,
+  pageLabel,
   stickyNavigationTitle,
   suppressStickyNavigation = false,
   title,
@@ -144,7 +146,7 @@ export default function WorkspaceShell({
           <StickyGlassHeader progress={progress} title={navigationTitle} />
         ) : null}
 
-        <WorkspaceHero action={heroActionNode} date={today} logoSrc={logo} title={title} />
+        <WorkspaceHero action={heroActionNode} date={today} logoSrc={logo} pageLabel={pageLabel} title={title} />
 
         <div ref={stickyTriggerRef} className="workspace-sticky-trigger" aria-hidden="true" />
 

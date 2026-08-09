@@ -9,6 +9,7 @@ interface WorkspaceHeroProps {
   action?: ReactNode;
   date: string;
   logoSrc: string;
+  pageLabel?: string;
   title: string;
 }
 
@@ -16,6 +17,7 @@ export default function WorkspaceHero({
   action,
   date,
   logoSrc,
+  pageLabel,
   title,
 }: WorkspaceHeroProps) {
   const { translate } = useLanguage();
@@ -47,7 +49,7 @@ export default function WorkspaceHero({
       </header>
 
       <section className="workspace-intro" aria-labelledby="workspace-title">
-        <p className="workspace-intro__eyebrow">{translate("staffPage")}</p>
+        <p className="workspace-intro__eyebrow">{pageLabel ?? translate("staffPage")}</p>
         <div className="workspace-intro__title-row">
           <h1 id="workspace-title">{title}</h1>
           {action ? <div className="workspace-intro__action">{action}</div> : null}

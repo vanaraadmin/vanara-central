@@ -43,12 +43,20 @@ async function refreshExistingPushSubscription(registration: ServiceWorkerRegist
   await syncPushSubscription(subscription);
 }
 
+async function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!serviceWorkersAvailable()) return null;
+  const existing = await navigator.serviceWorker.getRegistration("/");
+  if (existing) return existing;
+  return navigator.serviceWorker.register("/sw.js", { scope: "/" });
+}
+
 export function registerVanaraServiceWorker(onUpdate?: UpdateCallback): void {
   if (!serviceWorkersAvailable()) return;
 
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { scope: "/" })
+  const register = () => {
+    ensureServiceWorkerRegistration()
       .then((registration) => {
+        if (!registration) return;
         registration.addEventListener("updatefound", () => {
           const worker = registration.installing;
           if (!worker) return;
@@ -63,7 +71,10 @@ export function registerVanaraServiceWorker(onUpdate?: UpdateCallback): void {
       .catch(() => {
         // PWA registration must never block the operational app.
       });
-  });
+  };
+
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register, { once: true });
 }
 
 export async function checkVanaraUpdate(): Promise<PwaUpdateStatus> {
@@ -96,7 +107,7 @@ export async function checkPushNotificationStatus(): Promise<PushNotificationSta
   if (Notification.permission === "denied") return "blocked";
   const key = await pushPublicKey();
   if (!key.configured || !key.publicKey) return "unconfigured";
-  const registration = await navigator.serviceWorker.getRegistration("/");
+  const registration = await ensureServiceWorkerRegistration();
   if (!registration) return "ready";
   const subscription = await registration.pushManager.getSubscription();
   if (subscription) await syncPushSubscription(subscription);
@@ -110,7 +121,9 @@ export async function enablePushNotifications(): Promise<PushNotificationStatus>
   if (!key.configured || !key.publicKey) return "unconfigured";
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission !== "granted") return "blocked";
-  const registration = await navigator.serviceWorker.ready;
+  const ensuredRegistration = await ensureServiceWorkerRegistration();
+  if (!ensuredRegistration) return "unsupported";
+  const registration = await navigator.serviceWorker.ready.catch(() => ensuredRegistration);
   const subscription = await registration.pushManager.getSubscription()
     ?? await registration.pushManager.subscribe({
       userVisibleOnly: true,
