@@ -19,6 +19,34 @@ function money(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "THB", maximumFractionDigits: 0 }).format(value);
 }
 
+const incomeCategories = [
+  "INCASSI PER STANZE",
+  "INCASSI RISTORANTE / BAR",
+  "INCASSI AFFITTO MOTORINO",
+] as const;
+
+const expenseCategories = [
+  "Resort Supplies",
+  "Food & Beverage Operations",
+  "Repairs & Maintenance",
+  "Utilities & Connectivity",
+  "Garden & Pool",
+  "Transport & Fuel",
+  "Office & Admin",
+  "Government, Bank & Legal",
+  "Marketing & Reviews",
+  "Guest Services",
+  "Other Expenses",
+] as const;
+
+function categoriesFor(type: ManualEntryType): readonly string[] {
+  return type === "income" ? incomeCategories : expenseCategories;
+}
+
+function accountingNote(category: string): string {
+  return `category: ${category}`;
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -33,12 +61,13 @@ export default function AccountingPage() {
   const [entryType, setEntryType] = useState<ManualEntryType>("expense");
   const [entryDate, setEntryDate] = useState(today());
   const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState<string>(expenseCategories[0]);
   const [description, setDescription] = useState("");
-  const [note, setNote] = useState("");
   const [receiptDataUrl, setReceiptDataUrl] = useState<string | null>(null);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [from, setFrom] = useState(startOfMonth());
   const [to, setTo] = useState(today());
+  const activeCategories = categoriesFor(entryType);
 
   const accounting = useQuery({
     queryKey: ["accounting", "overview"],
@@ -50,22 +79,21 @@ export default function AccountingPage() {
       entryType,
       entryDate,
       amount: Number(amount),
-      description,
-      note: note.trim() ? note.trim() : null,
+      description: description.trim(),
+      note: accountingNote(category),
       receiptDataUrl,
       receiptFileName,
     }),
     onSuccess: async () => {
       setAmount("");
       setDescription("");
-      setNote("");
       setReceiptDataUrl(null);
       setReceiptFileName(null);
       await queryClient.invalidateQueries({ queryKey: ["accounting"] });
     },
   });
 
-  const canSubmit = entryDate && Number(amount) > 0 && description.trim().length > 0;
+  const canSubmit = entryDate && Number(amount) > 0 && category.trim().length > 0 && description.trim().length > 0;
   const totals = accounting.data?.totals;
 
   async function onReceipt(event: ChangeEvent<HTMLInputElement>) {
@@ -103,12 +131,34 @@ export default function AccountingPage() {
                 </div>
               </header>
               <form className="accounting-form" onSubmit={onSubmit}>
-                <label><span>Type</span><select value={entryType} onChange={(event) => setEntryType(event.target.value as ManualEntryType)}><option value="income">Income</option><option value="expense">Expense</option></select></label>
+                <label><span>Type</span><select value={entryType} onChange={(event) => {
+                  const nextType = event.target.value as ManualEntryType;
+                  setEntryType(nextType);
+                  setCategory(categoriesFor(nextType)[0]);
+                }}><option value="income">Income</option><option value="expense">Expense</option></select></label>
                 <label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} /></label>
                 <label><span>Amount</span><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
-                <label className="accounting-form__wide"><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-                <label className="accounting-form__wide"><span>Note</span><textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
-                <label className="accounting-upload"><span>Receipt photo/PDF</span><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={onReceipt} /><small>{receiptFileName ?? "JPG, PNG, WebP or PDF."}</small></label>
+                <label className="accounting-form__wide">
+                  <span>Category</span>
+                  <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                    {activeCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </label>
+                <label className="accounting-form__wide"><span>Description</span><textarea value={description} placeholder={entryType === "expense" ? "What was bought?" : "What was collected?"} onChange={(event) => setDescription(event.target.value)} /></label>
+                <div className="accounting-upload">
+                  <span>Receipt photo/PDF</span>
+                  <div className="accounting-upload__actions">
+                    <label className="accounting-upload__button">
+                      <input type="file" accept="image/*" capture="environment" onChange={onReceipt} />
+                      <span>Take receipt photo</span>
+                    </label>
+                    <label className="accounting-upload__button accounting-upload__button--secondary">
+                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={onReceipt} />
+                      <span>Choose file/PDF</span>
+                    </label>
+                  </div>
+                  <small>{receiptFileName ?? "Use a readable receipt photo, or attach JPG, PNG, WebP or PDF."}</small>
+                </div>
                 <button className="accounting-action" disabled={!canSubmit || saveEntry.isPending} type="submit">{saveEntry.isPending ? "Saving" : "Save entry"}</button>
               </form>
               {saveEntry.isError ? <p className="accounting-error">Entry could not be saved.</p> : null}

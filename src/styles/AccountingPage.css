@@ -95,6 +95,13 @@
   font-weight: var(--vc-weight-bold);
 }
 
+.accounting-upload {
+  padding: var(--vc-space-2);
+  border: 1px solid rgba(23, 71, 52, 0.18);
+  border-radius: var(--vc-radius-lg);
+  background: rgba(255, 255, 255, 0.42);
+}
+
 .accounting-form input,
 .accounting-form select,
 .accounting-form textarea,
@@ -139,6 +146,45 @@
 .accounting-form textarea {
   min-height: 88px;
   padding-top: var(--vc-space-2);
+}
+
+.accounting-upload__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-2);
+}
+
+.accounting-upload__button {
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--vc-space-2);
+  border: 1px solid rgba(23, 71, 52, 0.28);
+  border-radius: var(--vc-radius-pill);
+  background: linear-gradient(145deg, rgba(23, 71, 52, 0.92), rgba(39, 118, 85, 0.86));
+  color: var(--vc-text-inverse);
+  font-weight: var(--vc-weight-heavy);
+  text-align: center;
+  cursor: pointer;
+}
+
+.accounting-upload__button--secondary {
+  background: rgba(244, 237, 223, 0.72);
+  color: var(--vc-text-primary);
+}
+
+.accounting-upload__button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.accounting-upload__button:focus-within {
+  outline: 2px solid var(--vc-focus-glass);
+  outline-offset: 3px;
 }
 
 .accounting-form__wide,
@@ -195,6 +241,10 @@
 
   .accounting-form,
   .accounting-export-range {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-upload__actions {
     grid-template-columns: minmax(0, 1fr);
   }
 }
