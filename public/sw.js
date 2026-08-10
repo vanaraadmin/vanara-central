@@ -1,4 +1,4 @@
-const VANARA_SW_VERSION = "2026-08-10-push-v3";
+const VANARA_SW_VERSION = "2026-08-10-push-v4";
 const VANARA_CACHE = `vanara-central-${VANARA_SW_VERSION}`;
 const SHELL_ASSETS = [
   "/",
@@ -57,6 +57,7 @@ self.addEventListener("push", (event) => {
     const url = typeof payload.url === "string" && payload.url.trim()
       ? payload.url.trim()
       : typeof notification.navigate === "string" && notification.navigate.trim() ? notification.navigate.trim() : "/";
+    const notificationType = tag.startsWith("chat-") ? "chat.message.created" : null;
     try {
       await self.registration.showNotification(title, {
         body,
@@ -65,6 +66,13 @@ self.addEventListener("push", (event) => {
         icon: "/pwa/icon-192.png",
         badge: "/pwa/icon-192.png"
       });
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      await Promise.all(clients.map((client) => client.postMessage({
+        type: "VANARA_PUSH_NOTIFICATION",
+        notificationType,
+        tag,
+        url
+      })));
     } catch (error) {
       console.error("Vanara push showNotification failed", error);
       await self.registration.showNotification("Vanara Central", {

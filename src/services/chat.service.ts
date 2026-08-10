@@ -1,4 +1,4 @@
-﻿import { ApiError, requestJson } from "./api.client";
+﻿import { ApiError } from "./api.client";
 import type {
   ChatConversation,
   ChatConversationResponse,
@@ -16,13 +16,48 @@ import type {
   OpenPrivateChatPayload,
 } from "../types/chat";
 
+async function requestChatJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "cache-control": "no-store",
+    },
+    signal,
+  });
+
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ApiError("The server returned an invalid response", response.status);
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof payload === "object" &&
+      payload !== null &&
+      "error" in payload &&
+      typeof payload.error === "string"
+        ? payload.error
+        : "The request could not be completed";
+
+    throw new ApiError(message, response.status);
+  }
+
+  return payload as T;
+}
 async function sendJson<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
     credentials: "same-origin",
+    cache: "no-store",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
+      "cache-control": "no-store",
     },
     body: JSON.stringify(payload),
     signal,
@@ -51,7 +86,7 @@ async function sendJson<T>(path: string, payload: unknown, signal?: AbortSignal)
 }
 
 export async function loadChatConversations(signal?: AbortSignal): Promise<ChatConversation[]> {
-  const response = await requestJson<ChatConversationsResponse>("/api/chat/conversations", signal);
+  const response = await requestChatJson<ChatConversationsResponse>("/api/chat/conversations", signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Chat conversations are unavailable");
   }
@@ -59,7 +94,7 @@ export async function loadChatConversations(signal?: AbortSignal): Promise<ChatC
 }
 
 export async function loadChatConversation(id: string, signal?: AbortSignal): Promise<ChatConversation> {
-  const response = await requestJson<ChatConversationResponse>(`/api/chat/conversations/${id}`, signal);
+  const response = await requestChatJson<ChatConversationResponse>(`/api/chat/conversations/${id}`, signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Chat conversation is unavailable");
   }
@@ -67,7 +102,7 @@ export async function loadChatConversation(id: string, signal?: AbortSignal): Pr
 }
 
 export async function loadChatMessages(id: string, signal?: AbortSignal): Promise<ChatMessage[]> {
-  const response = await requestJson<ChatMessagesResponse>(`/api/chat/conversations/${id}/messages`, signal);
+  const response = await requestChatJson<ChatMessagesResponse>(`/api/chat/conversations/${id}/messages`, signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Chat messages are unavailable");
   }
@@ -103,6 +138,7 @@ export async function uploadChatAttachment(
   const response = await fetch(`/api/chat/conversations/${id}/attachments`, {
     method: "POST",
     credentials: "same-origin",
+    cache: "no-store",
     headers: { accept: "application/json" },
     body: formData,
     signal,
@@ -130,7 +166,7 @@ export async function uploadChatAttachment(
 }
 
 export async function loadChatUsers(signal?: AbortSignal): Promise<ChatUser[]> {
-  const response = await requestJson<ChatUsersResponse>("/api/chat/users", signal);
+  const response = await requestChatJson<ChatUsersResponse>("/api/chat/users", signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Team members are unavailable");
   }
@@ -220,6 +256,7 @@ export async function clearChatAnnouncement(conversationId: string, signal?: Abo
   const response = await fetch(`/api/chat/conversations/${conversationId}/announcement`, {
     method: "DELETE",
     credentials: "same-origin",
+    cache: "no-store",
     headers: { accept: "application/json" },
     signal,
   });
@@ -243,7 +280,7 @@ export async function clearChatAnnouncement(conversationId: string, signal?: Abo
 }
 
 export async function loadChatUnreadSummary(signal?: AbortSignal): Promise<ChatUnreadSummary> {
-  const response = await requestJson<ChatUnreadSummaryResponse>("/api/chat/summary", signal);
+  const response = await requestChatJson<ChatUnreadSummaryResponse>("/api/chat/summary", signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Chat summary is unavailable");
   }

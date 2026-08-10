@@ -82,6 +82,19 @@ const DEFAULT_VAPID_SUBJECT = "mailto:info@vanararetreat.com";
 const DEFAULT_PUBLIC_BASE_URL = "https://central.vanararetreat.com";
 const WEB_PUSH_CONTENT_ENCODING = "aes128gcm";
 const WEB_PUSH_RECORD_SIZE = 4096;
+const ACTIVE_PUSH_SUBSCRIPTION_FILTER = `
+  AND NOT (
+    ps.endpoint LIKE 'https://web.push.apple.com/%'
+    AND EXISTS (
+      SELECT 1
+      FROM push_subscriptions newer
+      WHERE newer.user_id = ps.user_id
+        AND newer.status = 'active'
+        AND newer.endpoint LIKE 'https://web.push.apple.com/%'
+        AND COALESCE(newer.last_seen_at, newer.updated_at, newer.created_at) > COALESCE(ps.last_seen_at, ps.updated_at, ps.created_at)
+    )
+  )
+`;
 
 function cleanText(value: unknown, max = 160): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -217,6 +230,7 @@ export async function registerPushSubscription(env: NotificationBindings, user: 
   const auth = cleanText(input.keys?.auth, 256);
   if (!endpoint || !p256dh || !auth) throw new Error("Push subscription is incomplete.");
   const now = new Date().toISOString();
+  const cleanedUserAgent = cleanText(userAgent, 512) || null;
   await env.DB.prepare(`
     INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, status, failure_count, created_at, updated_at, last_seen_at)
     VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?, ?)
@@ -230,7 +244,21 @@ export async function registerPushSubscription(env: NotificationBindings, user: 
       updated_at = excluded.updated_at,
       last_seen_at = excluded.last_seen_at,
       disabled_at = NULL
-  `).bind(user.id, endpoint, p256dh, auth, cleanText(userAgent, 512) || null, now, now, now).run();
+  `).bind(user.id, endpoint, p256dh, auth, cleanedUserAgent, now, now, now).run();
+
+  if (endpoint.startsWith("https://web.push.apple.com/") && cleanedUserAgent) {
+    await env.DB.prepare(`
+      UPDATE push_subscriptions
+      SET status = 'disabled',
+          disabled_at = ?,
+          updated_at = ?
+      WHERE user_id = ?
+        AND endpoint <> ?
+        AND endpoint LIKE 'https://web.push.apple.com/%'
+        AND user_agent = ?
+        AND status = 'active'
+    `).bind(now, now, user.id, endpoint, cleanedUserAgent).run();
+  }
 }
 
 export async function unregisterPushSubscription(env: NotificationBindings, user: CurrentUser, endpoint: string): Promise<void> {
@@ -272,6 +300,7 @@ async function loadSubscriptions(env: NotificationBindings, template: Notificati
       WHERE ps.status = 'active'
         AND u.status = 'active'
         AND ps.user_id IN (${placeholders})
+        ${ACTIVE_PUSH_SUBSCRIPTION_FILTER}
     `).bind(...ids).all<PushSubscriptionRow>();
     return rows.results ?? [];
   }
@@ -284,6 +313,7 @@ async function loadSubscriptions(env: NotificationBindings, template: Notificati
     WHERE ps.status = 'active'
       AND u.status = 'active'
       ${ownerWhere}
+      ${ACTIVE_PUSH_SUBSCRIPTION_FILTER}
   `).all<PushSubscriptionRow>();
   return rows.results ?? [];
 }
