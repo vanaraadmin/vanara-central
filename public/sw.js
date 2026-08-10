@@ -1,23 +1,8 @@
-const VANARA_SW_VERSION = "2026-08-10-push-v4";
+const VANARA_SW_VERSION = "2026-08-10-pwa-stability-v1";
 const VANARA_CACHE = `vanara-central-${VANARA_SW_VERSION}`;
-const SHELL_ASSETS = [
-  "/",
-  "/manifest.webmanifest",
-  "/favicon.svg",
-  "/pwa/icon-192.png",
-  "/pwa/icon-512.png",
-  "/pwa/icon-maskable-192.png",
-  "/pwa/icon-maskable-512.png",
-  "/pwa/apple-touch-icon.png"
-];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(VANARA_CACHE)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
-      .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
@@ -108,14 +93,5 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
 
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() => caches.match("/") || Response.error())
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request))
-  );
+  event.respondWith(fetch(request));
 });

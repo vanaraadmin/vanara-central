@@ -607,6 +607,17 @@ function ChatComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  function showSentMessage(message: ChatMessage) {
+    queryClient.setQueryData<ChatMessage[]>(["chat", "messages", conversationId], (current) => {
+      const messages = current ?? [];
+      if (messages.some((item) => item.id === message.id)) {
+        return messages.map((item) => item.id === message.id ? message : item);
+      }
+      return [...messages, message].sort((a, b) => a.id - b.id);
+    });
+  }
+
   async function refreshChat() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["chat", "messages", conversationId] }),
@@ -623,7 +634,8 @@ function ChatComposer({
       bodyLanguage: inferLanguage(body),
       replyToMessageId: replyTarget?.messageId ?? null,
     }),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       setBody("");
       onCancelReply();
       await refreshChat();
@@ -631,7 +643,8 @@ function ChatComposer({
   });
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadChatAttachment(conversationId, file, replyTarget?.messageId ?? null),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       onCancelReply();
       await refreshChat();
     },
@@ -644,7 +657,8 @@ function ChatComposer({
       stickerId: sticker.id,
       replyToMessageId: replyTarget?.messageId ?? null,
     }),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       setStickersOpen(false);
       onCancelReply();
       await refreshChat();

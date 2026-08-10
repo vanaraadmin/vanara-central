@@ -84,6 +84,9 @@ test("open internal chat view refreshes active conversations without manual pull
   assert.match(teamChatSurface, /document\.addEventListener\("visibilitychange", refreshActiveChat\)/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "messages", conversationId\] \}\)/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "conversation", conversationId\] \}\)/);
+  assert.match(teamChatSurface, /function showSentMessage\(message: ChatMessage\)/);
+  assert.match(teamChatSurface, /queryClient\.setQueryData<ChatMessage\[\]>\(\["chat", "messages", conversationId\]/);
+  assert.match(teamChatSurface, /onSuccess: async \(message\) => \{[\s\S]*showSentMessage\(message\)/);
 });
 
 test("guest message notifications are owner-only and separated from internal chat", () => {
@@ -146,7 +149,7 @@ test("maintenance notifications fire only for blocking creation or false-to-true
 
 test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
-  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-10-push-v4"/);
+  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-10-pwa-stability-v1"/);
   assert.doesNotMatch(serviceWorker, /if \(!event\.data\) return;/);
   assert.match(serviceWorker, /event\.waitUntil\(\(async \(\) => \{/);
   assert.match(serviceWorker, /let payload = \{ title: "Vanara Central", body: "New message received"/);
@@ -165,4 +168,8 @@ test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /self\.clients\.openWindow\(targetUrl\)/);
   assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
+  assert.doesNotMatch(serviceWorker, /cache\.addAll/);
+  assert.doesNotMatch(serviceWorker, /caches\.match\("\/"\)/);
+  assert.doesNotMatch(serviceWorker, /caches\.match\(request\)/);
+  assert.match(serviceWorker, /event\.respondWith\(fetch\(request\)\)/);
 });
