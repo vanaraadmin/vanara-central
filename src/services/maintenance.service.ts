@@ -113,3 +113,19 @@ export async function addMaintenancePhoto(id: number, payload: { localReference?
   if (!response.success || !response.data) throw new Error(response.error ?? "Maintenance photo could not be added");
   return response.data;
 }
+
+export async function uploadMaintenancePhoto(id: number, file: File, caption?: string | null, signal?: AbortSignal) {
+  const formData = new FormData();
+  formData.set("file", file);
+  if (caption) formData.set("caption", caption);
+  const response = await fetch(`/api/maintenance/tickets/${id}/photos`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+    body: formData,
+    signal,
+  });
+  const payload = await response.json().catch(() => ({ success: false, error: "Maintenance photo could not be uploaded" })) as MaintenancePhotoResponse;
+  if (!response.ok || !payload.success || !payload.data) throw new Error(payload.error ?? "Maintenance photo could not be uploaded");
+  return payload.data;
+}

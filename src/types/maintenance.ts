@@ -77,6 +77,9 @@ export interface MaintenancePhoto {
   addedBy: string;
   addedByName: string;
   createdAt: string;
+  contentType: string | null;
+  fileName: string | null;
+  byteSize: number | null;
 }
 
 export interface MaintenanceEvent {

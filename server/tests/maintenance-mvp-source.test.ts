@@ -11,6 +11,9 @@ const roomDetail = readFileSync(new URL("../../src/pages/RoomDetailPage.tsx", im
 const receptionPage = readFileSync(new URL("../../src/pages/ReceptionPage.tsx", import.meta.url), "utf8");
 const receptionService = readFileSync(new URL("../src/services/reception.service.ts", import.meta.url), "utf8");
 const staffOverviewService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
+const maintenanceClientService = readFileSync(new URL("../../src/services/maintenance.service.ts", import.meta.url), "utf8");
+const maintenanceServerService = readFileSync(new URL("../src/services/maintenance.service.ts", import.meta.url), "utf8");
+const apiIndex = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
 
 test("maintenance MVP UI exposes only four statuses and three priorities", () => {
   assert.match(maintenanceDetail, /"Open", "In Progress", "Waiting Parts", "Completed"/);
@@ -50,6 +53,16 @@ test("maintenance photos use a compact gallery with fullscreen preview", () => {
   assert.match(maintenanceGallery, /role="dialog"/);
   assert.match(maintenanceGallery, /Escape/);
   assert.match(maintenanceGallery, /photo\.url/);
+});
+
+test("maintenance creation uploads actual photo bytes instead of storing only a local filename", () => {
+  assert.match(createMaintenance, /uploadMaintenancePhoto\(ticket\.id, photo\)/);
+  assert.doesNotMatch(createMaintenance, /localReference: photo\.name/);
+  assert.match(maintenanceClientService, /new FormData\(\)/);
+  assert.match(apiIndex, /multipart\/form-data/);
+  assert.match(apiIndex, /normalizeMaintenancePhotoFormData/);
+  assert.match(maintenanceServerService, /R2_STORAGE\.put/);
+  assert.match(maintenanceServerService, /object_key/);
 });
 
 test("blocking maintenance is surfaced in Reception, Staff Home, and Room Workspace", () => {

@@ -7,7 +7,7 @@ import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import WorkspaceShell from "../components/WorkspaceShell";
-import { addMaintenancePhoto, createMaintenanceTicket, loadMaintenanceAssignableUsers, loadMaintenanceRoomTargets } from "../services/maintenance.service";
+import { createMaintenanceTicket, loadMaintenanceAssignableUsers, loadMaintenanceRoomTargets, uploadMaintenancePhoto } from "../services/maintenance.service";
 import type { MaintenancePriority, MaintenanceTargetType } from "../types/maintenance";
 import { useLanguage } from "../providers/language.context";
 import { translateStaffLabel } from "../utils/staff-i18n-labels";
@@ -63,7 +63,7 @@ export default function CreateMaintenancePage() {
         assignedUserId: assignedUserId || null,
         outOfService,
       });
-      await Promise.all(photos.map((photo) => addMaintenancePhoto(ticket.id, { localReference: photo.name })));
+      await Promise.all(photos.map((photo) => uploadMaintenancePhoto(ticket.id, photo)));
       return ticket;
     },
     onSuccess: (ticket) => {

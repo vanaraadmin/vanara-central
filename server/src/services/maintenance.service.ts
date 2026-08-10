@@ -21,6 +21,7 @@ export type MaintenanceAssignmentType = "INTERNAL" | "EXTERNAL";
 
 export interface MaintenanceBindings extends NotificationBindings {
   DB: D1Database;
+  R2_STORAGE: R2Bucket;
 }
 
 export class MaintenanceConflictError extends Error {}
@@ -100,6 +101,10 @@ interface MaintenancePhotoRow {
   added_by: string;
   added_by_name: string;
   created_at: string;
+  object_key?: string | null;
+  content_type?: string | null;
+  file_name?: string | null;
+  byte_size?: number | null;
 }
 
 interface MaintenanceEventRow {
@@ -196,6 +201,9 @@ export interface MaintenancePhoto {
   addedBy: string;
   addedByName: string;
   createdAt: string;
+  contentType: string | null;
+  fileName: string | null;
+  byteSize: number | null;
 }
 
 export interface MaintenanceEvent {
@@ -284,6 +292,25 @@ export interface CreateMaintenancePhotoInput {
   url: string | null;
   caption: string | null;
 }
+
+export interface MaintenancePhotoUploadInput {
+  file: File;
+  caption: string | null;
+}
+
+export interface MaintenancePhotoDownload {
+  object: R2ObjectBody;
+  fileName: string;
+  contentType: string;
+}
+
+const MAX_MAINTENANCE_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAINTENANCE_PHOTO_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+const MAINTENANCE_PHOTO_PREFIX = "maintenance/photos";
 
 function canEditMaintenance(user: CurrentChatUser): boolean {
   return MAINTENANCE_EDIT_ROLES.has(user.role);
@@ -469,6 +496,30 @@ export function normalizeMaintenancePhotoInput(payload: unknown): CreateMaintena
   };
 }
 
+function cleanMaintenanceFileName(value: string): string {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ");
+  return (cleaned || "maintenance-photo").slice(0, 180);
+}
+
+function maintenancePhotoObjectKey(ticketId: number, contentType: string, now: string): string {
+  const date = now.slice(0, 10);
+  const extension = MAINTENANCE_PHOTO_TYPES[contentType] ?? "bin";
+  return `${MAINTENANCE_PHOTO_PREFIX}/${date}/ticket-${ticketId}/${crypto.randomUUID()}.${extension}`;
+}
+
+export function normalizeMaintenancePhotoFormData(formData: FormData): MaintenancePhotoUploadInput {
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("Photo is required.");
+  if (file.type === "image/heic" || file.type === "image/heif") throw new Error("HEIC is not supported. Please upload JPG, PNG or WebP.");
+  if (!MAINTENANCE_PHOTO_TYPES[file.type]) throw new Error("Please upload JPG, PNG or WebP.");
+  if (file.size <= 0) throw new Error("Photo is empty.");
+  if (file.size > MAX_MAINTENANCE_PHOTO_BYTES) throw new Error("Photo must be 10 MB or smaller.");
+  return {
+    file,
+    caption: optionalString(formData.get("caption"), 240),
+  };
+}
+
 function mapTicket(row: MaintenanceTicketRow): MaintenanceTicketSummary {
   const assignment = {
     type: row.assignment_type,
@@ -536,6 +587,9 @@ function mapPhoto(row: MaintenancePhotoRow): MaintenancePhoto {
     addedBy: row.added_by,
     addedByName: row.added_by_name,
     createdAt: row.created_at,
+    contentType: row.content_type ?? null,
+    fileName: row.file_name ?? null,
+    byteSize: row.byte_size ?? null,
   };
 }
 
@@ -960,6 +1014,88 @@ export async function addMaintenancePhoto(env: MaintenanceBindings, ticketId: nu
   await recordEvent(env, ticketId, "photo_added", null, input.caption ?? input.localReference ?? input.url, user, now);
   const row = await env.DB.prepare("SELECT * FROM maintenance_ticket_photos WHERE photo_id = ?").bind(result.meta.last_row_id).first<MaintenancePhotoRow>();
   return row ? mapPhoto(row) : null;
+}
+
+export async function uploadMaintenancePhoto(env: MaintenanceBindings, ticketId: number, input: MaintenancePhotoUploadInput, user: CurrentChatUser): Promise<MaintenancePhoto | null> {
+  const ticket = await getMaintenanceTicket(env, ticketId);
+  if (!ticket) return null;
+  if (!canEditMaintenance(user) && ticket.reportedBy !== user.id) throw new MaintenancePermissionError("Only the reporter or Maintenance can update this ticket.");
+
+  const now = new Date().toISOString();
+  const fileName = cleanMaintenanceFileName(input.file.name);
+  const objectKey = maintenancePhotoObjectKey(ticketId, input.file.type, now);
+  const bytes = await input.file.arrayBuffer();
+
+  await env.R2_STORAGE.put(objectKey, bytes, {
+    httpMetadata: {
+      contentType: input.file.type,
+      contentDisposition: `inline; filename="${fileName.replace(/"/g, "")}"`,
+    },
+    customMetadata: {
+      ticketId: String(ticketId),
+      uploadedBy: user.id,
+      purpose: "maintenance-photo",
+    },
+  });
+
+  try {
+    const result = await env.DB.prepare(`
+      INSERT INTO maintenance_ticket_photos (
+        ticket_id,
+        storage_status,
+        local_reference,
+        url,
+        caption,
+        added_by,
+        added_by_name,
+        created_at,
+        object_key,
+        content_type,
+        file_name,
+        byte_size
+      ) VALUES (?, 'uploaded', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      ticketId,
+      fileName,
+      input.caption,
+      user.id,
+      user.displayName,
+      now,
+      objectKey,
+      input.file.type,
+      fileName,
+      input.file.size,
+    ).run();
+
+    const photoId = Number(result.meta.last_row_id);
+    const url = `/api/maintenance/photos/${photoId}`;
+    await env.DB.prepare("UPDATE maintenance_ticket_photos SET url = ? WHERE photo_id = ?").bind(url, photoId).run();
+    await env.DB.prepare("UPDATE maintenance_tickets SET updated_at = ? WHERE ticket_id = ?").bind(now, ticketId).run();
+    await recordEvent(env, ticketId, "photo_added", null, input.caption ?? fileName, user, now);
+    const row = await env.DB.prepare("SELECT * FROM maintenance_ticket_photos WHERE photo_id = ?").bind(photoId).first<MaintenancePhotoRow>();
+    return row ? mapPhoto(row) : null;
+  } catch (error) {
+    await env.R2_STORAGE.delete(objectKey).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function getMaintenancePhotoDownload(env: MaintenanceBindings, photoId: number, user: CurrentChatUser): Promise<MaintenancePhotoDownload | null> {
+  const row = await env.DB.prepare("SELECT * FROM maintenance_ticket_photos WHERE photo_id = ?").bind(photoId).first<MaintenancePhotoRow>();
+  if (!row) return null;
+  const ticket = await getMaintenanceTicket(env, row.ticket_id);
+  if (!ticket) return null;
+  if (!canEditMaintenance(user) && ticket.reportedBy !== user.id) {
+    throw new MaintenancePermissionError("Maintenance access is required.");
+  }
+  if (!row.object_key || !row.content_type || !row.file_name) return null;
+  const object = await env.R2_STORAGE.get(row.object_key);
+  if (!object) return null;
+  return {
+    object,
+    fileName: row.file_name,
+    contentType: row.content_type,
+  };
 }
 
 export const maintenanceOptions = {

@@ -24,7 +24,7 @@ import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailab
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTranslationBindings } from "./services/free-text-translation.service.js";
 import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
-import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
+import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenancePhotoDownload, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoFormData, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, uploadMaintenancePhoto, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { addPayrollEvent, finalizePayroll, generatePayrollStatementPdf, getPayrollOverview, getPayrollWorker, normalizePayrollEventInput, normalizePayrollMonth, normalizePayrollSettingsInput, savePayrollDraft, savePayrollSettings, type PayrollBindings } from "./services/payroll.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
@@ -1944,12 +1944,28 @@ app.post("/api/maintenance/tickets/:id/notes", async (c) => {
 app.post("/api/maintenance/tickets/:id/photos", async (c) => {
   try {
     const ticketId = positiveIntegerParam(c.req.param("id"), "ticket id");
-    const payload = await c.req.json().catch(() => null);
-    const input = normalizeMaintenancePhotoInput(payload);
     const user = await maintenanceIssueContributor(c);
-    const photo = await addMaintenancePhoto(c.env, ticketId, input, user);
+    const contentType = c.req.header("content-type") ?? "";
+    const photo = contentType.includes("multipart/form-data")
+      ? await uploadMaintenancePhoto(c.env, ticketId, normalizeMaintenancePhotoFormData(await c.req.formData()), user)
+      : await addMaintenancePhoto(c.env, ticketId, normalizeMaintenancePhotoInput(await c.req.json().catch(() => null)), user);
     if (!photo) return c.json({ success: false, error: "Maintenance ticket not found" }, 404);
     return c.json({ success: true, data: photo }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
+  }
+});
+
+  app.get("/api/maintenance/photos/:photoId", async (c) => {
+    try {
+      const photoId = positiveIntegerParam(c.req.param("photoId"), "photo id");
+      const user = await maintenanceIssueContributor(c);
+      const download = await getMaintenancePhotoDownload(c.env, photoId, user);
+      if (!download) return c.json({ success: false, error: "Maintenance photo not found" }, 404);
+    c.header("Cache-Control", "private, max-age=300");
+    c.header("Content-Type", download.contentType);
+    c.header("Content-Disposition", `inline; filename="${download.fileName.replace(/"/g, "")}"`);
+    return c.body(download.object.body);
   } catch (error) {
     return c.json({ success: false, error: errorMessage(error) }, error instanceof AuthenticationError || error instanceof ForbiddenError ? apiErrorStatus(error) : maintenanceErrorStatus(error));
   }

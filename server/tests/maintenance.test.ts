@@ -5,6 +5,7 @@ import {
   normalizeMaintenanceAssignmentInput,
   normalizeCreateMaintenanceTicketInput,
   normalizeMaintenanceNoteInput,
+  normalizeMaintenancePhotoFormData,
   normalizeMaintenancePhotoInput,
   normalizeMaintenanceStatusInput,
   normalizeUpdateMaintenanceTicketInput,
@@ -83,7 +84,7 @@ test("maintenance note requires a real body", () => {
   assert.throws(() => normalizeMaintenanceNoteInput({ body: " " }), /Note is required/);
 });
 
-test("maintenance photo stores a real reference while upload storage is deferred", () => {
+test("maintenance photo legacy payload stays available only for old references", () => {
   const input = normalizeMaintenancePhotoInput({
     localReference: "local-photo-001.jpg",
     caption: "Leak under sink",
@@ -94,4 +95,19 @@ test("maintenance photo stores a real reference while upload storage is deferred
     url: null,
     caption: "Leak under sink",
   });
+});
+
+test("maintenance photo upload requires a real image file", () => {
+  const formData = new FormData();
+  formData.set("file", new File(["photo-bytes"], "broken-stair.jpg", { type: "image/jpeg" }));
+  formData.set("caption", "Broken stair");
+
+  const input = normalizeMaintenancePhotoFormData(formData);
+  assert.equal(input.file.name, "broken-stair.jpg");
+  assert.equal(input.file.type, "image/jpeg");
+  assert.equal(input.caption, "Broken stair");
+
+  const bad = new FormData();
+  bad.set("file", new File(["photo-bytes"], "passport.heic", { type: "image/heic" }));
+  assert.throws(() => normalizeMaintenancePhotoFormData(bad), /HEIC is not supported/);
 });
