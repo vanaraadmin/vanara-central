@@ -36,22 +36,11 @@ async function syncPushSubscription(subscription: PushSubscription): Promise<boo
   return response.ok;
 }
 
-async function ensureSyncedPushSubscription(registration: ServiceWorkerRegistration, publicKey: string): Promise<PushNotificationStatus> {
-  const readyRegistration = await navigator.serviceWorker.ready.catch(() => registration);
-  const subscription = await readyRegistration.pushManager.getSubscription()
-    ?? await readyRegistration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToArrayBuffer(publicKey),
-    });
-  const synced = await syncPushSubscription(subscription);
-  return synced ? "enabled" : "error";
-}
-
 async function refreshExistingPushSubscription(registration: ServiceWorkerRegistration): Promise<void> {
   if (!pushAvailable() || Notification.permission !== "granted") return;
-  const key = await pushPublicKey();
-  if (!key.configured || !key.publicKey) return;
-  await ensureSyncedPushSubscription(registration, key.publicKey);
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return;
+  await syncPushSubscription(subscription);
 }
 
 async function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
@@ -120,8 +109,9 @@ export async function checkPushNotificationStatus(): Promise<PushNotificationSta
   if (!key.configured || !key.publicKey) return "unconfigured";
   const registration = await ensureServiceWorkerRegistration();
   if (!registration) return "ready";
-  if (Notification.permission !== "granted") return "ready";
-  return ensureSyncedPushSubscription(registration, key.publicKey);
+  const subscription = await registration.pushManager.getSubscription();
+  if (subscription) await syncPushSubscription(subscription);
+  return subscription ? "enabled" : "ready";
 }
 
 export async function enablePushNotifications(): Promise<PushNotificationStatus> {
@@ -133,5 +123,13 @@ export async function enablePushNotifications(): Promise<PushNotificationStatus>
   if (permission !== "granted") return "blocked";
   const ensuredRegistration = await ensureServiceWorkerRegistration();
   if (!ensuredRegistration) return "unsupported";
-  return ensureSyncedPushSubscription(ensuredRegistration, key.publicKey);
+  const registration = await navigator.serviceWorker.ready.catch(() => ensuredRegistration);
+  const subscription = await registration.pushManager.getSubscription()
+    ?? await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToArrayBuffer(key.publicKey),
+    });
+  const synced = await syncPushSubscription(subscription);
+  if (!synced) return "error";
+  return "enabled";
 }

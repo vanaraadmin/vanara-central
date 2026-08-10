@@ -5,7 +5,6 @@ export interface NotificationBindings {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY_JWK?: string;
   VAPID_SUBJECT?: string;
-  SOCIAL_PUBLIC_BASE_URL?: string;
 }
 
 export type NotificationLanguage = "en" | "th";
@@ -54,17 +53,6 @@ export interface NotificationPayload {
   url: string;
 }
 
-interface WebPushMessage extends NotificationPayload {
-  web_push: 8030;
-  notification: {
-    title: string;
-    body: string;
-    navigate: string;
-    tag: string;
-    silent: false;
-  };
-}
-
 export interface NotificationTemplate {
   type: NotificationType;
   entityType: string;
@@ -79,22 +67,6 @@ export interface NotificationTemplate {
 
 const MAX_PUSH_FAILURES = 3;
 const DEFAULT_VAPID_SUBJECT = "mailto:info@vanararetreat.com";
-const DEFAULT_PUBLIC_BASE_URL = "https://central.vanararetreat.com";
-const WEB_PUSH_CONTENT_ENCODING = "aes128gcm";
-const WEB_PUSH_RECORD_SIZE = 4096;
-const ACTIVE_PUSH_SUBSCRIPTION_FILTER = `
-  AND NOT (
-    ps.endpoint LIKE 'https://web.push.apple.com/%'
-    AND EXISTS (
-      SELECT 1
-      FROM push_subscriptions newer
-      WHERE newer.user_id = ps.user_id
-        AND newer.status = 'active'
-        AND newer.endpoint LIKE 'https://web.push.apple.com/%'
-        AND COALESCE(newer.last_seen_at, newer.updated_at, newer.created_at) > COALESCE(ps.last_seen_at, ps.updated_at, ps.created_at)
-    )
-  )
-`;
 
 function cleanText(value: unknown, max = 160): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -144,28 +116,6 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function publicBaseUrl(env: NotificationBindings): string {
-  return cleanText(env.SOCIAL_PUBLIC_BASE_URL, 240) || DEFAULT_PUBLIC_BASE_URL;
-}
-
-function absoluteNotificationUrl(env: NotificationBindings, url: string): string {
-  return new URL(url || "/", publicBaseUrl(env)).href;
-}
-
-function webPushMessage(env: NotificationBindings, payload: NotificationPayload): WebPushMessage {
-  return {
-    ...payload,
-    web_push: 8030,
-    notification: {
-      title: payload.title,
-      body: payload.body,
-      navigate: absoluteNotificationUrl(env, payload.url),
-      tag: payload.tag,
-      silent: false,
-    },
-  };
-}
-
 async function vapidAuthorization(env: NotificationBindings, endpoint: string): Promise<string | null> {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY_JWK) return null;
   const aud = new URL(endpoint).origin;
@@ -177,7 +127,7 @@ async function vapidAuthorization(env: NotificationBindings, endpoint: string): 
   return `vapid t=${header}.${claims}.${bytesToBase64Url(signature)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
-async function encryptPushPayload(subscription: PushSubscriptionRow, payload: WebPushMessage): Promise<Uint8Array> {
+async function encryptPushPayload(subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const serverKeys = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   const serverPublic = new Uint8Array(await crypto.subtle.exportKey("raw", serverKeys.publicKey));
@@ -193,7 +143,7 @@ async function encryptPushPayload(subscription: PushSubscriptionRow, payload: We
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(nonce) }, key, toArrayBuffer(plaintext)));
   const header = new Uint8Array(21 + serverPublic.length);
   header.set(salt, 0);
-  new DataView(header.buffer).setUint32(16, WEB_PUSH_RECORD_SIZE, false);
+  new DataView(header.buffer).setUint32(16, 4096, false);
   header[20] = serverPublic.length;
   header.set(serverPublic, 21);
   return concatBytes(header, encrypted);
@@ -202,22 +152,19 @@ async function encryptPushPayload(subscription: PushSubscriptionRow, payload: We
 async function sendPush(env: NotificationBindings, subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<{ ok: boolean; errorCode?: string }> {
   const authorization = await vapidAuthorization(env, subscription.endpoint);
   if (!authorization) return { ok: false, errorCode: "vapid_not_configured" };
-  const message = webPushMessage(env, payload);
-  const body = await encryptPushPayload(subscription, message);
+  const body = await encryptPushPayload(subscription, payload);
   const response = await fetch(subscription.endpoint, {
     method: "POST",
     headers: {
       authorization,
-      "content-encoding": WEB_PUSH_CONTENT_ENCODING,
+      "content-encoding": "aes128gcm",
       "content-type": "application/octet-stream",
       ttl: "86400",
-      urgency: payload.tag.startsWith("chat-") ? "high" : "normal",
     },
     body: toArrayBuffer(body),
   });
-  const diagnostic = `http_${response.status}:${WEB_PUSH_CONTENT_ENCODING}:bytes_${body.byteLength}`;
-  if (response.ok) return { ok: true, errorCode: diagnostic };
-  return { ok: false, errorCode: diagnostic };
+  if (response.ok) return { ok: true };
+  return { ok: false, errorCode: String(response.status) };
 }
 
 export function publicVapidKey(env: NotificationBindings): string | null {
@@ -230,7 +177,6 @@ export async function registerPushSubscription(env: NotificationBindings, user: 
   const auth = cleanText(input.keys?.auth, 256);
   if (!endpoint || !p256dh || !auth) throw new Error("Push subscription is incomplete.");
   const now = new Date().toISOString();
-  const cleanedUserAgent = cleanText(userAgent, 512) || null;
   await env.DB.prepare(`
     INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, status, failure_count, created_at, updated_at, last_seen_at)
     VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?, ?)
@@ -244,21 +190,7 @@ export async function registerPushSubscription(env: NotificationBindings, user: 
       updated_at = excluded.updated_at,
       last_seen_at = excluded.last_seen_at,
       disabled_at = NULL
-  `).bind(user.id, endpoint, p256dh, auth, cleanedUserAgent, now, now, now).run();
-
-  if (endpoint.startsWith("https://web.push.apple.com/") && cleanedUserAgent) {
-    await env.DB.prepare(`
-      UPDATE push_subscriptions
-      SET status = 'disabled',
-          disabled_at = ?,
-          updated_at = ?
-      WHERE user_id = ?
-        AND endpoint <> ?
-        AND endpoint LIKE 'https://web.push.apple.com/%'
-        AND user_agent = ?
-        AND status = 'active'
-    `).bind(now, now, user.id, endpoint, cleanedUserAgent).run();
-  }
+  `).bind(user.id, endpoint, p256dh, auth, cleanText(userAgent, 512) || null, now, now, now).run();
 }
 
 export async function unregisterPushSubscription(env: NotificationBindings, user: CurrentUser, endpoint: string): Promise<void> {
@@ -300,7 +232,6 @@ async function loadSubscriptions(env: NotificationBindings, template: Notificati
       WHERE ps.status = 'active'
         AND u.status = 'active'
         AND ps.user_id IN (${placeholders})
-        ${ACTIVE_PUSH_SUBSCRIPTION_FILTER}
     `).bind(...ids).all<PushSubscriptionRow>();
     return rows.results ?? [];
   }
@@ -313,7 +244,6 @@ async function loadSubscriptions(env: NotificationBindings, template: Notificati
     WHERE ps.status = 'active'
       AND u.status = 'active'
       ${ownerWhere}
-      ${ACTIVE_PUSH_SUBSCRIPTION_FILTER}
   `).all<PushSubscriptionRow>();
   return rows.results ?? [];
 }
@@ -378,8 +308,8 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
     userIds,
     data: { conversationId: input.conversationId },
     payload: {
-      en: notificationPayload("New message received", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat/${encodeURIComponent(input.conversationId)}`),
-      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat/${encodeURIComponent(input.conversationId)}`),
+      en: notificationPayload("New message received", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
+      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
     },
   });
 }

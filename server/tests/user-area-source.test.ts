@@ -56,10 +56,9 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(pwaService, /addEventListener\("load", register, \{ once: true \}\)/);
   assert.match(pwaService, /refreshExistingPushSubscription/);
   assert.match(pwaService, /pushManager\.getSubscription\(\)/);
-  assert.match(pwaService, /ensureSyncedPushSubscription\(registration: ServiceWorkerRegistration, publicKey: string\)/);
-  assert.match(pwaService, /readyRegistration\.pushManager\.getSubscription\(\)[\s\S]*readyRegistration\.pushManager\.subscribe/);
-  assert.match(pwaService, /checkPushNotificationStatus\(\)[\s\S]*return ensureSyncedPushSubscription\(registration, key\.publicKey\)/);
-  assert.match(pwaService, /enablePushNotifications\(\)[\s\S]*return ensureSyncedPushSubscription\(ensuredRegistration, key\.publicKey\)/);
+  assert.doesNotMatch(pwaService, /ensureSyncedPushSubscription\(registration: ServiceWorkerRegistration, publicKey: string\)/);
+  assert.match(pwaService, /checkPushNotificationStatus\(\)[\s\S]*return subscription \? "enabled" : "ready"/);
+  assert.match(pwaService, /enablePushNotifications\(\)[\s\S]*navigator\.serviceWorker\.ready\.catch\(\(\) => ensuredRegistration\)/);
   assert.match(pwaService, /syncPushSubscription\(subscription\)/);
   assert.match(pwaService, /\/api\/notifications\/push\/subscriptions/);
   assert.match(english, /enableNotifications: "Enable notifications"/);
@@ -81,7 +80,6 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.match(indexHtml, /<link rel="manifest" href="\/manifest\.webmanifest" \/>/);
   assert.match(indexHtml, /apple-mobile-web-app-capable/);
   assert.match(indexHtml, /apple-touch-icon/);
-  assert.match(indexHtml, /Vanara Central[\s\S]*Loading app\.\.\./);
   assert.match(mainTsx, /import\.meta\.env\.PROD\)\s*registerVanaraServiceWorker\(\)/);
   assert.equal(parsed.name, "Vanara Central");
   assert.equal(parsed.start_url, "/");
@@ -92,9 +90,9 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
   assert.match(serviceWorker, /self\.addEventListener\("notificationclick"/);
+  assert.match(serviceWorker, /self\.addEventListener\("fetch"/);
+  assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
-  assert.doesNotMatch(serviceWorker, /self\.addEventListener\("fetch"/);
-  assert.doesNotMatch(serviceWorker, /event\.respondWith/);
 });
 
 test("installed PWA reduces native browser callouts without blocking forms or chat actions", () => {
