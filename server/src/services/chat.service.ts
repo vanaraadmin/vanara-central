@@ -825,6 +825,23 @@ async function persistMentions(env: ChatBindings, conversationId: string, messag
   }
 }
 
+function dispatchChatNotification(env: ChatBindings, input: {
+  conversationId: string;
+  messageId: number;
+  authorId: string;
+  authorName: string;
+  body: string;
+}, label: string): void {
+  void notifyInternalChatMessage(env, input).catch((error: unknown) => {
+    console.warn(JSON.stringify({
+      message: label,
+      error: error instanceof Error ? error.message : "unknown",
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+    }));
+  });
+}
+
 export async function createChatMessage(
   env: ChatBindings,
   conversationId: string,
@@ -904,15 +921,13 @@ export async function createChatMessage(
     throw new Error("Message was created but could not be loaded.");
   }
 
-  await notifyInternalChatMessage(env, {
+  dispatchChatNotification(env, {
     conversationId,
     messageId,
     authorId: user.id,
     authorName: user.displayName,
     body: input.body,
-  }).catch((error: unknown) => {
-    console.warn(JSON.stringify({ message: "Chat push notification failed", error: error instanceof Error ? error.message : "unknown", conversationId, messageId }));
-  });
+  }, "Chat push notification failed");
 
   return (await hydrateMessages(env, [row], user))[0]!;
 }
@@ -1014,15 +1029,13 @@ export async function createChatAttachmentMessage(
   `).bind(messageId).first<ChatMessageRow>();
 
   if (!row) throw new Error("Message was created but could not be loaded.");
-  await notifyInternalChatMessage(env, {
+  dispatchChatNotification(env, {
     conversationId,
     messageId,
     authorId: user.id,
     authorName: user.displayName,
     body,
-  }).catch((error: unknown) => {
-    console.warn(JSON.stringify({ message: "Chat attachment push notification failed", error: error instanceof Error ? error.message : "unknown", conversationId, messageId }));
-  });
+  }, "Chat attachment push notification failed");
   return (await hydrateMessages(env, [row], user))[0]!;
 }
 

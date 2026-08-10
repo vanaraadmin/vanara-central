@@ -55,19 +55,25 @@ test("internal chat notifies participants except sender and never uses Guest Mes
   assert.doesNotMatch(guestMessagesService + messagesSyncService + warapornDraftService, /notifyInternalChatMessage|push_subscriptions/);
 });
 
-test("internal chat is restored to the stable pre-notification refresh baseline", () => {
-  assert.doesNotMatch(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS/);
-  assert.doesNotMatch(teamChatSurface, /refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
-  assert.doesNotMatch(teamChatSurface, /refetchIntervalInBackground/);
-  assert.doesNotMatch(teamChatSurface, /staleTime: 0/);
+test("internal chat refreshes only the active open chat without blocking on push", () => {
+  assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 5_000/);
+  assert.match(teamChatSurface, /refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
+  assert.match(teamChatSurface, /refetchInterval: selectedConversationId && activeInList \? ACTIVE_CHAT_REFRESH_MS : false/);
+  assert.match(teamChatSurface, /refetchIntervalInBackground: false/);
+  assert.match(teamChatSurface, /refetchOnMount: "always"/);
+  assert.match(teamChatSurface, /refetchOnWindowFocus: true/);
+  assert.match(teamChatSurface, /staleTime: 0/);
   assert.doesNotMatch(teamChatSurface, /window\.setInterval\(refreshActiveChat/);
   assert.doesNotMatch(teamChatSurface, /window\.addEventListener\("focus", refreshActiveChat\)/);
   assert.doesNotMatch(teamChatSurface, /window\.addEventListener\("pageshow", refreshActiveChat\)/);
   assert.doesNotMatch(teamChatSurface, /document\.addEventListener\("visibilitychange", refreshActiveChat\)/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "messages", conversationId\] \}\)/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "conversation", conversationId\] \}\)/);
-  assert.doesNotMatch(teamChatSurface, /function showSentMessage\(message: ChatMessage\)/);
-  assert.doesNotMatch(teamChatSurface, /queryClient\.setQueryData<ChatMessage\[\]>\(\["chat", "messages", conversationId\]/);
+  assert.match(teamChatSurface, /function showSentMessage\(message: ChatMessage\)/);
+  assert.match(teamChatSurface, /queryClient\.setQueryData<ChatMessage\[\]>\(\["chat", "messages", conversationId\]/);
+  assert.match(chatService, /function dispatchChatNotification/);
+  assert.match(chatService, /void notifyInternalChatMessage\(env, input\)\.catch/);
+  assert.doesNotMatch(chatService, /await notifyInternalChatMessage/);
 });
 
 test("guest message notifications are owner-only and separated from internal chat", () => {

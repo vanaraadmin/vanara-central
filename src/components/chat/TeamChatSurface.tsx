@@ -26,6 +26,7 @@ import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStic
 import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
+const ACTIVE_CHAT_REFRESH_MS = 5_000;
 const QUICK_REACTIONS: ChatReactionEmoji[] = ["👍", "😂", "😍", "🙏", "👀", "🔥"];
 
 interface TeamChatSurfaceProps {
@@ -606,6 +607,17 @@ function ChatComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  function showSentMessage(message: ChatMessage) {
+    queryClient.setQueryData<ChatMessage[]>(["chat", "messages", conversationId], (current) => {
+      const messages = current ?? [];
+      if (messages.some((item) => item.id === message.id)) {
+        return messages.map((item) => item.id === message.id ? message : item);
+      }
+      return [...messages, message].sort((a, b) => a.id - b.id);
+    });
+  }
+
   async function refreshChat() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["chat", "messages", conversationId] }),
@@ -622,7 +634,8 @@ function ChatComposer({
       bodyLanguage: inferLanguage(body),
       replyToMessageId: replyTarget?.messageId ?? null,
     }),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       setBody("");
       onCancelReply();
       await refreshChat();
@@ -630,7 +643,8 @@ function ChatComposer({
   });
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadChatAttachment(conversationId, file, replyTarget?.messageId ?? null),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       onCancelReply();
       await refreshChat();
     },
@@ -643,7 +657,8 @@ function ChatComposer({
       stickerId: sticker.id,
       replyToMessageId: replyTarget?.messageId ?? null,
     }),
-    onSuccess: async () => {
+    onSuccess: async (message) => {
+      showSentMessage(message);
       setStickersOpen(false);
       onCancelReply();
       await refreshChat();
@@ -922,6 +937,11 @@ export default function TeamChatSurface({
   const conversationsQuery = useQuery({
     queryKey: ["chat", "conversations"],
     queryFn: ({ signal }) => loadChatConversations(signal),
+    refetchInterval: ACTIVE_CHAT_REFRESH_MS,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const usersQuery = useQuery({
     queryKey: ["chat", "users"],
@@ -939,11 +959,21 @@ export default function TeamChatSurface({
     queryKey: ["chat", "conversation", selectedConversationId],
     queryFn: ({ signal }) => loadChatConversation(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
+    refetchInterval: selectedConversationId && activeInList ? ACTIVE_CHAT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedConversationId],
     queryFn: ({ signal }) => loadChatMessages(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
+    refetchInterval: selectedConversationId && activeInList ? ACTIVE_CHAT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),
