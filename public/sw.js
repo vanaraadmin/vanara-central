@@ -44,10 +44,19 @@ self.addEventListener("push", (event) => {
       console.warn("Vanara push payload fallback", error);
     }
 
-    const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "Vanara Central";
-    const body = typeof payload.body === "string" && payload.body.trim() ? payload.body.trim() : "New message received";
-    const tag = typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : "vanara-central";
-    const url = typeof payload.url === "string" && payload.url.trim() ? payload.url.trim() : "/";
+    const notification = payload.notification && typeof payload.notification === "object" ? payload.notification : {};
+    const title = typeof payload.title === "string" && payload.title.trim()
+      ? payload.title.trim()
+      : typeof notification.title === "string" && notification.title.trim() ? notification.title.trim() : "Vanara Central";
+    const body = typeof payload.body === "string" && payload.body.trim()
+      ? payload.body.trim()
+      : typeof notification.body === "string" && notification.body.trim() ? notification.body.trim() : "New message received";
+    const tag = typeof payload.tag === "string" && payload.tag.trim()
+      ? payload.tag.trim()
+      : typeof notification.tag === "string" && notification.tag.trim() ? notification.tag.trim() : "vanara-central";
+    const url = typeof payload.url === "string" && payload.url.trim()
+      ? payload.url.trim()
+      : typeof notification.navigate === "string" && notification.navigate.trim() ? notification.navigate.trim() : "/";
     try {
       await self.registration.showNotification(title, {
         body,

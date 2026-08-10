@@ -25,6 +25,12 @@ test("push notifications use a central D1-backed service with subscription and d
   assert.match(notificationService, /export async function emitNotification/);
   assert.match(notificationService, /INSERT OR IGNORE INTO notification_events/);
   assert.match(notificationSoundMigration, /sound_type TEXT NOT NULL DEFAULT 'event'/);
+  assert.match(notificationService, /interface WebPushMessage extends NotificationPayload/);
+  assert.match(notificationService, /web_push: 8030/);
+  assert.match(notificationService, /navigate: absoluteNotificationUrl\(env, payload\.url\)/);
+  assert.match(notificationService, /silent: false/);
+  assert.match(notificationService, /const message = webPushMessage\(env, payload\)/);
+  assert.match(notificationService, /encryptPushPayload\(subscription, message\)/);
   assert.match(notificationService, /audience, sound_type, payload_json, created_at/);
   assert.match(notificationService, /const soundType = template\.soundType \?\? \(template\.type === "chat\.message\.created" \? "chat" : "event"\)/);
   assert.match(notificationService, /SELECT notification_event_id, dedupe_key, created_at FROM notification_events WHERE dedupe_key = \?/);
@@ -134,6 +140,10 @@ test("service worker handles push without caching operational API data", () => {
   assert.doesNotMatch(serviceWorker, /if \(!event\.data\) return;/);
   assert.match(serviceWorker, /event\.waitUntil\(\(async \(\) => \{/);
   assert.match(serviceWorker, /let payload = \{ title: "Vanara Central", body: "New message received"/);
+  assert.match(serviceWorker, /const notification = payload\.notification && typeof payload\.notification === "object" \? payload\.notification : \{\}/);
+  assert.match(serviceWorker, /notification\.title/);
+  assert.match(serviceWorker, /notification\.body/);
+  assert.match(serviceWorker, /notification\.navigate/);
   assert.match(serviceWorker, /console\.warn\("Vanara push payload fallback", error\)/);
   assert.match(serviceWorker, /console\.error\("Vanara push showNotification failed", error\)/);
   assert.match(serviceWorker, /tag: "vanara-central-fallback"/);

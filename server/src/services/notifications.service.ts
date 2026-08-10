@@ -5,6 +5,7 @@ export interface NotificationBindings {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY_JWK?: string;
   VAPID_SUBJECT?: string;
+  SOCIAL_PUBLIC_BASE_URL?: string;
 }
 
 export type NotificationLanguage = "en" | "th";
@@ -53,6 +54,17 @@ export interface NotificationPayload {
   url: string;
 }
 
+interface WebPushMessage extends NotificationPayload {
+  web_push: 8030;
+  notification: {
+    title: string;
+    body: string;
+    navigate: string;
+    tag: string;
+    silent: false;
+  };
+}
+
 export interface NotificationTemplate {
   type: NotificationType;
   entityType: string;
@@ -67,6 +79,7 @@ export interface NotificationTemplate {
 
 const MAX_PUSH_FAILURES = 3;
 const DEFAULT_VAPID_SUBJECT = "mailto:info@vanararetreat.com";
+const DEFAULT_PUBLIC_BASE_URL = "https://central.vanararetreat.com";
 const WEB_PUSH_CONTENT_ENCODING = "aes128gcm";
 const WEB_PUSH_RECORD_SIZE = 4096;
 
@@ -118,6 +131,28 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
+function publicBaseUrl(env: NotificationBindings): string {
+  return cleanText(env.SOCIAL_PUBLIC_BASE_URL, 240) || DEFAULT_PUBLIC_BASE_URL;
+}
+
+function absoluteNotificationUrl(env: NotificationBindings, url: string): string {
+  return new URL(url || "/", publicBaseUrl(env)).href;
+}
+
+function webPushMessage(env: NotificationBindings, payload: NotificationPayload): WebPushMessage {
+  return {
+    ...payload,
+    web_push: 8030,
+    notification: {
+      title: payload.title,
+      body: payload.body,
+      navigate: absoluteNotificationUrl(env, payload.url),
+      tag: payload.tag,
+      silent: false,
+    },
+  };
+}
+
 async function vapidAuthorization(env: NotificationBindings, endpoint: string): Promise<string | null> {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY_JWK) return null;
   const aud = new URL(endpoint).origin;
@@ -129,7 +164,7 @@ async function vapidAuthorization(env: NotificationBindings, endpoint: string): 
   return `vapid t=${header}.${claims}.${bytesToBase64Url(signature)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
-async function encryptPushPayload(subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<Uint8Array> {
+async function encryptPushPayload(subscription: PushSubscriptionRow, payload: WebPushMessage): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const serverKeys = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
   const serverPublic = new Uint8Array(await crypto.subtle.exportKey("raw", serverKeys.publicKey));
@@ -154,7 +189,8 @@ async function encryptPushPayload(subscription: PushSubscriptionRow, payload: No
 async function sendPush(env: NotificationBindings, subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<{ ok: boolean; errorCode?: string }> {
   const authorization = await vapidAuthorization(env, subscription.endpoint);
   if (!authorization) return { ok: false, errorCode: "vapid_not_configured" };
-  const body = await encryptPushPayload(subscription, payload);
+  const message = webPushMessage(env, payload);
+  const body = await encryptPushPayload(subscription, message);
   const response = await fetch(subscription.endpoint, {
     method: "POST",
     headers: {
