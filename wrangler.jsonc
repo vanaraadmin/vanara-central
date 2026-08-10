@@ -18,6 +18,7 @@
     "PASSPORT_RETENTION_DAYS": "45",
     "META_GRAPH_API_VERSION": "v25.0",
     "SOCIAL_PUBLIC_BASE_URL": "https://central.vanararetreat.com",
+    "VAPID_PUBLIC_KEY": "BMumz6XWCgUphr3bL5bBM_091fBrnpfaFtak6OqBbhVat02DF2J_vEovgV5YHDW4I76iht73JjR2b9tqBFgO10E",
     "VANARA_DATABASE_ENVIRONMENT": "production",
     "VANARA_DATABASE_NAME": "vanara-central",
     "VANARA_DATABASE_ID": "1f0c6fce-8a47-442a-8158-97708aefe6b1"

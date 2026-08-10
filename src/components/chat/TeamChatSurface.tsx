@@ -26,6 +26,7 @@ import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStic
 import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
+const ACTIVE_CHAT_REFRESH_MS = 6_000;
 const QUICK_REACTIONS: ChatReactionEmoji[] = ["👍", "😂", "😍", "🙏", "👀", "🔥"];
 
 interface TeamChatSurfaceProps {
@@ -922,6 +923,8 @@ export default function TeamChatSurface({
   const conversationsQuery = useQuery({
     queryKey: ["chat", "conversations"],
     queryFn: ({ signal }) => loadChatConversations(signal),
+    refetchInterval: ACTIVE_CHAT_REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
   const usersQuery = useQuery({
     queryKey: ["chat", "users"],
@@ -939,11 +942,15 @@ export default function TeamChatSurface({
     queryKey: ["chat", "conversation", selectedConversationId],
     queryFn: ({ signal }) => loadChatConversation(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
+    refetchInterval: ACTIVE_CHAT_REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedConversationId],
     queryFn: ({ signal }) => loadChatMessages(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
+    refetchInterval: ACTIVE_CHAT_REFRESH_MS,
+    refetchIntervalInBackground: false,
   });
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),

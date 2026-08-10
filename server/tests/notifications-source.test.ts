@@ -13,6 +13,8 @@ const guestMessagesService = readFileSync(new URL("../src/services/guest-message
 const messagesSyncService = readFileSync(new URL("../src/services/messages-sync.service.ts", import.meta.url), "utf8");
 const warapornDraftService = readFileSync(new URL("../src/services/waraporn-draft.service.ts", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
+const wranglerConfig = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
 
 test("push notifications use a central D1-backed service with subscription and delivery records", () => {
   assert.match(notificationMigration, /CREATE TABLE push_subscriptions/);
@@ -29,6 +31,8 @@ test("push notifications use a central D1-backed service with subscription and d
   assert.match(notificationService, /row\?\.created_at === now \? row : null/);
   assert.doesNotMatch(notificationService, /result\.meta\.changes[\s\S]*return null/);
   assert.match(notificationService, /JOIN users u ON u\.user_id = ps\.user_id[\s\S]*u\.status = 'active'/);
+  assert.match(wranglerConfig, /"VAPID_PUBLIC_KEY":\s*"B[A-Za-z0-9_-]+"/);
+  assert.doesNotMatch(wranglerConfig, /"VAPID_PRIVATE_KEY_JWK"/);
 });
 
 test("internal chat notifies participants except sender and never uses Guest Messages", () => {
@@ -37,10 +41,19 @@ test("internal chat notifies participants except sender and never uses Guest Mes
   assert.match(notificationService, /dedupeKey: `chat:message:\$\{input\.messageId\}`/);
   assert.match(notificationService, /New message received/);
   assert.match(notificationService, /มีข้อความแชตใหม่/);
-  assert.match(notificationService, /\/chat\?conversation=\$\{encodeURIComponent\(input\.conversationId\)\}/);
+  assert.match(notificationService, /`\/chat\/\$\{encodeURIComponent\(input\.conversationId\)\}`/);
+  assert.doesNotMatch(notificationService, /\/chat\?conversation=/);
   assert.doesNotMatch(chatService, /Guest Messages|guest-message|Waraporn|WhatsApp/i);
   assert.doesNotMatch(chatService, /guest-messages|MessagesPage|\/api\/messages/i);
   assert.doesNotMatch(guestMessagesService + messagesSyncService + warapornDraftService, /notifyInternalChatMessage|push_subscriptions/);
+});
+
+test("open internal chat view refreshes active conversations without manual pull-to-refresh", () => {
+  assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 6_000/);
+  assert.match(teamChatSurface, /queryKey: \["chat", "conversations"\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
+  assert.match(teamChatSurface, /queryKey: \["chat", "conversation", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
+  assert.match(teamChatSurface, /queryKey: \["chat", "messages", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
+  assert.match(teamChatSurface, /refetchIntervalInBackground: false/);
 });
 
 test("guest message notifications are owner-only and separated from internal chat", () => {

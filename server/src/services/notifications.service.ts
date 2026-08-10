@@ -308,8 +308,8 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
     userIds,
     data: { conversationId: input.conversationId },
     payload: {
-      en: notificationPayload("New message received", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
-      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
+      en: notificationPayload("New message received", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat/${encodeURIComponent(input.conversationId)}`),
+      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat/${encodeURIComponent(input.conversationId)}`),
     },
   });
 }
