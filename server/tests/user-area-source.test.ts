@@ -56,6 +56,10 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(pwaService, /addEventListener\("load", register, \{ once: true \}\)/);
   assert.match(pwaService, /refreshExistingPushSubscription/);
   assert.match(pwaService, /pushManager\.getSubscription\(\)/);
+  assert.match(pwaService, /ensureSyncedPushSubscription\(registration: ServiceWorkerRegistration, publicKey: string\)/);
+  assert.match(pwaService, /readyRegistration\.pushManager\.getSubscription\(\)[\s\S]*readyRegistration\.pushManager\.subscribe/);
+  assert.match(pwaService, /checkPushNotificationStatus\(\)[\s\S]*return ensureSyncedPushSubscription\(registration, key\.publicKey\)/);
+  assert.match(pwaService, /enablePushNotifications\(\)[\s\S]*return ensureSyncedPushSubscription\(ensuredRegistration, key\.publicKey\)/);
   assert.match(pwaService, /syncPushSubscription\(subscription\)/);
   assert.match(pwaService, /\/api\/notifications\/push\/subscriptions/);
   assert.match(english, /enableNotifications: "Enable notifications"/);

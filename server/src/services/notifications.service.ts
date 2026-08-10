@@ -163,8 +163,8 @@ async function sendPush(env: NotificationBindings, subscription: PushSubscriptio
     },
     body: toArrayBuffer(body),
   });
-  if (response.ok) return { ok: true };
-  return { ok: false, errorCode: String(response.status) };
+  if (response.ok) return { ok: true, errorCode: `http_${response.status}` };
+  return { ok: false, errorCode: `http_${response.status}` };
 }
 
 export function publicVapidKey(env: NotificationBindings): string | null {

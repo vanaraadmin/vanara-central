@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,7 +26,7 @@ import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStic
 import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
-const ACTIVE_CHAT_REFRESH_MS = 6_000;
+const ACTIVE_CHAT_REFRESH_MS = 2_500;
 const QUICK_REACTIONS: ChatReactionEmoji[] = ["👍", "😂", "😍", "🙏", "👀", "🔥"];
 
 interface TeamChatSurfaceProps {
@@ -952,6 +952,24 @@ export default function TeamChatSurface({
     refetchInterval: ACTIVE_CHAT_REFRESH_MS,
     refetchIntervalInBackground: false,
   });
+
+  const refreshActiveChat = useCallback(() => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    void conversationsQuery.refetch();
+    if (!selectedConversationId || !activeInList) return;
+    void conversationQuery.refetch();
+    void messagesQuery.refetch();
+  }, [activeInList, conversationQuery, conversationsQuery, messagesQuery, selectedConversationId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    window.addEventListener("focus", refreshActiveChat);
+    document.addEventListener("visibilitychange", refreshActiveChat);
+    return () => {
+      window.removeEventListener("focus", refreshActiveChat);
+      document.removeEventListener("visibilitychange", refreshActiveChat);
+    };
+  }, [refreshActiveChat]);
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),
     onSuccess: async (conversation) => {

@@ -31,6 +31,9 @@ test("push notifications use a central D1-backed service with subscription and d
   assert.match(notificationService, /row\?\.created_at === now \? row : null/);
   assert.doesNotMatch(notificationService, /result\.meta\.changes[\s\S]*return null/);
   assert.match(notificationService, /JOIN users u ON u\.user_id = ps\.user_id[\s\S]*u\.status = 'active'/);
+  assert.match(notificationService, /if \(response\.ok\) return \{ ok: true, errorCode: `http_\$\{response\.status\}` \}/);
+  assert.match(notificationService, /return \{ ok: false, errorCode: `http_\$\{response\.status\}` \}/);
+  assert.match(notificationService, /result\.ok \? "sent" : "failed", result\.errorCode \?\? null/);
   assert.match(wranglerConfig, /"VAPID_PUBLIC_KEY":\s*"B[A-Za-z0-9_-]+"/);
   assert.doesNotMatch(wranglerConfig, /"VAPID_PRIVATE_KEY_JWK"/);
 });
@@ -49,11 +52,16 @@ test("internal chat notifies participants except sender and never uses Guest Mes
 });
 
 test("open internal chat view refreshes active conversations without manual pull-to-refresh", () => {
-  assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 6_000/);
+  assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 2_500/);
   assert.match(teamChatSurface, /queryKey: \["chat", "conversations"\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
   assert.match(teamChatSurface, /queryKey: \["chat", "conversation", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
   assert.match(teamChatSurface, /queryKey: \["chat", "messages", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
   assert.match(teamChatSurface, /refetchIntervalInBackground: false/);
+  assert.match(teamChatSurface, /document\.visibilityState !== "visible"/);
+  assert.match(teamChatSurface, /window\.addEventListener\("focus", refreshActiveChat\)/);
+  assert.match(teamChatSurface, /document\.addEventListener\("visibilitychange", refreshActiveChat\)/);
+  assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "messages", conversationId\] \}\)/);
+  assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "conversation", conversationId\] \}\)/);
 });
 
 test("guest message notifications are owner-only and separated from internal chat", () => {
