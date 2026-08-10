@@ -67,6 +67,8 @@ export interface NotificationTemplate {
 
 const MAX_PUSH_FAILURES = 3;
 const DEFAULT_VAPID_SUBJECT = "mailto:info@vanararetreat.com";
+const WEB_PUSH_CONTENT_ENCODING = "aes128gcm";
+const WEB_PUSH_RECORD_SIZE = 4096;
 
 function cleanText(value: unknown, max = 160): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -143,7 +145,7 @@ async function encryptPushPayload(subscription: PushSubscriptionRow, payload: No
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(nonce) }, key, toArrayBuffer(plaintext)));
   const header = new Uint8Array(21 + serverPublic.length);
   header.set(salt, 0);
-  new DataView(header.buffer).setUint32(16, 4096, false);
+  new DataView(header.buffer).setUint32(16, WEB_PUSH_RECORD_SIZE, false);
   header[20] = serverPublic.length;
   header.set(serverPublic, 21);
   return concatBytes(header, encrypted);
@@ -157,14 +159,16 @@ async function sendPush(env: NotificationBindings, subscription: PushSubscriptio
     method: "POST",
     headers: {
       authorization,
-      "content-encoding": "aes128gcm",
+      "content-encoding": WEB_PUSH_CONTENT_ENCODING,
       "content-type": "application/octet-stream",
       ttl: "86400",
+      urgency: payload.tag.startsWith("chat-") ? "high" : "normal",
     },
     body: toArrayBuffer(body),
   });
-  if (response.ok) return { ok: true, errorCode: `http_${response.status}` };
-  return { ok: false, errorCode: `http_${response.status}` };
+  const diagnostic = `http_${response.status}:${WEB_PUSH_CONTENT_ENCODING}:bytes_${body.byteLength}`;
+  if (response.ok) return { ok: true, errorCode: diagnostic };
+  return { ok: false, errorCode: diagnostic };
 }
 
 export function publicVapidKey(env: NotificationBindings): string | null {

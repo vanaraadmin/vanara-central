@@ -31,8 +31,14 @@ test("push notifications use a central D1-backed service with subscription and d
   assert.match(notificationService, /row\?\.created_at === now \? row : null/);
   assert.doesNotMatch(notificationService, /result\.meta\.changes[\s\S]*return null/);
   assert.match(notificationService, /JOIN users u ON u\.user_id = ps\.user_id[\s\S]*u\.status = 'active'/);
-  assert.match(notificationService, /if \(response\.ok\) return \{ ok: true, errorCode: `http_\$\{response\.status\}` \}/);
-  assert.match(notificationService, /return \{ ok: false, errorCode: `http_\$\{response\.status\}` \}/);
+  assert.match(notificationService, /const WEB_PUSH_CONTENT_ENCODING = "aes128gcm"/);
+  assert.match(notificationService, /const WEB_PUSH_RECORD_SIZE = 4096/);
+  assert.match(notificationService, /new DataView\(header\.buffer\)\.setUint32\(16, WEB_PUSH_RECORD_SIZE, false\)/);
+  assert.match(notificationService, /"content-encoding": WEB_PUSH_CONTENT_ENCODING/);
+  assert.match(notificationService, /urgency: payload\.tag\.startsWith\("chat-"\) \? "high" : "normal"/);
+  assert.match(notificationService, /const diagnostic = `http_\$\{response\.status\}:\$\{WEB_PUSH_CONTENT_ENCODING\}:bytes_\$\{body\.byteLength\}`/);
+  assert.match(notificationService, /if \(response\.ok\) return \{ ok: true, errorCode: diagnostic \}/);
+  assert.match(notificationService, /return \{ ok: false, errorCode: diagnostic \}/);
   assert.match(notificationService, /result\.ok \? "sent" : "failed", result\.errorCode \?\? null/);
   assert.match(wranglerConfig, /"VAPID_PUBLIC_KEY":\s*"B[A-Za-z0-9_-]+"/);
   assert.doesNotMatch(wranglerConfig, /"VAPID_PRIVATE_KEY_JWK"/);
@@ -124,6 +130,13 @@ test("maintenance notifications fire only for blocking creation or false-to-true
 
 test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
+  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-10-push-v3"/);
+  assert.doesNotMatch(serviceWorker, /if \(!event\.data\) return;/);
+  assert.match(serviceWorker, /event\.waitUntil\(\(async \(\) => \{/);
+  assert.match(serviceWorker, /let payload = \{ title: "Vanara Central", body: "New message received"/);
+  assert.match(serviceWorker, /console\.warn\("Vanara push payload fallback", error\)/);
+  assert.match(serviceWorker, /console\.error\("Vanara push showNotification failed", error\)/);
+  assert.match(serviceWorker, /tag: "vanara-central-fallback"/);
   assert.match(serviceWorker, /self\.registration\.showNotification/);
   assert.match(serviceWorker, /self\.addEventListener\("notificationclick"/);
   assert.match(serviceWorker, /const exact = clients\.find\(\(client\) => client\.url === targetUrl\)/);
