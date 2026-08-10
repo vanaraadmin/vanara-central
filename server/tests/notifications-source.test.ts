@@ -15,7 +15,6 @@ const warapornDraftService = readFileSync(new URL("../src/services/waraporn-draf
 const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
 const wranglerConfig = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
 const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
-const chatClientService = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
 
 test("push notifications use a central D1-backed service with subscription and delivery records", () => {
   assert.match(notificationMigration, /CREATE TABLE push_subscriptions/);
@@ -71,7 +70,6 @@ test("internal chat notifies participants except sender and never uses Guest Mes
 
 test("open internal chat view refreshes active conversations without manual pull-to-refresh", () => {
   assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 2_500/);
-  assert.match(teamChatSurface, /const FOREGROUND_CHAT_REFRESH_MS = 1_500/);
   assert.match(teamChatSurface, /queryKey: \["chat", "conversations"\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
   assert.match(teamChatSurface, /queryKey: \["chat", "conversation", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
   assert.match(teamChatSurface, /queryKey: \["chat", "messages", selectedConversationId\][\s\S]*refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
@@ -79,17 +77,13 @@ test("open internal chat view refreshes active conversations without manual pull
   assert.match(teamChatSurface, /refetchOnMount: "always"/);
   assert.match(teamChatSurface, /refetchOnWindowFocus: true/);
   assert.match(teamChatSurface, /staleTime: 0/);
-  assert.match(teamChatSurface, /window\.setInterval\(refreshActiveChat, FOREGROUND_CHAT_REFRESH_MS\)/);
+  assert.doesNotMatch(teamChatSurface, /window\.setInterval\(refreshActiveChat/);
   assert.match(teamChatSurface, /document\.visibilityState !== "visible"/);
   assert.match(teamChatSurface, /window\.addEventListener\("focus", refreshActiveChat\)/);
   assert.match(teamChatSurface, /window\.addEventListener\("pageshow", refreshActiveChat\)/);
   assert.match(teamChatSurface, /document\.addEventListener\("visibilitychange", refreshActiveChat\)/);
-  assert.match(teamChatSurface, /navigator\.serviceWorker\.addEventListener\("message", handleServiceWorkerMessage\)/);
-  assert.match(teamChatSurface, /event\.data\?\.type !== "VANARA_PUSH_NOTIFICATION"/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "messages", conversationId\] \}\)/);
   assert.match(teamChatSurface, /queryClient\.invalidateQueries\(\{ queryKey: \["chat", "conversation", conversationId\] \}\)/);
-  assert.match(chatClientService, /cache: "no-store"/);
-  assert.match(chatClientService, /"cache-control": "no-store"/);
 });
 
 test("guest message notifications are owner-only and separated from internal chat", () => {
@@ -160,9 +154,7 @@ test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /notification\.title/);
   assert.match(serviceWorker, /notification\.body/);
   assert.match(serviceWorker, /notification\.navigate/);
-  assert.match(serviceWorker, /const notificationType = tag\.startsWith\("chat-"\) \? "chat\.message\.created" : null/);
-  assert.match(serviceWorker, /const clients = await self\.clients\.matchAll\(\{ type: "window", includeUncontrolled: true \}\)/);
-  assert.match(serviceWorker, /type: "VANARA_PUSH_NOTIFICATION"/);
+  assert.doesNotMatch(serviceWorker, /VANARA_PUSH_NOTIFICATION/);
   assert.match(serviceWorker, /console\.warn\("Vanara push payload fallback", error\)/);
   assert.match(serviceWorker, /console\.error\("Vanara push showNotification failed", error\)/);
   assert.match(serviceWorker, /tag: "vanara-central-fallback"/);

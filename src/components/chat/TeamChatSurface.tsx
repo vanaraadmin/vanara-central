@@ -27,7 +27,6 @@ import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
 const ACTIVE_CHAT_REFRESH_MS = 2_500;
-const FOREGROUND_CHAT_REFRESH_MS = 1_500;
 const QUICK_REACTIONS: ChatReactionEmoji[] = ["👍", "😂", "😍", "🙏", "👀", "🔥"];
 
 interface TeamChatSurfaceProps {
@@ -983,22 +982,6 @@ export default function TeamChatSurface({
     };
   }, [refreshActiveChat]);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined" || !selectedConversationId || !activeInList) return;
-    const timer = window.setInterval(refreshActiveChat, FOREGROUND_CHAT_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [activeInList, refreshActiveChat, selectedConversationId]);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-    function handleServiceWorkerMessage(event: MessageEvent) {
-      if (event.data?.type !== "VANARA_PUSH_NOTIFICATION") return;
-      if (event.data?.notificationType && event.data.notificationType !== "chat.message.created") return;
-      refreshActiveChat();
-    }
-    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
-    return () => navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
-  }, [refreshActiveChat]);
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),
     onSuccess: async (conversation) => {
