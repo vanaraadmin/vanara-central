@@ -149,7 +149,7 @@ test("maintenance notifications fire only for blocking creation or false-to-true
 
 test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
-  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-10-pwa-stability-v1"/);
+  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-10-pwa-first-launch-v1"/);
   assert.doesNotMatch(serviceWorker, /if \(!event\.data\) return;/);
   assert.match(serviceWorker, /event\.waitUntil\(\(async \(\) => \{/);
   assert.match(serviceWorker, /let payload = \{ title: "Vanara Central", body: "New message received"/);
@@ -166,10 +166,10 @@ test("service worker handles push without caching operational API data", () => {
   assert.match(serviceWorker, /const exact = clients\.find\(\(client\) => client\.url === targetUrl\)/);
   assert.match(serviceWorker, /sameOrigin\.navigate\(targetUrl\)/);
   assert.match(serviceWorker, /self\.clients\.openWindow\(targetUrl\)/);
-  assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
   assert.doesNotMatch(serviceWorker, /cache\.addAll/);
   assert.doesNotMatch(serviceWorker, /caches\.match\("\/"\)/);
   assert.doesNotMatch(serviceWorker, /caches\.match\(request\)/);
-  assert.match(serviceWorker, /event\.respondWith\(fetch\(request\)\)/);
+  assert.doesNotMatch(serviceWorker, /self\.addEventListener\("fetch"/);
+  assert.doesNotMatch(serviceWorker, /event\.respondWith/);
 });

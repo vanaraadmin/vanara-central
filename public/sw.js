@@ -1,4 +1,4 @@
-const VANARA_SW_VERSION = "2026-08-10-pwa-stability-v1";
+const VANARA_SW_VERSION = "2026-08-10-pwa-first-launch-v1";
 const VANARA_CACHE = `vanara-central-${VANARA_SW_VERSION}`;
 
 self.addEventListener("install", (event) => {
@@ -83,15 +83,4 @@ self.addEventListener("notificationclick", (event) => {
 
     await self.clients.openWindow(targetUrl);
   })());
-});
-
-self.addEventListener("fetch", (event) => {
-  const request = event.request;
-  if (request.method !== "GET") return;
-
-  const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/")) return;
-
-  event.respondWith(fetch(request));
 });

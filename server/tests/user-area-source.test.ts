@@ -81,6 +81,7 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.match(indexHtml, /<link rel="manifest" href="\/manifest\.webmanifest" \/>/);
   assert.match(indexHtml, /apple-mobile-web-app-capable/);
   assert.match(indexHtml, /apple-touch-icon/);
+  assert.match(indexHtml, /Vanara Central[\s\S]*Loading app\.\.\./);
   assert.match(mainTsx, /import\.meta\.env\.PROD\)\s*registerVanaraServiceWorker\(\)/);
   assert.equal(parsed.name, "Vanara Central");
   assert.equal(parsed.start_url, "/");
@@ -89,10 +90,11 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.ok(parsed.icons?.some((icon) => icon.sizes === "192x192" && icon.purpose === "any"));
   assert.ok(parsed.icons?.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
   assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
-  assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
   assert.match(serviceWorker, /self\.addEventListener\("notificationclick"/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
+  assert.doesNotMatch(serviceWorker, /self\.addEventListener\("fetch"/);
+  assert.doesNotMatch(serviceWorker, /event\.respondWith/);
 });
 
 test("installed PWA reduces native browser callouts without blocking forms or chat actions", () => {
