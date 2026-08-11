@@ -7,6 +7,7 @@ import TranslatableText from "../TranslatableText";
 import { loadCurrentUser } from "../../services/auth.service";
 import {
   createChatMessage,
+  chatThreadBootstrapState,
   clearChatAnnouncement,
   loadChatConversation,
   loadChatConversations,
@@ -1063,6 +1064,12 @@ export default function TeamChatSurface({
   const isError = conversationsQuery.isError || currentUserQuery.isError || conversationQuery.isError || messagesQuery.isError;
   const conversation = conversationQuery.data;
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const threadState = chatThreadBootstrapState({
+    selectedConversationId,
+    activeInList,
+    conversationPending: conversationQuery.isPending,
+    messagesPending: messagesQuery.isPending,
+  });
 
   if (isLoading) return <PageLoading />;
   if (isError) return <PageError onRetry={retry} />;
@@ -1110,7 +1117,11 @@ export default function TeamChatSurface({
           </div>
         </aside>
 
-        {conversation && activeInList ? (
+        {threadState === "loading" ? (
+          <section className="chat-thread chat-thread--loading" aria-label={translate("loading")}>
+            <PageLoading />
+          </section>
+        ) : threadState === "ready" && conversation ? (
           <ChatThread
             conversation={conversation}
             messages={messages}

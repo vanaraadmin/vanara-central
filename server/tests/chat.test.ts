@@ -13,7 +13,7 @@ import {
   normalizeReactionInput,
 } from "../src/services/chat.service.ts";
 import { CHAT_STICKERS } from "../src/services/chat-stickers.service.ts";
-import { acceptChatInboxInvalidation, shouldMarkChatConversationRead } from "../../src/services/chat.service.ts";
+import { acceptChatInboxInvalidation, chatThreadBootstrapState, shouldMarkChatConversationRead } from "../../src/services/chat.service.ts";
 
 interface RuntimeChatRow {
   message_id: number;
@@ -337,6 +337,54 @@ test("chat unread state deduplicates inbox events and marks read only for the vi
   assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: true, currentMobileView: "thread" }), true);
   assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: false, currentMobileView: "list" }), true);
   assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: true, currentMobileView: "thread", unreadCount: 0 }), false);
+});
+
+test("cold notification navigation waits for selected chat history before showing an empty thread", () => {
+  assert.equal(chatThreadBootstrapState({
+    selectedConversationId: "",
+    activeInList: false,
+    conversationPending: false,
+    messagesPending: false,
+  }), "select");
+
+  const selectedPrivate = {
+    selectedConversationId: "private-stefano-ice",
+    activeInList: true,
+  };
+  assert.equal(chatThreadBootstrapState({
+    ...selectedPrivate,
+    conversationPending: true,
+    messagesPending: true,
+  }), "loading");
+  assert.equal(chatThreadBootstrapState({
+    ...selectedPrivate,
+    conversationPending: false,
+    messagesPending: true,
+  }), "loading");
+
+  const restoredHistory = [{ id: 57 }, { id: 58 }, { id: 59 }];
+  assert.equal(chatThreadBootstrapState({
+    ...selectedPrivate,
+    conversationPending: false,
+    messagesPending: false,
+  }), "ready");
+  assert.deepEqual(restoredHistory.map((message) => message.id), [57, 58, 59]);
+
+  assert.equal(chatThreadBootstrapState({
+    selectedConversationId: "general-operations",
+    activeInList: true,
+    conversationPending: false,
+    messagesPending: false,
+  }), "ready");
+
+  const chatPage = readFileSync(new URL("../../src/pages/ChatPage.tsx", import.meta.url), "utf8");
+  const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
+  assert.match(chatPage, /activeConversationId=\{conversationId\}/);
+  assert.match(chatPage, /navigate\(`\/chat\/\$\{nextConversationId\}`\)/);
+  assert.match(teamChatSurface, /conversationPending: conversationQuery\.isPending/);
+  assert.match(teamChatSurface, /messagesPending: messagesQuery\.isPending/);
+  assert.match(teamChatSurface, /threadState === "loading"[\s\S]*<PageLoading \/>/);
+  assert.match(teamChatSurface, /threadState === "ready" && conversation/);
 });
 
 test("internal Chat stays separated from Guest Messages and remains the global bubble entrypoint", () => {

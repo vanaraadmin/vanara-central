@@ -112,6 +112,17 @@ export function shouldMarkChatConversationRead(input: {
   return input.unreadCount + input.mentionCount > 0;
 }
 
+export function chatThreadBootstrapState(input: {
+  selectedConversationId: string;
+  activeInList: boolean;
+  conversationPending: boolean;
+  messagesPending: boolean;
+}): "select" | "loading" | "ready" {
+  if (!input.selectedConversationId || !input.activeInList) return "select";
+  if (input.conversationPending || input.messagesPending) return "loading";
+  return "ready";
+}
+
 export async function createChatMessage(
   id: string,
   payload: CreateChatMessagePayload,
