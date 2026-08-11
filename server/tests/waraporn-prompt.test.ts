@@ -17,7 +17,7 @@ const promptPath = resolve(
   "../src/assets/prompts/waraporn-general-requests-v4-rc3.prompt.txt",
 );
 
-const expectedChecksum = "1534c2d9654b2ccca292784110d31b7a6aa739fb498709913bd3278ca5e6848e";
+const expectedChecksum = "f2144e51f4516c7e9f9e4aa96dd62ddd10ff0176bdaeebba93b44b04f3a7b6b7";
 
 test("frozen Waraporn prompt asset matches the approved checksum", () => {
   const prompt = readFileSync(promptPath, "utf8");
@@ -27,6 +27,11 @@ test("frozen Waraporn prompt asset matches the approved checksum", () => {
   assert.equal(getPromptChecksum(DEFAULT_WARAPORN_PROMPT_KEY), expectedChecksum);
   assert.equal(getPromptVersion(DEFAULT_WARAPORN_PROMPT_KEY), "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE");
   assert.match(prompt, /^# SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE/);
+  assert.match(prompt, /Previous assistant replies are conversational context only\. They are never factual evidence\./);
+  assert.match(prompt, /Every operational or commercial fact about Vanara must be verified through File Search during the current turn\./);
+  assert.match(prompt, /reformulate the search around Vanara and the specific service before answering/);
+  assert.match(prompt, /Never replace a missing Vanara price or operational fact with a generic island average/);
+  assert.doesNotMatch(prompt, /GUEST_SERVICES_MASTER|scooter rental|200 THB/);
 });
 
 test("prompt registry contains only the current frozen Make prompt", () => {

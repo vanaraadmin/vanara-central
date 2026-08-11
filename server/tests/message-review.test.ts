@@ -138,11 +138,12 @@ class FakeReviewDB {
 
   async run(sql: string, params: unknown[]) {
     if (sql.includes("SET original_draft_text = COALESCE")) {
-      const draft = this.readyDraft(Number(params[6]));
+      const draft = this.drafts.find((item) => item.message_draft_id === Number(params[6]) && ["READY", "FAILED"].includes(item.status));
       if (!draft) return { meta: { changes: 0, last_row_id: 0 } };
       draft.original_draft_text = draft.original_draft_text ?? draft.draft_text;
       draft.edited_draft_text = String(params[0]);
       draft.draft_text = String(params[1]);
+      draft.status = "READY";
       draft.edited_by = String(params[2]);
       draft.edited_by_name = String(params[3]);
       draft.edited_at = String(params[4]);
@@ -418,6 +419,30 @@ test("edit updates draft text and approve sends the edited version", async () =>
   await approveMessageDraft(api, 1, user("Manager"), { now: NOW, requestOptions: { fetcher: beds24Fetcher(calls) } });
   assert.deepEqual(calls[0], [{ bookingId: 9001, message: "Updated transfer answer." }]);
   assert.equal(db.drafts[0]!.edited_by_name, "Manager");
+});
+
+test("both owners can turn a terminal AI failure into one manual Beds24 reply", async () => {
+  for (const ownerName of ["Stefano", "JF"]) {
+    const db = new FakeReviewDB();
+    db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+    db.drafts[0]!.status = "FAILED";
+    db.drafts[0]!.draft_text = "";
+    db.drafts[0]!.failure_code = "openai_timeout";
+    const calls: unknown[] = [];
+    const owner = {
+      ...user("Owner", { ownerView: true }),
+      id: `owner-${ownerName.toLowerCase()}`,
+      displayName: ownerName,
+      fullName: ownerName,
+    };
+
+    const prepared = await editMessageDraft(env(db) as never, 1, owner, "Manual answer from Central.", { now: NOW });
+    assert.equal(prepared.state, "READY");
+    const sent = await approveMessageDraft(env(db) as never, 1, owner, { now: NOW, requestOptions: { fetcher: beds24Fetcher(calls) } });
+    assert.equal(sent.state, "SENT");
+    assert.deepEqual(calls, [[{ bookingId: 9001, message: "Manual answer from Central." }]]);
+    assert.equal(db.messages.filter((message) => message.direction === "OUTBOUND").length, 1);
+  }
 });
 
 test("reject never calls Beds24 and keeps the conversation needing reply", async () => {

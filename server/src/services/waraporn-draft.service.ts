@@ -1,9 +1,9 @@
 import { buildMessageContext, type MessageContextBuilderBindings } from "./message-context-builder.service.js";
+import { notifyGuestMessageDraftReady, notifyGuestMessageInbound, type GuestMessageNotificationBindings } from "./guest-message-notifications.service.js";
 import { DEFAULT_WARAPORN_PROMPT_KEY, loadPrompt, verifyPromptChecksum } from "./message-prompt.service.js";
-import { notifyGuestMessageDraftReady, type NotificationBindings } from "./notifications.service.js";
 import type { Draft, MessagePromptKey, VerifiedMessageContext } from "../types/messages.js";
 
-export interface WarapornDraftBindings extends MessageContextBuilderBindings, NotificationBindings {
+export interface WarapornDraftBindings extends MessageContextBuilderBindings, GuestMessageNotificationBindings {
   OPENAI_API_KEY: string;
   WARAPORN_VECTOR_STORE_ID?: string;
   fetcher?: Fetcher;
@@ -12,6 +12,9 @@ export interface WarapornDraftBindings extends MessageContextBuilderBindings, No
 export interface GenerateWarapornDraftOptions {
   now?: string;
   fetcher?: Fetcher;
+  pollIntervalMs?: number;
+  pollTimeoutMs?: number;
+  sleep?: (milliseconds: number) => Promise<void>;
 }
 
 export interface GeneratePendingWarapornDraftsOptions extends GenerateWarapornDraftOptions {
@@ -62,6 +65,29 @@ interface MessageDraftTargetRow {
   message_id: number;
 }
 
+interface WarapornResponseJobRow {
+  message_id: number;
+  message_conversation_id: number;
+  booking_id: number | null;
+  openai_response_id: string | null;
+  response_status: string;
+  prompt_key: MessagePromptKey;
+  prompt_version: string;
+  prompt_checksum: string;
+  model: string;
+  vector_store_id: string;
+  context_hash: string;
+  runtime_context_json: string;
+  openai_request_count: number;
+  submitted_at: string | null;
+  last_checked_at: string | null;
+  completed_at: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 type JsonRecord = Record<string, unknown>;
 
@@ -72,6 +98,7 @@ export const OPENAI_RESPONSES_FILE_SEARCH_INCLUDE = ["file_search_call.results"]
 export const WARAPORN_FILE_SEARCH_MAX_RESULTS = 10;
 export const WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD = 8;
 export const WARAPORN_PROMPT_CACHE_KEY = "waraporn-v4-rc3-make-faithful";
+export const WARAPORN_SUBMISSION_RECOVERY_GRACE_MS = 300_000;
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const GPT_5_5_INPUT_USD_PER_MILLION = 5;
 const GPT_5_5_CACHED_INPUT_USD_PER_MILLION = 0.5;
@@ -97,6 +124,13 @@ interface OpenAiResponsesResult {
   estimatedCostUsd: number;
 }
 
+interface OpenAiResponseEnvelope {
+  payload: unknown;
+  responseId: string;
+  status: string;
+  elapsedMs: number;
+}
+
 type WarapornDraftErrorWithResult = WarapornDraftError & {
   openAiResult?: OpenAiResponsesResult;
 };
@@ -109,6 +143,7 @@ export class WarapornDraftError extends Error {
       | "prompt_checksum_mismatch"
       | "openai_request_failed"
       | "openai_timeout"
+      | "openai_response_pending"
       | "openai_invalid_response"
       | "openai_tool_call_limit_exceeded"
       | "draft_not_eligible"
@@ -143,6 +178,35 @@ function openAiErrorMessage(payload: unknown): string {
 function openAiResponseId(payload: unknown): string | null {
   if (!isRecord(payload)) return null;
   return typeof payload.id === "string" ? payload.id : null;
+}
+
+function openAiResponseStatus(payload: unknown): string {
+  if (!isRecord(payload) || typeof payload.status !== "string") {
+    return isRecord(payload) && (typeof payload.output_text === "string" || Array.isArray(payload.output))
+      ? "completed"
+      : "unknown";
+  }
+  return payload.status.toLowerCase();
+}
+
+function persistedResponseStatus(status: string): string {
+  const normalized = status.replaceAll("-", "_").toUpperCase();
+  if (["QUEUED", "IN_PROGRESS", "COMPLETED", "FAILED", "INCOMPLETE", "CANCELLED"].includes(normalized)) {
+    return normalized;
+  }
+  return "UNKNOWN";
+}
+
+function responseIsPending(status: string): boolean {
+  return status === "queued" || status === "in_progress";
+}
+
+function responseIsFailed(status: string): boolean {
+  return status === "failed" || status === "incomplete" || status === "cancelled";
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function outputTextFrom(response: unknown): string {
@@ -334,6 +398,7 @@ export function buildWarapornResponsesRequest(
     prompt_cache_key: WARAPORN_PROMPT_CACHE_KEY,
     prompt_cache_retention: "24h",
     include: OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
+    background: true,
     input: [{
       role: "user",
       content,
@@ -400,21 +465,133 @@ async function loadReadyDraft(env: Pick<WarapornDraftBindings, "DB">, messageId:
   return row ? toDraft(row) : null;
 }
 
-async function acquireDraftLease(env: Pick<WarapornDraftBindings, "DB">, messageId: number, now: string): Promise<boolean> {
-  const result = await env.DB.prepare(`
+async function loadResponseJob(
+  env: Pick<WarapornDraftBindings, "DB">,
+  messageId: number,
+): Promise<WarapornResponseJobRow | null> {
+  return env.DB.prepare(`
+    SELECT
+      message_id,
+      message_conversation_id,
+      booking_id,
+      openai_response_id,
+      response_status,
+      prompt_key,
+      prompt_version,
+      prompt_checksum,
+      model,
+      vector_store_id,
+      context_hash,
+      runtime_context_json,
+      openai_request_count,
+      submitted_at,
+      last_checked_at,
+      completed_at,
+      failure_code,
+      failure_message,
+      created_at,
+      updated_at
+    FROM waraporn_response_jobs
+    WHERE message_id = ?
+    LIMIT 1
+  `).bind(messageId).first<WarapornResponseJobRow>();
+}
+
+async function createResponseJobLease(
+  env: Pick<WarapornDraftBindings, "DB">,
+  params: {
+    messageId: number;
+    now: string;
+    prompt: Awaited<ReturnType<typeof loadPrompt>>;
+    context: NonNullable<Awaited<ReturnType<typeof buildMessageContext>>>;
+    storeId: string;
+  },
+): Promise<boolean> {
+  const inserted = await env.DB.prepare(`
+    INSERT INTO waraporn_response_jobs (
+      message_id,
+      message_conversation_id,
+      booking_id,
+      response_status,
+      prompt_key,
+      prompt_version,
+      prompt_checksum,
+      model,
+      vector_store_id,
+      context_hash,
+      runtime_context_json,
+      openai_request_count,
+      created_at,
+      updated_at
+    )
+    SELECT ?, ?, ?, 'SUBMITTING', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?
+    FROM messages m
+    WHERE m.message_id = ?
+      AND m.state IN ('ASSOCIATED', 'FAILED_MANUAL_RETRY')
+      AND m.association_state = 'LINKED'
+      AND NOT EXISTS (SELECT 1 FROM message_drafts d WHERE d.message_id = m.message_id)
+      AND NOT EXISTS (SELECT 1 FROM waraporn_response_jobs j WHERE j.message_id = m.message_id)
+    ON CONFLICT(message_id) DO NOTHING
+  `).bind(
+    params.messageId,
+    Number(params.context.context.conversationId),
+    params.context.context.bookingId,
+    params.prompt.key,
+    params.prompt.version,
+    params.prompt.checksum,
+    OPENAI_WARAPORN_DRAFT_MODEL,
+    params.storeId,
+    params.context.contextHash,
+    JSON.stringify(params.context.context),
+    params.now,
+    params.now,
+    params.messageId,
+  ).run();
+  if ((inserted.meta?.changes ?? 0) === 0) return false;
+
+  await env.DB.prepare(`
     UPDATE messages
-    SET state = 'GENERATING',
+    SET state = 'GENERATING', updated_at = ?
+    WHERE message_id = ?
+  `).bind(params.now, params.messageId).run();
+  return true;
+}
+
+async function updateResponseJob(
+  env: Pick<WarapornDraftBindings, "DB">,
+  params: {
+    messageId: number;
+    responseId?: string | null;
+    status: string;
+    now: string;
+    failureCode?: string | null;
+    failureMessage?: string | null;
+  },
+): Promise<void> {
+  await env.DB.prepare(`
+    UPDATE waraporn_response_jobs
+    SET openai_response_id = COALESCE(?, openai_response_id),
+        response_status = ?,
+        submitted_at = CASE WHEN ? IS NOT NULL THEN COALESCE(submitted_at, ?) ELSE submitted_at END,
+        last_checked_at = ?,
+        completed_at = CASE WHEN ? IN ('COMPLETED', 'FAILED', 'INCOMPLETE', 'CANCELLED') THEN ? ELSE completed_at END,
+        failure_code = ?,
+        failure_message = ?,
         updated_at = ?
     WHERE message_id = ?
-      AND state IN ('ASSOCIATED', 'FAILED_MANUAL_RETRY')
-      AND association_state = 'LINKED'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM message_drafts
-        WHERE message_id = ?
-      )
-  `).bind(now, messageId, messageId).run();
-  return (result.meta?.changes ?? 0) > 0;
+  `).bind(
+    params.responseId ?? null,
+    persistedResponseStatus(params.status),
+    params.responseId ?? null,
+    params.now,
+    params.now,
+    persistedResponseStatus(params.status),
+    params.now,
+    params.failureCode ?? null,
+    params.failureMessage ?? null,
+    params.now,
+    params.messageId,
+  ).run();
 }
 
 function failureCode(error: unknown): string {
@@ -441,7 +618,7 @@ async function markMessageFailedManualRetry(
 }
 
 async function persistFailedDraftAttempt(
-  env: Pick<WarapornDraftBindings, "DB">,
+  env: WarapornDraftBindings,
   params: {
     messageId: number;
     now: string;
@@ -453,8 +630,22 @@ async function persistFailedDraftAttempt(
     error: unknown;
   },
 ): Promise<void> {
-  if (!params.prompt || !params.context || params.openAiRequestCount !== 1) {
+  if (!params.prompt || !params.context) {
     await markMessageFailedManualRetry(env, params.messageId, params.now);
+    const target = await env.DB.prepare(`
+      SELECT message_conversation_id
+      FROM messages
+      WHERE message_id = ?
+      LIMIT 1
+    `).bind(params.messageId).first<{ message_conversation_id: number }>();
+    if (target) {
+      await notifyGuestMessageInbound(env, {
+        messageId: params.messageId,
+        conversationId: target.message_conversation_id,
+      }).catch((error: unknown) => {
+        console.warn(JSON.stringify({ message: "Guest message failed package notification failed", error: error instanceof Error ? error.message : "unknown", messageId: params.messageId }));
+      });
+    }
     return;
   }
   const result = params.openAiResult ?? null;
@@ -546,13 +737,26 @@ async function persistFailedDraftAttempt(
     });
     throw insertError;
   }
+  await notifyGuestMessageInbound(env, {
+    messageId: params.messageId,
+    conversationId: Number(params.context.context.conversationId),
+  }).catch((error: unknown) => {
+    console.warn(JSON.stringify({ message: "Guest message failed package notification failed", error: error instanceof Error ? error.message : "unknown", messageId: params.messageId }));
+  });
 }
 
-async function callOpenAiResponses(
+function openAiHeaders(apiKey: string): HeadersInit {
+  return {
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+  };
+}
+
+async function submitOpenAiResponse(
   env: WarapornDraftBindings,
   requestBody: JsonRecord,
   options: GenerateWarapornDraftOptions,
-): Promise<OpenAiResponsesResult> {
+): Promise<OpenAiResponseEnvelope> {
   const apiKey = clean(env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new WarapornDraftError("OPENAI_API_KEY is missing.", "openai_request_failed", 502);
@@ -568,10 +772,7 @@ async function callOpenAiResponses(
     response = await fetcher(OPENAI_RESPONSES_URL, {
       method: "POST",
       signal: abortController.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
+      headers: openAiHeaders(apiKey),
       body: JSON.stringify(requestBody),
     });
   } catch (error) {
@@ -588,22 +789,281 @@ async function callOpenAiResponses(
   if (!response.ok) {
     throw new WarapornDraftError(openAiErrorMessage(payload), "openai_request_failed", 502);
   }
-  const usage = usageFrom(payload);
-  const fileSearchCallCount = fileSearchCallCountFrom(payload);
+  const responseId = openAiResponseId(payload);
+  if (!responseId) throw new WarapornDraftError("OpenAI response did not include an id.", "openai_invalid_response", 502);
+  return {
+    payload,
+    responseId,
+    status: openAiResponseStatus(payload),
+    elapsedMs,
+  };
+}
+
+async function retrieveOpenAiResponse(
+  env: WarapornDraftBindings,
+  responseId: string,
+  options: GenerateWarapornDraftOptions,
+): Promise<OpenAiResponseEnvelope> {
+  const apiKey = clean(env.OPENAI_API_KEY);
+  if (!apiKey) throw new WarapornDraftError("OPENAI_API_KEY is missing.", "openai_request_failed", 502);
+  const fetcher = options.fetcher ?? env.fetcher ?? fetch;
+  const started = Date.now();
+  const url = `${OPENAI_RESPONSES_URL}/${encodeURIComponent(responseId)}?include%5B%5D=file_search_call.results`;
+  let response: Response;
+  try {
+    response = await fetcher(url, {
+      method: "GET",
+      headers: openAiHeaders(apiKey),
+    });
+  } catch {
+    throw new WarapornDraftError("OpenAI response retrieval is pending.", "openai_response_pending", 502);
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new WarapornDraftError(openAiErrorMessage(payload), "openai_request_failed", 502);
+  }
+  return {
+    payload,
+    responseId: openAiResponseId(payload) ?? responseId,
+    status: openAiResponseStatus(payload),
+    elapsedMs: Date.now() - started,
+  };
+}
+
+function completedOpenAiResult(envelope: OpenAiResponseEnvelope, elapsedMs: number): OpenAiResponsesResult {
+  const usage = usageFrom(envelope.payload);
+  const fileSearchCallCount = fileSearchCallCountFrom(envelope.payload);
   const result: OpenAiResponsesResult = {
     text: "",
-    responseId: openAiResponseId(payload),
-    retrievalFilenames: retrievalFilenamesFrom(payload),
-    retrievalResultCount: retrievalResultCountFrom(payload),
+    responseId: envelope.responseId,
+    retrievalFilenames: retrievalFilenamesFrom(envelope.payload),
+    retrievalResultCount: retrievalResultCountFrom(envelope.payload),
     fileSearchCallCount,
     usage,
     elapsedMs,
     estimatedCostUsd: estimateGpt55CostUsd(usage, fileSearchCallCount),
   };
   try {
-    return { ...result, text: outputTextFrom(payload) };
+    return { ...result, text: outputTextFrom(envelope.payload) };
   } catch (error) {
     attachOpenAiResult(error, result);
+    throw error;
+  }
+}
+
+async function waitForOpenAiResponse(
+  env: WarapornDraftBindings,
+  messageId: number,
+  initial: OpenAiResponseEnvelope,
+  options: GenerateWarapornDraftOptions,
+  submittedAt: string,
+): Promise<OpenAiResponsesResult> {
+  const pollTimeoutMs = Math.max(options.pollTimeoutMs ?? OPENAI_WARAPORN_DRAFT_TIMEOUT_MS, 0);
+  const pollIntervalMs = Math.max(options.pollIntervalMs ?? 2_000, 0);
+  const sleep = options.sleep ?? delay;
+  const deadline = Date.now() + pollTimeoutMs;
+  let current = initial;
+
+  while (responseIsPending(current.status)) {
+    await updateResponseJob(env, {
+      messageId,
+      responseId: current.responseId,
+      status: current.status,
+      now: new Date().toISOString(),
+    });
+    if (Date.now() >= deadline) {
+      throw new WarapornDraftError("OpenAI response is still processing.", "openai_response_pending", 502);
+    }
+    await sleep(pollIntervalMs);
+    current = await retrieveOpenAiResponse(env, current.responseId, options);
+  }
+
+  const checkedAt = new Date().toISOString();
+  await updateResponseJob(env, {
+    messageId,
+    responseId: current.responseId,
+    status: current.status,
+    now: checkedAt,
+    failureCode: responseIsFailed(current.status) ? `openai_${current.status}` : null,
+    failureMessage: responseIsFailed(current.status) ? openAiErrorMessage(current.payload) : null,
+  });
+  if (responseIsFailed(current.status)) {
+    throw new WarapornDraftError(openAiErrorMessage(current.payload), "openai_request_failed", 502);
+  }
+  if (current.status !== "completed") {
+    throw new WarapornDraftError("OpenAI returned an unknown response state.", "openai_response_pending", 502);
+  }
+  const elapsedMs = options.now
+    ? current.elapsedMs
+    : Math.max(Date.now() - Date.parse(submittedAt), current.elapsedMs);
+  return completedOpenAiResult(current, elapsedMs);
+}
+
+function jobPrompt(job: WarapornResponseJobRow): Awaited<ReturnType<typeof loadPrompt>> {
+  return {
+    key: job.prompt_key,
+    version: job.prompt_version,
+    checksumAlgorithm: "sha256",
+    checksum: job.prompt_checksum,
+    text: "",
+  };
+}
+
+function jobContext(job: WarapornResponseJobRow): NonNullable<Awaited<ReturnType<typeof buildMessageContext>>> {
+  const context = JSON.parse(job.runtime_context_json) as VerifiedMessageContext;
+  return { context, contextHash: job.context_hash };
+}
+
+async function persistReadyDraft(
+  env: WarapornDraftBindings,
+  job: WarapornResponseJobRow,
+  generated: OpenAiResponsesResult,
+  now: string,
+): Promise<Draft> {
+  const inserted = await env.DB.prepare(`
+    INSERT INTO message_drafts (
+      message_id,
+      message_conversation_id,
+      booking_id,
+      prompt_key,
+      prompt_version,
+      prompt_checksum,
+      draft_text,
+      status,
+      model,
+      vector_store_id,
+      openai_response_id,
+      context_hash,
+      runtime_context_json,
+      retrieval_filenames,
+      retrieval_result_count,
+      openai_file_search_call_count,
+      openai_request_count,
+      openai_input_tokens,
+      openai_cached_input_tokens,
+      openai_output_tokens,
+      openai_reasoning_tokens,
+      openai_total_tokens,
+      openai_elapsed_ms,
+      estimated_cost_usd,
+      failure_code,
+      failure_message,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+    ON CONFLICT(message_id) DO NOTHING
+  `).bind(
+    job.message_id,
+    job.message_conversation_id,
+    job.booking_id,
+    job.prompt_key,
+    job.prompt_version,
+    job.prompt_checksum,
+    generated.text,
+    job.model,
+    job.vector_store_id,
+    generated.responseId,
+    job.context_hash,
+    job.runtime_context_json,
+    JSON.stringify(generated.retrievalFilenames),
+    generated.retrievalResultCount,
+    generated.fileSearchCallCount,
+    generated.usage.inputTokens,
+    generated.usage.cachedInputTokens,
+    generated.usage.outputTokens,
+    generated.usage.reasoningTokens,
+    generated.usage.totalTokens,
+    generated.elapsedMs,
+    generated.estimatedCostUsd,
+    now,
+    now,
+  ).run();
+
+  const draft = await loadReadyDraft(env, job.message_id);
+  if (!draft) throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE messages SET state = 'DRAFT_READY', updated_at = ? WHERE message_id = ?").bind(now, job.message_id),
+    env.DB.prepare(`
+      UPDATE message_conversations
+      SET state = 'DRAFT_READY', updated_at = ?
+      WHERE message_conversation_id = ?
+    `).bind(now, job.message_conversation_id),
+  ]);
+  await updateResponseJob(env, {
+    messageId: job.message_id,
+    responseId: generated.responseId,
+    status: "completed",
+    now,
+  });
+
+  if ((inserted.meta?.changes ?? 0) > 0) {
+    await notifyGuestMessageDraftReady(env, {
+      messageId: job.message_id,
+      draftId: draft.draftId,
+      conversationId: draft.conversationId,
+    }).catch((error: unknown) => {
+      console.warn(JSON.stringify({ message: "Guest message draft push notification failed", error: error instanceof Error ? error.message : "unknown", messageId: job.message_id, draftId: draft.draftId }));
+    });
+  }
+
+  return draft;
+}
+
+async function recoverResponseJob(
+  env: WarapornDraftBindings,
+  job: WarapornResponseJobRow,
+  options: GenerateWarapornDraftOptions,
+): Promise<Draft> {
+  if (!job.openai_response_id) {
+    const ageMs = Math.max(Date.parse(options.now ?? new Date().toISOString()) - Date.parse(job.created_at), 0);
+    if (ageMs < WARAPORN_SUBMISSION_RECOVERY_GRACE_MS) {
+      throw new WarapornDraftError("Waraporn response submission is still in progress.", "openai_response_pending", 502);
+    }
+    const error = new WarapornDraftError("Waraporn response submission did not return a recoverable id.", "openai_request_failed", 502);
+    await updateResponseJob(env, {
+      messageId: job.message_id,
+      status: "failed",
+      now: options.now ?? new Date().toISOString(),
+      failureCode: error.code,
+      failureMessage: error.message,
+    });
+    await persistFailedDraftAttempt(env, {
+      messageId: job.message_id,
+      now: options.now ?? new Date().toISOString(),
+      prompt: jobPrompt(job),
+      context: jobContext(job),
+      storeId: job.vector_store_id,
+      openAiRequestCount: 1,
+      error,
+    });
+    throw error;
+  }
+
+  let generated: OpenAiResponsesResult | null = null;
+  try {
+    const current = await retrieveOpenAiResponse(env, job.openai_response_id, options);
+    generated = await waitForOpenAiResponse(
+      env,
+      job.message_id,
+      current,
+      options,
+      job.submitted_at ?? job.created_at,
+    );
+    return await persistReadyDraft(env, job, generated, options.now ?? new Date().toISOString());
+  } catch (error) {
+    if (error instanceof WarapornDraftError && error.code === "openai_response_pending") throw error;
+    await persistFailedDraftAttempt(env, {
+      messageId: job.message_id,
+      now: options.now ?? new Date().toISOString(),
+      prompt: jobPrompt(job),
+      context: jobContext(job),
+      storeId: job.vector_store_id,
+      openAiRequestCount: 1,
+      openAiResult: generated ?? openAiResultFromError(error),
+      error,
+    });
     throw error;
   }
 }
@@ -617,12 +1077,8 @@ export async function generateWarapornDraft(
   if (existing) return existing;
 
   const now = options.now ?? new Date().toISOString();
-  const leased = await acquireDraftLease(env, messageId, now);
-  if (!leased) {
-    const replay = await loadReadyDraft(env, messageId);
-    if (replay) return replay;
-    throw new WarapornDraftError("Waraporn draft generation is not eligible for automatic retry.", "draft_not_eligible", 400);
-  }
+  const pendingJob = await loadResponseJob(env, messageId);
+  if (pendingJob) return recoverResponseJob(env, pendingJob, options);
 
   const storeId = vectorStoreId(env);
   let prompt: Awaited<ReturnType<typeof loadPrompt>> | null = null;
@@ -631,17 +1087,40 @@ export async function generateWarapornDraft(
   let openAiResult: OpenAiResponsesResult | null = null;
 
   try {
+    context = await buildMessageContext(env, { messageId, now });
+    if (!context) throw new WarapornDraftError("Message not found.", "message_not_found", 404);
     prompt = await loadPrompt(DEFAULT_WARAPORN_PROMPT_KEY);
     if (!await verifyPromptChecksum(prompt.key)) {
       throw new WarapornDraftError("Frozen Waraporn prompt checksum mismatch.", "prompt_checksum_mismatch", 500);
     }
 
-    context = await buildMessageContext(env, { messageId, now });
-    if (!context) throw new WarapornDraftError("Message not found.", "message_not_found", 404);
-
+    const leased = await createResponseJobLease(env, {
+      messageId,
+      now,
+      prompt,
+      context,
+      storeId,
+    });
+    if (!leased) {
+      const replay = await loadReadyDraft(env, messageId);
+      if (replay) return replay;
+      const existingJob = await loadResponseJob(env, messageId);
+      if (existingJob) return recoverResponseJob(env, existingJob, options);
+      throw new WarapornDraftError("Waraporn draft generation is not eligible for automatic retry.", "draft_not_eligible", 400);
+    }
     const requestBody = buildWarapornResponsesRequest(prompt.text, context.context, storeId);
     openAiRequestCount = 1;
-    const generated = await callOpenAiResponses(env, requestBody, options);
+    const submitted = await submitOpenAiResponse(env, requestBody, options);
+    const submittedAt = options.now ?? new Date().toISOString();
+    await updateResponseJob(env, {
+      messageId,
+      responseId: submitted.responseId,
+      status: submitted.status,
+      now: submittedAt,
+    });
+    const job = await loadResponseJob(env, messageId);
+    if (!job) throw new WarapornDraftError("Waraporn response job could not be reloaded.", "draft_persistence_failed", 500);
+    const generated = await waitForOpenAiResponse(env, messageId, submitted, options, submittedAt);
     openAiResult = generated;
     if (generated.fileSearchCallCount > WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD) {
       console.warn(JSON.stringify({
@@ -654,94 +1133,9 @@ export async function generateWarapornDraft(
       }));
     }
 
-    const inserted = await env.DB.prepare(`
-      INSERT INTO message_drafts (
-        message_id,
-        message_conversation_id,
-        booking_id,
-        prompt_key,
-        prompt_version,
-        prompt_checksum,
-        draft_text,
-        status,
-        model,
-        vector_store_id,
-        openai_response_id,
-        context_hash,
-        runtime_context_json,
-        retrieval_filenames,
-        retrieval_result_count,
-        openai_file_search_call_count,
-        openai_request_count,
-        openai_input_tokens,
-        openai_cached_input_tokens,
-        openai_output_tokens,
-        openai_reasoning_tokens,
-        openai_total_tokens,
-        openai_elapsed_ms,
-        estimated_cost_usd,
-        failure_code,
-        failure_message,
-        created_at,
-        updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-      ON CONFLICT(message_id) DO NOTHING
-    `).bind(
-      messageId,
-      Number(context.context.conversationId),
-      context.context.bookingId,
-      prompt.key,
-      prompt.version,
-      prompt.checksum,
-      generated.text,
-      OPENAI_WARAPORN_DRAFT_MODEL,
-      storeId,
-      generated.responseId,
-      context.contextHash,
-      JSON.stringify(context.context),
-      JSON.stringify(generated.retrievalFilenames),
-      generated.retrievalResultCount,
-      generated.fileSearchCallCount,
-      generated.usage.inputTokens,
-      generated.usage.cachedInputTokens,
-      generated.usage.outputTokens,
-      generated.usage.reasoningTokens,
-      generated.usage.totalTokens,
-      generated.elapsedMs,
-      generated.estimatedCostUsd,
-      now,
-      now,
-    ).run();
-
-    if ((inserted.meta?.changes ?? 0) === 0) {
-      const replay = await loadReadyDraft(env, messageId);
-      if (replay) return replay;
-      throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
-    }
-
-    const draft = await loadReadyDraft(env, messageId);
-    if (!draft) throw new WarapornDraftError("Waraporn draft could not be persisted.", "draft_persistence_failed", 500);
-
-    await env.DB.batch([
-      env.DB.prepare("UPDATE messages SET state = 'DRAFT_READY', updated_at = ? WHERE message_id = ?").bind(now, messageId),
-      env.DB.prepare(`
-        UPDATE message_conversations
-        SET state = 'DRAFT_READY', updated_at = ?
-        WHERE message_conversation_id = ?
-      `).bind(now, Number(draft.conversationId)),
-    ]);
-
-    await notifyGuestMessageDraftReady(env, {
-      messageId,
-      draftId: draft.draftId,
-      conversationId: draft.conversationId,
-    }).catch((error: unknown) => {
-      console.warn(JSON.stringify({ message: "Guest message draft push notification failed", error: error instanceof Error ? error.message : "unknown", messageId, draftId: draft.draftId }));
-    });
-
-    return draft;
+    return persistReadyDraft(env, job, generated, now);
   } catch (error) {
+    if (error instanceof WarapornDraftError && error.code === "openai_response_pending") throw error;
     await persistFailedDraftAttempt(env, {
       messageId,
       now,
@@ -761,6 +1155,18 @@ export async function generatePendingWarapornDrafts(
   options: GeneratePendingWarapornDraftsOptions = {},
 ): Promise<GeneratePendingWarapornDraftsResult> {
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 20), 1), 100);
+  const recoveryRows = await env.DB.prepare(`
+    SELECT message_id
+    FROM waraporn_response_jobs
+    WHERE response_status IN ('SUBMITTING', 'QUEUED', 'IN_PROGRESS', 'COMPLETED', 'UNKNOWN')
+      AND NOT EXISTS (
+        SELECT 1 FROM message_drafts d
+        WHERE d.message_id = waraporn_response_jobs.message_id
+      )
+    ORDER BY updated_at ASC, message_id ASC
+    LIMIT ?
+  `).bind(limit).all<MessageDraftTargetRow>();
+  const remaining = Math.max(limit - (recoveryRows.results ?? []).length, 0);
   const rows = await env.DB.prepare(`
     SELECT m.message_id
     FROM messages m
@@ -771,14 +1177,15 @@ export async function generatePendingWarapornDrafts(
       AND m.association_state = 'LINKED'
     ORDER BY m.received_at ASC, m.message_id ASC
     LIMIT ?
-  `).bind(limit).all<MessageDraftTargetRow>();
+  `).bind(remaining).all<MessageDraftTargetRow>();
+  const targets = [...(recoveryRows.results ?? []), ...(rows.results ?? [])];
 
   let generated = 0;
   let reused = 0;
   let failed = 0;
   const draftIds: string[] = [];
 
-  for (const row of rows.results ?? []) {
+  for (const row of targets) {
     try {
       const before = await loadReadyDraft(env, row.message_id);
       const draft = await generateWarapornDraft(env, row.message_id, options);
@@ -796,7 +1203,7 @@ export async function generatePendingWarapornDrafts(
   }
 
   return {
-    attempted: (rows.results ?? []).length,
+    attempted: targets.length,
     generated,
     reused,
     failed,

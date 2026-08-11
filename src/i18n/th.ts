@@ -334,6 +334,8 @@ const th = {
   guestMessagesSelectFromInbox: "เลือกข้อความจากแขกในกล่องข้อความ",
   guestMessagesConversationTimeline: "ประวัติแชต",
   guestMessagesDraftReady: "ข้อความพร้อมส่ง",
+  guestMessagesAiUnavailable: "ระบบ AI ตอบไม่ได้",
+  guestMessagesManualReplyHelp: "เขียนคำตอบเองและส่งผ่าน Central",
   guestMessagesCompact: "แบบย่อ",
   guestMessagesTravelPhase: "ช่วงการเดินทาง",
   guestMessagesChannel: "ช่องทาง",

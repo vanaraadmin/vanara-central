@@ -152,6 +152,10 @@ function assertReadyForReview(row: DraftReviewRow): void {
   if (row.status !== "READY") throw new MessageReviewError("Draft is not ready for review.", "draft_not_ready", 400);
 }
 
+function canPrepareManualFallback(row: DraftReviewRow): boolean {
+  return row.status === "FAILED" && row.failure_code !== "beds24_delivery_failed";
+}
+
 export async function editMessageDraft(
   env: MessageReviewBindings,
   draftId: number,
@@ -161,7 +165,8 @@ export async function editMessageDraft(
 ): Promise<Draft> {
   const row = await loadDraftRow(env, draftId);
   if (!row) throw new MessageReviewError("Draft not found.", "draft_not_found", 404);
-  assertReadyForReview(row);
+  const manualFallback = canPrepareManualFallback(row);
+  if (!manualFallback) assertReadyForReview(row);
 
   const body = normalizeBody(bodyInput);
   const now = options.now ?? new Date().toISOString();
@@ -170,18 +175,19 @@ export async function editMessageDraft(
     SET original_draft_text = COALESCE(original_draft_text, draft_text),
         edited_draft_text = ?,
         draft_text = ?,
+        status = 'READY',
         edited_by = ?,
         edited_by_name = ?,
         edited_at = ?,
         updated_at = ?
     WHERE message_draft_id = ?
-      AND status = 'READY'
+      AND status IN ('READY', 'FAILED')
   `).bind(body, body, user.id, reviewerName(user), now, now, draftId).run();
 
   if ((result.meta?.changes ?? 0) === 0) {
     const replay = await loadDraftRow(env, draftId);
     if (replay?.status === "SENT") throw new MessageReviewError("Draft has already been sent.", "draft_already_sent", 409);
-    throw new MessageReviewError("Draft is no longer ready for review.", "draft_not_ready", 409);
+    throw new MessageReviewError("Draft is no longer available for review.", "draft_not_ready", 409);
   }
 
   const updated = await loadDraftRow(env, draftId);

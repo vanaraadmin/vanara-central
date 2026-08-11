@@ -37,7 +37,7 @@ type DraftRow = {
   message_id: number;
   message_conversation_id: number;
   draft_text: string;
-  status: "READY" | "FAILED" | "APPROVED";
+  status: "READY" | "FAILED" | "REJECTED" | "APPROVED" | "SENT";
   failure_code: string | null;
   created_at: string;
 };
@@ -126,10 +126,10 @@ class FakeGuestMessagesDB {
     { room_type_id: 1, room_type_name: "Tent", room_name: "Tent" },
   ];
   messages: MessageRow[] = [
-    messageRow(1, 1, "INBOUND", "GUEST", "2026-08-04T09:50:00.000Z", "Can we arrange a transfer from Bangkok?", "ASSOCIATED"),
+    messageRow(1, 1, "INBOUND", "GUEST", "2026-08-04T09:50:00.000Z", "Can we arrange a transfer from Bangkok?", "DRAFT_READY"),
     messageRow(2, 2, "INBOUND", "GUEST", "2026-08-04T10:30:00.000Z", "Thank you for the details.", "SENT"),
     messageRow(3, 2, "OUTBOUND", "WARAPORN", "2026-08-04T11:00:00.000Z", "You are very welcome.", "SENT"),
-    messageRow(4, 3, "INBOUND", "GUEST", "2026-08-03T10:00:00.000Z", "Cancelled booking question.", "ASSOCIATED"),
+    messageRow(4, 3, "INBOUND", "GUEST", "2026-08-03T10:00:00.000Z", "Cancelled booking question.", "SENT"),
     messageRow(5, 1, "OUTBOUND", "PROVIDER", "2026-08-04T09:55:00.000Z", "Provider event hidden from UI.", "RECEIVED"),
   ];
   drafts: DraftRow[] = [
@@ -149,7 +149,15 @@ class FakeGuestMessagesDB {
   private latestMessage(conversationId: number): MessageRow | null {
     return [...this.messages]
       .filter((message) => message.message_conversation_id === conversationId)
+      .filter((message) => this.visibleMessage(message))
       .sort((left, right) => right.received_at.localeCompare(left.received_at) || right.message_id - left.message_id)[0] ?? null;
+  }
+
+  private visibleMessage(message: MessageRow): boolean {
+    if (message.direction === "OUTBOUND") return message.state === "SENT";
+    if (message.author !== "GUEST") return false;
+    if (["FAILED_MANUAL_RETRY", "UNLINKED", "REVIEW_PENDING", "SENT"].includes(message.state)) return true;
+    return message.state === "DRAFT_READY" && this.drafts.some((draft) => draft.message_id === message.message_id);
   }
 
   private readyDraft(conversationId: number): DraftRow | null {
@@ -173,6 +181,7 @@ class FakeGuestMessagesDB {
       message.message_conversation_id === conversation.message_conversation_id
       && message.direction === "INBOUND"
       && message.author === "GUEST"
+      && this.visibleMessage(message)
       && message.received_at > latestSentAt
     ).length;
 
@@ -211,7 +220,9 @@ class FakeGuestMessagesDB {
     if (sql.includes("WHERE c.message_conversation_id = ?")) {
       const conversationId = Number(params[0]);
       const conversation = this.conversations.find((item) => item.message_conversation_id === conversationId);
-      return (conversation ? this.rowFor(conversation) : null) as T | null;
+      if (!conversation) return null;
+      const row = this.rowFor(conversation);
+      return (row.latest_message_id !== null ? row : null) as T | null;
     }
     return null;
   }
@@ -243,14 +254,14 @@ class FakeGuestMessagesDB {
           row.channel,
         ].some((value) => String(value ?? "").toLowerCase().includes(search)))
         .sort((left, right) => String(right.latest_received_at ?? right.last_message_at).localeCompare(String(left.latest_received_at ?? left.last_message_at)));
-      return { results: rows as T[] };
+      return { results: rows.filter((row) => row.latest_message_id !== null) as T[] };
     }
     if (sql.includes("FROM messages") && sql.includes("direction = 'INBOUND'")) {
       const conversationId = Number(params[0]);
       return {
         results: this.messages
           .filter((message) => message.message_conversation_id === conversationId)
-          .filter((message) => (message.direction === "INBOUND" && message.author === "GUEST") || (message.direction === "OUTBOUND" && message.state === "SENT"))
+          .filter((message) => this.visibleMessage(message))
           .sort((left, right) => left.received_at.localeCompare(right.received_at) || left.message_id - right.message_id)
           .map((message) => ({
             ...message,
@@ -262,7 +273,13 @@ class FakeGuestMessagesDB {
       const conversationId = Number(params[0]);
       return {
         results: this.drafts
-          .filter((draft) => draft.message_conversation_id === conversationId && (draft.status === "READY" || (draft.status === "APPROVED" && draft.failure_code === "beds24_delivery_failed")))
+          .filter((draft) => {
+            if (draft.message_conversation_id !== conversationId) return false;
+            if (["READY", "REJECTED", "SENT"].includes(draft.status)) return true;
+            if (draft.status === "APPROVED" && draft.failure_code === "beds24_delivery_failed") return true;
+            return draft.status === "FAILED"
+              && this.messages.some((message) => message.message_id === draft.message_id && message.state === "FAILED_MANUAL_RETRY");
+          })
           .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.message_draft_id - right.message_draft_id) as T[],
       };
     }
@@ -379,6 +396,45 @@ test("guest message conversation detail exposes only guest messages ready drafts
   assert.equal(detail.timeline[1]!.sender, "Waraporn Draft");
   assert.equal(detail.timeline[1]!.status, "READY");
   assert.doesNotMatch(detail.timeline.map((item) => item.message).join("\n"), /Failed internal draft|Provider event/);
+});
+
+test("guest message package stays hidden while AI is processing and appears only after draft persistence", async () => {
+  const db = new FakeGuestMessagesDB();
+  db.messages[0]!.state = "ASSOCIATED";
+  db.drafts = db.drafts.filter((draft) => draft.message_id !== 1);
+
+  assert.equal((await listGuestMessageConversations({ DB: db } as never)).conversations.some((item) => item.conversationId === "1"), false);
+  db.messages[0]!.state = "DRAFT_READY";
+  assert.equal((await listGuestMessageConversations({ DB: db } as never)).conversations.some((item) => item.conversationId === "1"), false);
+
+  db.drafts.push(draftRow(9, 1, 1, "The complete reply is ready.", "READY", NOW));
+  const inbox = await listGuestMessageConversations({ DB: db } as never);
+  assert.equal(inbox.conversations.some((item) => item.conversationId === "1"), true);
+});
+
+test("terminal AI failure exposes the guest message and an editable manual fallback to owners", async () => {
+  const db = new FakeGuestMessagesDB({ role: "Owner", views: ["owner", "staff"] });
+  db.messages[0]!.state = "FAILED_MANUAL_RETRY";
+  db.drafts = [draftRow(9, 1, 1, "", "FAILED", NOW)];
+
+  const detail = await getGuestMessageConversation({ DB: db } as never, 1, {
+    ...USER_ROW,
+    id: "owner-stefano",
+    displayName: "Stefano",
+    fullName: "Stefano",
+    role: "Owner",
+    view: "owner",
+    views: ["owner", "staff"],
+    permissions: [],
+    actionPermissions: [],
+  } as never);
+
+  assert.ok(detail);
+  assert.deepEqual(detail.timeline.map((item) => item.kind), ["guest", "draft"]);
+  assert.equal(detail.timeline[0]!.status, "AI_UNAVAILABLE");
+  assert.equal(detail.timeline[1]!.status, "AI_UNAVAILABLE");
+  assert.equal(detail.timeline[1]!.draftId, "9");
+  assert.equal(detail.timeline[1]!.canReview, true);
 });
 
 test("guest message conversation detail keeps failed delivery drafts visible for retry", async () => {
@@ -510,6 +566,13 @@ test("guest messages workspace keeps production UX polish guardrails", () => {
   assert.match(page, /guestMessagesNoSearchResults/);
   assert.match(page, /guestMessagesNoDraftsWaiting/);
   assert.match(page, /guestMessagesNoReplyRequired/);
+  assert.match(page, /refetchInterval:\s*pageVisible \? 5_000 : 60_000/);
+  assert.match(page, /refetchIntervalInBackground:\s*false/);
+  assert.match(page, /window\.addEventListener\("pageshow", refreshGuestMessages\)/);
+  assert.match(page, /document\.addEventListener\("visibilitychange", refreshGuestMessages\)/);
+  assert.match(page, /queryClient\.invalidateQueries\(\{ queryKey: \["guest-messages"\] \}\)/);
+  assert.match(page, /item\.status === "AI_UNAVAILABLE"/);
+  assert.match(page, /guestMessagesManualReplyHelp/);
   assert.match(css, /\.messages-inbox-row:focus-visible/);
   assert.match(css, /\.messages-skeleton__line/);
   assert.match(css, /prefers-reduced-motion/);

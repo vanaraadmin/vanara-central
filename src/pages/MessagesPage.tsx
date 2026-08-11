@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
@@ -202,7 +202,7 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const label = item.kind === "draft" ? translate("guestMessagesDraft") : item.sender;
-  const canActOnDraft = item.kind === "draft" && (item.status === "READY" || item.status === "DELIVERY_FAILED");
+  const canActOnDraft = item.kind === "draft" && (item.status === "READY" || item.status === "AI_UNAVAILABLE" || item.status === "DELIVERY_FAILED");
   const failedMessageId = item.kind === "guest" && item.canGenerateDraft && item.id.startsWith("message:")
     ? item.id.slice("message:".length)
     : "";
@@ -228,6 +228,10 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
           <span>{translate("guestMessagesDraft")}</span>
           <strong>{item.status}</strong>
         </div>
+      ) : item.status === "AI_UNAVAILABLE" ? (
+        <div className="messages-bubble__draft-header">
+          <strong>{translate("guestMessagesAiUnavailable")}</strong>
+        </div>
       ) : null}
       <p>{item.message}</p>
       {failedMessageId ? (
@@ -248,7 +252,7 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
 
 function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
   const { translate } = useLanguage();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(item.status === "AI_UNAVAILABLE");
   const [draftText, setDraftText] = useState(item.message);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -282,6 +286,7 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
     <div className="messages-draft-actions" aria-label={translate("guestMessagesDraftReviewActions")}>
       {editing ? (
         <div className="messages-draft-editor">
+          {item.status === "AI_UNAVAILABLE" ? <p role="status">{translate("guestMessagesManualReplyHelp")}</p> : null}
           <label>
             <span className="vc-sr-only">{translate("guestMessagesEditDraft")}</span>
             <textarea
@@ -307,9 +312,11 @@ function DraftActions({ actions, item }: { actions: DraftActionHandlers; item: G
             >
               {translate("guestMessagesApproveAndSend")}
             </button>
-            <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(false)}>
-              {translate("cancel")}
-            </button>
+            {item.status !== "AI_UNAVAILABLE" ? (
+              <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={() => setEditing(false)}>
+                {translate("cancel")}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -467,11 +474,33 @@ export default function MessagesPage() {
   const { translate } = useLanguage();
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState("");
+  const [pageVisible, setPageVisible] = useState(() => typeof document === "undefined" || document.visibilityState === "visible");
   const queryClient = useQueryClient();
+  useEffect(() => {
+    const refreshGuestMessages = () => {
+      const visible = document.visibilityState === "visible";
+      setPageVisible(visible);
+      if (visible) void queryClient.invalidateQueries({ queryKey: ["guest-messages"] });
+    };
+    window.addEventListener("focus", refreshGuestMessages);
+    window.addEventListener("pageshow", refreshGuestMessages);
+    window.addEventListener("online", refreshGuestMessages);
+    document.addEventListener("visibilitychange", refreshGuestMessages);
+    return () => {
+      window.removeEventListener("focus", refreshGuestMessages);
+      window.removeEventListener("pageshow", refreshGuestMessages);
+      window.removeEventListener("online", refreshGuestMessages);
+      document.removeEventListener("visibilitychange", refreshGuestMessages);
+    };
+  }, [queryClient]);
   const inboxQuery = useQuery({
     queryKey: ["guest-messages", "inbox", search.trim()],
     queryFn: ({ signal }) => loadGuestMessageInbox(search, signal),
-    refetchInterval: 60_000,
+    refetchInterval: pageVisible ? 5_000 : 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnReconnect: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const conversations = useMemo(() => inboxQuery.data?.conversations ?? [], [inboxQuery.data]);
@@ -484,7 +513,11 @@ export default function MessagesPage() {
     queryKey: ["guest-messages", "conversation", activeConversationId],
     queryFn: ({ signal }) => loadGuestMessageConversation(activeConversationId, signal),
     enabled: Boolean(activeConversationId),
-    refetchInterval: 60_000,
+    refetchInterval: pageVisible ? 5_000 : 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnReconnect: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const retry = () => {

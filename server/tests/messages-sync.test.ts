@@ -535,7 +535,7 @@ test("duplicate provider messages are ignored by provider_message_id", async () 
   assert.equal(replay.recordsDeduplicated, 1);
 });
 
-test("new guest messages emit one owner notification and sync replay does not duplicate it", async () => {
+test("linked guest-message ingest stays silent until the Waraporn package is terminal", async () => {
   const db = new FakeMessagesDB({
     bookings: [{ booking_id: 1, beds24_booking_id: 9001, channel: "Booking.com", api_source: "Booking.com", language_code: "en" }],
   });
@@ -550,11 +550,26 @@ test("new guest messages emit one owner notification and sync replay does not du
     requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
   });
 
+  assert.equal(db.notificationEvents.length, 0);
+});
+
+test("unlinked guest message is terminally visible and emits one owner package alert", async () => {
+  const db = new FakeMessagesDB();
+  const { fetcher } = messagesFetcher([guestMessage("msg-unlinked", 9999, "I need help with my booking.")]);
+
+  await syncMessages(env(db) as never, {
+    now: NOW,
+    requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
+  });
+  await syncMessages(env(db) as never, {
+    now: NOW,
+    requestOptions: { fetcher, pauseAfterMs: 0, sleep: async () => undefined },
+  });
+
   assert.equal(db.notificationEvents.length, 1);
   assert.equal(db.notificationEvents[0]!.notification_type, "guest_message.inbound");
   assert.equal(db.notificationEvents[0]!.dedupe_key, "guest-message:inbound:1");
   assert.equal(db.notificationEvents[0]!.audience, "owners");
-  assert.equal(db.notificationEvents[0]!.sound_type, "event");
   assert.match(db.notificationEvents[0]!.payload_json, /Guest message needs review/);
   assert.match(db.notificationEvents[0]!.payload_json, /"\/messages"/);
 });

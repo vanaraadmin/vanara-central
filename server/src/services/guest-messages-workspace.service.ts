@@ -9,6 +9,20 @@ export interface GuestMessagesWorkspaceBindings {
 export type GuestMessageInboxGroup = "needsReply" | "waitingGuest" | "closed";
 export type GuestMessageTimelineKind = "guest" | "draft" | "review" | "sent";
 
+function visibleInboundSql(alias: string): string {
+  return `(
+    ${alias}.state IN ('FAILED_MANUAL_RETRY', 'UNLINKED', 'REVIEW_PENDING', 'SENT')
+    OR (
+      ${alias}.state = 'DRAFT_READY'
+      AND EXISTS (
+        SELECT 1
+        FROM message_drafts visible_draft
+        WHERE visible_draft.message_id = ${alias}.message_id
+      )
+    )
+  )`;
+}
+
 interface ConversationListRow {
   message_conversation_id: number;
   provider: string;
@@ -56,7 +70,7 @@ interface TimelineDraftRow {
   message_draft_id: number;
   message_id: number;
   draft_text: string;
-  status: "READY" | "REJECTED" | "APPROVED" | "SENT";
+  status: "READY" | "FAILED" | "REJECTED" | "APPROVED" | "SENT";
   failure_code: string | null;
   original_draft_text: string | null;
   edited_draft_text: string | null;
@@ -92,7 +106,7 @@ export interface GuestMessageTimelineItem {
   sender: string;
   timestamp: string;
   message: string;
-  status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT";
+  status?: "READY" | "REJECTED" | "DELIVERY_FAILED" | "SENT" | "AI_UNAVAILABLE";
   draftId?: string;
   canReview?: boolean;
   canGenerateDraft?: boolean;
@@ -279,6 +293,7 @@ export async function listGuestMessageConversations(
         WHERE unread.message_conversation_id = c.message_conversation_id
           AND unread.direction = 'INBOUND'
           AND unread.author = 'GUEST'
+          AND ${visibleInboundSql("unread")}
           AND unread.received_at > COALESCE((
             SELECT MAX(sent.received_at)
             FROM messages sent
@@ -299,10 +314,15 @@ export async function listGuestMessageConversations(
         SELECT m.message_id
         FROM messages m
         WHERE m.message_conversation_id = c.message_conversation_id
+          AND (
+            (m.direction = 'INBOUND' AND m.author = 'GUEST' AND ${visibleInboundSql("m")})
+            OR (m.direction = 'OUTBOUND' AND m.state = 'SENT')
+          )
         ORDER BY m.received_at DESC, m.message_id DESC
         LIMIT 1
       )
-    ${filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : ""}
+    WHERE latest.message_id IS NOT NULL
+      ${filters.length > 0 ? `AND ${filters.join(" AND ")}` : ""}
     ORDER BY COALESCE(latest.received_at, c.last_message_at, c.updated_at) DESC, c.message_conversation_id DESC
     LIMIT ?
   `).bind(...params).all<ConversationListRow>();
@@ -360,6 +380,7 @@ async function loadConversationHeader(
         WHERE unread.message_conversation_id = c.message_conversation_id
           AND unread.direction = 'INBOUND'
           AND unread.author = 'GUEST'
+          AND ${visibleInboundSql("unread")}
       ) AS unread_count
     FROM message_conversations c
     LEFT JOIN bookings b
@@ -373,10 +394,15 @@ async function loadConversationHeader(
         SELECT m.message_id
         FROM messages m
         WHERE m.message_conversation_id = c.message_conversation_id
+          AND (
+            (m.direction = 'INBOUND' AND m.author = 'GUEST' AND ${visibleInboundSql("m")})
+            OR (m.direction = 'OUTBOUND' AND m.state = 'SENT')
+          )
         ORDER BY m.received_at DESC, m.message_id DESC
         LIMIT 1
       )
     WHERE c.message_conversation_id = ?
+      AND latest.message_id IS NOT NULL
   `).bind(conversationId).first<ConversationHeaderRow>();
 }
 
@@ -385,6 +411,7 @@ function toMessageTimelineItem(row: TimelineMessageRow, canReviewDrafts: boolean
   const sender = isOutbound
     ? row.author === "WARAPORN" ? "Waraporn" : "Staff"
     : "Guest";
+  const aiUnavailable = !isOutbound && (row.state === "FAILED_MANUAL_RETRY" || row.state === "UNLINKED");
   const canGenerateDraft = !isOutbound
     && canReviewDrafts
     && row.state === "FAILED_MANUAL_RETRY"
@@ -396,14 +423,21 @@ function toMessageTimelineItem(row: TimelineMessageRow, canReviewDrafts: boolean
     sender,
     timestamp: row.received_at,
     message: row.guest_message,
-    status: isOutbound ? "SENT" : undefined,
+    status: isOutbound ? "SENT" : aiUnavailable ? "AI_UNAVAILABLE" : undefined,
     canGenerateDraft,
   };
 }
 
 function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): GuestMessageTimelineItem[] {
   const isFailedDelivery = row.status === "APPROVED" && row.failure_code === "beds24_delivery_failed";
-  const presentationStatus = isFailedDelivery ? "DELIVERY_FAILED" : row.status === "APPROVED" ? "READY" : row.status;
+  const aiUnavailable = row.status === "FAILED";
+  const presentationStatus: NonNullable<GuestMessageTimelineItem["status"]> = aiUnavailable
+    ? "AI_UNAVAILABLE"
+    : isFailedDelivery
+      ? "DELIVERY_FAILED"
+      : row.status === "APPROVED"
+        ? "READY"
+        : row.status as "READY" | "REJECTED" | "SENT";
   const items: GuestMessageTimelineItem[] = [{
     id: `draft:${row.message_draft_id}`,
     kind: "draft",
@@ -412,7 +446,7 @@ function toDraftTimelineItems(row: TimelineDraftRow, canReviewDrafts: boolean): 
     message: row.original_draft_text ?? row.draft_text,
     status: presentationStatus,
     draftId: String(row.message_draft_id),
-    canReview: canReviewDrafts && (row.status === "READY" || isFailedDelivery),
+    canReview: canReviewDrafts && (row.status === "READY" || aiUnavailable || isFailedDelivery),
   }];
 
   if (row.edited_at) {
@@ -488,7 +522,7 @@ export async function getGuestMessageConversation(
       FROM messages m
       WHERE m.message_conversation_id = ?
         AND (
-          (m.direction = 'INBOUND' AND m.author = 'GUEST')
+          (m.direction = 'INBOUND' AND m.author = 'GUEST' AND ${visibleInboundSql("m")})
           OR (m.direction = 'OUTBOUND' AND m.state = 'SENT')
         )
       ORDER BY m.received_at ASC, m.message_id ASC
@@ -515,6 +549,15 @@ export async function getGuestMessageConversation(
       WHERE message_conversation_id = ?
         AND (
           status IN ('READY', 'REJECTED', 'SENT')
+          OR (
+            status = 'FAILED'
+            AND EXISTS (
+              SELECT 1
+              FROM messages m
+              WHERE m.message_id = message_drafts.message_id
+                AND m.state = 'FAILED_MANUAL_RETRY'
+            )
+          )
           OR (status = 'APPROVED' AND failure_code = 'beds24_delivery_failed')
         )
       ORDER BY created_at ASC, message_draft_id ASC

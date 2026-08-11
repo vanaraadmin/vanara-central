@@ -1,11 +1,11 @@
 import { beds24Get, type Beds24Bindings, type Beds24RequestOptions } from "./beds24-client.service.js";
 import { sanitizeLogMessage } from "./log-safety.service.js";
-import { notifyGuestMessageInbound, type NotificationBindings } from "./notifications.service.js";
+import { notifyGuestMessageInbound, type GuestMessageNotificationBindings } from "./guest-message-notifications.service.js";
 import { acquireSyncLock, recordSkippedSyncRun, releaseSyncLock, type SyncLockBindings } from "./sync-lock.service.js";
 import { SyncMetrics } from "./sync-metrics.service.js";
 import type { Channel, DraftState, ImportedMessage, MessageAssociationState, Provider } from "../types/messages.js";
 
-export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings, NotificationBindings {
+export interface MessagesSyncBindings extends Beds24Bindings, SyncLockBindings, GuestMessageNotificationBindings {
   DB: D1Database;
   fetcher?: Fetcher;
 }
@@ -606,12 +606,14 @@ export async function syncMessages(
         }
 
         metrics.written();
-        await notifyGuestMessageInbound(env, {
-          messageId: result.messageId,
-          conversationId,
-        }).catch((error: unknown) => {
-          console.warn(JSON.stringify({ message: "Guest message push notification failed", error: error instanceof Error ? error.message : "unknown", messageId: result.messageId }));
-        });
+        if (!booking) {
+          await notifyGuestMessageInbound(env, {
+            messageId: result.messageId,
+            conversationId,
+          }).catch((error: unknown) => {
+            console.warn(JSON.stringify({ message: "Unlinked guest message package notification failed", error: error instanceof Error ? error.message : "unknown", messageId: result.messageId }));
+          });
+        }
         if (booking) linked += 1;
         else unlinked += 1;
         latestReceivedAt = maxIso(latestReceivedAt, normalized.receivedAt);

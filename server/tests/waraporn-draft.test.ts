@@ -14,11 +14,12 @@ import {
   WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD,
   WARAPORN_FILE_SEARCH_MAX_RESULTS,
   WARAPORN_PROMPT_CACHE_KEY,
+  WARAPORN_SUBMISSION_RECOVERY_GRACE_MS,
 } from "../src/services/waraporn-draft.service.ts";
 
 const NOW = "2026-08-04T10:00:00.000Z";
 const READY_DRAFT_TEXT = "Of course, Khun Daniel. We can help with that.";
-const DEFAULT_RETRIEVAL_FILENAMES = ["GUEST_SERVICES_MASTER.md.md"] as const;
+const DEFAULT_RETRIEVAL_FILENAMES = ["GUEST_SERVICES_MASTER.md"] as const;
 const SCOOTER_DRAFT_TEXT = "We have one Vanara scooter available at 200 THB per day, or around 180 THB per day for a longer rental. Helmets are included, the deposit is 3,000 THB, and we do not keep your passport.";
 const ELEPHANT_DRAFT_TEXT = "For the option Vanara considers strongest on animal welfare, I would choose Klong Son Elephant Camp. Other known choices include Baan Chang Thai Elephant Tracking and Feed the Elephants near Khlong Phlu, plus Kai Bae Meechai Elephant Camp; the last three should be presented neutrally rather than as ethical sanctuaries.";
 
@@ -105,6 +106,28 @@ type NotificationEventRow = {
   payload_json: string;
   created_at: string;
 };
+type WarapornResponseJobRow = {
+  message_id: number;
+  message_conversation_id: number;
+  booking_id: number | null;
+  openai_response_id: string | null;
+  response_status: string;
+  prompt_key: string;
+  prompt_version: string;
+  prompt_checksum: string;
+  model: string;
+  vector_store_id: string;
+  context_hash: string;
+  runtime_context_json: string;
+  openai_request_count: number;
+  submitted_at: string | null;
+  last_checked_at: string | null;
+  completed_at: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 const OWNER_ROW = {
   session_id: "session-1",
@@ -139,6 +162,7 @@ class FakeWarapornDB {
   messages: MessageRow[] = [];
   drafts: DraftRow[] = [];
   notificationEvents: NotificationEventRow[] = [];
+  responseJobs: WarapornResponseJobRow[] = [];
   conversations: ConversationRow[] = [{ message_conversation_id: 1, state: "OPEN", updated_at: NOW }];
   bookings: BookingRow[] = [{
     booking_id: 1,
@@ -200,6 +224,13 @@ class FakeWarapornDB {
       const messageId = Number(params[0]);
       const draft = this.drafts.find((item) => item.message_id === messageId && item.status === "READY") ?? null;
       return draft as T | null;
+    }
+    if (sql.includes("FROM waraporn_response_jobs") && sql.includes("WHERE message_id = ?")) {
+      return (this.responseJobs.find((item) => item.message_id === Number(params[0])) ?? null) as T | null;
+    }
+    if (sql.includes("SELECT message_conversation_id") && sql.includes("FROM messages") && sql.includes("WHERE message_id = ?")) {
+      const message = this.messages.find((item) => item.message_id === Number(params[0]));
+      return (message ? { message_conversation_id: message.message_conversation_id } : null) as T | null;
     }
     if (sql.includes("FROM messages m") && sql.includes("LEFT JOIN bookings b") && sql.includes("WHERE m.message_id = ?")) {
       const messageId = Number(params[0]);
@@ -280,6 +311,15 @@ class FakeWarapornDB {
         })) as T[],
       };
     }
+    if (sql.includes("FROM waraporn_response_jobs") && sql.includes("response_status IN")) {
+      return {
+        results: this.responseJobs
+          .filter((job) => ["SUBMITTING", "QUEUED", "IN_PROGRESS", "COMPLETED", "UNKNOWN"].includes(job.response_status))
+          .filter((job) => !this.drafts.some((draft) => draft.message_id === job.message_id))
+          .map((job) => ({ message_id: job.message_id }))
+          .slice(0, Number(params[0])) as T[],
+      };
+    }
     if (sql.includes("SELECT m.message_id") && sql.includes("d.message_draft_id IS NULL")) {
       return {
         results: this.messages
@@ -329,6 +369,56 @@ class FakeWarapornDB {
   }
 
   async run(sql: string, params: unknown[]) {
+    if (sql.includes("INSERT INTO waraporn_response_jobs")) {
+      const messageId = Number(params[0]);
+      const message = this.messages.find((item) => item.message_id === messageId);
+      const eligible = message
+        && ["ASSOCIATED", "FAILED_MANUAL_RETRY"].includes(message.state)
+        && message.association_state === "LINKED"
+        && !this.drafts.some((draft) => draft.message_id === messageId)
+        && !this.responseJobs.some((job) => job.message_id === messageId);
+      if (!eligible) return { meta: { changes: 0, last_row_id: 0 } };
+      this.responseJobs.push({
+        message_id: messageId,
+        message_conversation_id: Number(params[1]),
+        booking_id: params[2] as number | null,
+        openai_response_id: null,
+        response_status: "SUBMITTING",
+        prompt_key: String(params[3]),
+        prompt_version: String(params[4]),
+        prompt_checksum: String(params[5]),
+        model: String(params[6]),
+        vector_store_id: String(params[7]),
+        context_hash: String(params[8]),
+        runtime_context_json: String(params[9]),
+        openai_request_count: 1,
+        submitted_at: null,
+        last_checked_at: null,
+        completed_at: null,
+        failure_code: null,
+        failure_message: null,
+        created_at: String(params[10]),
+        updated_at: String(params[11]),
+      });
+      return { meta: { changes: 1, last_row_id: this.responseJobs.length } };
+    }
+    if (sql.includes("UPDATE waraporn_response_jobs")) {
+      const job = this.responseJobs.find((item) => item.message_id === Number(params[10]));
+      if (!job) return { meta: { changes: 0, last_row_id: 0 } };
+      if (params[0] !== null) {
+        job.openai_response_id = String(params[0]);
+        job.submitted_at ??= String(params[3]);
+      }
+      job.response_status = String(params[1]);
+      job.last_checked_at = String(params[4]);
+      if (["COMPLETED", "FAILED", "INCOMPLETE", "CANCELLED"].includes(String(params[5]))) {
+        job.completed_at = String(params[6]);
+      }
+      job.failure_code = params[7] as string | null;
+      job.failure_message = params[8] as string | null;
+      job.updated_at = String(params[9]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     if (sql.includes("UPDATE messages") && sql.includes("state = 'GENERATING'")) {
       const messageId = Number(params[1]);
       const message = this.messages.find((item) => item.message_id === messageId);
@@ -445,9 +535,14 @@ function openAiFileSearchPayload(
   outputText: string,
   filenames: readonly string[],
   fileSearchCallCount = 1,
+  options: {
+    queries?: readonly string[];
+    resultTextByFilename?: Readonly<Record<string, string>>;
+  } = {},
 ): Record<string, unknown> {
   return {
     id,
+    status: "completed",
     output_text: outputText,
     usage: {
       input_tokens: 1200,
@@ -460,12 +555,12 @@ function openAiFileSearchPayload(
       id: `fs-${id}-${callIndex + 1}`,
       type: "file_search_call",
       status: "completed",
-      queries: ["Waraporn retrieval"],
+      queries: [...(options.queries ?? ["Waraporn retrieval"])],
       results: filenames.map((filename, index) => ({
         file_id: `file-${index + 1}`,
         filename,
         score: 0.9,
-        text: `Retrieved ${filename}`,
+        text: options.resultTextByFilename?.[filename] ?? `Retrieved ${filename}`,
       })),
     })),
   };
@@ -510,19 +605,11 @@ test("one OTA message creates exactly one Make-compatible OpenAI Responses reque
   assert.equal((body.text as Record<string, unknown>).verbosity, "medium");
   assert.equal(body.prompt_cache_key, WARAPORN_PROMPT_CACHE_KEY);
   assert.equal(body.prompt_cache_retention, "24h");
+  assert.equal(body.background, true);
   assert.equal(OPENAI_WARAPORN_DRAFT_TIMEOUT_MS, 180_000);
-  assert.deepEqual((body.input as Array<Record<string, unknown>>)[0]!.content, [
-    { type: "input_text", text: "GUEST FIRST NAME" },
-    { type: "input_text", text: "Daniel" },
-    { type: "input_text", text: "CHECK-IN DATE" },
-    { type: "input_text", text: "2026-12-28" },
-    { type: "input_text", text: "CHECK-OUT DATE" },
-    { type: "input_text", text: "2027-01-01" },
-    { type: "input_text", text: "CONVERSATION CONTEXT" },
-    { type: "input_text", text: "No previous conversation history stored in Vanara." },
-    { type: "input_text", text: "CURRENT GUEST MESSAGE" },
-    { type: "input_text", text: "Can we have a late check-in?" },
-  ]);
+  const input = requestText(body);
+  assert.match(input, /GUEST FIRST NAME\s+Daniel/);
+  assert.match(input, /CURRENT GUEST MESSAGE\s+Can we have a late check-in\?/);
   assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
@@ -530,22 +617,36 @@ test("one OTA message creates exactly one Make-compatible OpenAI Responses reque
   }]);
 });
 
-test("scooter retrieval uses Vanara Guest Services facts instead of generic mobility documents", async () => {
+test("an autonomous scooter retrieval trace uses Vanara Guest Services without request hardcoding", async () => {
   const db = new FakeWarapornDB();
   db.messages[0]!.guest_message = "How much does it cost to rent a scooter from Vanara?";
-  const filenames = [
-    "MOBILITY_REASONING_CONTRACT_v1.md",
-    "GUEST_SERVICES_MASTER.md.md",
-  ];
-  const { fetcher, bodies } = openAiFetcher(SCOOTER_DRAFT_TEXT, filenames);
+  const filenames = ["MOBILITY_REASONING_CONTRACT_v1.md", "GUEST_SERVICES_MASTER.md"];
+  const bodies: Array<Record<string, unknown>> = [];
+  const trace = openAiFileSearchPayload("resp-scooter", SCOOTER_DRAFT_TEXT, filenames, 1, {
+    queries: ["Vanara Resort scooter rental price Guest Services"],
+    resultTextByFilename: {
+      "GUEST_SERVICES_MASTER.md": "Vanara scooter rental: 200 THB per day; around 180 THB per day for longer rentals; helmets included; 3,000 THB deposit; passport is not retained.",
+    },
+  });
+  const fetcher: typeof fetch = async (_input, init) => {
+    bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+    return jsonResponse(200, trace);
+  };
 
   const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
+  const toolCall = (trace.output as Array<Record<string, unknown>>)[0]!;
+  assert.deepEqual(toolCall.queries, ["Vanara Resort scooter rental price Guest Services"]);
+  assert.match(JSON.stringify(toolCall.results), /200 THB per day/);
   assert.equal(bodies.length, 1);
   const text = requestText(bodies[0]!);
   assert.doesNotMatch(text, /CURRENT DECISION REQUIRED RETRIEVAL FILENAMES/);
   assert.doesNotMatch(text, /RETRIEVAL RETRY REQUIRED FILENAMES/);
   assert.doesNotMatch(text, /FOUNDATION RETRIEVAL VERIFIED FILENAMES/);
+  const request = JSON.stringify(bodies[0]);
+  assert.doesNotMatch(request, /GUEST_SERVICES_MASTER/i);
+  assert.doesNotMatch(request, /200\s*THB/i);
+  assert.doesNotMatch(request, /VANARA OPERATIONAL DOCUMENTS/i);
   assert.equal("previous_response_id" in bodies[0]!, false);
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), filenames);
   assert.match(draft.body, /200 THB per day/);
@@ -831,6 +932,93 @@ test("an ambiguous timeout performs zero automatic retries and becomes terminal"
   assert.equal(calls, 1);
 });
 
+test("an in-progress Response is recovered by id after restart without a second POST", async () => {
+  const db = new FakeWarapornDB();
+  let postCalls = 0;
+  let getCalls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    if (init.method === "POST") {
+      postCalls += 1;
+      return jsonResponse(200, { id: "resp-recoverable", status: "in_progress" });
+    }
+    getCalls += 1;
+    return jsonResponse(200, openAiFileSearchPayload("resp-recoverable", READY_DRAFT_TEXT, DEFAULT_RETRIEVAL_FILENAMES));
+  };
+  const bindings = env(db, fetcher) as never;
+
+  await assert.rejects(
+    generateWarapornDraft(bindings, 1, { now: NOW, pollTimeoutMs: 0 }),
+    /still processing/i,
+  );
+  assert.equal(postCalls, 1);
+  assert.equal(getCalls, 0);
+  assert.equal(db.drafts.length, 0);
+  assert.equal(db.responseJobs[0]!.openai_response_id, "resp-recoverable");
+
+  const draft = await generateWarapornDraft(bindings, 1, { now: NOW, pollIntervalMs: 0, sleep: async () => {} });
+
+  assert.equal(draft.body, READY_DRAFT_TEXT);
+  assert.equal(postCalls, 1);
+  assert.equal(getCalls, 1);
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.notificationEvents.length, 1);
+});
+
+test("a stale submission without a response id becomes one manual fallback without another POST", async () => {
+  const db = new FakeWarapornDB();
+  const createdAt = new Date(Date.parse(NOW) - WARAPORN_SUBMISSION_RECOVERY_GRACE_MS - 1).toISOString();
+  db.responseJobs.push({
+    message_id: 1,
+    message_conversation_id: 1,
+    booking_id: 1,
+    openai_response_id: null,
+    response_status: "SUBMITTING",
+    prompt_key: "waraporn-general-requests-v4-rc3",
+    prompt_version: "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE",
+    prompt_checksum: "test-checksum",
+    model: OPENAI_WARAPORN_DRAFT_MODEL,
+    vector_store_id: DEFAULT_WARAPORN_VECTOR_STORE_ID,
+    context_hash: "test-context-hash",
+    runtime_context_json: JSON.stringify({
+      messageId: "1",
+      conversationId: "1",
+      bookingId: 1,
+      guestFirstName: "Daniel",
+      arrivalDate: "2026-12-28",
+      departureDate: "2027-01-01",
+      conversationContext: "No previous conversation history stored in Vanara.",
+      currentGuestMessage: "Can we have a late check-in?",
+      availabilityAndPrices: null,
+      language: "en",
+    }),
+    openai_request_count: 1,
+    submitted_at: null,
+    last_checked_at: null,
+    completed_at: null,
+    failure_code: null,
+    failure_message: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  });
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(500, { error: { message: "must not be called" } });
+  };
+
+  await assert.rejects(
+    generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW }),
+    /did not return a recoverable id/i,
+  );
+
+  assert.equal(calls, 0);
+  assert.equal(db.messages[0]!.state, "FAILED_MANUAL_RETRY");
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "FAILED");
+  assert.equal(db.notificationEvents.length, 1);
+  assert.equal(db.notificationEvents[0]!.dedupe_key, "guest-message:inbound:1");
+});
+
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {
   const db = new FakeWarapornDB();
   const { fetcher, bodies } = openAiFetcher();
@@ -866,7 +1054,7 @@ test("concurrent pending generation cannot call OpenAI twice for the same messag
 
   assert.equal(draft.state, "READY");
   assert.ok(blocked instanceof Error);
-  assert.match(blocked.message, /not eligible/i);
+  assert.match(blocked.message, /still in progress/i);
   assert.equal(calls, 1);
   assert.equal(db.drafts.length, 1);
 

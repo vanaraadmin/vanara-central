@@ -334,6 +334,8 @@ const en = {
   guestMessagesSelectFromInbox: "Select a guest message from the inbox.",
   guestMessagesConversationTimeline: "Conversation timeline",
   guestMessagesDraftReady: "Draft Ready",
+  guestMessagesAiUnavailable: "AI reply unavailable",
+  guestMessagesManualReplyHelp: "Write a reply manually and send it through Central.",
   guestMessagesCompact: "Compact",
   guestMessagesTravelPhase: "Travel phase",
   guestMessagesChannel: "Channel",

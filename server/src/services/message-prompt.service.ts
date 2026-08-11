@@ -17,7 +17,7 @@ const WARAPORN_GENERAL_REQUESTS_METADATA: PromptMetadata = {
   key: DEFAULT_WARAPORN_PROMPT_KEY,
   version: "SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE",
   checksumAlgorithm: "sha256",
-  checksum: "1534c2d9654b2ccca292784110d31b7a6aa739fb498709913bd3278ca5e6848e",
+  checksum: "f2144e51f4516c7e9f9e4aa96dd62ddd10ff0176bdaeebba93b44b04f3a7b6b7",
 };
 
 const PROMPT_REGISTRY = {
