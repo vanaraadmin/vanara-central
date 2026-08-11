@@ -682,6 +682,8 @@ const en = {
   closeMessageActions: "Close message actions",
   fileNoLongerAvailable: "File no longer available",
   payroll: "Payroll",
+  accounting: "Accounting",
+  accountingDescription: "Income, expenses, and accountant export.",
   staffPayroll: "Staff Payroll",
   payrollMonth: "Payroll month",
   workerDetail: "Worker Detail",

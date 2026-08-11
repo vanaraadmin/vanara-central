@@ -90,12 +90,41 @@
 
 .staff-workspace__title {
   min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
   color: rgba(250, 247, 238, 0.97);
   font-family: var(--vc-font-display);
   font-size: var(--vc-type-card-title);
   font-weight: var(--vc-weight-regular);
   line-height: 1;
+}
+
+.staff-workspace__balance {
+  flex: 0 0 auto;
+  max-width: min(42%, 8.6rem);
+  overflow: hidden;
+  padding: 0.28rem 0.48rem;
+  border: 1px solid rgba(255, 251, 241, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 251, 241, 0.08);
+  color: rgba(255, 251, 241, 0.88);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: 0.68rem;
+  font-weight: var(--vc-weight-bold);
+  line-height: 1;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staff-workspace__balance--positive {
+  border-color: rgba(108, 186, 137, 0.32);
+  color: rgba(194, 242, 205, 0.94);
+}
+
+.staff-workspace__balance--negative {
+  border-color: rgba(222, 151, 128, 0.32);
+  color: rgba(255, 211, 197, 0.94);
 }
 
 .staff-workspace__description {

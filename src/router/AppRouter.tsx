@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import PagePlaceholder, { type PlaceholderLink } from "../components/PagePlaceholder";
 import AppLayout from "../layouts/AppLayout";
+import AccountingPage from "../pages/AccountingPage";
 import AvailabilityPage from "../pages/AvailabilityPage";
 import ChatPage from "../pages/ChatPage";
 import CreateMaintenancePage from "../pages/CreateMaintenancePage";
@@ -92,6 +93,7 @@ export default function AppRouter() {
           <Route index element={<Navigate replace to="/staff" />} />
           <Route path="staff" element={<StaffPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="accounting" element={<AccountingPage />} />
           <Route path="rooms" element={<RoomsPage />} />
           <Route path="rooms/:roomId" element={<RoomDetailPage />} />
           <Route path="reception" element={<ReceptionPage />} />

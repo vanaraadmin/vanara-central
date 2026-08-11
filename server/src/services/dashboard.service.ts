@@ -2,8 +2,9 @@ import { getHousekeepingOverview, type HousekeepingBindings } from "./housekeepi
 import { listUsers, type AuthBindings } from "./current-user.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getTodayDashboard, type TodayBindings, type TodayReservation } from "./today.service.js";
+import { rebuildOtaFinancialRecords, type OtaFinancialBindings } from "./ota-financial-normalization.service.js";
 
-export interface DashboardBindings extends TodayBindings, HousekeepingBindings, MaintenanceBindings, AuthBindings {
+export interface DashboardBindings extends TodayBindings, HousekeepingBindings, MaintenanceBindings, AuthBindings, OtaFinancialBindings {
   DB: D1Database;
 }
 
@@ -21,6 +22,36 @@ interface MaintenanceRow {
   maintenance_id: number;
   unit_id: number;
   unit_name: string | null;
+}
+
+interface OtaFinancialRow {
+  channel: string | null;
+  expected_net_payout: number | null;
+  check_in: string;
+}
+
+interface ManualAccountingRow {
+  entry_type: "income" | "expense";
+  amount: number;
+  description: string;
+  note: string | null;
+}
+
+interface PayrollFinancialRow {
+  monthly_gross_salary: number;
+  salary_advances_received: number;
+  bonuses_additions: number;
+  authorized_deductions: number;
+  employee_social_security: number;
+  absence_deduction: number;
+  overtime_compensation: number;
+  meal_allowance_advance: number;
+  net_salary_payable: number;
+}
+
+export interface DashboardDateRange {
+  fromDate?: string | null;
+  toDate?: string | null;
 }
 
 export interface DashboardRoomCard {
@@ -83,9 +114,63 @@ export interface DashboardQuickLink {
   href: string;
 }
 
+export interface DashboardBusinessMetric {
+  id: string;
+  label: string;
+  value: number | string;
+  detail: string;
+  tone: "neutral" | "success" | "warning" | "danger" | "info";
+}
+
+export interface DashboardBreakdownItem {
+  label: string;
+  value: number;
+  amount?: number;
+}
+
+export interface DashboardFinancialSegment {
+  id: string;
+  label: string;
+  amount: number;
+  percentage: number;
+  kind: "income" | "expense" | "forecast" | "reduction";
+}
+
+export interface DashboardFinancialSnapshot {
+  totalIncome: number;
+  totalExpenses: number;
+  netPosition: number;
+  checkedInNetRevenue: number;
+  futureBookedNetForecast: number;
+  manualIncomeTotal: number;
+  manualExpenseTotal: number;
+  payrollTotal: number;
+  topLevel: DashboardFinancialSegment[];
+  incomeComposition: DashboardFinancialSegment[];
+  expenseComposition: DashboardFinancialSegment[];
+  otaChannels: DashboardFinancialSegment[];
+  manualIncome: DashboardFinancialSegment[];
+  manualExpenses: DashboardFinancialSegment[];
+  payrollComponents: DashboardFinancialSegment[];
+}
+
 export interface DashboardOverview {
   date: string;
+  dateRange: {
+    mode: "full" | "custom";
+    fromDate: string | null;
+    toDate: string | null;
+    label: string;
+  };
   alerts: DashboardOverviewAlert[];
+  business: {
+    expectedNetIncomeToDate: DashboardBusinessMetric;
+    expectedFutureNetIncome: DashboardBusinessMetric;
+    occupancy: DashboardBusinessMetric;
+    guestOrigins: DashboardBreakdownItem[];
+    channels: DashboardBreakdownItem[];
+    financialSnapshot: DashboardFinancialSnapshot;
+  };
   housekeeping: {
     roomsToClean: DashboardOverviewMetric;
     cleaning: DashboardOverviewMetric;
@@ -224,16 +309,327 @@ function metric(id: string, label: string, value: number | string, href: string,
   return { id, label, value, href, tone };
 }
 
+function businessMetric(id: string, label: string, value: number | string, detail: string, tone: DashboardBusinessMetric["tone"] = "neutral"): DashboardBusinessMetric {
+  return { id, label, value, detail, tone };
+}
+
 function alert(id: string, label: string, value: number, href: string, tone: DashboardOverviewAlert["tone"]): DashboardOverviewAlert | null {
   return value > 0 ? { id, label, value, href, tone } : null;
 }
 
-export async function getDashboardOverview(env: DashboardBindings): Promise<DashboardOverview> {
+function amount(value: number | null | undefined): number {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanDate(value: string | null | undefined): string | null {
+  const date = typeof value === "string" ? value.trim() : "";
+  return DATE_RE.test(date) ? date : null;
+}
+
+function normalizeDateRange(input?: DashboardDateRange | null): Required<DashboardDateRange> | null {
+  const fromDate = cleanDate(input?.fromDate ?? null);
+  const toDate = cleanDate(input?.toDate ?? null);
+  if (!fromDate && !toDate) return null;
+  if (fromDate && toDate && fromDate > toDate) return { fromDate: toDate, toDate: fromDate };
+  return { fromDate, toDate };
+}
+
+function dateRangeLabel(range: Required<DashboardDateRange> | null): string {
+  if (!range) return "Full view";
+  if (range.fromDate && range.toDate) return `${range.fromDate} to ${range.toDate}`;
+  if (range.fromDate) return `From ${range.fromDate}`;
+  return `Until ${range.toDate}`;
+}
+
+function dateRangeCondition(column: string, range: Required<DashboardDateRange> | null): { sql: string; params: string[] } {
+  if (!range) return { sql: "", params: [] };
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (range.fromDate) {
+    clauses.push(`${column} >= ?`);
+    params.push(range.fromDate);
+  }
+  if (range.toDate) {
+    clauses.push(`${column} <= ?`);
+    params.push(range.toDate);
+  }
+  return { sql: clauses.length ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
+function payrollRangeCondition(range: Required<DashboardDateRange> | null, bangkokMonth: string): { sql: string; params: string[] } {
+  if (!range) return { sql: "AND payroll_month <= ?", params: [bangkokMonth] };
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (range.fromDate) {
+    clauses.push("payroll_month >= ?");
+    params.push(range.fromDate.slice(0, 7));
+  }
+  if (range.toDate) {
+    clauses.push("payroll_month <= ?");
+    params.push(range.toDate.slice(0, 7));
+  }
+  return { sql: clauses.length ? `AND ${clauses.join(" AND ")}` : "", params };
+}
+
+function percent(part: number, total: number): number {
+  return total === 0 ? 0 : Math.round((part / total) * 1000) / 10;
+}
+
+function categoryFromNote(note: string | null, fallback: string): string {
+  const match = note?.match(/(?:^|;)\s*category:\s*([^;]+)/i);
+  const category = match?.[1]?.trim();
+  return category || fallback;
+}
+
+function ownerChannelLabel(value: string | null): string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return "Other";
+  if (normalized.includes("booking")) return "Booking.com";
+  if (normalized.includes("agoda")) return "Agoda";
+  if (normalized.includes("airbnb")) return "Airbnb";
+  if (normalized.includes("expedia")) return "Expedia";
+  if (normalized.includes("trip") || normalized.includes("ctrip")) return "Trip.com";
+  if (normalized.includes("google")) return "Google Ads";
+  if (normalized.includes("direct") || normalized.includes("front desk") || normalized.includes("walk")) return "Direct / Front Desk";
+  return value?.trim() || "Other";
+}
+
+function ownerManualIncomeLabel(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "INCASSI PER STANZE") return "Room income";
+  if (normalized === "INCASSI RISTORANTE / BAR") return "Restaurant / Bar income";
+  if (normalized === "INCASSI AFFITTO MOTORINO") return "Motorbike rental income";
+  return value.trim() || "Other manual income";
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+}
+
+function addBucket(buckets: Map<string, number>, label: string, value: number): void {
+  if (value === 0) return;
+  buckets.set(label, (buckets.get(label) ?? 0) + value);
+}
+
+function segmentsFromBuckets(
+  buckets: Map<string, number>,
+  total: number,
+  kind: DashboardFinancialSegment["kind"],
+): DashboardFinancialSegment[] {
+  return [...buckets.entries()]
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || a[0].localeCompare(b[0]))
+    .map(([label, bucketAmount]) => ({
+      id: slug(label),
+      label,
+      amount: Math.round(bucketAmount * 100) / 100,
+      percentage: percent(bucketAmount, total),
+      kind: bucketAmount < 0 ? "reduction" : kind,
+    }));
+}
+
+function payrollCost(row: PayrollFinancialRow): number {
+  return amount(row.net_salary_payable) + amount(row.salary_advances_received) + amount(row.employee_social_security);
+}
+
+function addPayrollComponents(buckets: Map<string, number>, row: PayrollFinancialRow): void {
+  const baseAfterSso = Math.max(0, amount(row.monthly_gross_salary) - amount(row.employee_social_security));
+  addBucket(buckets, "Base wages", baseAfterSso);
+  addBucket(buckets, "Social security / SSO", amount(row.employee_social_security));
+  addBucket(buckets, "Meal allowance", amount(row.meal_allowance_advance));
+  addBucket(buckets, "Bonuses / additions", amount(row.bonuses_additions));
+  addBucket(buckets, "Overtime", amount(row.overtime_compensation));
+  addBucket(buckets, "Unpaid absence reduction", -amount(row.absence_deduction));
+  addBucket(buckets, "Authorized deductions", -amount(row.authorized_deductions));
+}
+
+export async function buildFinancialSnapshot(
+  env: DashboardBindings,
+  bangkokToday: string,
+  checkedInNetRevenue: number,
+  futureBookedNetForecast: number,
+  dateRangeInput?: DashboardDateRange | null,
+): Promise<DashboardFinancialSnapshot> {
+  const bangkokMonth = bangkokToday.slice(0, 7);
+  const dateRange = normalizeDateRange(dateRangeInput);
+  const otaRange = dateRangeCondition("f.check_in", dateRange);
+  const manualRange = dateRange
+    ? dateRangeCondition("entry_date", dateRange)
+    : { sql: " AND entry_date <= ?", params: [bangkokToday] };
+  const payrollRange = payrollRangeCondition(dateRange, bangkokMonth);
+  const [otaRows, manualRows, payrollRows] = await Promise.all([
+    env.DB.prepare(`
+      SELECT f.channel, f.expected_net_payout, f.check_in
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+        ${otaRange.sql}
+    `).bind(...otaRange.params).all<OtaFinancialRow>(),
+    env.DB.prepare(`
+      SELECT entry_type, amount, description, note
+      FROM manual_accounting_entries
+      WHERE 1 = 1
+        ${manualRange.sql}
+    `).bind(...manualRange.params).all<ManualAccountingRow>(),
+    env.DB.prepare(`
+      SELECT monthly_gross_salary, salary_advances_received, bonuses_additions,
+        authorized_deductions, employee_social_security, absence_deduction,
+        overtime_compensation, meal_allowance_advance, net_salary_payable
+      FROM payroll_records
+      WHERE status = 'FINALIZED'
+        ${payrollRange.sql}
+    `).bind(...payrollRange.params).all<PayrollFinancialRow>(),
+  ]);
+
+  const otaChannels = new Map<string, number>();
+  for (const row of otaRows.results ?? []) {
+    if (row.check_in > bangkokToday) continue;
+    addBucket(otaChannels, ownerChannelLabel(row.channel), amount(row.expected_net_payout));
+  }
+
+  const manualIncomeBuckets = new Map<string, number>([
+    ["Room income", 0],
+    ["Restaurant / Bar income", 0],
+    ["Motorbike rental income", 0],
+  ]);
+  const manualExpenseBuckets = new Map<string, number>();
+  for (const row of manualRows.results ?? []) {
+    const label = categoryFromNote(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses");
+    if (row.entry_type === "income") {
+      addBucket(manualIncomeBuckets, ownerManualIncomeLabel(label), amount(row.amount));
+    } else {
+      addBucket(manualExpenseBuckets, label, amount(row.amount));
+    }
+  }
+
+  const payrollBuckets = new Map<string, number>();
+  let payrollTotal = 0;
+  for (const row of payrollRows.results ?? []) {
+    payrollTotal += payrollCost(row);
+    addPayrollComponents(payrollBuckets, row);
+  }
+
+  const manualIncomeTotal = [...manualIncomeBuckets.values()].reduce((sum, value) => sum + value, 0);
+  const manualExpenseTotal = [...manualExpenseBuckets.values()].reduce((sum, value) => sum + value, 0);
+  const totalIncome = checkedInNetRevenue + manualIncomeTotal;
+  const totalExpenses = manualExpenseTotal + payrollTotal;
+  const netPosition = totalIncome - totalExpenses;
+  const incomeBuckets = new Map<string, number>([
+    ["Booking / OTA income", checkedInNetRevenue],
+    ["Manual income", manualIncomeTotal],
+  ]);
+  const expenseBuckets = new Map<string, number>([
+    ["Manual expenses", manualExpenseTotal],
+    ["Payroll / Wages", payrollTotal],
+  ]);
+
+  return {
+    totalIncome: Math.round(totalIncome * 100) / 100,
+    totalExpenses: Math.round(totalExpenses * 100) / 100,
+    netPosition: Math.round(netPosition * 100) / 100,
+    checkedInNetRevenue,
+    futureBookedNetForecast,
+    manualIncomeTotal: Math.round(manualIncomeTotal * 100) / 100,
+    manualExpenseTotal: Math.round(manualExpenseTotal * 100) / 100,
+    payrollTotal: Math.round(payrollTotal * 100) / 100,
+    topLevel: segmentsFromBuckets(new Map([["Income", totalIncome], ["Expenses", totalExpenses]]), totalIncome + totalExpenses, "income")
+      .map((segment) => segment.label === "Expenses" ? { ...segment, kind: "expense" } : segment),
+    incomeComposition: segmentsFromBuckets(incomeBuckets, totalIncome, "income"),
+    expenseComposition: segmentsFromBuckets(expenseBuckets, totalExpenses, "expense"),
+    otaChannels: segmentsFromBuckets(otaChannels, checkedInNetRevenue, "income"),
+    manualIncome: segmentsFromBuckets(manualIncomeBuckets, manualIncomeTotal, "income"),
+    manualExpenses: segmentsFromBuckets(manualExpenseBuckets, manualExpenseTotal, "expense"),
+    payrollComponents: segmentsFromBuckets(payrollBuckets, payrollTotal, "expense"),
+  };
+}
+
+export async function getDashboardOverview(env: DashboardBindings, options: { dateRange?: DashboardDateRange | null } = {}): Promise<DashboardOverview> {
+  await rebuildOtaFinancialRecords(env);
   const [housekeeping, maintenanceTickets, today, users] = await Promise.all([
     getHousekeepingOverview(env),
     listMaintenanceTickets(env, { status: "All" }),
     getTodayDashboard(env),
     listUsers(env),
+  ]);
+  const bangkokToday = today.date;
+  const dateRange = normalizeDateRange(options.dateRange);
+  const checkedInRange = dateRangeCondition("f.check_in", dateRange);
+  const guestOriginRange = dateRangeCondition("arrival_date", dateRange);
+  const channelRange = dateRangeCondition("f.check_in", dateRange);
+  const occupancyRangeStart = dateRange?.fromDate ?? bangkokToday;
+  const occupancyRangeEnd = dateRange?.toDate ?? occupancyRangeStart;
+  const [incomeToDate, futureIncome, occupiedRooms, totalOperatingRooms, guestOrigins, channels] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in <= ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+        ${checkedInRange.sql}
+    `).bind(bangkokToday, ...checkedInRange.params).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COALESCE(SUM(f.expected_net_payout), 0) AS total
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in > ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+        ${checkedInRange.sql}
+    `).bind(bangkokToday, ...checkedInRange.params).first<CountRow>(),
+    env.DB.prepare(`
+      WITH RECURSIVE dashboard_dates(stay_date) AS (
+        SELECT ?
+        UNION ALL
+        SELECT date(stay_date, '+1 day')
+        FROM dashboard_dates
+        WHERE stay_date < ?
+      ),
+      occupied_by_day AS (
+        SELECT dashboard_dates.stay_date, COUNT(DISTINCT bookings.unit_id) AS occupied
+        FROM dashboard_dates
+        LEFT JOIN bookings
+          ON bookings.arrival_date <= dashboard_dates.stay_date
+          AND bookings.departure_date > dashboard_dates.stay_date
+          AND lower(COALESCE(bookings.status, '')) NOT IN ('cancelled', 'canceled')
+        GROUP BY dashboard_dates.stay_date
+      )
+      SELECT COALESCE(AVG(occupied), 0) AS total
+      FROM occupied_by_day
+    `).bind(occupancyRangeStart, occupancyRangeEnd).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM units
+      WHERE active = 1
+    `).first<CountRow>(),
+    env.DB.prepare(`
+      SELECT COALESCE(NULLIF(country_code, ''), NULLIF(country, ''), 'Unknown') AS label, COUNT(*) AS value
+      FROM bookings
+      WHERE lower(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+        ${guestOriginRange.sql}
+      GROUP BY label
+      ORDER BY value DESC, label
+      LIMIT 6
+    `).bind(...guestOriginRange.params).all<{ label: string; value: number }>(),
+    env.DB.prepare(`
+      SELECT f.channel AS label, COUNT(*) AS value, COALESCE(SUM(f.expected_net_payout), 0) AS amount
+      FROM ota_financial_records f
+      INNER JOIN bookings b
+        ON b.beds24_booking_id = f.beds24_booking_id
+      WHERE f.check_in <= ?
+        AND lower(COALESCE(b.status, '')) NOT IN ('cancelled', 'canceled', 'deleted')
+        AND lower(trim(COALESCE(b.sub_status, ''))) <> 'provider_deleted'
+        ${channelRange.sql}
+      GROUP BY f.channel
+      ORDER BY amount DESC, value DESC
+      LIMIT 6
+    `).bind(bangkokToday, ...channelRange.params).all<{ label: string; value: number; amount: number }>(),
   ]);
 
   const roomsToClean = housekeeping.summary.cleanFirst + housekeeping.summary.cleanToday;
@@ -253,6 +649,15 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
   const disabledUsers = users.filter((user) => user.status === "disabled");
   const housekeepingStaff = activeUsers.filter((user) => user.role === "Housekeeping").length;
   const maintenanceStaff = activeUsers.filter((user) => user.role === "Maintenance").length;
+  const checkedInNetRevenue = count(incomeToDate);
+  const futureBookedNetForecast = count(futureIncome);
+  const [financialSnapshot] = await Promise.all([
+    buildFinancialSnapshot(env, bangkokToday, checkedInNetRevenue, futureBookedNetForecast, dateRange),
+  ]);
+  const occupancyPercent = count(totalOperatingRooms) > 0 ? Math.round((count(occupiedRooms) / count(totalOperatingRooms)) * 100) : 0;
+  const occupancyDetail = dateRange
+    ? `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied on average for the selected period.`
+    : `${count(occupiedRooms)} of ${count(totalOperatingRooms)} operating rooms occupied today.`;
 
   const alerts = [
     alert("high-maintenance", "High Maintenance", highIssues, "/maintenance?priority=High", "danger"),
@@ -263,7 +668,21 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
 
   return {
     date: today.date,
+    dateRange: {
+      mode: dateRange ? "custom" : "full",
+      fromDate: dateRange?.fromDate ?? null,
+      toDate: dateRange?.toDate ?? null,
+      label: dateRangeLabel(dateRange),
+    },
     alerts,
+    business: {
+      expectedNetIncomeToDate: businessMetric("checked-in-net-revenue", "Checked-In Net Revenue", count(incomeToDate), "Expected net payout for checked-in stays, not bank-received cash.", "success"),
+      expectedFutureNetIncome: businessMetric("future-booked-net-forecast", "Future Booked Net Forecast", count(futureIncome), "Expected net payout for future bookings; still cancellable or modifiable.", "info"),
+      occupancy: businessMetric("occupancy", "Occupancy", `${occupancyPercent}%`, occupancyDetail, occupancyPercent >= 80 ? "success" : occupancyPercent >= 45 ? "info" : "warning"),
+      guestOrigins: (guestOrigins.results ?? []).map((item) => ({ label: item.label, value: item.value })),
+      channels: (channels.results ?? []).map((item) => ({ label: item.label, value: item.value, amount: item.amount })),
+      financialSnapshot,
+    },
     housekeeping: {
       roomsToClean: metric("rooms-to-clean", "Rooms To Clean", roomsToClean, "/housekeeping?filter=to-clean", roomsToClean > 0 ? "warning" : "success"),
       cleaning: metric("cleaning", "Cleaning", cleaning, "/housekeeping?filter=cleaning", "info"),
@@ -291,6 +710,7 @@ export async function getDashboardOverview(env: DashboardBindings): Promise<Dash
       disabledUsers: metric("disabled-users", "Disabled Users", disabledUsers.length, "/settings?section=users&status=disabled", disabledUsers.length > 0 ? "warning" : "neutral"),
     },
     quickLinks: [
+      { id: "accounting", label: "Accounting", href: "/accounting" },
       { id: "housekeeping", label: "Housekeeping", href: "/housekeeping" },
       { id: "maintenance", label: "Maintenance", href: "/maintenance" },
       { id: "rooms", label: "Rooms", href: "/rooms" },

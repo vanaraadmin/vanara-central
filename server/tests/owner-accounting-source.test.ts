@@ -1,0 +1,166 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+function read(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+const index = read("src/index.ts");
+const accounting = read("src/services/accounting.service.ts");
+const dashboard = read("src/services/dashboard.service.ts");
+const migration = read("migrations/0043_owner_accounting.sql");
+const staffOverview = read("src/services/staff-overview.service.ts");
+const workspaceShell = read("../src/components/WorkspaceShell.tsx");
+const englishCopy = read("../src/i18n/en.ts");
+const thaiCopy = read("../src/i18n/th.ts");
+const accountingPage = read("../src/pages/AccountingPage.tsx");
+const accountingCss = read("../src/styles/AccountingPage.css");
+
+test("accounting module is owner-only and staff home card is owner gated", () => {
+  assert.match(index, /async function accountingOwner[\s\S]*requireOwner\(user\)[\s\S]*requireModulePermission\(user, "accounting"/);
+  assert.match(index, /\/api\/accounting\/overview/);
+  assert.match(staffOverview, /function canUseAccounting[\s\S]*isOwner\(user\)[\s\S]*canAccess\(user, "accounting"\)/);
+  assert.doesNotMatch(staffOverview, /canAccess\(user, "accounting"\)[\s\S]*role !== "Owner"/);
+});
+
+test("financial migration stores normalized OTA records and manual receipt references", () => {
+  assert.match(migration, /CREATE TABLE ota_financial_records/);
+  assert.match(migration, /expected_net_payout REAL/);
+  assert.match(migration, /raw_rate_description TEXT/);
+  assert.match(migration, /raw_channel_info TEXT/);
+  assert.match(migration, /CREATE TABLE manual_accounting_entries/);
+  assert.match(migration, /receipt_object_key TEXT/);
+  assert.match(migration, /module_key IN \([\s\S]*'accounting'/);
+});
+
+test("dashboard uses normalized expected net payout and does not sum raw Beds24 booking price as revenue", () => {
+  assert.match(dashboard, /FROM ota_financial_records/);
+  assert.match(dashboard, /SUM\(f\.expected_net_payout\)/);
+  assert.match(dashboard, /INNER JOIN bookings b[\s\S]*b\.beds24_booking_id = f\.beds24_booking_id/);
+  assert.match(dashboard, /f\.check_in <= \?[\s\S]*provider_deleted/);
+  assert.match(dashboard, /f\.check_in > \?[\s\S]*provider_deleted/);
+  assert.match(dashboard, /Checked-In Net Revenue/);
+  assert.match(dashboard, /Future Booked Net Forecast/);
+  assert.match(dashboard, /financialSnapshot/);
+  assert.match(dashboard, /manual_accounting_entries/);
+  assert.match(dashboard, /payroll_records[\s\S]*status = 'FINALIZED'/);
+  assert.match(dashboard, /salaryAdvances|salary_advances_received/);
+  assert.match(dashboard, /Payroll \/ Wages/);
+  assert.match(dashboard, /Social security \/ SSO/);
+  assert.doesNotMatch(dashboard, /SUM\([^)]*bookings[^)]*price|SUM\(price\)/i);
+});
+
+test("owner financial dashboard remains business-facing and owner scoped", () => {
+  const dashboardPage = read("../src/pages/DashboardPage.tsx");
+  const dashboardCss = read("../src/styles/DashboardPage.css");
+  assert.match(dashboardPage, /FinancialDashboard/);
+  assert.match(dashboardPage, /WorkspaceShell/);
+  assert.match(dashboardPage, /workspace="ownerDashboard"/);
+  assert.match(workspaceShell, /ownerDashboard:\s*"11"/);
+  assert.match(workspaceShell, /ownerDashboard:\s*"payroll"/);
+  assert.match(dashboardPage, /Owner finance/);
+  assert.match(dashboardPage, /Income composition/);
+  assert.match(dashboardPage, /Expenses composition/);
+  assert.match(dashboardPage, /Payroll \/ Wages/);
+  assert.match(dashboardPage, /Salary advances are not counted as extra cost/);
+  assert.match(dashboardPage, /financial-dashboard__donut/);
+  assert.match(dashboardPage, /<span>Balance<\/span>/);
+  assert.doesNotMatch(dashboardPage, />Net position</);
+  assert.match(dashboardPage, /financial-dashboard__metrics/);
+  assert.match(dashboardPage, /Future forecast/);
+  assert.match(dashboardPage, /DashboardRangeFilter/);
+  assert.match(dashboardPage, /className="dashboard-range-filter"/);
+  assert.match(dashboardPage, /Full view/);
+  assert.match(dashboardPage, /type="date"/);
+  assert.match(dashboardPage, /\{isCustom \? <span className="dashboard-range-filter__status">\{activeLabel\}<\/span> : null\}/);
+  assert.match(dashboardPage, /loadDashboardOverview\(appliedRange, signal\)/);
+  assert.match(dashboardPage, /aria-label=\{`Open income details\. Total income \$\{money\(snapshot\.totalIncome\)\}`\}/);
+  assert.match(dashboardPage, /aria-label=\{`Open expenses details\. Total expenses \$\{money\(snapshot\.totalExpenses\)\}`\}/);
+  assert.match(dashboardPage, /const topTotal = useMemo\(\(\) => totalAbs\(topSegments\), \[topSegments\]\)/);
+  assert.match(dashboardPage, /<span className="financial-dashboard__segment-label">Income<\/span>/);
+  assert.match(dashboardPage, /<span className="financial-dashboard__segment-label">Expenses<\/span>/);
+  assert.match(dashboardPage, /<b className="financial-dashboard__segment-percent">\{percentOf\(snapshot\.totalIncome, topTotal\)\}%<\/b>[\s\S]*<em className="financial-dashboard__segment-arrow" aria-hidden="true">›<\/em>/);
+  assert.match(dashboardPage, /<b className="financial-dashboard__segment-percent">\{percentOf\(snapshot\.totalExpenses, topTotal\)\}%<\/b>[\s\S]*<em className="financial-dashboard__segment-arrow" aria-hidden="true">›<\/em>/);
+  assert.doesNotMatch(dashboardPage, /financial-dashboard__segment--income[\s\S]{0,220}<strong>\{money\(snapshot\.totalIncome\)\}/);
+  assert.doesNotMatch(dashboardPage, /financial-dashboard__segment--expenses[\s\S]{0,220}<strong>\{money\(snapshot\.totalExpenses\)\}/);
+  assert.match(dashboardPage, /financial-dashboard__list/);
+  assert.match(dashboardPage, /setView\("income"\)/);
+  assert.match(dashboardPage, /setView\("expenses"\)/);
+  assert.match(dashboardPage, /id\.includes\("manual"\) \? "manual-expenses"/);
+  assert.match(dashboardPage, /title: "Manual expenses"/);
+  assert.match(dashboardPage, /setView\(next\)/);
+  assert.doesNotMatch(dashboardPage, /normalized data|backend|debug|raw Beds24|Open Accounting|QuickAccess|BusinessCard|Breakdown|MetricCard|AlertCard|Guest origins|OTA channels|todaySection|housekeeping|maintenance|quickAccess/i);
+  assert.doesNotMatch(dashboardPage, /\["overview", "Overview"\]|\["income", "Income"\]|\["expenses", "Expenses"\]/);
+  assert.doesNotMatch(dashboardPage, /<table|<thead|<tbody/i);
+  assert.match(dashboardCss, /\.financial-dashboard[\s\S]*overflow: hidden/);
+  assert.doesNotMatch(dashboardCss, /\.dashboard-header|\.financial-dashboard__tabs|\.business-grid|\.dashboard-breakdowns|\.quick-access-grid|\.control-alerts|\.control-section|\.control-card/);
+  assert.doesNotMatch(dashboardCss, /146,\s*91,\s*60|178,\s*138,\s*70/);
+  assert.match(dashboardCss, /\.financial-dashboard__header h2[\s\S]*font-size: clamp\(1\.1rem, 4\.8vw, 1\.58rem\)/);
+  assert.match(dashboardCss, /\.dashboard-range-filter[\s\S]*grid-template-columns: auto minmax\(0, 132px\) minmax\(0, 132px\) auto auto minmax\(0, 1fr\)/);
+  assert.match(dashboardCss, /\.dashboard-range-filter input[\s\S]*width: 100%[\s\S]*accent-color: #5fae9b/);
+  assert.match(dashboardCss, /@media \(max-width: 720px\)[\s\S]*\.dashboard-range-filter[\s\S]*grid-template-columns: 1fr/);
+  assert.match(dashboardCss, /@media \(max-width: 720px\)[\s\S]*\.dashboard-range-filter label,[\s\S]*\.dashboard-range-filter input,[\s\S]*\.dashboard-range-filter button[\s\S]*width: 100%/);
+  assert.doesNotMatch(dashboardCss, /@media \(max-width: 430px\)[\s\S]*\.dashboard-range-filter[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut-wrap[\s\S]*grid-template-columns: repeat\(2, minmax\(0, auto\)\)[\s\S]*justify-content: center/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut[\s\S]*grid-column: 1 \/ -1[\s\S]*grid-row: 1/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut span[\s\S]*font-size: 0\.58rem/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut strong[\s\S]*font-size: clamp\(0\.78rem, 3\.35vw, 0\.98rem\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment[\s\S]*display: inline-flex[\s\S]*border: 0[\s\S]*border-radius: 0[\s\S]*background: transparent[\s\S]*box-shadow: none/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment-dot[\s\S]*border-radius: 50%/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment-label[\s\S]*color: rgba\(255, 251, 241, 0\.96\)[\s\S]*font-size: clamp\(0\.72rem, 2\.8vw, 0\.82rem\)[\s\S]*text-transform: none[\s\S]*text-overflow: ellipsis/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment-percent[\s\S]*font-size: 0\.64rem/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment-arrow[\s\S]*border-radius: 50%/);
+  assert.match(dashboardCss, /\.financial-dashboard__segment:hover,[\s\S]*\.financial-dashboard__segment:focus-visible[\s\S]*text-decoration: underline[\s\S]*transform: translateY\(-1px\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__donut[\s\S]*width: min\(100%, 224px\)/);
+  assert.match(dashboardCss, /\.financial-dashboard__metrics[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(104px, 1fr\)\)/);
+  assert.doesNotMatch(dashboardCss, /\.financial-dashboard__metrics\s*{[\s\S]*grid-template-columns: 1fr/);
+  assert.doesNotMatch(dashboardCss, /min-height: 104px|min-height: 82px/);
+  assert.match(dashboardCss, /\.financial-dashboard__list b[\s\S]*max-width: 42%/);
+  assert.match(dashboardCss, /\.dashboard-finance-stack[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(220px, 320px\)/);
+});
+
+test("manual accounting receipt upload uses R2 and validates expenses", () => {
+  assert.match(accounting, /R2_STORAGE\.put/);
+  assert.match(accounting, /MAX_RECEIPT_BYTES/);
+  assert.match(accounting, /Entry type must be income or expense/);
+  assert.match(accounting, /Amount must be greater than zero/);
+});
+
+test("Accounting UI uses business language and keeps date controls contained", () => {
+  assert.match(accountingPage, />Manual entry</);
+  assert.match(accountingPage, />Export for accountant</);
+  assert.match(accountingPage, />Checked-in net</);
+  assert.match(accountingPage, />Future net forecast</);
+  assert.match(accountingPage, /const incomeCategories = \[/);
+  assert.match(accountingPage, /INCASSI PER STANZE/);
+  assert.match(accountingPage, /INCASSI RISTORANTE \/ BAR/);
+  assert.match(accountingPage, /INCASSI AFFITTO MOTORINO/);
+  assert.match(accountingPage, /const expenseCategories = \[/);
+  assert.match(accountingPage, /Resort Supplies/);
+  assert.match(accountingPage, /Utilities & Connectivity/);
+  assert.match(accountingPage, /<span>Category<\/span>/);
+  assert.match(accountingPage, /note: accountingNote\(category\)/);
+  assert.match(accountingPage, /<span>Description<\/span><textarea/);
+  assert.doesNotMatch(accountingPage, /<span>Note<\/span>/);
+  assert.match(accountingPage, /capture="environment"/);
+  assert.match(accountingPage, /Take receipt photo/);
+  assert.match(accountingPage, /Choose file\/PDF/);
+  const afterExport = accountingPage.slice(accountingPage.indexOf(">Export for accountant<"));
+  assert.doesNotMatch(afterExport, /<section className="accounting-panel"[\s\S]*<h2>/);
+  assert.match(`${englishCopy}\n${thaiCopy}\n${staffOverview}`, /Income, expenses, and accountant export\./);
+  assert.doesNotMatch(
+    `${accountingPage}\n${englishCopy}\n${thaiCopy}\n${staffOverview}`,
+    /Other income|Expected payable by booking channel|Revenue review|Recent Movements?|Owner entered income and expenses|OTA Income|Normalized OTA income|Normalized income|normalized data|source of truth|Beds24 raw price|Manual entries|manual entries log|backend|debug|raw manual/i,
+  );
+  assert.doesNotMatch(accountingPage, /latestOta|manualEntries|accounting-table|accounting-entry-list/);
+  assert.doesNotMatch(accountingCss, /\.accounting-table|\.accounting-entry-list/);
+  assert.match(accountingCss, /\.accounting-form input\[type="date"\],[\s\S]*\.accounting-export-range input\[type="date"\][\s\S]*inline-size: 100%;[\s\S]*max-width: 100%;[\s\S]*min-inline-size: 0;/);
+  assert.match(accountingCss, /accent-color: var\(--vc-color-jungle-900\)/);
+  assert.match(accountingCss, /::-webkit-calendar-picker-indicator[\s\S]*color: var\(--vc-color-jungle-900\)/);
+  assert.match(accountingCss, /\.accounting-form input:focus-visible,[\s\S]*\.accounting-export-range input:focus-visible[\s\S]*border-color: rgba\(23, 71, 52, 0\.72\)/);
+  assert.match(accountingCss, /\.accounting-upload__actions[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(accountingCss, /\.accounting-upload__button input[\s\S]*opacity: 0/);
+  assert.match(accountingCss, /@media \(max-width: 640px\)[\s\S]*\.accounting-upload__actions[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(accountingCss, /\.workspace-shell--accounting \.vc-staff-home-action[\s\S]*color: var\(--vc-text-inverse\)[\s\S]*background: linear-gradient/);
+});

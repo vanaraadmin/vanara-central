@@ -1,0 +1,250 @@
+.accounting-page,
+.accounting-kpis,
+.accounting-panel,
+.accounting-form,
+.accounting-export-range {
+  display: grid;
+  gap: var(--vc-space-3);
+}
+
+.accounting-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.accounting-kpis article,
+.accounting-panel {
+  min-width: 0;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-xl);
+  background: var(--vc-bg-surface);
+  box-shadow: var(--vc-shadow-xs);
+}
+
+.accounting-kpis article {
+  padding: var(--vc-space-3);
+  background:
+    linear-gradient(145deg, rgba(8, 38, 27, 0.9), rgba(28, 83, 59, 0.84)),
+    var(--vc-bg-surface);
+  color: var(--vc-text-inverse);
+}
+
+.accounting-kpis span,
+.accounting-kpis strong,
+.accounting-panel span,
+.accounting-panel strong,
+.accounting-panel p,
+.accounting-panel small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.accounting-kpis span {
+  display: block;
+  color: rgba(246, 240, 226, 0.82);
+  font-size: var(--vc-text-sm);
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-kpis strong {
+  display: block;
+  margin-top: var(--vc-space-1);
+  color: var(--vc-text-inverse);
+  font-size: var(--vc-text-2xl);
+  line-height: 1.05;
+}
+
+.accounting-panel {
+  padding: var(--vc-space-3);
+}
+
+.accounting-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+}
+
+.accounting-panel__header h2 {
+  margin: 0;
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-lg);
+}
+
+.accounting-panel__header p,
+.accounting-panel small {
+  margin: var(--vc-space-1) 0 0;
+  color: var(--vc-text-secondary);
+  font-size: var(--vc-text-sm);
+}
+
+.accounting-form,
+.accounting-export-range {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.accounting-form label,
+.accounting-export-range label,
+.accounting-upload {
+  display: grid;
+  gap: var(--vc-space-1);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-upload {
+  padding: var(--vc-space-2);
+  border: 1px solid rgba(23, 71, 52, 0.18);
+  border-radius: var(--vc-radius-lg);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.accounting-form input,
+.accounting-form select,
+.accounting-form textarea,
+.accounting-export-range input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--vc-touch-min);
+  box-sizing: border-box;
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-md);
+  background: rgba(255, 255, 255, 0.78);
+  color: #163425;
+  padding: 0 var(--vc-space-2);
+  font: inherit;
+  accent-color: var(--vc-color-jungle-900);
+  color-scheme: light;
+}
+
+.accounting-form input[type="date"],
+.accounting-export-range input[type="date"] {
+  inline-size: 100%;
+  max-width: 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.accounting-form input[type="date"]::-webkit-calendar-picker-indicator,
+.accounting-export-range input[type="date"]::-webkit-calendar-picker-indicator {
+  color: var(--vc-color-jungle-900);
+  opacity: 0.86;
+}
+
+.accounting-form input:focus-visible,
+.accounting-form select:focus-visible,
+.accounting-form textarea:focus-visible,
+.accounting-export-range input:focus-visible {
+  outline: 2px solid var(--vc-focus-glass);
+  border-color: rgba(23, 71, 52, 0.72);
+  box-shadow: 0 0 0 3px rgba(23, 71, 52, 0.12);
+}
+
+.accounting-form textarea {
+  min-height: 88px;
+  padding-top: var(--vc-space-2);
+}
+
+.accounting-upload__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-2);
+}
+
+.accounting-upload__button {
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--vc-space-2);
+  border: 1px solid rgba(23, 71, 52, 0.28);
+  border-radius: var(--vc-radius-pill);
+  background: linear-gradient(145deg, rgba(23, 71, 52, 0.92), rgba(39, 118, 85, 0.86));
+  color: var(--vc-text-inverse);
+  font-weight: var(--vc-weight-heavy);
+  text-align: center;
+  cursor: pointer;
+}
+
+.accounting-upload__button--secondary {
+  background: rgba(244, 237, 223, 0.72);
+  color: var(--vc-text-primary);
+}
+
+.accounting-upload__button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.accounting-upload__button:focus-within {
+  outline: 2px solid var(--vc-focus-glass);
+  outline-offset: 3px;
+}
+
+.accounting-form__wide,
+.accounting-upload {
+  grid-column: 1 / -1;
+}
+
+.accounting-action {
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vc-space-2);
+  padding: 0 var(--vc-space-3);
+  border: 1px solid var(--vc-border-subtle);
+  border-radius: var(--vc-radius-pill);
+  background: rgba(44, 106, 77, 0.18);
+  color: var(--vc-text-primary);
+  font-weight: var(--vc-weight-heavy);
+  text-decoration: none;
+}
+
+.accounting-action:disabled {
+  opacity: 0.56;
+}
+
+.accounting-error {
+  color: var(--vc-color-danger);
+  font-weight: var(--vc-weight-bold);
+}
+
+.workspace-shell--accounting .vc-staff-home-action {
+  color: var(--vc-text-inverse);
+  background: linear-gradient(145deg, rgba(23, 59, 45, 0.96), rgba(31, 106, 77, 0.92));
+  border: 1px solid rgba(244, 237, 223, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(7, 28, 20, 0.16),
+    0 14px 30px rgba(5, 24, 17, 0.24);
+}
+
+.workspace-shell--accounting .vc-staff-home-action span {
+  color: inherit;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 640px) {
+  .accounting-panel__header {
+    flex-direction: column;
+  }
+
+  .accounting-panel__header .accounting-action {
+    width: 100%;
+  }
+
+  .accounting-form,
+  .accounting-export-range {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-upload__actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

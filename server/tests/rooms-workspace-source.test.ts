@@ -48,15 +48,18 @@ test("Staff Home keeps a compact Rooms widget that opens the Rooms Workspace", (
   assert.match(staffService, /href:\s*"\/rooms"/);
 });
 
-test("Staff Home hierarchy keeps Booking Pulse then Rooms, Prices, Check-In, Housekeeping, Maintenance, Procurement, owner Social Automation and Payroll", () => {
+test("Staff Home hierarchy keeps staff order stable and uses the approved owner card order", () => {
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*"payroll",\s*\]/);
+  assert.match(staffPage, /const STAFF_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*"payroll",\s*\]/);
+  assert.match(staffPage, /const OWNER_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"owner-dashboard",\s*"rooms",\s*"messages",\s*"reception",\s*"availability",\s*"accounting",\s*"payroll",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*\]/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
   assert.doesNotMatch(staffPage, /const MESSAGES_WORKSPACE_CARD|href:\s*"\/messages"/);
   assert.match(staffService, /id:\s*"social"[\s\S]*href:\s*"\/social-automation"/);
   assert.match(staffService, /id:\s*"payroll"[\s\S]*href:\s*"\/payroll"/);
+  assert.match(staffService, /canUseOwnerDashboard[\s\S]*id:\s*"owner-dashboard"[\s\S]*href:\s*"\/dashboard"/);
+  assert.match(staffService, /canUseAccounting[\s\S]*id:\s*"accounting"[\s\S]*href:\s*"\/accounting"/);
   assert.doesNotMatch(staffPage, /href:\s*"\/chat"/);
   assert.ok(recentBookingsIndex >= 0 && workspacesIndex >= 0);
   assert.ok(recentBookingsIndex < workspacesIndex);

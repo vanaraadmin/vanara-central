@@ -5,7 +5,6 @@ import test from "node:test";
 const en = readFileSync(new URL("../../src/i18n/en.ts", import.meta.url), "utf8");
 const th = readFileSync(new URL("../../src/i18n/th.ts", import.meta.url), "utf8");
 const messagesPage = readFileSync(new URL("../../src/pages/MessagesPage.tsx", import.meta.url), "utf8");
-const dashboardPage = readFileSync(new URL("../../src/pages/DashboardPage.tsx", import.meta.url), "utf8");
 const movementsPage = readFileSync(new URL("../../src/pages/MovementsPage.tsx", import.meta.url), "utf8");
 const passportWorkflow = readFileSync(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportMessages = readFileSync(new URL("../../src/components/passport/passport-messages.ts", import.meta.url), "utf8");
@@ -72,12 +71,8 @@ test("Guest Messages staff UI is wired through i18n and keeps guest-message work
   assert.doesNotMatch(messagesPage, />Guest Messages<|>Needs Reply<|>Approve & Send<|>Retry Send<|>Booking Context</);
 });
 
-test("Dashboard and Movements staff pages translate reachable legacy/control labels", () => {
+test("Movements staff page translates reachable operational labels", () => {
   for (const key of [
-    "controlRoom",
-    "downloadTm30",
-    "quickAccess",
-    "operationalAlerts",
     "refreshArrivalsDepartures",
     "verifyDocuments",
     "assignKeys",
@@ -86,8 +81,6 @@ test("Dashboard and Movements staff pages translate reachable legacy/control lab
     assert.match(en + th, new RegExp(`${key}:`));
   }
 
-  assert.match(dashboardPage, /translate\("controlRoom"\)/);
-  assert.match(dashboardPage, /translateStaffLabel/);
   assert.match(movementsPage, /translate\("verifyDocuments"\)/);
   assert.match(movementsPage, /translateStaffLabel/);
 });

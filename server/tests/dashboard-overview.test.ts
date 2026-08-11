@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 import { getDashboardOverview } from "../src/services/dashboard.service.ts";
+
+test.before(() => {
+  mock.timers.enable({ apis: ["Date"], now: new Date("2026-08-09T05:00:00.000Z") });
+});
+
+test.after(() => {
+  mock.timers.reset();
+});
 
 class FakeStmt {
   private params: unknown[] = [];
@@ -16,6 +24,52 @@ class FakeStmt {
 
 class FakeDashboardDB {
   prepare(sql: string) { return new FakeStmt(this, sql); }
+
+  private readonly financialRecords = [
+    { beds24_booking_id: 101, channel: "Booking.com", check_in: "2026-08-06", expected_net_payout: 1200 },
+    { beds24_booking_id: 105, channel: "Agoda", check_in: "2026-08-06", expected_net_payout: 800 },
+    { beds24_booking_id: 102, channel: "Airbnb", check_in: "2026-08-10", expected_net_payout: 2300 },
+    { beds24_booking_id: 103, channel: "Booking.com", check_in: "2026-08-06", expected_net_payout: 900 },
+    { beds24_booking_id: 104, channel: "Agoda", check_in: "2026-08-12", expected_net_payout: 700 },
+  ];
+
+  private readonly bookingStates = new Map<number, { status: string; sub_status: string | null }>([
+    [101, { status: "confirmed", sub_status: null }],
+    [105, { status: "confirmed", sub_status: null }],
+    [102, { status: "confirmed", sub_status: null }],
+    [103, { status: "cancelled", sub_status: null }],
+    [104, { status: "confirmed", sub_status: "provider_deleted" }],
+  ]);
+
+  private sqlRange(sql: string, params: unknown[], column: string, offset = 0) {
+    let index = offset;
+    let fromDate: string | null = null;
+    let toDate: string | null = null;
+    if (sql.includes(`${column} >= ?`)) {
+      fromDate = String(params[index++]);
+    }
+    if (sql.includes(`${column} <= ?`)) {
+      toDate = String(params[index]);
+    }
+    return { fromDate, toDate };
+  }
+
+  private inRange(value: string, range: { fromDate: string | null; toDate: string | null }) {
+    return (!range.fromDate || value >= range.fromDate) && (!range.toDate || value <= range.toDate);
+  }
+
+  private activeFinancialRecords(sql: string, params: unknown[], offset = 0) {
+    const range = this.sqlRange(sql, params, "f.check_in", offset);
+    return this.financialRecords
+      .filter((record) => this.inRange(record.check_in, range))
+      .filter((record) => {
+        const booking = this.bookingStates.get(record.beds24_booking_id);
+        if (!booking) return false;
+        const status = booking.status.toLowerCase();
+        const subStatus = (booking.sub_status ?? "").toLowerCase();
+        return !["cancelled", "canceled", "deleted"].includes(status) && subStatus !== "provider_deleted";
+      });
+  }
 
   async all<T>(sql: string, params: unknown[]) {
     if (sql.includes("WITH latest_housekeeping")) {
@@ -145,10 +199,54 @@ class FakeDashboardDB {
     }
     if (sql.includes("SELECT view_key FROM user_views")) return { results: [{ view_key: "staff" }] as T[] };
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: [] as T[] };
+    if (sql.includes("SELECT f.channel, f.expected_net_payout, f.check_in")) {
+      return {
+        results: this.activeFinancialRecords(sql, params)
+          .map(({ channel, expected_net_payout, check_in }) => ({ channel, expected_net_payout, check_in })) as T[],
+      };
+    }
+    if (sql.includes("FROM manual_accounting_entries")) {
+      const range = this.sqlRange(sql, params, "entry_date");
+      return {
+        results: [
+          { entry_date: "2026-08-06", entry_type: "income", amount: 500, description: "Restaurant", note: "category: INCASSI RISTORANTE / BAR" },
+          { entry_date: "2026-08-06", entry_type: "income", amount: 250, description: "Motorbike", note: "category: INCASSI AFFITTO MOTORINO" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 300, description: "Supplies", note: "category: Resort Supplies" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 200, description: "Internet", note: "category: Utilities & Connectivity" },
+        ].filter((row) => this.inRange(row.entry_date, range)) as T[],
+      };
+    }
+    if (sql.includes("FROM payroll_records") && sql.includes("status = 'FINALIZED'")) {
+      const range = this.sqlRange(sql, params, "payroll_month");
+      return {
+        results: [
+          {
+            payroll_month: "2026-08",
+            monthly_gross_salary: 12000,
+            salary_advances_received: 1000,
+            bonuses_additions: 500,
+            authorized_deductions: 300,
+            employee_social_security: 600,
+            absence_deduction: 200,
+            overtime_compensation: 400,
+            meal_allowance_advance: 900,
+            net_salary_payable: 11700,
+          },
+        ].filter((row) => this.inRange(row.payroll_month, range)) as T[],
+      };
+    }
     return { results: [] as T[] };
   }
 
-  async first<T>() {
+  async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM ota_financial_records f") && sql.includes("INNER JOIN bookings b")) {
+      const today = String(params[0]);
+      const isFuture = sql.includes("f.check_in > ?");
+      const total = this.activeFinancialRecords(sql, params, 1)
+        .filter((record) => isFuture ? record.check_in > today : record.check_in <= today)
+        .reduce((sum, record) => sum + record.expected_net_payout, 0);
+      return { total } as T;
+    }
     return null as T | null;
   }
 }
@@ -168,7 +266,59 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.staff.housekeepingStaff.value, 1);
   assert.equal(data.staff.maintenanceStaff.value, 1);
   assert.equal(data.staff.disabledUsers.value, 1);
+  assert.equal(data.business.expectedNetIncomeToDate.label, "Checked-In Net Revenue");
+  assert.equal(data.business.expectedNetIncomeToDate.value, 2000);
+  assert.match(data.business.expectedNetIncomeToDate.detail, /not bank-received cash/i);
+  assert.equal(data.business.expectedFutureNetIncome.label, "Future Booked Net Forecast");
+  assert.equal(data.business.expectedFutureNetIncome.value, 2300);
+  assert.match(data.business.expectedFutureNetIncome.detail, /cancellable or modifiable/i);
+  assert.equal(data.business.financialSnapshot.checkedInNetRevenue, 2000);
+  assert.equal(data.business.financialSnapshot.futureBookedNetForecast, 2300);
+  assert.equal(data.dateRange.mode, "full");
+  assert.equal(data.dateRange.label, "Full view");
+  assert.equal(data.business.financialSnapshot.manualIncomeTotal, 750);
+  assert.equal(data.business.financialSnapshot.manualExpenseTotal, 500);
+  assert.equal(data.business.financialSnapshot.payrollTotal, 13300);
+  assert.equal(data.business.financialSnapshot.totalIncome, 2750);
+  assert.equal(data.business.financialSnapshot.totalExpenses, 13800);
+  assert.equal(data.business.financialSnapshot.netPosition, -11050);
+  assert.deepEqual(
+    data.business.financialSnapshot.otaChannels.map((item) => [item.label, item.amount]),
+    [["Booking.com", 1200], ["Agoda", 800]],
+  );
+  assert.equal(data.business.financialSnapshot.incomeComposition.some((item) => item.label === "Booking / OTA income" && item.amount === 2000), true);
+  assert.equal(data.business.financialSnapshot.incomeComposition.some((item) => item.label === "Manual income" && item.amount === 750), true);
+  assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Restaurant / Bar income" && item.amount === 500), true);
+  assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Motorbike rental income" && item.amount === 250), true);
+  assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Manual expenses" && item.amount === 500), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Resort Supplies" && item.amount === 300), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Utilities & Connectivity" && item.amount === 200), true);
+  assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Payroll / Wages" && item.amount === 13300), true);
+  assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Base wages" && item.amount === 11400), true);
+  assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Social security / SSO" && item.amount === 600), true);
+  assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Authorized deductions" && item.amount === -300), true);
+  assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label.toLowerCase().includes("advance")), false);
   assert.equal(data.alerts.some((item) => item.id === "high-maintenance"), true);
   assert.equal(data.alerts.some((item) => item.id === "waiting-maintenance"), true);
   assert.equal(data.quickLinks.some((item) => item.href === "/maintenance"), true);
+});
+
+test("dashboard overview can recalculate the financial snapshot for a selected date range", async () => {
+  const data = await getDashboardOverview(
+    { DB: new FakeDashboardDB() as unknown as D1Database },
+    { dateRange: { fromDate: "2026-08-10", toDate: "2026-08-10" } },
+  );
+
+  assert.equal(data.dateRange.mode, "custom");
+  assert.equal(data.dateRange.fromDate, "2026-08-10");
+  assert.equal(data.dateRange.toDate, "2026-08-10");
+  assert.equal(data.dateRange.label, "2026-08-10 to 2026-08-10");
+  assert.equal(data.business.expectedNetIncomeToDate.value, 0);
+  assert.equal(data.business.expectedFutureNetIncome.value, 2300);
+  assert.equal(data.business.financialSnapshot.checkedInNetRevenue, 0);
+  assert.equal(data.business.financialSnapshot.futureBookedNetForecast, 2300);
+  assert.equal(data.business.financialSnapshot.manualIncomeTotal, 0);
+  assert.equal(data.business.financialSnapshot.manualExpenseTotal, 0);
+  assert.equal(data.business.financialSnapshot.payrollTotal, 13300);
+  assert.match(data.business.occupancy.detail, /selected period/i);
 });
