@@ -26,6 +26,11 @@ import { useChatRealtime } from "../../hooks/useChatRealtime";
 import { useLanguage } from "../../providers/language.context";
 import type { ChatConversation, ChatLanguage, ChatMessage, ChatMessageReply, ChatReactionEmoji, ChatUser } from "../../types/chat";
 import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStickers";
+import {
+  CHAT_THREAD_BOOTSTRAP_TIMEOUT_MS,
+  chatThreadUnavailableCopy,
+  resolveChatThreadLoadPhase,
+} from "./chatThreadLoading";
 import "../../styles/ChatPage.css";
 
 type TeamChatSurfaceMode = "route" | "overlay";
@@ -935,11 +940,13 @@ export default function TeamChatSurface({
   onActiveConversationChange,
   onMobileViewChange,
 }: TeamChatSurfaceProps) {
-  const { translate } = useLanguage();
+  const { language, translate } = useLanguage();
   const queryClient = useQueryClient();
   const [pickerKind, setPickerKind] = useState<"private" | "group" | null>(null);
   const [localMobileView, setLocalMobileView] = useState<"list" | "thread">(activeConversationId ? "thread" : "list");
   const [localActiveConversationId, setLocalActiveConversationId] = useState("");
+  const [timedOutConversationId, setTimedOutConversationId] = useState<string | null>(null);
+  const [retryingConversationId, setRetryingConversationId] = useState<string | null>(null);
 
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
@@ -1001,6 +1008,24 @@ export default function TeamChatSurface({
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
+  const conversation = conversationQuery.data;
+  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const threadBootstrapState = chatThreadBootstrapState({
+    selectedConversationId,
+    activeInList,
+    conversationPending: conversationQuery.isPending,
+    messagesPending: messagesQuery.isPending,
+  });
+  const threadLoadPhase = resolveChatThreadLoadPhase({
+    bootstrapState: threadBootstrapState,
+    hasConversation: Boolean(conversation),
+    hasMessages: messagesQuery.data !== undefined,
+    timedOut: timedOutConversationId === selectedConversationId,
+    retrying: retryingConversationId === selectedConversationId,
+    failed: conversationQuery.isError || messagesQuery.isError,
+  });
+  const threadState = threadLoadPhase;
+  const threadUnavailableCopy = chatThreadUnavailableCopy(language);
   const openPrivateMutation = useMutation({
     mutationFn: (userId: string) => openPrivateChat({ userId }),
     onSuccess: async (conversation) => {
@@ -1026,6 +1051,16 @@ export default function TeamChatSurface({
       ]);
     },
   });
+
+  useEffect(() => {
+    if (!selectedConversationId || threadLoadPhase !== "loading") return;
+    const loadingConversationId = selectedConversationId;
+    const timeoutId = window.setTimeout(() => {
+      setTimedOutConversationId(loadingConversationId);
+      setRetryingConversationId((current) => current === loadingConversationId ? null : current);
+    }, CHAT_THREAD_BOOTSTRAP_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [selectedConversationId, threadLoadPhase]);
 
   function selectConversation(conversationId: string) {
     if (onMobileViewChange) {
@@ -1056,20 +1091,29 @@ export default function TeamChatSurface({
 
   const retry = () => {
     void conversationsQuery.refetch();
-    void conversationQuery.refetch();
-    void messagesQuery.refetch();
+  };
+
+  const retryThread = () => {
+    const conversationId = selectedConversationId;
+    if (!conversationId) return;
+    setTimedOutConversationId(null);
+    setRetryingConversationId(conversationId);
+    void (async () => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ["chat", "conversation", conversationId], exact: true }),
+        queryClient.cancelQueries({ queryKey: ["chat", "messages", conversationId], exact: true }),
+      ]);
+      await Promise.all([
+        conversationQuery.refetch(),
+        messagesQuery.refetch(),
+      ]);
+    })().finally(() => {
+      setRetryingConversationId((current) => current === conversationId ? null : current);
+    });
   };
 
   const isLoading = conversationsQuery.isLoading || currentUserQuery.isLoading;
-  const isError = conversationsQuery.isError || currentUserQuery.isError || conversationQuery.isError || messagesQuery.isError;
-  const conversation = conversationQuery.data;
-  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
-  const threadState = chatThreadBootstrapState({
-    selectedConversationId,
-    activeInList,
-    conversationPending: conversationQuery.isPending,
-    messagesPending: messagesQuery.isPending,
-  });
+  const isError = conversationsQuery.isError || currentUserQuery.isError;
 
   if (isLoading) return <PageLoading />;
   if (isError) return <PageError onRetry={retry} />;
@@ -1120,6 +1164,15 @@ export default function TeamChatSurface({
         {threadState === "loading" ? (
           <section className="chat-thread chat-thread--loading" aria-label={translate("loading")}>
             <PageLoading />
+          </section>
+        ) : threadState === "unavailable" ? (
+          <section className="chat-thread chat-thread--empty" aria-label={threadUnavailableCopy.title}>
+            <div className="chat-thread__empty" role="alert">
+              <h2>{threadUnavailableCopy.title}</h2>
+              <button className="vc-secondary-action" type="button" onClick={retryThread}>
+                {threadUnavailableCopy.action}
+              </button>
+            </div>
           </section>
         ) : threadState === "ready" && conversation ? (
           <ChatThread

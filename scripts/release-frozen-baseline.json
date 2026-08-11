@@ -30,7 +30,7 @@
     "src/assets/sounds/notification_chat_message.mp3": "c13da61f3e5bcd79ce3e8785715970ef8d09b2edcd5f956febc6d83e6a759827",
     "src/components/FloatingTeamChat.tsx": "92cf342453689cfb9e517a20068a5f0d550975b1855de581ead72de526630d52",
     "src/components/ProfilePanel.tsx": "302c2be068d831a9a3bdc42f6a593d7b7f68fdaac18338f89ce5daca9d6c3097",
-    "src/components/chat/TeamChatSurface.tsx": "c1ff7b803d2ac0946a3c2c9a14c3765c6601c4b1f5b1b9c5b97293c8fb86f52d",
+    "src/components/chat/TeamChatSurface.tsx": "67447bb01967db61208d9ca5906a97402047a137f3c89bab3b49ec53c2084b03",
     "src/config/chatStickers.ts": "fdb2e7c5272359566b0b95be914d646c66539cfd61757bc4a03509073869d1a0",
     "src/hooks/useChatInboxRealtime.ts": "fad50dab7fbca1dcf3d32b1cf33723a261991464f14953683c4df370f1e7cabe",
     "src/hooks/useChatRealtime.ts": "91955c860872eedb6ef7b910ca9d45a610c8b1a76bc47f6605f4e840ce04f068",
