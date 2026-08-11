@@ -20,7 +20,7 @@ test("build and production deploy are blocked by frozen hashes and canonical lin
   assert.match(deployScript, /"--release"/);
   assert.match(deployScript, /cloudflare-test-loader\.mjs/);
   assert.match(deployScript, /"file:\/\/\/" \+ \$cloudflareTestLoaderPath/);
-  assert.match(deployScript, /Push-Location \(Join-Path \$RepoRoot "server"\)/);
+  assert.match(deployScript, /Invoke-Step "Server tests" "node" \$serverTestArgs \(Join-Path \$RepoRoot "server"\)/);
   assert.match(deployScript, /"-ProductionUrl", \$ProductionUrl/);
   assert.match(preflightScript, /https:\/\/central\.vanararetreat\.com/);
   assert.doesNotMatch(preflightScript, /workers\.dev/);

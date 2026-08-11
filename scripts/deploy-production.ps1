@@ -88,12 +88,7 @@ $serverTestArgs = @("--import", "tsx", "--loader", $cloudflareTestLoaderUrl, "--
     Sort-Object Name |
     ForEach-Object { $_.FullName }
 )
-Push-Location (Join-Path $RepoRoot "server")
-try {
-  Invoke-Step "Server tests" "node" $serverTestArgs
-} finally {
-  Pop-Location
-}
+Invoke-Step "Server tests" "node" $serverTestArgs (Join-Path $RepoRoot "server")
 Invoke-Step "Frontend/source tests" "node" @("--import", "tsx", "--test", "tests/housekeeping-v2-source.test.ts", "tests/housekeeping-v2-room-source.test.ts") (Join-Path $RepoRoot "server")
 Invoke-Step "Typecheck" "npm.cmd" @("run", "typecheck")
 Invoke-Step "Lint" "npm.cmd" @("run", "lint")
