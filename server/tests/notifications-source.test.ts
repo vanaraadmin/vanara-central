@@ -102,7 +102,7 @@ const chatPushPayload = {
   title: "New message received",
   body: "Ice: Hello",
   tag: "chat-private-example",
-  url: "/chat/private-example",
+  url: "/chat",
 };
 
 test("push notifications use a central D1-backed service with subscription and delivery records", () => {
@@ -141,7 +141,8 @@ test("internal chat notifies participants except sender and never uses Guest Mes
   assert.match(notificationService, /dedupeKey: `chat:message:\$\{input\.messageId\}`/);
   assert.match(notificationService, /New message received/);
   assert.match(notificationService, /มีข้อความแชตใหม่/);
-  assert.match(notificationService, /`\/chat\/\$\{encodeURIComponent\(input\.conversationId\)\}`/);
+  assert.match(notificationService, /const conversationUrl = "\/chat"/);
+  assert.doesNotMatch(notificationService, /`\/chat\/\$\{encodeURIComponent\(input\.conversationId\)\}`/);
   assert.doesNotMatch(notificationService, /\/chat\?conversation=/);
   assert.match(notificationService, /previewKind === "attachment" \? "Attachment"/);
   assert.match(notificationService, /previewKind === "sticker" \? "Sticker"/);
@@ -161,7 +162,7 @@ test("internal chat notification targets every private or group recipient except
   });
   assert.deepEqual(privateFixture.loadedRecipientIds, ["recipient"]);
   assert.equal(privateFixture.payload().payload.en.title, "New message received");
-  assert.equal(privateFixture.payload().payload.en.url, "/chat/private-example");
+  assert.equal(privateFixture.payload().payload.en.url, "/chat");
 
   const groupFixture = notificationFixture(["sender", "staff-a", "staff-b", "owner-a"], "sender");
   await notifyInternalChatMessage(groupFixture.env, {
@@ -174,7 +175,7 @@ test("internal chat notification targets every private or group recipient except
   assert.deepEqual(groupFixture.loadedRecipientIds, ["staff-a", "staff-b", "owner-a"]);
   assert.equal(groupFixture.loadedRecipientIds.includes("sender"), false);
   assert.equal(groupFixture.payload().payload.th.title, "มีข้อความแชตใหม่");
-  assert.equal(groupFixture.payload().payload.th.url, "/chat/group-example");
+  assert.equal(groupFixture.payload().payload.th.url, "/chat");
 
   const attachmentFixture = notificationFixture(["sender", "recipient"], "sender");
   await notifyInternalChatMessage(attachmentFixture.env, {
@@ -389,5 +390,5 @@ test("service worker shows a visible fallback for missing or invalid push data",
   });
   await validWait;
   assert.equal(shown[2]?.title, "New message received");
-  assert.equal((shown[2]?.options.data as { url?: string } | undefined)?.url, "/chat/private-example");
+  assert.equal((shown[2]?.options.data as { url?: string } | undefined)?.url, "/chat");
 });

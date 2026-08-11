@@ -349,7 +349,7 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
   const previewKind = input.previewKind ?? "text";
   const englishPreview = previewKind === "attachment" ? "Attachment" : previewKind === "sticker" ? "Sticker" : previewText(input.body);
   const thaiPreview = previewKind === "attachment" ? "ไฟล์แนบ" : previewKind === "sticker" ? "สติกเกอร์" : previewText(input.body);
-  const conversationUrl = `/chat/${encodeURIComponent(input.conversationId)}`;
+  const conversationUrl = "/chat";
   await emitNotification(env, {
     type: "chat.message.created",
     entityType: "chat_message",
