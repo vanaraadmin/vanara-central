@@ -69,6 +69,25 @@ function ProtectedLayout() {
   return <AppLayout />;
 }
 
+function HomeRedirect({ openTeamChat = false }: { openTeamChat?: boolean }) {
+  const user = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => loadCurrentUser(signal),
+    retry: false,
+  });
+
+  if (user.isLoading) return <PageLoading />;
+  if (user.isError || !user.data) return <PageError onRetry={() => void user.refetch()} />;
+
+  return (
+    <Navigate
+      replace
+      to={user.data.isOwner ? "/dashboard" : "/staff"}
+      state={openTeamChat ? { openTeamChat: true } : undefined}
+    />
+  );
+}
+
 function HousekeepingRoomRedirect() {
   const { roomId = "", unitId = "" } = useParams();
   const targetId = unitId || roomId;
@@ -89,7 +108,7 @@ export default function AppRouter() {
         />
 
         <Route element={<ProtectedLayout />}>
-          <Route index element={<Navigate replace to="/staff" />} />
+          <Route index element={<HomeRedirect />} />
           <Route path="staff" element={<StaffPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="rooms" element={<RoomsPage />} />
@@ -111,7 +130,7 @@ export default function AppRouter() {
           <Route path="procurement/:requestId" element={<Navigate replace to="/procurement" />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="social-automation" element={<SocialAutomationPage />} />
-          <Route path="chat" element={<ChatPage />} />
+          <Route path="chat" element={<HomeRedirect openTeamChat />} />
           <Route path="chat/:conversationId" element={<ChatPage />} />
           <Route path="notifications" element={<Placeholder titleKey="notifications" descriptionKey="notificationsPlaceholder" />} />
           <Route path="more" element={<Placeholder titleKey="more" descriptionKey="morePlaceholder" links={moreLinks} />} />

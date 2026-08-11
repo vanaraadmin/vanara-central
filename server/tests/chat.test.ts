@@ -407,7 +407,7 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   assert.match(chatService, /\/api\/chat\/private/);
   assert.match(chatService, /\/api\/chat\/groups/);
   assert.match(chatService, /\/api\/chat\/summary/);
-  assert.match(appRouter, /<Route path="chat" element=\{<ChatPage \/>\}/);
+  assert.match(appRouter, /<Route path="chat" element=\{<HomeRedirect openTeamChat \/>\}/);
   assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\}/);
   assert.match(workspaceShell, /vc-floating-ui-suppressed/);
   assert.match(floatingTeamChatCss, /:root\.vc-floating-ui-suppressed \.staff-chat/);
@@ -574,6 +574,36 @@ test("floating chat bubble opens direct app overlay with drag-down close", () =>
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay__grab-zone\s*\{[^}]*min-height:\s*58px/);
   assert.match(floatingTeamChatCss, /\.staff-chat-overlay \.chat-app\s*\{[^}]*height:\s*100%/);
   assert.match(floatingTeamChatCss, /:root\.vc-chat-overlay-open,\s*body\.vc-chat-overlay-open\s*\{[^}]*overflow:\s*hidden[^}]*overscroll-behavior:\s*none/);
+});
+
+test("cold chat notification intent resolves the authorized home and opens the overlay list", () => {
+  const appRouter = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
+  const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
+
+  assert.match(appRouter, /function HomeRedirect\(\{ openTeamChat = false \}/);
+  assert.match(appRouter, /to=\{user\.data\.isOwner \? "\/dashboard" : "\/staff"\}/);
+  assert.match(appRouter, /state=\{openTeamChat \? \{ openTeamChat: true \} : undefined\}/);
+  assert.match(appRouter, /<Route index element=\{<HomeRedirect \/>\} \/>/);
+  assert.match(appRouter, /<Route path="chat" element=\{<HomeRedirect openTeamChat \/>\} \/>/);
+  assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\} \/>/);
+
+  assert.match(floatingTeamChat, /const location = useLocation\(\)/);
+  assert.match(floatingTeamChat, /const navigate = useNavigate\(\)/);
+  assert.match(floatingTeamChat, /setOverlayMobileView\("list"\);\s*setIsOpen\(true\);/);
+  assert.match(floatingTeamChat, /mode="overlay"/);
+  assert.match(floatingTeamChat, /mobileView=\{overlayMobileView\}/);
+});
+
+test("warm chat notification intent is consumed once, cleans state, and preserves manual close behavior", () => {
+  const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
+
+  assert.match(floatingTeamChat, /consumedChatIntentKeyRef\.current === location\.key/);
+  assert.match(floatingTeamChat, /\{ replace: true, state: null \}/);
+
+  const bodyLockCount = floatingTeamChat.match(/body\.style\.position = "fixed"/g)?.length ?? 0;
+  assert.equal(bodyLockCount, 1);
+  assert.match(floatingTeamChat, /if \(overlayMobileView === "thread"\) \{\s*setOverlayMobileView\("list"\);\s*return;\s*\}\s*closeOverlay\(\)/);
+  assert.match(floatingTeamChat, /onClick=\{\(\) => setIsOpen\(true\)\}/);
 });
 
 test("persistent chat bubble reads as a Vanara-owned LINE-like app icon", () => {

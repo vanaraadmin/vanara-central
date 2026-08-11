@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
 import TeamChatSurface from "./chat/TeamChatSurface";
 import { useChatInboxRealtime } from "../hooks/useChatInboxRealtime";
 import { loadCurrentUser } from "../services/auth.service";
@@ -21,10 +22,13 @@ function VanaraChatIcon() {
 
 export default function FloatingTeamChat() {
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [overlayMobileView, setOverlayMobileView] = useState<"list" | "thread">("list");
   const [dragOffset, setDragOffset] = useState(0);
   const dragStartYRef = useRef<number | null>(null);
+  const consumedChatIntentKeyRef = useRef<string | null>(null);
   const user = useQuery({
     queryKey: ["current-user"],
     queryFn: ({ signal }) => loadCurrentUser(signal),
@@ -55,6 +59,20 @@ export default function FloatingTeamChat() {
   const unreadCount = summary.data?.unreadCount ?? 0;
   const mentionCount = summary.data?.mentionCount ?? 0;
   const badgeLabel = mentionCount > 0 ? `@${mentionCount}` : unreadCount > 0 ? String(unreadCount) : "";
+  const openFromNavigation = (location.state as { openTeamChat?: boolean } | null)?.openTeamChat === true;
+
+  useEffect(() => {
+    if (!canOpenChat || !openFromNavigation || consumedChatIntentKeyRef.current === location.key) return;
+    consumedChatIntentKeyRef.current = location.key;
+    dragStartYRef.current = null;
+    setDragOffset(0);
+    setOverlayMobileView("list");
+    setIsOpen(true);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null },
+    );
+  }, [canOpenChat, location.hash, location.key, location.pathname, location.search, navigate, openFromNavigation]);
 
   useEffect(() => {
     if (!isOpen) return;
