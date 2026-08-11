@@ -3,6 +3,7 @@ param(
   [string]$ProductionUrl = $env:VANARA_PRODUCTION_URL,
   [string]$Cookie = $env:VANARA_SMOKE_COOKIE,
   [int]$RoomId = 1,
+  [switch]$SkipProtectedSmoke,
   [Alias("temporary-smoke-session")]
   [switch]$TemporarySmokeSession,
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -13,6 +14,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$ProductionUrl = if ($ProductionUrl) { $ProductionUrl } else { "https://central.vanararetreat.com" }
 $ConfigFullPath = Join-Path $RepoRoot $ConfigPath
 $UseTemporarySmokeSession = [bool]$TemporarySmokeSession -or ($RemainingArgs -contains "--temporary-smoke-session")
 
@@ -57,7 +59,9 @@ function Get-WranglerPath {
   return "wrangler.cmd"
 }
 
-if ($UseTemporarySmokeSession) {
+if ($SkipProtectedSmoke) {
+  Write-Host "Protected production smoke explicitly skipped; public health and build provenance remain required."
+} elseif ($UseTemporarySmokeSession) {
   Write-Host "Smoke authentication precheck: temporary Owner smoke session will be created and revoked by deploy-smoke."
 } elseif (-not $Cookie) {
   Fail-Step "Smoke authentication precheck" "SETUP ACTION: Set VANARA_SMOKE_COOKIE in this shell to the full production 'vanara_session=...' cookie value before running deploy:production. Do not commit or print it."
@@ -72,6 +76,9 @@ $database = $config.d1_databases | Select-Object -First 1
 if (-not $database) { Fail-Step "D1 configuration" "No D1 database binding found in wrangler.jsonc." }
 $databaseName = [string]$database.database_name
 $wrangler = Get-WranglerPath
+$releaseCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
+
+Invoke-Step "Frozen release and canonical lineage guard" "node" @((Join-Path $PSScriptRoot "verify-frozen-release-scope.mjs"), "--release")
 
 Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath, "-AllowPendingMigrations")
 Invoke-Step "Server tests" "npm.cmd" @("--prefix", "server", "test")
@@ -79,6 +86,7 @@ Invoke-Step "Frontend/source tests" "node" @("--import", "tsx", "--test", "tests
 Invoke-Step "Typecheck" "npm.cmd" @("run", "typecheck")
 Invoke-Step "Lint" "npm.cmd" @("run", "lint")
 Invoke-Step "Build" "npm.cmd" @("run", "build")
+Invoke-Step "Capture release build provenance" "node" @((Join-Path $PSScriptRoot "release-provenance.mjs"), "capture", "--commit", $releaseCommit)
 Invoke-Step "Server build" "npm.cmd" @("--prefix", "server", "run", "build:server")
 Invoke-Step "Apply approved D1 migrations" $wrangler @("d1", "migrations", "apply", $databaseName, "--remote", "--config", $ConfigFullPath)
 
@@ -96,12 +104,16 @@ $versionId = $Matches[1]
 Write-Host ("GREEN: Production deploy")
 Write-Host ("CLOUDFLARE_VERSION_ID={0}" -f $versionId)
 
-$smokeArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-smoke.ps1"))
-if ($ConfigPath) { $smokeArgs += @("-ConfigPath", $ConfigPath) }
-if ($ProductionUrl) { $smokeArgs += @("-ProductionUrl", $ProductionUrl) }
-if ($RoomId -gt 0) { $smokeArgs += @("-RoomId", [string]$RoomId) }
-if ($UseTemporarySmokeSession) { $smokeArgs += @("-TemporarySmokeSession") }
-Invoke-Step "Read-only production smoke" "powershell" $smokeArgs
+Invoke-Step "Verify online build provenance and public health" "node" @((Join-Path $PSScriptRoot "release-provenance.mjs"), "verify-online", "--commit", $releaseCommit, "--version", $versionId, "--url", $ProductionUrl)
+
+if (-not $SkipProtectedSmoke) {
+  $smokeArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-smoke.ps1"))
+  if ($ConfigPath) { $smokeArgs += @("-ConfigPath", $ConfigPath) }
+  if ($ProductionUrl) { $smokeArgs += @("-ProductionUrl", $ProductionUrl) }
+  if ($RoomId -gt 0) { $smokeArgs += @("-RoomId", [string]$RoomId) }
+  if ($UseTemporarySmokeSession) { $smokeArgs += @("-TemporarySmokeSession") }
+  Invoke-Step "Read-only production smoke" "powershell" $smokeArgs
+}
 
 Write-Host ("VERSION_ID={0}" -f $versionId)
 Write-Host "DEPLOYMENT GREEN"

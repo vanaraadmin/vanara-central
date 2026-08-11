@@ -16,6 +16,7 @@ const englishCopy = read("../src/i18n/en.ts");
 const thaiCopy = read("../src/i18n/th.ts");
 const accountingPage = read("../src/pages/AccountingPage.tsx");
 const accountingCss = read("../src/styles/AccountingPage.css");
+const dashboardCss = read("../src/styles/DashboardPage.css");
 
 test("accounting module is owner-only and staff home card is owner gated", () => {
   assert.match(index, /async function accountingOwner[\s\S]*requireOwner\(user\)[\s\S]*requireModulePermission\(user, "accounting"/);
@@ -133,14 +134,15 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.match(accountingPage, />Checked-in net</);
   assert.match(accountingPage, />Future net forecast</);
   assert.match(accountingPage, /const incomeCategories = \[/);
-  assert.match(accountingPage, /INCASSI PER STANZE/);
-  assert.match(accountingPage, /INCASSI RISTORANTE \/ BAR/);
-  assert.match(accountingPage, /INCASSI AFFITTO MOTORINO/);
+  assert.match(accountingPage, /value: "INCASSI PER STANZE", label: "Room Income"/);
+  assert.match(accountingPage, /value: "INCASSI RISTORANTE \/ BAR", label: "Restaurant \/ Bar Income"/);
+  assert.match(accountingPage, /value: "INCASSI AFFITTO MOTORINO", label: "Motorbike Rental Income"/);
   assert.match(accountingPage, /const expenseCategories = \[/);
-  assert.match(accountingPage, /Resort Supplies/);
-  assert.match(accountingPage, /Utilities & Connectivity/);
+  assert.match(accountingPage, /value: "Resort Supplies", label: "Resort Supplies"/);
+  assert.match(accountingPage, /value: "Utilities & Connectivity", label: "Utilities & Connectivity"/);
   assert.match(accountingPage, /<span>Category<\/span>/);
   assert.match(accountingPage, /note: accountingNote\(category\)/);
+  assert.match(accountingPage, /<option key=\{item\.value\} value=\{item\.value\}>\{item\.label\}<\/option>/);
   assert.match(accountingPage, /<span>Description<\/span><textarea/);
   assert.doesNotMatch(accountingPage, /<span>Note<\/span>/);
   assert.match(accountingPage, /capture="environment"/);
@@ -163,4 +165,11 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.match(accountingCss, /\.accounting-upload__button input[\s\S]*opacity: 0/);
   assert.match(accountingCss, /@media \(max-width: 640px\)[\s\S]*\.accounting-upload__actions[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(accountingCss, /\.workspace-shell--accounting \.vc-staff-home-action[\s\S]*color: var\(--vc-text-inverse\)[\s\S]*background: linear-gradient/);
+});
+
+test("Financial Dashboard date range controls cannot overflow narrow mobile containers", () => {
+  assert.match(dashboardCss, /\.dashboard-range-filter\s*\{[\s\S]*max-width:\s*100%;[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(dashboardCss, /\.dashboard-range-filter \*,[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(dashboardCss, /\.dashboard-range-filter input\s*\{[\s\S]*max-width:\s*100%;[\s\S]*min-inline-size:\s*0;[\s\S]*inline-size:\s*100%;/);
+  assert.match(dashboardCss, /@media \(max-width: 720px\)[\s\S]*grid-template-columns:\s*1fr;[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
 });

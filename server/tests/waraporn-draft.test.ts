@@ -436,7 +436,12 @@ function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status });
 }
 
-function openAiFileSearchPayload(id: string, outputText: string, filenames: readonly string[]): Record<string, unknown> {
+function openAiFileSearchPayload(
+  id: string,
+  outputText: string,
+  filenames: readonly string[],
+  fileSearchCallCount = 1,
+): Record<string, unknown> {
   return {
     id,
     output_text: outputText,
@@ -447,8 +452,8 @@ function openAiFileSearchPayload(id: string, outputText: string, filenames: read
       output_tokens_details: { reasoning_tokens: 40 },
       total_tokens: 1300,
     },
-    output: [{
-      id: `fs-${id}`,
+    output: Array.from({ length: fileSearchCallCount }, (_, callIndex) => ({
+      id: `fs-${id}-${callIndex + 1}`,
       type: "file_search_call",
       status: "completed",
       queries: ["Waraporn retrieval"],
@@ -458,7 +463,7 @@ function openAiFileSearchPayload(id: string, outputText: string, filenames: read
         score: 0.9,
         text: `Retrieved ${filename}`,
       })),
-    }],
+    })),
   };
 }
 
@@ -735,6 +740,33 @@ test("successful assistant text is accepted without backend retrieval filename r
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), ["Other_File.md"]);
 });
 
+test("valid final answer over the file-search soft threshold is preserved READY exactly once", async () => {
+  const db = new FakeWarapornDB();
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    return jsonResponse(200, openAiFileSearchPayload(
+      "resp-soft-limit",
+      READY_DRAFT_TEXT,
+      ["MOBILITY_REASONING_CONTRACT_v1.md"],
+      WARAPORN_MAX_TOOL_CALLS + 1,
+    ));
+  };
+  const bindings = env(db, fetcher) as never;
+
+  const draft = await generateWarapornDraft(bindings, 1, { now: NOW });
+  const replay = await generateWarapornDraft(bindings, 1, { now: NOW });
+
+  assert.equal(draft.state, "READY");
+  assert.equal(draft.body, READY_DRAFT_TEXT);
+  assert.equal(replay.draftId, draft.draftId);
+  assert.equal(calls, 1);
+  assert.equal(db.drafts.length, 1);
+  assert.equal(db.drafts[0]!.status, "READY");
+  assert.equal(db.drafts[0]!.openai_file_search_call_count, WARAPORN_MAX_TOOL_CALLS + 1);
+  assert.equal(db.messages[0]!.state, "DRAFT_READY");
+});
+
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {
   const db = new FakeWarapornDB();
   const { fetcher, bodies } = openAiFetcher();
@@ -873,6 +905,11 @@ test("paid malformed AI response stores a FAILED draft row and becomes terminal 
   assert.equal(db.drafts[0]!.openai_reasoning_tokens, 5);
   assert.equal(db.drafts[0]!.openai_total_tokens, 725);
   assert.equal(db.drafts[0]!.failure_code, "openai_invalid_response");
+
+  const pending = await generatePendingWarapornDrafts(env(db, countingFetcher) as never, { now: NOW });
+  assert.equal(pending.attempted, 0);
+  assert.equal(calls, 1);
+  assert.equal(db.drafts.length, 1);
 });
 
 test("failed draft persistence SQL keeps message draft values aligned with schema", () => {

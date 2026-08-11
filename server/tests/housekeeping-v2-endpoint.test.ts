@@ -83,6 +83,7 @@ class FakeHousekeepingV2DB {
   nextTaskId = 1;
   raceWaterInsertKey: string | null = null;
   operationalAvailability = new Map<number, "OPERATING" | "NOT_OPERATING">();
+  roomReadyStates = new Map<number, "READY" | "NOT_READY">();
   maintenanceTickets: Array<{ room_id: number | null; title: string; priority: "Low" | "Medium" | "High" | "Critical"; out_of_service: number; status: string }> = [];
   currentUser = userRow();
   currentViews: Array<{ view_key: "owner" | "staff" }> = [{ view_key: "staff" }];
@@ -106,6 +107,30 @@ class FakeHousekeepingV2DB {
           operational_availability_status: this.operationalAvailability.get(unit.unit_id) ?? "OPERATING",
         })) as T[],
       };
+    }
+    if (sql.includes("LEFT JOIN room_housekeeping_state rhs")) {
+      const date = String(params[2]);
+      const activeStatuses = new Set(["WAITING_FOR_RECEPTION", "AVAILABLE_FOR_CLAIM", "CLAIMED", "IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION", "READY", "BLOCKED"]);
+      const rows = this.tasks
+        .filter((task) => task.task_type === "TURNOVER" && task.status === "WAITING_FOR_RECEPTION" && task.operational_date <= date)
+        .filter((task) => !this.bookings.some((bookingRow) => {
+          const sameIdentity = bookingRow.booking_id === task.booking_id || bookingRow.beds24_booking_id === task.stay_id;
+          return sameIdentity
+            && bookingRow.unit_id === task.unit_id
+            && bookingRow.departure_date === task.operational_date
+            && ["confirmed", "new"].includes(bookingRow.status.trim().toLowerCase());
+        }))
+        .map((task) => ({
+          task_id: task.task_id,
+          version: task.version,
+          ready_state: this.roomReadyStates.get(task.unit_id) ?? null,
+          has_actionable_replacement: this.tasks.some((replacement) => replacement.task_id !== task.task_id
+            && replacement.unit_id === task.unit_id
+            && ["TURNOVER", "STANDARD_CLEANING", "ON_DEMAND_CLEANING"].includes(replacement.task_type)
+            && activeStatuses.has(replacement.status)
+            && (replacement.operational_date <= date || (replacement.due_cycle_date !== null && replacement.due_cycle_date <= date))) ? 1 : 0,
+        }));
+      return { results: rows as T[] };
     }
     if (sql.includes("FROM bookings b")) {
       const rows = this.bookings
@@ -286,7 +311,10 @@ class FakeHousekeepingV2DB {
     if (sql.includes("started_at = ?")) task.started_at = String(params[index++]);
     if (sql.includes("completed_at = ?")) task.completed_at = String(params[index++]);
     if (sql.includes("skipped_at = ?")) task.skipped_at = String(params[index++]);
-    if (sql.includes("cancelled_at = ?")) task.cancelled_at = String(params[index]);
+    if (sql.includes("cancelled_at = ?")) {
+      task.cancelled_at = String(params[index++]);
+      task.cancellation_reason = params[index] as string | null;
+    }
     if (sql.includes("assigned_user_id = NULL")) {
       task.assigned_user_id = null;
       task.assigned_user_name = null;
@@ -583,9 +611,10 @@ test("unfinished checkout turnover remains visible the following day as normal c
   assert.equal(body.data.summary.toClean, 1);
 });
 
-test("stale waiting-for-checkout turnover is hidden when there is no matching departure", async () => {
+test("stale waiting-for-checkout turnover becomes actionable normal cleaning when the room is still dirty", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [];
+  db.roomReadyStates.set(1, "NOT_READY");
   db.tasks.push(storedTask({
     task_id: 91,
     task_type: "TURNOVER",
@@ -602,9 +631,120 @@ test("stale waiting-for-checkout turnover is hidden when there is no matching de
   const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string; taskStatus: string }> }>; summary: { toClean: number } } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 91), false);
-  assert.equal(body.data.summary.toClean, 0);
+  const card = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards.find((item) => item.taskId === 91);
+  assert.ok(card);
+  assert.equal(card.taskStatus, "AVAILABLE_FOR_CLAIM");
+  assert.equal(card.currentQueue, "normal-cleaning");
+  assert.equal(body.data.summary.toClean, 1);
+  assert.equal(db.events.some((event) => event.task_id === 91 && event.event_type === "release_from_reception"), true);
+
+  const detailResponse = await request("/api/housekeeping/v2/rooms/1?date=2026-08-09", db);
+  const detail = await detailResponse.json() as { success: boolean; data: { housekeeping: { tasks: Array<{ id: number; status: string; taskType: string; capabilities: { canStart: boolean } }> } } };
+  assert.equal(detailResponse.status, 200, JSON.stringify(detail));
+  const detailTask = detail.data.housekeeping.tasks.find((task) => task.id === 91);
+  assert.ok(detailTask);
+  assert.equal(detailTask.status, "AVAILABLE_FOR_CLAIM");
+  assert.equal(detailTask.taskType, "TURNOVER");
+  assert.equal(detailTask.capabilities.canStart, true);
+  assert.equal(detail.data.housekeeping.tasks.filter((task) => task.taskType === "TURNOVER" && !["CANCELLED", "COMPLETED", "SKIPPED"].includes(task.status)).length, 1);
 });
+
+for (const scenario of [
+  { name: "missing", bookingStatus: null, departureDate: null },
+  { name: "cancelled", bookingStatus: "cancelled", departureDate: "2026-08-05" },
+  { name: "moved", bookingStatus: "confirmed", departureDate: "2026-08-08" },
+] as const) {
+  test(`stale waiting turnover is cancelled when its booking is ${scenario.name} and the room is already ready`, async () => {
+    const db = new FakeHousekeepingV2DB();
+    db.roomReadyStates.set(1, "READY");
+    db.bookings = scenario.bookingStatus === null ? [] : [{
+      ...booking(304, 930304, 1, "Former Guest", 2, 0),
+      status: scenario.bookingStatus,
+      departure_date: scenario.departureDate!,
+    }];
+    db.tasks.push(storedTask({
+      task_id: 92,
+      task_type: "TURNOVER",
+      unit_id: 1,
+      booking_id: 304,
+      stay_id: 930304,
+      operational_date: "2026-08-05",
+      due_cycle_date: "2026-08-05",
+      status: "WAITING_FOR_RECEPTION",
+      priority: "HIGH",
+    }));
+
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-09", db);
+    assert.equal(response.status, 200, await response.text());
+    assert.equal(db.tasks.find((task) => task.task_id === 92)?.status, "CANCELLED");
+    assert.match(db.tasks.find((task) => task.task_id === 92)?.cancellation_reason ?? "", /stale|superseded|ready/i);
+    assert.equal(db.events.some((event) => event.task_id === 92 && event.event_type === "cancel"), true);
+  });
+}
+
+test("stale waiting turnover is cancelled when a newer actionable cleaning task already replaces it", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [];
+  db.roomReadyStates.set(1, "NOT_READY");
+  db.tasks.push(
+    storedTask({ task_id: 96, task_type: "TURNOVER", unit_id: 1, booking_id: 304, stay_id: 930304, operational_date: "2026-08-05", due_cycle_date: "2026-08-05", status: "WAITING_FOR_RECEPTION", priority: "HIGH" }),
+    storedTask({ task_id: 97, task_type: "TURNOVER", unit_id: 1, booking_id: 305, stay_id: 930305, operational_date: "2026-08-07", due_cycle_date: "2026-08-07", status: "AVAILABLE_FOR_CLAIM", priority: "NORMAL" }),
+  );
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-09", db);
+  const body = await response.json() as { data: { tasks: Array<{ taskId: number; currentQueue: string }> } };
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(db.tasks.find((task) => task.task_id === 96)?.status, "CANCELLED");
+  assert.equal(db.tasks.find((task) => task.task_id === 97)?.status, "AVAILABLE_FOR_CLAIM");
+  assert.equal(body.data.tasks.some((task) => task.taskId === 97 && task.currentQueue === "normal-cleaning"), true);
+});
+
+test("Beds room swap reconciles both old-unit turnovers and keeps one valid task per current unit", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.roomReadyStates.set(1, "NOT_READY");
+  db.roomReadyStates.set(2, "READY");
+  db.bookings = [
+    { ...booking(501, 950501, 2, "Guest A", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05", room_released: 1 },
+    { ...booking(502, 950502, 1, "Guest B", 2, 0), arrival_date: "2026-08-02", departure_date: "2026-08-06", room_released: 0 },
+  ];
+  db.tasks.push(
+    storedTask({ task_id: 110, task_type: "TURNOVER", unit_id: 1, booking_id: 501, stay_id: 950501, operational_date: "2026-08-05", due_cycle_date: "2026-08-05", status: "WAITING_FOR_RECEPTION", priority: "HIGH" }),
+    storedTask({ task_id: 111, task_type: "TURNOVER", unit_id: 2, booking_id: 502, stay_id: 950502, operational_date: "2026-08-06", due_cycle_date: "2026-08-06", status: "WAITING_FOR_RECEPTION", priority: "HIGH" }),
+    storedTask({ task_id: 112, task_type: "TURNOVER", unit_id: 2, booking_id: 501, stay_id: 950501, operational_date: "2026-08-05", due_cycle_date: "2026-08-05", status: "AVAILABLE_FOR_CLAIM", priority: "NORMAL" }),
+  );
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-06", db);
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(db.tasks.find((task) => task.task_id === 110)?.status, "CANCELLED");
+  assert.equal(db.tasks.find((task) => task.task_id === 111)?.status, "CANCELLED");
+
+  const activeA = db.tasks.filter((task) => task.booking_id === 501 && task.task_type === "TURNOVER" && !["CANCELLED", "COMPLETED", "SKIPPED"].includes(task.status));
+  const activeB = db.tasks.filter((task) => task.booking_id === 502 && task.task_type === "TURNOVER" && !["CANCELLED", "COMPLETED", "SKIPPED"].includes(task.status));
+  assert.equal(activeA.length, 1);
+  assert.equal(activeA[0]?.unit_id, 2);
+  assert.equal(activeB.length, 1);
+  assert.equal(activeB[0]?.unit_id, 1);
+  assert.equal(activeB[0]?.operational_date, "2026-08-06");
+});
+
+for (const scenario of [
+  { label: "next-day", arrivalDate: "2026-08-04", expectedQueue: "priority-turnover" },
+  { label: "later future", arrivalDate: "2026-08-05", expectedQueue: "normal-cleaning" },
+] as const) {
+  test(`released turnover with ${scenario.label} arrival uses ${scenario.expectedQueue}`, async () => {
+    const db = new FakeHousekeepingV2DB();
+    db.bookings = [
+      { ...booking(306, 930306, 1, "Departed Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-03", room_released: 1 },
+      { ...booking(307, 930307, 1, "Incoming Guest", 2, 0), arrival_date: scenario.arrivalDate, departure_date: "2026-08-08", guest_arrived: 0, room_released: 0 },
+    ];
+    db.tasks.push(storedTask({ task_id: 98, task_type: "TURNOVER", unit_id: 1, booking_id: 306, stay_id: 930306, operational_date: "2026-08-03", due_cycle_date: "2026-08-03", status: "AVAILABLE_FOR_CLAIM", priority: "NORMAL" }));
+
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-03", db);
+    const body = await response.json() as { data: { tasks: Array<{ taskId: number; currentQueue: string }> } };
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.data.tasks.find((task) => task.taskId === 98)?.currentQueue, scenario.expectedQueue);
+  });
+}
 
 test("arrival-day water task already stored is not published and the next full day generates water", async () => {
   const db = new FakeHousekeepingV2DB();

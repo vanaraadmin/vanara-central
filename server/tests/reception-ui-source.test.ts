@@ -25,7 +25,9 @@ test("booking details sheet renders as a fullscreen glass sheet", () => {
   const bookingDetailsSheet = receptionPage.match(/function BookingDetailsSheet[\s\S]*?export default function ReceptionPage/)?.[0] ?? "";
   assert.doesNotMatch(bookingDetailsSheet, /reception-sheet__handle/);
   assert.match(receptionCss, /\.reception-details-sheet\s*\{[\s\S]*align-items:\s*stretch;/);
-  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*border-radius:\s*0;/);
+  assert.match(receptionCss, /\.reception-details-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);/);
+  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(receptionPage, /const root = document\.documentElement;[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
 });
 
 test("reception contact icon uses the current Design System color and centered trigger", () => {
@@ -51,6 +53,15 @@ test("actionable today booking cards start completion while details remain secon
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onDetailsRequest\(stay\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onContactRequest\(contact\)/);
   assert.match(receptionPage, /event\.stopPropagation\(\);\s*onRequest\(stay, type\)/);
+});
+
+test("future arrival cards expose only Details and Address Book for every role", () => {
+  const stayCard = receptionPage.match(/function StayCard[\s\S]*?function ReceptionDatePicker/)?.[0] ?? "";
+  assert.match(stayCard, /\{translate\("details"\)\}/);
+  assert.match(stayCard, /<VanaraGuestContactTrigger/);
+  assert.match(stayCard, /stay\.roomId && \(isToday \|\| type !== "arrival"\)/);
+  assert.doesNotMatch(stayCard, /user\?\.isOwner|currentUser|role ===/);
+  assert.match(receptionCss, /\.reception-card__quick-actions \.vc-secondary-action,[\s\S]*min-height:\s*var\(--vc-touch-min\);[\s\S]*line-height:\s*1;[\s\S]*white-space:\s*nowrap;/);
 });
 
 test("check-in and check-out cards render nationality text without flags", async () => {

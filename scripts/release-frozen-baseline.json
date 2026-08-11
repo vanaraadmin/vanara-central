@@ -1,0 +1,80 @@
+{
+  "canonicalAncestor": "b98ce98076106ad449c81343bba7f381f32ce672",
+  "files": {
+    "package-lock.json": "09323cc911af4d7a96d47db7ec2486fde4dce3657755e57d6f90ee67313228f9",
+    "public/manifest.webmanifest": "51aee047aba1f2006ea08f733e763ac3f8445529df7313b89fe0fbd9f87a6d29",
+    "public/pwa/apple-touch-icon.png": "770b80b1d11e028a43673b60240fa1b9d16baf9abf6cdb3ae7764db243a0f879",
+    "public/pwa/icon-192.png": "253e3dffd5e39a97073bd7fe8b0d3f6f969ada4ceec4dad8f7856203decb5c9f",
+    "public/pwa/icon-512.png": "e2a13602132eb8076d3fa741e8c8c057936b8004787173d1f4f4d405f6c92adc",
+    "public/pwa/icon-maskable-192.png": "b02d6cd293782a5047037ed9c1549fce2f00f10ab7c415605c3de10eeac6fb32",
+    "public/pwa/icon-maskable-512.png": "ddee5b25ef523894d6119815512950e5a1b9239a76ef9a2736a1b27755aa3bc0",
+    "public/sw.js": "baaad9617fd1c2119cf68675d95229b7a2d0955356fe6785bd477287aff34637",
+    "server/migrations/0003_chat_foundation.sql": "06688c14cf9058882b8c47d2c984ef21f314e352664e243fc6965d882cebff00",
+    "server/migrations/0032_internal_chat_conversations.sql": "4203a9464ed9b01f9049709ffce21e7de55b231c55b47fd112260a000d8423f0",
+    "server/migrations/0033_internal_chat_message_interactions.sql": "beaf9d91c31978fd23cb2f3cc984afa75dd7e21aa92f623842a8016b27f9eccb",
+    "server/migrations/0034_internal_chat_attachments.sql": "81cd54621dd97fc3f35660cd82cff815ad0eeb0d0eae3647731048f37add6f00",
+    "server/migrations/0042_push_notifications.sql": "0202a19c97233c0049f825e0ba98d754904e852c11618f23f363e28cf0a5ae65",
+    "server/migrations/0044_notification_event_sound_type.sql": "402bc953d965f5ac637871465de26e99342e0c86f632d5456aa8456b69a00809",
+    "server/package.json": "3d66ca225e1852f4750106adaf96972dd9e69b3e75b287762c172850cafecb3b",
+    "server/src/index.ts": "a9ee7e76906919632a3aaaf2f4e34f35a2b29f94a3b95c141227deb44c5f76d8",
+    "server/src/services/chat-conversation-room.do.ts": "ac3bd2066aea4dca5f1de41bdd6306362441870be226baad96bafaa3ea6f6618",
+    "server/src/services/chat-realtime.service.ts": "7c7fa56d5771afcfaa87517ee98a6950956fdd38a8aefb751583c425d6078e72",
+    "server/src/services/chat-stickers.service.ts": "18a8f386c4c6ede49845bd76d1359b14f5836e2da8fccfd0b2a63ad204a32383",
+    "server/src/services/chat-user-inbox-room.do.ts": "01a26c27e18dfe75df619a830f762bfd239d3b6a94b234ca87f782aa65d727c3",
+    "server/src/services/chat.service.ts": "232eb829dc0c864785e42e59eb1286c81a3b0717a78b9a7e22b5ec75dacf69da",
+    "server/src/services/notifications.service.ts": "e181b1fb5ce9cc0738808f40812f91f2dc7402daf1367e0fdf72b8be22cba05b",
+    "server/tests/chat.test.ts": "0750ed13a35e6c5e0e45425f0fe0f70045709fc2a1c61028a75d3afdc3abd2cf",
+    "server/tests/notifications-source.test.ts": "46bdf00f51b22c73830b1415f2655f0b336618d7ad6dcff83893aacd33a5dc5b",
+    "server/tests/user-area-source.test.ts": "49e276c14f188c49bfd7460db4cec76a97e6f9ab5ce11f3de609c73cff42ade1",
+    "src/assets/sounds/event_alert_notification.mp3": "b40bf18982d6c529d3b6b95c64624386115d8515721c1e202a77aa69e5c69fd3",
+    "src/assets/sounds/notification_chat_message.mp3": "c13da61f3e5bcd79ce3e8785715970ef8d09b2edcd5f956febc6d83e6a759827",
+    "src/components/FloatingTeamChat.tsx": "92cf342453689cfb9e517a20068a5f0d550975b1855de581ead72de526630d52",
+    "src/components/ProfilePanel.tsx": "302c2be068d831a9a3bdc42f6a593d7b7f68fdaac18338f89ce5daca9d6c3097",
+    "src/components/chat/TeamChatSurface.tsx": "c1ff7b803d2ac0946a3c2c9a14c3765c6601c4b1f5b1b9c5b97293c8fb86f52d",
+    "src/config/chatStickers.ts": "fdb2e7c5272359566b0b95be914d646c66539cfd61757bc4a03509073869d1a0",
+    "src/hooks/useChatInboxRealtime.ts": "fad50dab7fbca1dcf3d32b1cf33723a261991464f14953683c4df370f1e7cabe",
+    "src/hooks/useChatRealtime.ts": "91955c860872eedb6ef7b910ca9d45a610c8b1a76bc47f6605f4e840ce04f068",
+    "src/pages/ChatPage.tsx": "5259849bbe860894851a761f07046b7822d2920a9d12c4632e3c66154019a304",
+    "src/services/chat.service.ts": "2672d6f06e5449960f4a4dea1dfe4293b3bdaee4b69234a024bfc33dc433ee5e",
+    "src/services/pwa.service.ts": "140334b339bd572a2c14b90deedc3ed36d8d5cb7c868757ced2dead3af0271dd",
+    "src/styles/ChatPage.css": "bc7c98c86adb18d4241e9e712b05fb570617a0f59cfa6c3bf4cbc61c823d6290",
+    "src/styles/FloatingTeamChat.css": "687dcf7ac622e4bc0223f0afac52cf9a29d36150185e860b9f75b67a3915dd38",
+    "src/types/chat.ts": "e6375dea7faa1059d503a121d8e6870c2f3cf58b50ba9a39480939bc1f97e229"
+  },
+  "binaryExtensions": [".mp3", ".png"],
+  "workerConfig": {
+    "name": "vanara-central",
+    "main": "server/src/index.ts",
+    "workers_dev": false,
+    "routes": [{ "pattern": "central.vanararetreat.com", "custom_domain": true }],
+    "vapidPublicKey": "BMumz6XWCgUphr3bL5bBM_091fBrnpfaFtak6OqBbhVat02DF2J_vEovgV5YHDW4I76iht73JjR2b9tqBFgO10E",
+    "database": {
+      "binding": "DB",
+      "database_name": "vanara-central",
+      "database_id": "1f0c6fce-8a47-442a-8158-97708aefe6b1",
+      "migrations_dir": "server/migrations",
+      "remote": true
+    },
+    "chatAttachmentBucket": {
+      "binding": "R2_STORAGE",
+      "bucket_name": "vanara-central-documents"
+    },
+    "durableObjects": {
+      "bindings": [
+        { "name": "CHAT_CONVERSATION_ROOM", "class_name": "ChatConversationRoom" },
+        { "name": "CHAT_USER_INBOX_ROOM", "class_name": "ChatUserInboxRoom" }
+      ]
+    },
+    "durableObjectMigrations": [
+      { "tag": "v1_chat_conversation_room", "new_sqlite_classes": ["ChatConversationRoom"] },
+      { "tag": "v2_chat_user_inbox_room", "new_sqlite_classes": ["ChatUserInboxRoom"] }
+    ],
+    "assets": {
+      "binding": "ASSETS",
+      "directory": "./dist/client",
+      "not_found_handling": "single-page-application",
+      "run_worker_first": ["/api/*", "/health", "/sync/*"]
+    },
+    "compatibilityFlags": ["nodejs_compat"]
+  }
+}

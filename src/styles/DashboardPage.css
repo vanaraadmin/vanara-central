@@ -48,6 +48,8 @@
 
 .dashboard-range-filter {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   grid-template-columns: auto minmax(0, 132px) minmax(0, 132px) auto auto minmax(0, 1fr);
   align-items: end;
   gap: 8px;
@@ -62,8 +64,15 @@
 
 .dashboard-range-filter label {
   min-width: 0;
+  max-width: 100%;
   display: grid;
   gap: 3px;
+}
+
+.dashboard-range-filter *,
+.dashboard-range-filter *::before,
+.dashboard-range-filter *::after {
+  box-sizing: border-box;
 }
 
 .dashboard-range-filter label span,
@@ -90,7 +99,11 @@
 }
 
 .dashboard-range-filter input {
+  display: block;
   width: 100%;
+  max-width: 100%;
+  min-inline-size: 0;
+  inline-size: 100%;
   padding: 0 9px;
   color-scheme: dark;
   accent-color: #5fae9b;
@@ -144,6 +157,8 @@
   .dashboard-range-filter label,
   .dashboard-range-filter input,
   .dashboard-range-filter button {
+    min-width: 0;
+    max-width: 100%;
     width: 100%;
   }
 

@@ -1,6 +1,17 @@
 .operations-shell {
   min-height: 100dvh;
-  background: #0c241a;
+  background-color: #0c241a;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(4, 17, 12, 0.22) 0%,
+      rgba(5, 22, 15, 0.5) 46%,
+      rgba(4, 17, 12, 0.84) 100%
+    ),
+    url("../assets/img/background_room.png");
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 .operations-shell__content {

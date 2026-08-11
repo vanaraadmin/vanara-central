@@ -1,4 +1,5 @@
 import type { CurrentUser } from "./current-user.service.js";
+import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { setRoomHousekeepingState } from "./room-housekeeping-state.service.js";
 
 export type HousekeepingTaskType = "TURNOVER" | "STANDARD_CLEANING" | "LINEN_CHANGE" | "WATER_REFILL" | "ON_DEMAND_CLEANING";
@@ -261,6 +262,78 @@ export async function syncReleasedTurnoverTasks(env: HousekeepingTaskBindings, d
         metadata: { source: "reception_stays.room_released" },
       });
     } catch (error: unknown) {
+      if (error instanceof HousekeepingTaskDomainError && (error.code === "housekeeping_task_stale_version" || error.code === "housekeeping_invalid_transition")) {
+        const current = await getHousekeepingTask(env, row.task_id);
+        if (current?.taskType === "TURNOVER" && current.status !== "WAITING_FOR_RECEPTION") continue;
+      }
+      throw error;
+    }
+  }
+}
+
+interface StaleWaitingTurnoverRow {
+  task_id: number;
+  version: number;
+  ready_state: "READY" | "NOT_READY" | null;
+  has_actionable_replacement: number;
+}
+
+export async function reconcileStaleWaitingTurnoverTasks(
+  env: HousekeepingTaskBindings,
+  date: string,
+  actor?: HousekeepingActor | CurrentUser | null,
+): Promise<void> {
+  const rows = await env.DB.prepare(`
+    SELECT ht.task_id,
+           ht.version,
+           rhs.ready_state,
+           EXISTS (
+             SELECT 1
+             FROM housekeeping_tasks replacement
+             WHERE replacement.unit_id = ht.unit_id
+               AND replacement.task_id <> ht.task_id
+               AND replacement.task_type IN ('TURNOVER', 'STANDARD_CLEANING', 'ON_DEMAND_CLEANING')
+               AND replacement.status IN (
+                 'WAITING_FOR_RECEPTION', 'AVAILABLE_FOR_CLAIM', 'CLAIMED', 'IN_PROGRESS',
+                 'CHECKLIST_COMPLETE', 'READY_FOR_INSPECTION', 'READY', 'BLOCKED'
+               )
+               AND (replacement.operational_date <= ? OR replacement.due_cycle_date <= ?)
+           ) AS has_actionable_replacement
+    FROM housekeeping_tasks ht
+    LEFT JOIN room_housekeeping_state rhs ON rhs.unit_id = ht.unit_id
+    WHERE ht.task_type = 'TURNOVER'
+      AND ht.status = 'WAITING_FOR_RECEPTION'
+      AND ht.operational_date <= ?
+      AND NOT EXISTS (
+        SELECT 1
+        FROM bookings b
+        WHERE b.unit_id = ht.unit_id
+          AND b.departure_date = ht.operational_date
+          AND (b.booking_id = ht.booking_id OR b.beds24_booking_id = ht.stay_id)
+          AND ${operationalBookingStatusSql("b.status")}
+      )
+  `).bind(date, date, date).all<StaleWaitingTurnoverRow>();
+
+  for (const row of rows.results ?? []) {
+    const shouldRelease = row.has_actionable_replacement !== 1 && row.ready_state !== "READY";
+    const action = shouldRelease ? "release_from_reception" : "cancel";
+    try {
+      await transitionHousekeepingTask(env, row.task_id, {
+        action,
+        expectedVersion: row.version,
+        actor,
+        idempotencyKey: `housekeeping:stale-waiting:${action}:${row.task_id}:${row.version}`,
+        reason: shouldRelease
+          ? "Checkout is no longer present; room still requires cleaning."
+          : "Stale checkout task superseded or room already ready.",
+        metadata: {
+          source: "stale_checkout_reconciliation",
+          roomReadyState: row.ready_state,
+          hasActionableReplacement: row.has_actionable_replacement === 1,
+        },
+      });
+    } catch (error: unknown) {
+      if (error instanceof HousekeepingTaskDomainError && error.code === "housekeeping_task_not_found") continue;
       if (error instanceof HousekeepingTaskDomainError && (error.code === "housekeeping_task_stale_version" || error.code === "housekeeping_invalid_transition")) {
         const current = await getHousekeepingTask(env, row.task_id);
         if (current?.taskType === "TURNOVER" && current.status !== "WAITING_FOR_RECEPTION") continue;

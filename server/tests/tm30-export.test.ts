@@ -6,6 +6,19 @@ import { generateTm30Workbook, listTm30PassportRows, type Tm30PassportRow } from
 import { buildTm30NationalityMap, tm30NationalityCodeFrom } from "../src/services/tm30-nationality.service.ts";
 import { readZipEntries, textEntry } from "../src/services/tm30-zip.service.ts";
 
+test("TM30 Owner export keeps the official asset binding and existing Profile download", async () => {
+  const [wrangler, profile, server] = await Promise.all([
+    readFile(new URL("../../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../../src/components/ProfilePanel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(wrangler, /"assets"\s*:\s*\{\s*"binding"\s*:\s*"ASSETS"/);
+  assert.match(profile, /tab === "owner"[\s\S]*href="\/api\/owner\/tm30\/export"/);
+  assert.match(server, /authenticated\(c, "owner-dashboard", "access"\)[\s\S]*loadTm30Template\(c\)/);
+  assert.match(server, /c\.env\.ASSETS\.fetch/);
+});
+
 class FakeStmt {
   private params: unknown[] = [];
   constructor(private rows: Record<string, unknown>[]) {}

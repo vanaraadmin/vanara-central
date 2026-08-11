@@ -20,26 +20,26 @@ function money(value: number | null | undefined): string {
 }
 
 const incomeCategories = [
-  "INCASSI PER STANZE",
-  "INCASSI RISTORANTE / BAR",
-  "INCASSI AFFITTO MOTORINO",
+  { value: "INCASSI PER STANZE", label: "Room Income" },
+  { value: "INCASSI RISTORANTE / BAR", label: "Restaurant / Bar Income" },
+  { value: "INCASSI AFFITTO MOTORINO", label: "Motorbike Rental Income" },
 ] as const;
 
 const expenseCategories = [
-  "Resort Supplies",
-  "Food & Beverage Operations",
-  "Repairs & Maintenance",
-  "Utilities & Connectivity",
-  "Garden & Pool",
-  "Transport & Fuel",
-  "Office & Admin",
-  "Government, Bank & Legal",
-  "Marketing & Reviews",
-  "Guest Services",
-  "Other Expenses",
+  { value: "Resort Supplies", label: "Resort Supplies" },
+  { value: "Food & Beverage Operations", label: "Food & Beverage Operations" },
+  { value: "Repairs & Maintenance", label: "Repairs & Maintenance" },
+  { value: "Utilities & Connectivity", label: "Utilities & Connectivity" },
+  { value: "Garden & Pool", label: "Garden & Pool" },
+  { value: "Transport & Fuel", label: "Transport & Fuel" },
+  { value: "Office & Admin", label: "Office & Admin" },
+  { value: "Government, Bank & Legal", label: "Government, Bank & Legal" },
+  { value: "Marketing & Reviews", label: "Marketing & Reviews" },
+  { value: "Guest Services", label: "Guest Services" },
+  { value: "Other Expenses", label: "Other Expenses" },
 ] as const;
 
-function categoriesFor(type: ManualEntryType): readonly string[] {
+function categoriesFor(type: ManualEntryType): ReadonlyArray<{ value: string; label: string }> {
   return type === "income" ? incomeCategories : expenseCategories;
 }
 
@@ -61,7 +61,7 @@ export default function AccountingPage() {
   const [entryType, setEntryType] = useState<ManualEntryType>("expense");
   const [entryDate, setEntryDate] = useState(today());
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState<string>(expenseCategories[0]);
+  const [category, setCategory] = useState<string>(expenseCategories[0].value);
   const [description, setDescription] = useState("");
   const [receiptDataUrl, setReceiptDataUrl] = useState<string | null>(null);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
@@ -134,14 +134,14 @@ export default function AccountingPage() {
                 <label><span>Type</span><select value={entryType} onChange={(event) => {
                   const nextType = event.target.value as ManualEntryType;
                   setEntryType(nextType);
-                  setCategory(categoriesFor(nextType)[0]);
+                  setCategory(categoriesFor(nextType)[0].value);
                 }}><option value="income">Income</option><option value="expense">Expense</option></select></label>
                 <label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} /></label>
                 <label><span>Amount</span><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
                 <label className="accounting-form__wide">
                   <span>Category</span>
                   <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                    {activeCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {activeCategories.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                   </select>
                 </label>
                 <label className="accounting-form__wide"><span>Description</span><textarea value={description} placeholder={entryType === "expense" ? "What was bought?" : "What was collected?"} onChange={(event) => setDescription(event.target.value)} /></label>

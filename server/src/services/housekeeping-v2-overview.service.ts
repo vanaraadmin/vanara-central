@@ -1,6 +1,6 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
-import { createHousekeepingTask, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { createHousekeepingTask, reconcileStaleWaitingTurnoverTasks, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
 import { readableUnitName } from "./room-display-label.service.js";
 import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
@@ -206,6 +206,7 @@ export function normalizeHousekeepingV2Date(value: string | null | undefined, no
 
 export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, user: CurrentUser, date: string): Promise<HousekeepingV2Overview> {
   const generated = await generateHousekeepingV2Tasks(env, user, date);
+  await reconcileStaleWaitingTurnoverTasks(env, date, user);
   await syncReleasedTurnoverTasks(env, date, user);
   const [units, bookings, tasks, counters, alerts, maintenance, waterConfig, procurement] = await Promise.all([
     loadUnits(env),

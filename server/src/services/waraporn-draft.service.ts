@@ -672,7 +672,14 @@ export async function generateWarapornDraft(
     const generated = await callOpenAiResponses(env, requestBody, options);
     openAiResult = generated;
     if (generated.fileSearchCallCount > WARAPORN_MAX_TOOL_CALLS) {
-      throw new WarapornDraftError("OpenAI exceeded the Waraporn file_search call limit.", "openai_tool_call_limit_exceeded", 502);
+      console.warn(JSON.stringify({
+        event: "waraporn_file_search_soft_limit_exceeded",
+        messageId,
+        responseId: generated.responseId,
+        fileSearchCallCount: generated.fileSearchCallCount,
+        configuredMaxToolCalls: WARAPORN_MAX_TOOL_CALLS,
+        action: "preserve_valid_final_answer",
+      }));
     }
 
     const inserted = await env.DB.prepare(`
