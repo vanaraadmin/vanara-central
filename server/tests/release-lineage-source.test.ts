@@ -6,6 +6,7 @@ const packageJson = readFileSync(new URL("../../package.json", import.meta.url),
 const deployScript = readFileSync(new URL("../../scripts/deploy-production.ps1", import.meta.url), "utf8");
 const preflightScript = readFileSync(new URL("../../scripts/deploy-preflight.ps1", import.meta.url), "utf8");
 const frozenGuard = readFileSync(new URL("../../scripts/verify-frozen-release-scope.mjs", import.meta.url), "utf8");
+const serverTypecheck = readFileSync(new URL("../../scripts/verify-server-typecheck.mjs", import.meta.url), "utf8");
 const provenance = readFileSync(new URL("../../scripts/release-provenance.mjs", import.meta.url), "utf8");
 
 test("build and production deploy are blocked by frozen hashes and canonical lineage", () => {
@@ -21,6 +22,11 @@ test("build and production deploy are blocked by frozen hashes and canonical lin
   assert.match(deployScript, /cloudflare-test-loader\.mjs/);
   assert.match(deployScript, /"file:\/\/\/" \+ \$cloudflareTestLoaderPath/);
   assert.match(deployScript, /Invoke-Step "Server tests" "node" \$serverTestArgs \(Join-Path \$RepoRoot "server"\)/);
+  assert.match(deployScript, /Invoke-Step "Server typecheck" "node"/);
+  assert.match(serverTypecheck, /git", \["diff", "--quiet", frozenBaseline/);
+  assert.match(serverTypecheck, /diagnostics\.length === expected\.length/);
+  assert.match(serverTypecheck, /TS2416/);
+  assert.match(serverTypecheck, /if \(!onlyFrozenBaselineDiagnostics\)[\s\S]*process\.exit\(result\.status \?\? 1\)/);
   assert.match(deployScript, /"-ProductionUrl", \$ProductionUrl/);
   assert.match(preflightScript, /https:\/\/central\.vanararetreat\.com/);
   assert.doesNotMatch(preflightScript, /workers\.dev/);

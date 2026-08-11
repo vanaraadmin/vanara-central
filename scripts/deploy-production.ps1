@@ -94,7 +94,7 @@ Invoke-Step "Typecheck" "npm.cmd" @("run", "typecheck")
 Invoke-Step "Lint" "npm.cmd" @("run", "lint")
 Invoke-Step "Build" "npm.cmd" @("run", "build")
 Invoke-Step "Capture release build provenance" "node" @((Join-Path $PSScriptRoot "release-provenance.mjs"), "capture", "--commit", $releaseCommit)
-Invoke-Step "Server build" "npm.cmd" @("--prefix", "server", "run", "build:server")
+Invoke-Step "Server typecheck" "node" @((Join-Path $PSScriptRoot "verify-server-typecheck.mjs"))
 Invoke-Step "Apply approved D1 migrations" $wrangler @("d1", "migrations", "apply", $databaseName, "--remote", "--config", $ConfigFullPath)
 
 Write-Host "== Production deploy =="
