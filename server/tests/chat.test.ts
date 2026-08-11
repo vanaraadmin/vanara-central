@@ -407,7 +407,7 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   assert.match(chatService, /\/api\/chat\/private/);
   assert.match(chatService, /\/api\/chat\/groups/);
   assert.match(chatService, /\/api\/chat\/summary/);
-  assert.match(appRouter, /<Route path="chat" element=\{<HomeRedirect openTeamChat \/>\}/);
+  assert.match(appRouter, /<Route path="chat" element=\{<Navigate replace to="\/staff" state=\{\{ openTeamChat: true \}\} \/>\}/);
   assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\}/);
   assert.match(workspaceShell, /vc-floating-ui-suppressed/);
   assert.match(floatingTeamChatCss, /:root\.vc-floating-ui-suppressed \.staff-chat/);
@@ -576,15 +576,13 @@ test("floating chat bubble opens direct app overlay with drag-down close", () =>
   assert.match(floatingTeamChatCss, /:root\.vc-chat-overlay-open,\s*body\.vc-chat-overlay-open\s*\{[^}]*overflow:\s*hidden[^}]*overscroll-behavior:\s*none/);
 });
 
-test("cold chat notification intent resolves the authorized home and opens the overlay list", () => {
+test("cold chat notification intent returns to the canonical home and opens the overlay list", () => {
   const appRouter = readFileSync(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
   const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
 
-  assert.match(appRouter, /function HomeRedirect\(\{ openTeamChat = false \}/);
-  assert.match(appRouter, /to=\{user\.data\.isOwner \? "\/dashboard" : "\/staff"\}/);
-  assert.match(appRouter, /state=\{openTeamChat \? \{ openTeamChat: true \} : undefined\}/);
-  assert.match(appRouter, /<Route index element=\{<HomeRedirect \/>\} \/>/);
-  assert.match(appRouter, /<Route path="chat" element=\{<HomeRedirect openTeamChat \/>\} \/>/);
+  assert.doesNotMatch(appRouter, /function HomeRedirect/);
+  assert.match(appRouter, /<Route index element=\{<Navigate replace to="\/staff" \/>\} \/>/);
+  assert.match(appRouter, /<Route path="chat" element=\{<Navigate replace to="\/staff" state=\{\{ openTeamChat: true \}\} \/>\} \/>/);
   assert.match(appRouter, /<Route path="chat\/:conversationId" element=\{<ChatPage \/>\} \/>/);
 
   assert.match(floatingTeamChat, /const location = useLocation\(\)/);

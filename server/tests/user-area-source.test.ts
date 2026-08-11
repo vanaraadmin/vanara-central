@@ -71,10 +71,10 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(thai, /notificationsUnsupportedDevice: "เครื่องนี้ใช้แจ้งเตือนไม่ได้"/);
 });
 
-test("workspace home labels owner and staff contexts with a role-aware home route", () => {
-  assert.match(appRouter, /function HomeRedirect/);
-  assert.match(appRouter, /to=\{user\.data\.isOwner \? "\/dashboard" : "\/staff"\}/);
-  assert.match(appRouter, /<Route index element=\{<HomeRedirect \/>\} \/>/);
+test("workspace home keeps one staff route while StaffPage adapts owner and staff contexts", () => {
+  assert.doesNotMatch(appRouter, /function HomeRedirect/);
+  assert.match(appRouter, /<Route index element=\{<Navigate replace to="\/staff" \/>\} \/>/);
+  assert.match(appRouter, /<Route path="chat" element=\{<Navigate replace to="\/staff" state=\{\{ openTeamChat: true \}\} \/>\} \/>/);
   assert.match(staffPage, /staff\.data\?\.user\.isOwner/);
   assert.match(staffPage, /pageLabel=\{isOwnerHome \? translate\("ownerPage"\) : translate\("staffPage"\)\}/);
   assert.match(workspaceShell, /pageLabel\?: string/);
