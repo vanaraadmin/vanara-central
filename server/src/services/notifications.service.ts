@@ -1,4 +1,9 @@
 import type { CurrentUser } from "./current-user.service.js";
+import webpush, {
+  type PushSubscription as StandardPushSubscription,
+  type RequestOptions as WebPushRequestOptions,
+  type SendResult as WebPushSendResult,
+} from "web-push";
 
 export interface NotificationBindings {
   DB: D1Database;
@@ -21,7 +26,7 @@ export type NotificationType =
   | "maintenance.blocking.created"
   | "maintenance.blocking.enabled";
 
-interface PushSubscriptionRow {
+export interface PushSubscriptionRow {
   push_subscription_id: number;
   user_id: string;
   endpoint: string;
@@ -67,104 +72,139 @@ export interface NotificationTemplate {
 
 const MAX_PUSH_FAILURES = 3;
 const DEFAULT_VAPID_SUBJECT = "mailto:info@vanararetreat.com";
+const MAX_WEB_PUSH_ATTEMPTS = 2;
+
+export interface WebPushTransport {
+  sendNotification(
+    subscription: StandardPushSubscription,
+    payload: string,
+    options: WebPushRequestOptions,
+  ): Promise<WebPushSendResult>;
+}
+
+export interface PushSendResult {
+  ok: boolean;
+  statusCode: number | null;
+  payloadBytes: number;
+  attempts: number;
+  errorCode?: string;
+}
 
 function cleanText(value: unknown, max = 160): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-function base64UrlToBytes(value: string): Uint8Array {
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
-async function hmac(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey("raw", toArrayBuffer(keyBytes), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", key, toArrayBuffer(data)));
-}
-
-async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
-  const prk = await hmac(salt, ikm);
-  const input = new Uint8Array(info.length + 1);
-  input.set(info, 0);
-  input[input.length - 1] = 1;
-  return (await hmac(prk, input)).slice(0, length);
-}
-
-function concatBytes(...parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(length);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
+function vapidPrivateKey(env: NotificationBindings): string | null {
+  if (!env.VAPID_PRIVATE_KEY_JWK) return null;
+  try {
+    const key = JSON.parse(env.VAPID_PRIVATE_KEY_JWK) as { d?: unknown };
+    return cleanText(key.d, 256) || null;
+  } catch {
+    return null;
   }
-  return out;
 }
 
-async function vapidAuthorization(env: NotificationBindings, endpoint: string): Promise<string | null> {
-  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY_JWK) return null;
-  const aud = new URL(endpoint).origin;
-  const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60;
-  const header = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
-  const claims = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ aud, exp, sub: env.VAPID_SUBJECT ?? DEFAULT_VAPID_SUBJECT })));
-  const key = await crypto.subtle.importKey("jwk", JSON.parse(env.VAPID_PRIVATE_KEY_JWK) as JsonWebKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(`${header}.${claims}`)));
-  return `vapid t=${header}.${claims}.${bytesToBase64Url(signature)}, k=${env.VAPID_PUBLIC_KEY}`;
+function pushProvider(endpoint: string): "apple" | "google" | "other" {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    if (host === "push.apple.com" || host.endsWith(".push.apple.com")) return "apple";
+    if (host === "fcm.googleapis.com" || host.endsWith(".fcm.googleapis.com")) return "google";
+  } catch {
+    return "other";
+  }
+  return "other";
 }
 
-async function encryptPushPayload(subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<Uint8Array> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const serverKeys = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
-  const serverPublic = new Uint8Array(await crypto.subtle.exportKey("raw", serverKeys.publicKey));
-  const clientPublic = await crypto.subtle.importKey("raw", toArrayBuffer(base64UrlToBytes(subscription.p256dh)), { name: "ECDH", namedCurve: "P-256" }, false, []);
-  const sharedSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: clientPublic }, serverKeys.privateKey, 256));
-  const authSecret = base64UrlToBytes(subscription.auth);
-  const info = concatBytes(new TextEncoder().encode("WebPush: info\0"), base64UrlToBytes(subscription.p256dh), serverPublic);
-  const ikm = await hmac(await hmac(authSecret, sharedSecret), info);
-  const cek = await hkdf(salt, ikm, new TextEncoder().encode("Content-Encoding: aes128gcm\0"), 16);
-  const nonce = await hkdf(salt, ikm, new TextEncoder().encode("Content-Encoding: nonce\0"), 12);
-  const key = await crypto.subtle.importKey("raw", toArrayBuffer(cek), { name: "AES-GCM" }, false, ["encrypt"]);
-  const plaintext = concatBytes(new TextEncoder().encode(JSON.stringify(payload)), new Uint8Array([2]));
-  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(nonce) }, key, toArrayBuffer(plaintext)));
-  const header = new Uint8Array(21 + serverPublic.length);
-  header.set(salt, 0);
-  new DataView(header.buffer).setUint32(16, 4096, false);
-  header[20] = serverPublic.length;
-  header.set(serverPublic, 21);
-  return concatBytes(header, encrypted);
+function statusFromWebPushError(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("statusCode" in error)) return null;
+  const statusCode = Number((error as { statusCode?: unknown }).statusCode);
+  return Number.isInteger(statusCode) ? statusCode : null;
 }
 
-async function sendPush(env: NotificationBindings, subscription: PushSubscriptionRow, payload: NotificationPayload): Promise<{ ok: boolean; errorCode?: string }> {
-  const authorization = await vapidAuthorization(env, subscription.endpoint);
-  if (!authorization) return { ok: false, errorCode: "vapid_not_configured" };
-  const body = await encryptPushPayload(subscription, payload);
-  const response = await fetch(subscription.endpoint, {
-    method: "POST",
-    headers: {
-      authorization,
-      "content-encoding": "aes128gcm",
-      "content-type": "application/octet-stream",
-      ttl: "86400",
+function deliveryDiagnostic(statusCode: number | null, payloadBytes: number, attempts: number): string {
+  const status = statusCode === null ? "transport_error" : `http_${statusCode}`;
+  return `${status}:web-push:bytes_${payloadBytes}:attempt_${attempts}`;
+}
+
+function logPushAttempt(subscription: PushSubscriptionRow, statusCode: number | null, payloadBytes: number, attempt: number, ok: boolean): void {
+  console.info(JSON.stringify({
+    message: "web_push_delivery",
+    provider: pushProvider(subscription.endpoint),
+    statusCode,
+    payloadBytes,
+    attempt,
+    ok,
+  }));
+}
+
+const defaultWebPushTransport: WebPushTransport = {
+  sendNotification: (subscription, payload, options) => webpush.sendNotification(subscription, payload, options),
+};
+
+export async function sendPushWithTransport(
+  env: NotificationBindings,
+  subscription: PushSubscriptionRow,
+  payload: NotificationPayload,
+  transport: WebPushTransport = defaultWebPushTransport,
+): Promise<PushSendResult> {
+  const publicKey = cleanText(env.VAPID_PUBLIC_KEY, 256);
+  const privateKey = vapidPrivateKey(env);
+  const payloadJson = JSON.stringify(payload);
+  const payloadBytes = new TextEncoder().encode(payloadJson).byteLength;
+  if (!publicKey || !privateKey) {
+    return { ok: false, statusCode: null, payloadBytes, attempts: 0, errorCode: "vapid_not_configured" };
+  }
+
+  const standardSubscription: StandardPushSubscription = {
+    endpoint: subscription.endpoint,
+    keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+  };
+  const options: WebPushRequestOptions = {
+    TTL: 86_400,
+    contentEncoding: "aes128gcm",
+    urgency: payload.tag.startsWith("chat-") ? "high" : "normal",
+    vapidDetails: {
+      subject: cleanText(env.VAPID_SUBJECT, 256) || DEFAULT_VAPID_SUBJECT,
+      publicKey,
+      privateKey,
     },
-    body: toArrayBuffer(body),
-  });
-  if (response.ok) return { ok: true };
-  return { ok: false, errorCode: String(response.status) };
+  };
+
+  for (let attempt = 1; attempt <= MAX_WEB_PUSH_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await transport.sendNotification(standardSubscription, payloadJson, options);
+      logPushAttempt(subscription, result.statusCode, payloadBytes, attempt, true);
+      return {
+        ok: true,
+        statusCode: result.statusCode,
+        payloadBytes,
+        attempts: attempt,
+        errorCode: deliveryDiagnostic(result.statusCode, payloadBytes, attempt),
+      };
+    } catch (error) {
+      const statusCode = statusFromWebPushError(error);
+      logPushAttempt(subscription, statusCode, payloadBytes, attempt, false);
+      const retryable = statusCode !== null && statusCode >= 500 && statusCode <= 599;
+      if (retryable && attempt < MAX_WEB_PUSH_ATTEMPTS) continue;
+      return {
+        ok: false,
+        statusCode,
+        payloadBytes,
+        attempts: attempt,
+        errorCode: deliveryDiagnostic(statusCode, payloadBytes, attempt),
+      };
+    }
+  }
+
+  return { ok: false, statusCode: null, payloadBytes, attempts: MAX_WEB_PUSH_ATTEMPTS, errorCode: "push_failed" };
+}
+
+export function shouldDisablePushSubscription(result: PushSendResult, currentFailureCount: number): boolean {
+  return !result.ok && (
+    result.statusCode === 404
+    || result.statusCode === 410
+    || currentFailureCount + 1 >= MAX_PUSH_FAILURES
+  );
 }
 
 export function publicVapidKey(env: NotificationBindings): string | null {
@@ -255,12 +295,18 @@ export async function emitNotification(env: NotificationBindings, template: Noti
   const subscriptions = await loadSubscriptions(env, template);
   for (const subscription of subscriptions) {
     const payload = template.payload[subscription.preferred_language] ?? template.payload.en;
-    const result = await sendPush(env, subscription, payload).catch((error: unknown) => ({ ok: false, errorCode: error instanceof Error ? error.name : "push_failed" }));
+    const result = await sendPushWithTransport(env, subscription, payload).catch((error: unknown): PushSendResult => ({
+      ok: false,
+      statusCode: null,
+      payloadBytes: 0,
+      attempts: 0,
+      errorCode: error instanceof Error ? error.name : "push_failed",
+    }));
     await env.DB.prepare(`
       INSERT INTO notification_deliveries (notification_event_id, user_id, push_subscription_id, status, error_code, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(event.notification_event_id, subscription.user_id, subscription.push_subscription_id, result.ok ? "sent" : "failed", result.errorCode ?? null, now, new Date().toISOString()).run();
-    if (!result.ok && result.errorCode && (result.errorCode === "404" || result.errorCode === "410" || subscription.failure_count + 1 >= MAX_PUSH_FAILURES)) {
+    if (shouldDisablePushSubscription(result, subscription.failure_count)) {
       await env.DB.prepare(`
         UPDATE push_subscriptions
         SET status = 'disabled', failure_count = failure_count + 1, disabled_at = ?, updated_at = ?
@@ -277,7 +323,7 @@ export function notificationPayload(title: string, body: string, tag: string, ur
 }
 
 function previewText(value: string | null | undefined): string {
-  const text = cleanText(value, 80);
+  const text = cleanText(value, 160).replace(/\s+/g, " ").slice(0, 80);
   return text || "New update";
 }
 
@@ -291,6 +337,7 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
   authorId: string;
   authorName: string;
   body: string;
+  previewKind?: "text" | "sticker" | "attachment";
 }): Promise<void> {
   const participants = await env.DB.prepare(`
     SELECT user_id
@@ -299,6 +346,10 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
       AND user_id <> ?
   `).bind(input.conversationId, input.authorId).all<{ user_id: string }>();
   const userIds = (participants.results ?? []).map((row) => row.user_id);
+  const previewKind = input.previewKind ?? "text";
+  const englishPreview = previewKind === "attachment" ? "Attachment" : previewKind === "sticker" ? "Sticker" : previewText(input.body);
+  const thaiPreview = previewKind === "attachment" ? "ไฟล์แนบ" : previewKind === "sticker" ? "สติกเกอร์" : previewText(input.body);
+  const conversationUrl = `/chat/${encodeURIComponent(input.conversationId)}`;
   await emitNotification(env, {
     type: "chat.message.created",
     entityType: "chat_message",
@@ -308,8 +359,8 @@ export async function notifyInternalChatMessage(env: NotificationBindings, input
     userIds,
     data: { conversationId: input.conversationId },
     payload: {
-      en: notificationPayload("New message received", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
-      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${previewText(input.body)}`, `chat-${input.conversationId}`, `/chat?conversation=${encodeURIComponent(input.conversationId)}`),
+      en: notificationPayload("New message received", `${input.authorName}: ${englishPreview}`, `chat-${input.conversationId}`, conversationUrl),
+      th: notificationPayload("มีข้อความแชตใหม่", `${input.authorName}: ${thaiPreview}`, `chat-${input.conversationId}`, conversationUrl),
     },
   });
 }

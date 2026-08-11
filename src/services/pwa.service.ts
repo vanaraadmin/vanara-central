@@ -117,10 +117,10 @@ export async function checkPushNotificationStatus(): Promise<PushNotificationSta
 export async function enablePushNotifications(): Promise<PushNotificationStatus> {
   if (!pushAvailable()) return "unsupported";
   if (Notification.permission === "denied") return "blocked";
-  const key = await pushPublicKey();
-  if (!key.configured || !key.publicKey) return "unconfigured";
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission !== "granted") return "blocked";
+  const key = await pushPublicKey();
+  if (!key.configured || !key.publicKey) return "unconfigured";
   const ensuredRegistration = await ensureServiceWorkerRegistration();
   if (!ensuredRegistration) return "unsupported";
   const registration = await navigator.serviceWorker.ready.catch(() => ensuredRegistration);

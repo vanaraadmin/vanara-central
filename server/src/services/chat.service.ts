@@ -834,6 +834,7 @@ function dispatchChatNotification(scheduleSideEffect: ChatSideEffectScheduler, e
   authorId: string;
   authorName: string;
   body: string;
+  previewKind?: "text" | "sticker" | "attachment";
 }, label: string): void {
   scheduleSideEffect(notifyInternalChatMessage(env, input).catch((error: unknown) => {
     console.warn(JSON.stringify({
@@ -977,6 +978,7 @@ export async function createChatMessage(
     authorId: user.id,
     authorName: user.displayName,
     body: input.body,
+    previewKind: input.messageKind === "STICKER" ? "sticker" : "text",
   }, "Chat push notification failed");
 
   return message;
@@ -1090,6 +1092,7 @@ export async function createChatAttachmentMessage(
     authorId: user.id,
     authorName: user.displayName,
     body,
+    previewKind: "attachment",
   }, "Chat attachment push notification failed");
   return message;
 }

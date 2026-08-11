@@ -52,6 +52,11 @@ test("profile panel exposes user-action notification opt-in with Somkiat-approve
   assert.match(profilePanel, /translate\("enableNotifications"\)/);
   assert.match(pwaService, /Notification\.requestPermission\(\)/);
   assert.match(pwaService, /pushManager\.subscribe/);
+  const enableStart = pwaService.indexOf("export async function enablePushNotifications");
+  const permissionRequest = pwaService.indexOf("Notification.requestPermission()", enableStart);
+  const publicKeyRequest = pwaService.indexOf("const key = await pushPublicKey()", enableStart);
+  assert.ok(enableStart >= 0 && permissionRequest > enableStart && publicKeyRequest > permissionRequest);
+  assert.match(pwaService, /userVisibleOnly: true/);
   assert.match(pwaService, /document\.readyState === "complete"\)\s*register\(\)/);
   assert.match(pwaService, /addEventListener\("load", register, \{ once: true \}\)/);
   assert.match(pwaService, /refreshExistingPushSubscription/);

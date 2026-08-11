@@ -1,4 +1,4 @@
-const VANARA_SW_VERSION = "2026-08-08-pwa-v2";
+const VANARA_SW_VERSION = "2026-08-11-chat-push-v1";
 const VANARA_CACHE = `vanara-central-${VANARA_SW_VERSION}`;
 const SHELL_ASSETS = [
   "/",
@@ -33,22 +33,45 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch {
-    payload = { title: "Vanara Central", body: "New app alert" };
-  }
-  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "Vanara Central";
-  const options = {
-    body: typeof payload.body === "string" ? payload.body : "",
-    tag: typeof payload.tag === "string" ? payload.tag : "vanara-central",
-    data: { url: typeof payload.url === "string" ? payload.url : "/" },
-    icon: "/pwa/icon-192.png",
-    badge: "/pwa/icon-192.png"
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    const fallback = {
+      title: "New message received",
+      body: "Open Vanara Central to view the message",
+      tag: "vanara-central-message",
+      url: "/chat"
+    };
+    let payload = fallback;
+    try {
+      if (event.data) {
+        const parsed = event.data.json();
+        if (parsed && typeof parsed === "object") payload = { ...fallback, ...parsed };
+      }
+    } catch (error) {
+      console.warn("Vanara push payload fallback", error);
+    }
+
+    const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : fallback.title;
+    const body = typeof payload.body === "string" && payload.body.trim() ? payload.body.trim() : fallback.body;
+    const tag = typeof payload.tag === "string" && payload.tag.trim() ? payload.tag.trim() : fallback.tag;
+    const url = typeof payload.url === "string" && payload.url.trim() ? payload.url.trim() : fallback.url;
+
+    try {
+      await self.registration.showNotification(title, {
+        body,
+        tag,
+        data: { url },
+        icon: "/pwa/icon-192.png",
+        badge: "/pwa/icon-192.png"
+      });
+    } catch (error) {
+      console.error("Vanara push showNotification failed", error);
+      await self.registration.showNotification(fallback.title, {
+        body: fallback.body,
+        tag: `${fallback.tag}-fallback`,
+        data: { url: fallback.url }
+      });
+    }
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {
