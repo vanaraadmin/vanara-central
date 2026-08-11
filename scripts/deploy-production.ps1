@@ -80,8 +80,13 @@ $releaseCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
 
 Invoke-Step "Frozen release and canonical lineage guard" "node" @((Join-Path $PSScriptRoot "verify-frozen-release-scope.mjs"), "--release")
 
-Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath, "-AllowPendingMigrations")
-Invoke-Step "Server tests" "npm.cmd" @("--prefix", "server", "test")
+Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath, "-ProductionUrl", $ProductionUrl, "-AllowPendingMigrations")
+$serverTestArgs = @("--import", "tsx", "--loader", (Join-Path $PSScriptRoot "cloudflare-test-loader.mjs"), "--test") + @(
+  Get-ChildItem -LiteralPath (Join-Path $RepoRoot "server\tests") -Filter "*.test.ts" |
+    Sort-Object Name |
+    ForEach-Object { $_.FullName }
+)
+Invoke-Step "Server tests" "node" $serverTestArgs
 Invoke-Step "Frontend/source tests" "node" @("--import", "tsx", "--test", "tests/housekeeping-v2-source.test.ts", "tests/housekeeping-v2-room-source.test.ts") (Join-Path $RepoRoot "server")
 Invoke-Step "Typecheck" "npm.cmd" @("run", "typecheck")
 Invoke-Step "Lint" "npm.cmd" @("run", "lint")

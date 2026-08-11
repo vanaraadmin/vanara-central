@@ -4,6 +4,7 @@ import test from "node:test";
 
 const packageJson = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
 const deployScript = readFileSync(new URL("../../scripts/deploy-production.ps1", import.meta.url), "utf8");
+const preflightScript = readFileSync(new URL("../../scripts/deploy-preflight.ps1", import.meta.url), "utf8");
 const frozenGuard = readFileSync(new URL("../../scripts/verify-frozen-release-scope.mjs", import.meta.url), "utf8");
 const provenance = readFileSync(new URL("../../scripts/release-provenance.mjs", import.meta.url), "utf8");
 
@@ -17,6 +18,10 @@ test("build and production deploy are blocked by frozen hashes and canonical lin
   assert.match(frozenGuard, /--untracked-files=all/);
   assert.match(deployScript, /Frozen release and canonical lineage guard/);
   assert.match(deployScript, /"--release"/);
+  assert.match(deployScript, /cloudflare-test-loader\.mjs/);
+  assert.match(deployScript, /"-ProductionUrl", \$ProductionUrl/);
+  assert.match(preflightScript, /https:\/\/central\.vanararetreat\.com/);
+  assert.doesNotMatch(preflightScript, /workers\.dev/);
 });
 
 test("production deploy records commit, Worker version, build hashes, and verifies online entry assets", () => {

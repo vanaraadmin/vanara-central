@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ConfigFullPath = Join-Path $RepoRoot $ConfigPath
-$DefaultProductionUrl = "https://vanara-central.administrator-5b7.workers.dev"
+$DefaultProductionUrl = "https://central.vanararetreat.com"
 $RequiredVars = @(
   "BEDS24_BASE_URL",
   "PASSPORT_RETENTION_DAYS",
