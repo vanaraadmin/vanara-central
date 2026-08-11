@@ -1,5 +1,6 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { chatStickerById } from "./chat-stickers.service.js";
+import { broadcastChatMessageCreated, type ChatRealtimeBindings } from "./chat-realtime.service.js";
 import { translateFreeText, type FreeTextTranslationBindings } from "./free-text-translation.service.js";
 import { notifyInternalChatMessage, type NotificationBindings } from "./notifications.service.js";
 
@@ -7,7 +8,7 @@ export type ChatContextType = "general" | "room" | "maintenance" | "housekeeping
 export type ChatConversationKind = "GROUP" | "PRIVATE";
 export type ChatLanguage = "en" | "th";
 
-export interface ChatBindings extends FreeTextTranslationBindings, NotificationBindings {
+export interface ChatBindings extends FreeTextTranslationBindings, NotificationBindings, ChatRealtimeBindings {
   DB: D1Database;
   R2_STORAGE: R2Bucket;
 }
@@ -186,6 +187,8 @@ export interface CreateChatAttachmentInput {
   file: File;
   replyToMessageId: number | null;
 }
+
+export type ChatSideEffectScheduler = (promise: Promise<unknown>) => void;
 
 export interface ChatAttachmentDownload {
   object: R2ObjectBody;
@@ -825,21 +828,32 @@ async function persistMentions(env: ChatBindings, conversationId: string, messag
   }
 }
 
-function dispatchChatNotification(env: ChatBindings, input: {
+function dispatchChatNotification(scheduleSideEffect: ChatSideEffectScheduler, env: ChatBindings, input: {
   conversationId: string;
   messageId: number;
   authorId: string;
   authorName: string;
   body: string;
 }, label: string): void {
-  void notifyInternalChatMessage(env, input).catch((error: unknown) => {
+  scheduleSideEffect(notifyInternalChatMessage(env, input).catch((error: unknown) => {
     console.warn(JSON.stringify({
       message: label,
       error: error instanceof Error ? error.message : "unknown",
       conversationId: input.conversationId,
       messageId: input.messageId,
     }));
-  });
+  }));
+}
+
+function dispatchChatRealtimeBroadcast(scheduleSideEffect: ChatSideEffectScheduler, env: ChatBindings, conversationId: string, message: ChatMessage, label: string): void {
+  scheduleSideEffect(broadcastChatMessageCreated(env, conversationId, message).catch((error: unknown) => {
+    console.warn(JSON.stringify({
+      message: label,
+      error: error instanceof Error ? error.message : "unknown",
+      conversationId,
+      messageId: message.id,
+    }));
+  }));
 }
 
 export async function createChatMessage(
@@ -847,6 +861,7 @@ export async function createChatMessage(
   conversationId: string,
   user: CurrentChatUser,
   input: CreateChatMessageInput,
+  scheduleSideEffect: ChatSideEffectScheduler,
 ): Promise<ChatMessage> {
   await requireParticipant(env, conversationId, user);
   if (input.replyToMessageId) {
@@ -921,7 +936,9 @@ export async function createChatMessage(
     throw new Error("Message was created but could not be loaded.");
   }
 
-  dispatchChatNotification(env, {
+  const message = (await hydrateMessages(env, [row], user))[0]!;
+  dispatchChatRealtimeBroadcast(scheduleSideEffect, env, conversationId, message, "Chat realtime broadcast failed");
+  dispatchChatNotification(scheduleSideEffect, env, {
     conversationId,
     messageId,
     authorId: user.id,
@@ -929,7 +946,7 @@ export async function createChatMessage(
     body: input.body,
   }, "Chat push notification failed");
 
-  return (await hydrateMessages(env, [row], user))[0]!;
+  return message;
 }
 
 export async function createChatAttachmentMessage(
@@ -937,6 +954,7 @@ export async function createChatAttachmentMessage(
   conversationId: string,
   user: CurrentChatUser,
   input: CreateChatAttachmentInput,
+  scheduleSideEffect: ChatSideEffectScheduler,
 ): Promise<ChatMessage> {
   await requireParticipant(env, conversationId, user);
   if (input.replyToMessageId) {
@@ -1029,14 +1047,16 @@ export async function createChatAttachmentMessage(
   `).bind(messageId).first<ChatMessageRow>();
 
   if (!row) throw new Error("Message was created but could not be loaded.");
-  dispatchChatNotification(env, {
+  const message = (await hydrateMessages(env, [row], user))[0]!;
+  dispatchChatRealtimeBroadcast(scheduleSideEffect, env, conversationId, message, "Chat attachment realtime broadcast failed");
+  dispatchChatNotification(scheduleSideEffect, env, {
     conversationId,
     messageId,
     authorId: user.id,
     authorName: user.displayName,
     body,
   }, "Chat attachment push notification failed");
-  return (await hydrateMessages(env, [row], user))[0]!;
+  return message;
 }
 
 export async function getChatAttachmentDownload(

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  createChatMessage,
+  listChatMessages,
   mentionedUsernames,
   normalizeAnnouncementInput,
   normalizeChatAttachmentInput,
@@ -11,6 +13,154 @@ import {
   normalizeReactionInput,
 } from "../src/services/chat.service.ts";
 import { CHAT_STICKERS } from "../src/services/chat-stickers.service.ts";
+
+interface RuntimeChatRow {
+  message_id: number;
+  conversation_id: string;
+  author_id: string;
+  author_display_name: string;
+  author_role: string;
+  body: string;
+  body_language: string;
+  translated_body: string | null;
+  translated_language: string | null;
+  reply_to_message_id: number | null;
+  message_kind: string;
+  sticker_id: string | null;
+  attachment_object_key: string | null;
+  attachment_file_name: string | null;
+  attachment_content_type: string | null;
+  attachment_byte_size: number | null;
+  attachment_expires_at: string | null;
+  attachment_unavailable_at: string | null;
+  author_profile_photo_url: string | null;
+  created_at: string;
+}
+
+class RuntimeChatStmt {
+  private values: unknown[] = [];
+
+  constructor(private readonly db: RuntimeChatDB, private readonly sql: string) {}
+
+  bind(...values: unknown[]) {
+    this.values = values;
+    return this;
+  }
+
+  async run() {
+    const sql = this.sql;
+    if (sql.includes("INSERT INTO chat_messages")) {
+      const messageId = this.db.nextMessageId++;
+      this.db.messages.push({
+        message_id: messageId,
+        conversation_id: this.values[0] as string,
+        author_id: this.values[1] as string,
+        author_display_name: this.values[2] as string,
+        author_role: this.values[3] as string,
+        body: this.values[4] as string,
+        body_language: this.values[5] as string,
+        translated_body: this.values[6] as string | null,
+        translated_language: this.values[7] as string | null,
+        reply_to_message_id: this.values[8] as number | null,
+        message_kind: this.values[9] as string,
+        sticker_id: this.values[10] as string | null,
+        attachment_object_key: null,
+        attachment_file_name: null,
+        attachment_content_type: null,
+        attachment_byte_size: null,
+        attachment_expires_at: null,
+        attachment_unavailable_at: null,
+        author_profile_photo_url: null,
+        created_at: this.values[11] as string,
+      });
+      return { success: true, meta: { last_row_id: messageId, changes: 1 } };
+    }
+    if (sql.includes("UPDATE chat_conversations")) {
+      this.db.updatedAt = this.values[0] as string;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes("UPDATE chat_conversation_participants")) {
+      const messageId = this.values[0] as number;
+      const userId = this.values[3] as string;
+      this.db.lastRead.set(userId, messageId);
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO chat_message_mentions")) {
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO notification_events")) {
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT INTO notification_deliveries")) {
+      return { success: true, meta: { changes: 1 } };
+    }
+    return { success: true, meta: { changes: 0 } };
+  }
+
+  async first<T>() {
+    const sql = this.sql;
+    if (sql.includes("FROM chat_conversation_participants") && sql.includes("SELECT 1")) {
+      const conversationId = this.values[0] as string;
+      const userId = this.values[1] as string;
+      return (this.db.participants.has(`${conversationId}:${userId}`) ? { 1: 1 } : null) as T | null;
+    }
+    if (sql.includes("WHERE m.message_id = ?")) {
+      const messageId = this.values[0] as number;
+      return (this.db.messages.find((message) => message.message_id === messageId) ?? null) as T | null;
+    }
+    if (sql.includes("SELECT notification_event_id")) {
+      return null as T | null;
+    }
+    return null as T | null;
+  }
+
+  async all<T>() {
+    const sql = this.sql;
+    if (sql.includes("FROM chat_messages m") && sql.includes("WHERE m.conversation_id = ?")) {
+      const conversationId = this.values[0] as string;
+      const rows = this.db.messages
+        .filter((message) => message.conversation_id === conversationId)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.message_id - b.message_id);
+      return { results: rows as T[] };
+    }
+    if (sql.includes("FROM chat_message_reactions")) {
+      return { results: [] as T[] };
+    }
+    if (sql.includes("SELECT user_id, username") && sql.includes("FROM chat_conversation_participants")) {
+      const conversationId = this.values[0] as string;
+      return { results: this.db.users
+        .filter((user) => this.db.participants.has(`${conversationId}:${user.user_id}`))
+        .map((user) => ({ user_id: user.user_id, username: user.username })) as T[] };
+    }
+    if (sql.includes("SELECT user_id") && sql.includes("FROM chat_conversation_participants") && sql.includes("user_id <> ?")) {
+      const conversationId = this.values[0] as string;
+      const authorId = this.values[1] as string;
+      return { results: this.db.users
+        .filter((user) => user.user_id !== authorId && this.db.participants.has(`${conversationId}:${user.user_id}`))
+        .map((user) => ({ user_id: user.user_id })) as T[] };
+    }
+    if (sql.includes("FROM push_subscriptions")) {
+      return { results: [] as T[] };
+    }
+    return { results: [] as T[] };
+  }
+}
+
+class RuntimeChatDB {
+  nextMessageId = 1;
+  updatedAt = "2026-08-11T00:00:00.000Z";
+  messages: RuntimeChatRow[] = [];
+  lastRead = new Map<string, number>();
+  readonly users = [
+    { user_id: "user-a", username: "stefano" },
+    { user_id: "user-b", username: "ice" },
+  ];
+  readonly participants = new Set(["private-runtime:user-a", "private-runtime:user-b"]);
+
+  prepare(sql: string) {
+    return new RuntimeChatStmt(this, sql);
+  }
+}
 
 test("chat message input requires non-empty body", () => {
   assert.throws(() => normalizeMessageInput({ body: "   " }), /Message body is required/);
@@ -90,6 +240,56 @@ test("chat group input requires a name and at least two selected team members", 
   assert.throws(() => normalizeGroupChatInput({ title: "Team", participantIds: ["u2"] }), /at least two/);
 });
 
+test("internal chat runtime simulation persists ordered two-user history through service path", async () => {
+  const db = new RuntimeChatDB();
+  const env = {
+    DB: db as unknown as D1Database,
+  } as never;
+  const userA = {
+    id: "user-a",
+    username: "stefano",
+    displayName: "Stefano",
+    role: "Owner",
+    preferredLanguage: "en",
+    views: ["owner", "staff"],
+  } as never;
+  const userB = {
+    id: "user-b",
+    username: "ice",
+    displayName: "Ice",
+    role: "Operations",
+    preferredLanguage: "en",
+    views: ["staff"],
+  } as never;
+  const scheduled: Promise<unknown>[] = [];
+  const scheduleSideEffect = (promise: Promise<unknown>) => scheduled.push(promise);
+
+  const first = await createChatMessage(env, "private-runtime", userA, normalizeMessageInput({ body: "Hello Ice" }), scheduleSideEffect);
+  assert.equal(first.id, 1);
+  assert.equal(first.author.id, "user-a");
+  assert.equal(first.body, "Hello Ice");
+  assert.equal(db.messages.length, 1);
+  assert.equal(db.lastRead.get("user-a"), 1);
+
+  const historyForB = await listChatMessages(env, "private-runtime", userB);
+  assert.deepEqual(historyForB.map((message) => [message.id, message.author.id, message.body]), [
+    [1, "user-a", "Hello Ice"],
+  ]);
+
+  const second = await createChatMessage(env, "private-runtime", userB, normalizeMessageInput({ body: "Hi Stefano" }), scheduleSideEffect);
+  assert.equal(second.id, 2);
+  assert.equal(second.author.id, "user-b");
+  assert.equal(db.lastRead.get("user-b"), 2);
+
+  const historyForA = await listChatMessages(env, "private-runtime", userA);
+  assert.deepEqual(historyForA.map((message) => [message.id, message.author.id, message.body]), [
+    [1, "user-a", "Hello Ice"],
+    [2, "user-b", "Hi Stefano"],
+  ]);
+  assert.equal(scheduled.length, 4);
+  await Promise.all(scheduled);
+});
+
 test("internal Chat stays separated from Guest Messages and remains the global bubble entrypoint", () => {
   const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
   const floatingTeamChatCss = readFileSync(new URL("../../src/styles/FloatingTeamChat.css", import.meta.url), "utf8");
@@ -116,6 +316,84 @@ test("internal Chat stays separated from Guest Messages and remains the global b
   assert.match(floatingTeamChatCss, /:root\.vc-floating-ui-suppressed \.staff-chat/);
   assert.doesNotMatch(floatingTeamChat + chatPage + teamChatSurface + chatService, /messages\.service|MessagesPage|\/api\/messages|\/sync\/messages|guest-messages/i);
   assert.match(messagesPage, /loadGuestMessageInbox/);
+});
+
+test("internal chat realtime backend is conversation-scoped and preserves D1 as source of truth", () => {
+  const wranglerConfig = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+  const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const chatService = readFileSync(new URL("../src/services/chat.service.ts", import.meta.url), "utf8");
+  const realtimeService = readFileSync(new URL("../src/services/chat-realtime.service.ts", import.meta.url), "utf8");
+  const realtimeObject = readFileSync(new URL("../src/services/chat-conversation-room.do.ts", import.meta.url), "utf8");
+  const realtimeDiagnostic = readFileSync(new URL("../../scripts/chat-realtime-validation.ts", import.meta.url), "utf8");
+
+  assert.match(wranglerConfig, /"durable_objects"\s*:\s*\{/);
+  assert.match(wranglerConfig, /"name":\s*"CHAT_CONVERSATION_ROOM"/);
+  assert.match(wranglerConfig, /"class_name":\s*"ChatConversationRoom"/);
+  assert.match(wranglerConfig, /"new_sqlite_classes":\s*\[\s*"ChatConversationRoom"\s*\]/);
+
+  assert.match(server, /export \{ ChatConversationRoom \} from "\.\/services\/chat-conversation-room\.do\.js"/);
+  assert.match(server, /app\.get\("\/api\/chat\/conversations\/:id\/live"/);
+  assert.match(server, /c\.req\.header\("upgrade"\)\?\.toLowerCase\(\) !== "websocket"/);
+  assert.match(server, /const user = await chatMember\(c\)/);
+  assert.match(server, /const conversation = await getChatConversation\(c\.env, conversationId, user\)/);
+  assert.match(server, /return connectChatRoomSocket\(c\.env, conversationId, user\)/);
+
+  assert.match(chatService, /broadcastChatMessageCreated/);
+  assert.match(server, /function scheduleChatSideEffect\(c: AppContext\)/);
+  assert.match(server, /c\.executionCtx\.waitUntil\(promise\.then\(\(\) => undefined\)\)/);
+  assert.match(server, /createChatMessage\(c\.env, conversationId, user, input, scheduleChatSideEffect\(c\)\)/);
+  assert.match(server, /createChatAttachmentMessage\(c\.env, conversationId, user, input, scheduleChatSideEffect\(c\)\)/);
+  assert.match(chatService, /export type ChatSideEffectScheduler = \(promise: Promise<unknown>\) => void/);
+  assert.match(chatService, /dispatchChatRealtimeBroadcast\(scheduleSideEffect, env, conversationId, message, "Chat realtime broadcast failed"\)/);
+  assert.match(chatService, /dispatchChatRealtimeBroadcast\(scheduleSideEffect, env, conversationId, message, "Chat attachment realtime broadcast failed"\)/);
+  assert.match(chatService, /dispatchChatNotification\(scheduleSideEffect, env, \{/);
+  assert.match(chatService, /scheduleSideEffect\(broadcastChatMessageCreated\(env, conversationId, message\)\.catch/);
+  assert.match(chatService, /scheduleSideEffect\(notifyInternalChatMessage\(env, input\)\.catch/);
+  assert.doesNotMatch(chatService, /void notifyInternalChatMessage/);
+  assert.doesNotMatch(chatService, /void broadcastChatMessageCreated/);
+  assert.doesNotMatch(chatService, /await notifyInternalChatMessage/);
+
+  assert.match(realtimeService, /CHAT_CONVERSATION_ROOM\?\.getByName\(conversationId\)/);
+  assert.match(realtimeService, /stub\.fetch\(realtimeBroadcastRequest\(conversationId, message\)\)/);
+  assert.match(realtimeObject, /export class ChatConversationRoom extends DurableObject/);
+  assert.match(realtimeObject, /this\.ctx\.acceptWebSocket\(server, \[`conversation:\$\{conversationId\}`/);
+  assert.match(realtimeObject, /server\.serializeAttachment/);
+  assert.match(realtimeObject, /socket\.deserializeAttachment/);
+  assert.match(realtimeObject, /this\.ctx\.getWebSockets\(`conversation:\$\{event\.conversationId\}`\)/);
+  assert.match(realtimeObject, /type: "message\.created"/);
+  assert.match(realtimeObject, /type: "conversation\.updated"/);
+  assert.match(realtimeDiagnostic, /new WebSocket\(websocketUrl\(conversationId\)\)/);
+  assert.match(realtimeDiagnostic, /waitForEvent\(clientB\.events, "message\.created"\)/);
+  assert.match(realtimeDiagnostic, /waitForEvent\(clientB\.events, "conversation\.updated"\)/);
+  assert.match(realtimeDiagnostic, /\/api\/chat\/conversations\/\$\{encodeURIComponent\(conversationId\)\}\/messages/);
+});
+
+test("internal chat frontend uses realtime for the selected thread with polling fallback only", () => {
+  const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
+  const chatClient = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
+  const realtimeHook = readFileSync(new URL("../../src/hooks/useChatRealtime.ts", import.meta.url), "utf8");
+
+  assert.match(chatClient, /export function chatRealtimeUrl\(id: string\): string/);
+  assert.match(chatClient, /window\.location\.protocol === "https:" \? "wss:" : "ws:"/);
+  assert.match(chatClient, /\/api\/chat\/conversations\/\$\{encodeURIComponent\(id\)\}\/live/);
+
+  assert.match(teamChatSurface, /import \{ useChatRealtime \} from "\.\.\/\.\.\/hooks\/useChatRealtime"/);
+  assert.match(teamChatSurface, /function mergeChatMessage\(messages: ChatMessage\[\] \| undefined, message: ChatMessage\): ChatMessage\[\]/);
+  assert.match(teamChatSurface, /current\.some\(\(item\) => item\.id === message\.id\)/);
+  assert.match(teamChatSurface, /useChatRealtime\(\{/);
+  assert.match(teamChatSurface, /queryClient\.setQueryData<ChatMessage\[\]>\(\["chat", "messages", message\.conversationId\]/);
+  assert.match(teamChatSurface, /refetchInterval: selectedConversationId && activeInList && !chatRealtime\.connected \? ACTIVE_CHAT_REFRESH_MS : false/);
+  assert.doesNotMatch(teamChatSurface, /chatRealtime\.status/);
+
+  assert.match(realtimeHook, /new WebSocket\(chatRealtimeUrl\(conversationId\)\)/);
+  assert.match(realtimeHook, /RECONNECT_DELAYS_MS = \[500, 1_500, 3_000, 5_000\]/);
+  assert.match(realtimeHook, /window\.addEventListener\("focus", resumeRealtime\)/);
+  assert.match(realtimeHook, /window\.addEventListener\("pageshow", resumeRealtime\)/);
+  assert.match(realtimeHook, /document\.addEventListener\("visibilitychange", resumeRealtime\)/);
+  assert.match(realtimeHook, /payload\.type === "message\.created"/);
+  assert.match(realtimeHook, /callbacksRef\.current\.onMessageCreated\(payload\.message\)/);
+  assert.match(realtimeHook, /payload\.type === "conversation\.updated"/);
+  assert.doesNotMatch(realtimeHook + teamChatSurface + chatClient, /guest-messages|\/api\/messages|Waraporn/i);
 });
 
 test("floating chat bubble opens direct app overlay with drag-down close", () => {

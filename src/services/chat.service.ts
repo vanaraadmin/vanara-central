@@ -74,6 +74,11 @@ export async function loadChatMessages(id: string, signal?: AbortSignal): Promis
   return response.data;
 }
 
+export function chatRealtimeUrl(id: string): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api/chat/conversations/${encodeURIComponent(id)}/live`;
+}
+
 export async function createChatMessage(
   id: string,
   payload: CreateChatMessagePayload,

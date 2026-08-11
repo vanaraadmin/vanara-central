@@ -58,7 +58,7 @@ test("internal chat notifies participants except sender and never uses Guest Mes
 test("internal chat refreshes only the active open chat without blocking on push", () => {
   assert.match(teamChatSurface, /const ACTIVE_CHAT_REFRESH_MS = 5_000/);
   assert.match(teamChatSurface, /refetchInterval: ACTIVE_CHAT_REFRESH_MS/);
-  assert.match(teamChatSurface, /refetchInterval: selectedConversationId && activeInList \? ACTIVE_CHAT_REFRESH_MS : false/);
+  assert.match(teamChatSurface, /refetchInterval: selectedConversationId && activeInList && !chatRealtime\.connected \? ACTIVE_CHAT_REFRESH_MS : false/);
   assert.match(teamChatSurface, /refetchIntervalInBackground: false/);
   assert.match(teamChatSurface, /refetchOnMount: "always"/);
   assert.match(teamChatSurface, /refetchOnWindowFocus: true/);
@@ -72,7 +72,9 @@ test("internal chat refreshes only the active open chat without blocking on push
   assert.match(teamChatSurface, /function showSentMessage\(message: ChatMessage\)/);
   assert.match(teamChatSurface, /queryClient\.setQueryData<ChatMessage\[\]>\(\["chat", "messages", conversationId\]/);
   assert.match(chatService, /function dispatchChatNotification/);
-  assert.match(chatService, /void notifyInternalChatMessage\(env, input\)\.catch/);
+  assert.match(chatService, /export type ChatSideEffectScheduler = \(promise: Promise<unknown>\) => void/);
+  assert.match(chatService, /scheduleSideEffect\(notifyInternalChatMessage\(env, input\)\.catch/);
+  assert.doesNotMatch(chatService, /void notifyInternalChatMessage/);
   assert.doesNotMatch(chatService, /await notifyInternalChatMessage/);
 });
 

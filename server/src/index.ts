@@ -22,6 +22,7 @@ import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepi
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
+import { connectChatRoomSocket } from "./services/chat-realtime.service.js";
 import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTranslationBindings } from "./services/free-text-translation.service.js";
 import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenancePhotoDownload, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoFormData, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, uploadMaintenancePhoto, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
@@ -76,6 +77,8 @@ import {
   type CurrentUser,
   type ModuleKey,
 } from "./services/current-user.service.js";
+
+export { ChatConversationRoom } from "./services/chat-conversation-room.do.js";
 
 export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, NotificationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, LoginRateLimitBindings {
   BEDS24_BASE_URL: string;
@@ -295,6 +298,10 @@ async function chatMember(c: AppContext): Promise<CurrentUser> {
     throw new ForbiddenError("Chat access is required.");
   }
   return user;
+}
+
+function scheduleChatSideEffect(c: AppContext) {
+  return (promise: Promise<unknown>) => c.executionCtx.waitUntil(promise.then(() => undefined));
 }
 
 function canCreateMaintenanceIssue(user: CurrentUser): boolean {
@@ -2049,6 +2056,23 @@ app.get("/api/chat/conversations/:id", async (c) => {
   }
 });
 
+app.get("/api/chat/conversations/:id/live", async (c) => {
+  try {
+    if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
+      return c.text("Expected WebSocket upgrade", 426);
+    }
+    const user = await chatMember(c);
+    const conversationId = conversationIdParam(c.req.param("id"));
+    const conversation = await getChatConversation(c.env, conversationId, user);
+    if (!conversation) {
+      return c.json({ success: false, error: "Conversation not found" }, 404);
+    }
+    return connectChatRoomSocket(c.env, conversationId, user);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
 app.get("/api/chat/conversations/:id/messages", async (c) => {
   try {
     const user = await chatMember(c);
@@ -2072,7 +2096,7 @@ app.post("/api/chat/conversations/:id/messages", async (c) => {
     const payload = await c.req.json().catch(() => null);
     const input = normalizeMessageInput(payload);
     const user = await chatMember(c);
-    const message = await createChatMessage(c.env, conversationId, user, input);
+    const message = await createChatMessage(c.env, conversationId, user, input, scheduleChatSideEffect(c));
     return c.json({ success: true, data: message }, 201);
   } catch (error) {
     const message = errorMessage(error);
@@ -2087,7 +2111,7 @@ app.post("/api/chat/conversations/:id/attachments", async (c) => {
     const user = await chatMember(c);
     const formData = await c.req.formData();
     const input = normalizeChatAttachmentInput(formData);
-    const message = await createChatAttachmentMessage(c.env, conversationId, user, input);
+    const message = await createChatAttachmentMessage(c.env, conversationId, user, input, scheduleChatSideEffect(c));
     return c.json({ success: true, data: message }, 201);
   } catch (error) {
     const message = errorMessage(error);

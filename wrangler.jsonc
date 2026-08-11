@@ -42,6 +42,22 @@
       "bucket_name": "vanara-waraporn-kb-archive"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_CONVERSATION_ROOM",
+        "class_name": "ChatConversationRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1_chat_conversation_room",
+      "new_sqlite_classes": [
+        "ChatConversationRoom"
+      ]
+    }
+  ],
   "triggers": {
     "crons": [
       "2 * * * *",

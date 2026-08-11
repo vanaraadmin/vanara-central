@@ -20,6 +20,7 @@ import {
   uploadChatAttachment,
 } from "../../services/chat.service";
 import vanaraLogo from "../../assets/img/logo.png";
+import { useChatRealtime } from "../../hooks/useChatRealtime";
 import { useLanguage } from "../../providers/language.context";
 import type { ChatConversation, ChatLanguage, ChatMessage, ChatMessageReply, ChatReactionEmoji, ChatUser } from "../../types/chat";
 import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStickers";
@@ -62,6 +63,14 @@ function formatConversationTime(value: string | null, language: "en" | "th" = "e
     day: "2-digit",
     month: "short",
   }).format(date);
+}
+
+function mergeChatMessage(messages: ChatMessage[] | undefined, message: ChatMessage): ChatMessage[] {
+  const current = messages ?? [];
+  if (current.some((item) => item.id === message.id)) {
+    return current.map((item) => item.id === message.id ? message : item);
+  }
+  return [...current, message].sort((a, b) => a.id - b.id);
 }
 
 function avatarLabel(value: string): string {
@@ -954,12 +963,27 @@ export default function TeamChatSurface({
   const selectedConversationId = activeConversationId ?? (localActiveConversationId || fallbackConversationId);
   const activeInList = conversations.some((conversation) => conversation.id === selectedConversationId);
   const currentMobileView = mobileView ?? localMobileView;
+  const chatRealtime = useChatRealtime({
+    conversationId: selectedConversationId,
+    enabled: Boolean(selectedConversationId && activeInList),
+    onMessageCreated: (message) => {
+      queryClient.setQueryData<ChatMessage[]>(["chat", "messages", message.conversationId], (current) => mergeChatMessage(current, message));
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversation", message.conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
+      void queryClient.invalidateQueries({ queryKey: ["chat", "summary"] });
+    },
+    onConversationUpdated: (conversationId) => {
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversation", conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
+      void queryClient.invalidateQueries({ queryKey: ["chat", "summary"] });
+    },
+  });
 
   const conversationQuery = useQuery({
     queryKey: ["chat", "conversation", selectedConversationId],
     queryFn: ({ signal }) => loadChatConversation(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
-    refetchInterval: selectedConversationId && activeInList ? ACTIVE_CHAT_REFRESH_MS : false,
+    refetchInterval: selectedConversationId && activeInList && !chatRealtime.connected ? ACTIVE_CHAT_REFRESH_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
@@ -969,7 +993,7 @@ export default function TeamChatSurface({
     queryKey: ["chat", "messages", selectedConversationId],
     queryFn: ({ signal }) => loadChatMessages(selectedConversationId, signal),
     enabled: Boolean(selectedConversationId && activeInList),
-    refetchInterval: selectedConversationId && activeInList ? ACTIVE_CHAT_REFRESH_MS : false,
+    refetchInterval: selectedConversationId && activeInList && !chatRealtime.connected ? ACTIVE_CHAT_REFRESH_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
