@@ -79,6 +79,39 @@ export function chatRealtimeUrl(id: string): string {
   return `${protocol}//${window.location.host}/api/chat/conversations/${encodeURIComponent(id)}/live`;
 }
 
+export function chatInboxRealtimeUrl(): string {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api/chat/live`;
+}
+
+export function acceptChatInboxInvalidation(
+  seenEventIds: Set<string>,
+  eventId: string,
+  maxSeenEventIds = 128,
+): boolean {
+  if (seenEventIds.has(eventId)) return false;
+  seenEventIds.add(eventId);
+  if (seenEventIds.size > maxSeenEventIds) {
+    const oldest = seenEventIds.values().next().value as string | undefined;
+    if (oldest) seenEventIds.delete(oldest);
+  }
+  return true;
+}
+
+export function shouldMarkChatConversationRead(input: {
+  selectedConversationId: string;
+  activeInList: boolean;
+  currentMobileView: "list" | "thread";
+  compactViewport: boolean;
+  mutationPending: boolean;
+  unreadCount: number;
+  mentionCount: number;
+}): boolean {
+  if (!input.selectedConversationId || !input.activeInList || input.mutationPending) return false;
+  if (input.compactViewport && input.currentMobileView !== "thread") return false;
+  return input.unreadCount + input.mentionCount > 0;
+}
+
 export async function createChatMessage(
   id: string,
   payload: CreateChatMessagePayload,

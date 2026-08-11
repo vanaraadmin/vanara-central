@@ -16,6 +16,7 @@ import {
   openGroupChat,
   openPrivateChat,
   setChatAnnouncement,
+  shouldMarkChatConversationRead,
   toggleChatMessageReaction,
   uploadChatAttachment,
 } from "../../services/chat.service";
@@ -1039,11 +1040,18 @@ export default function TeamChatSurface({
   }
 
   useEffect(() => {
-    if (!selectedConversationId || !activeInList || markReadMutation.isPending) return;
     const active = conversations.find((conversation) => conversation.id === selectedConversationId);
-    if (!active || active.unreadCount + active.mentionCount === 0) return;
+    if (!active || !shouldMarkChatConversationRead({
+      selectedConversationId,
+      activeInList,
+      currentMobileView,
+      compactViewport: window.matchMedia("(max-width: 859px)").matches,
+      mutationPending: markReadMutation.isPending,
+      unreadCount: active.unreadCount,
+      mentionCount: active.mentionCount,
+    })) return;
     markReadMutation.mutate(selectedConversationId);
-  }, [activeInList, conversations, markReadMutation, selectedConversationId]);
+  }, [activeInList, conversations, currentMobileView, markReadMutation, selectedConversationId]);
 
   const retry = () => {
     void conversationsQuery.refetch();

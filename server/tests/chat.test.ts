@@ -13,6 +13,7 @@ import {
   normalizeReactionInput,
 } from "../src/services/chat.service.ts";
 import { CHAT_STICKERS } from "../src/services/chat-stickers.service.ts";
+import { acceptChatInboxInvalidation, shouldMarkChatConversationRead } from "../../src/services/chat.service.ts";
 
 interface RuntimeChatRow {
   message_id: number;
@@ -162,6 +163,27 @@ class RuntimeChatDB {
   }
 }
 
+interface RuntimeInboxBroadcast {
+  userId: string;
+  conversationId: string;
+  eventId: string;
+}
+
+class RuntimeInboxNamespace {
+  readonly broadcasts: RuntimeInboxBroadcast[] = [];
+
+  getByName(userId: string) {
+    return {
+      fetch: async (request: Request) => {
+        const payload = await request.json() as { userId: string; conversationId: string; eventId: string };
+        assert.equal(payload.userId, userId);
+        this.broadcasts.push(payload);
+        return Response.json({ success: true });
+      },
+    };
+  }
+}
+
 test("chat message input requires non-empty body", () => {
   assert.throws(() => normalizeMessageInput({ body: "   " }), /Message body is required/);
 });
@@ -242,8 +264,10 @@ test("chat group input requires a name and at least two selected team members", 
 
 test("internal chat runtime simulation persists ordered two-user history through service path", async () => {
   const db = new RuntimeChatDB();
+  const inbox = new RuntimeInboxNamespace();
   const env = {
     DB: db as unknown as D1Database,
+    CHAT_USER_INBOX_ROOM: inbox as unknown as DurableObjectNamespace,
   } as never;
   const userA = {
     id: "user-a",
@@ -286,8 +310,33 @@ test("internal chat runtime simulation persists ordered two-user history through
     [1, "user-a", "Hello Ice"],
     [2, "user-b", "Hi Stefano"],
   ]);
-  assert.equal(scheduled.length, 4);
+  assert.equal(scheduled.length, 6);
   await Promise.all(scheduled);
+  assert.deepEqual(inbox.broadcasts, [
+    { userId: "user-b", conversationId: "private-runtime", eventId: "message:1" },
+    { userId: "user-a", conversationId: "private-runtime", eventId: "message:2" },
+  ]);
+});
+
+test("chat unread state deduplicates inbox events and marks read only for the visible thread", () => {
+  const seen = new Set<string>();
+  assert.equal(acceptChatInboxInvalidation(seen, "message:17", 2), true);
+  assert.equal(acceptChatInboxInvalidation(seen, "message:17", 2), false);
+  assert.equal(acceptChatInboxInvalidation(seen, "message:18", 2), true);
+  assert.equal(acceptChatInboxInvalidation(seen, "message:19", 2), true);
+  assert.deepEqual([...seen], ["message:18", "message:19"]);
+
+  const unread = {
+    selectedConversationId: "private-runtime",
+    activeInList: true,
+    mutationPending: false,
+    unreadCount: 1,
+    mentionCount: 0,
+  };
+  assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: true, currentMobileView: "list" }), false);
+  assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: true, currentMobileView: "thread" }), true);
+  assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: false, currentMobileView: "list" }), true);
+  assert.equal(shouldMarkChatConversationRead({ ...unread, compactViewport: true, currentMobileView: "thread", unreadCount: 0 }), false);
 });
 
 test("internal Chat stays separated from Guest Messages and remains the global bubble entrypoint", () => {
@@ -324,15 +373,22 @@ test("internal chat realtime backend is conversation-scoped and preserves D1 as 
   const chatService = readFileSync(new URL("../src/services/chat.service.ts", import.meta.url), "utf8");
   const realtimeService = readFileSync(new URL("../src/services/chat-realtime.service.ts", import.meta.url), "utf8");
   const realtimeObject = readFileSync(new URL("../src/services/chat-conversation-room.do.ts", import.meta.url), "utf8");
+  const inboxRealtimeObject = readFileSync(new URL("../src/services/chat-user-inbox-room.do.ts", import.meta.url), "utf8");
   const realtimeDiagnostic = readFileSync(new URL("../../scripts/chat-realtime-validation.ts", import.meta.url), "utf8");
 
   assert.match(wranglerConfig, /"durable_objects"\s*:\s*\{/);
   assert.match(wranglerConfig, /"name":\s*"CHAT_CONVERSATION_ROOM"/);
   assert.match(wranglerConfig, /"class_name":\s*"ChatConversationRoom"/);
   assert.match(wranglerConfig, /"new_sqlite_classes":\s*\[\s*"ChatConversationRoom"\s*\]/);
+  assert.match(wranglerConfig, /"name":\s*"CHAT_USER_INBOX_ROOM"/);
+  assert.match(wranglerConfig, /"class_name":\s*"ChatUserInboxRoom"/);
+  assert.match(wranglerConfig, /"tag":\s*"v2_chat_user_inbox_room"/);
 
   assert.match(server, /export \{ ChatConversationRoom \} from "\.\/services\/chat-conversation-room\.do\.js"/);
+  assert.match(server, /export \{ ChatUserInboxRoom \} from "\.\/services\/chat-user-inbox-room\.do\.js"/);
   assert.match(server, /app\.get\("\/api\/chat\/conversations\/:id\/live"/);
+  assert.match(server, /app\.get\("\/api\/chat\/live"/);
+  assert.match(server, /return connectChatInboxSocket\(c\.env, user\)/);
   assert.match(server, /c\.req\.header\("upgrade"\)\?\.toLowerCase\(\) !== "websocket"/);
   assert.match(server, /const user = await chatMember\(c\)/);
   assert.match(server, /const conversation = await getChatConversation\(c\.env, conversationId, user\)/);
@@ -354,6 +410,9 @@ test("internal chat realtime backend is conversation-scoped and preserves D1 as 
   assert.doesNotMatch(chatService, /await notifyInternalChatMessage/);
 
   assert.match(realtimeService, /CHAT_CONVERSATION_ROOM\?\.getByName\(conversationId\)/);
+  assert.match(realtimeService, /CHAT_USER_INBOX_ROOM\?\.getByName\(user\.id\)/);
+  assert.match(realtimeService, /namespace\.getByName\(userId\)\.fetch/);
+  assert.match(realtimeService, /new Set\(userIds\.filter\(Boolean\)\)/);
   assert.match(realtimeService, /stub\.fetch\(realtimeBroadcastRequest\(conversationId, message\)\)/);
   assert.match(realtimeObject, /export class ChatConversationRoom extends DurableObject/);
   assert.match(realtimeObject, /this\.ctx\.acceptWebSocket\(server, \[`conversation:\$\{conversationId\}`/);
@@ -362,6 +421,13 @@ test("internal chat realtime backend is conversation-scoped and preserves D1 as 
   assert.match(realtimeObject, /this\.ctx\.getWebSockets\(`conversation:\$\{event\.conversationId\}`\)/);
   assert.match(realtimeObject, /type: "message\.created"/);
   assert.match(realtimeObject, /type: "conversation\.updated"/);
+  assert.match(inboxRealtimeObject, /export class ChatUserInboxRoom extends DurableObject/);
+  assert.match(inboxRealtimeObject, /this\.ctx\.acceptWebSocket\(server, \[`user:\$\{userId\}`\]\)/);
+  assert.match(inboxRealtimeObject, /type: "summary\.invalidated"/);
+  assert.match(inboxRealtimeObject, /this\.ctx\.getWebSockets\(`user:\$\{event\.userId\}`\)/);
+  assert.match(chatService, /WHERE conversation_id = \?[\s\S]*AND user_id <> \?/);
+  assert.match(chatService, /dispatchChatSummaryInvalidation\(scheduleSideEffect, env, recipientUserIds/);
+  assert.match(server, /broadcastChatSummaryInvalidated\(c\.env, \[user\.id\]/);
   assert.match(realtimeDiagnostic, /new WebSocket\(websocketUrl\(conversationId\)\)/);
   assert.match(realtimeDiagnostic, /waitForEvent\(clientB\.events, "message\.created"\)/);
   assert.match(realtimeDiagnostic, /waitForEvent\(clientB\.events, "conversation\.updated"\)/);
@@ -394,6 +460,40 @@ test("internal chat frontend uses realtime for the selected thread with polling 
   assert.match(realtimeHook, /callbacksRef\.current\.onMessageCreated\(payload\.message\)/);
   assert.match(realtimeHook, /payload\.type === "conversation\.updated"/);
   assert.doesNotMatch(realtimeHook + teamChatSurface + chatClient, /guest-messages|\/api\/messages|Waraporn/i);
+});
+
+test("floating unread badge has user-level realtime with authoritative summary reconciliation", () => {
+  const floatingTeamChat = readFileSync(new URL("../../src/components/FloatingTeamChat.tsx", import.meta.url), "utf8");
+  const inboxRealtimeHook = readFileSync(new URL("../../src/hooks/useChatInboxRealtime.ts", import.meta.url), "utf8");
+  const chatClient = readFileSync(new URL("../../src/services/chat.service.ts", import.meta.url), "utf8");
+  const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
+
+  assert.match(chatClient, /export function chatInboxRealtimeUrl\(\): string/);
+  assert.match(chatClient, /\/api\/chat\/live/);
+  assert.match(floatingTeamChat, /useChatInboxRealtime\(\{/);
+  assert.match(floatingTeamChat, /enabled: canOpenChat/);
+  assert.match(floatingTeamChat, /invalidateQueries\(\{ queryKey: \["chat", "summary"\] \}\)/);
+  assert.match(floatingTeamChat, /refetchInterval: inboxRealtime\.connected \? 45_000 : 15_000/);
+  assert.match(floatingTeamChat, /refetchIntervalInBackground: false/);
+  assert.doesNotMatch(floatingTeamChat, /unreadCount\s*\+\s*1|setQueryData<ChatUnreadSummary>/);
+
+  assert.match(inboxRealtimeHook, /new WebSocket\(chatInboxRealtimeUrl\(\)\)/);
+  assert.match(inboxRealtimeHook, /payload\.type === "summary\.invalidated"/);
+  assert.match(inboxRealtimeHook, /acceptChatInboxInvalidation\(seenEventIdsRef\.current, payload\.eventId\)/);
+  assert.match(inboxRealtimeHook, /try\s*\{[\s\S]*new WebSocket\(chatInboxRealtimeUrl\(\)\)[\s\S]*\}\s*catch\s*\{[\s\S]*setStatus\("error"\)[\s\S]*scheduleReconnect\(\)/);
+  assert.match(inboxRealtimeHook, /callbackRef\.current\(\)/);
+  assert.match(inboxRealtimeHook, /window\.addEventListener\("focus", resumeRealtime\)/);
+  assert.match(inboxRealtimeHook, /window\.addEventListener\("pageshow", resumeRealtime\)/);
+  assert.match(inboxRealtimeHook, /document\.addEventListener\("visibilitychange", resumeRealtime\)/);
+
+  assert.match(teamChatSurface, /shouldMarkChatConversationRead\(\{/);
+  assert.match(teamChatSurface, /compactViewport: window\.matchMedia\("\(max-width: 859px\)"\)\.matches/);
+  assert.match(teamChatSurface, /markChatConversationRead\(id\)/);
+  assert.match(teamChatSurface, /invalidateQueries\(\{ queryKey: \["chat", "summary"\] \}\)/);
+
+  const inboxHookIndex = floatingTeamChat.indexOf("useChatInboxRealtime({");
+  const openOverlayIndex = floatingTeamChat.indexOf("{isOpen && (");
+  assert.ok(inboxHookIndex >= 0 && openOverlayIndex >= 0 && inboxHookIndex < openOverlayIndex);
 });
 
 test("floating chat bubble opens direct app overlay with drag-down close", () => {

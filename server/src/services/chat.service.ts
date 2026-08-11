@@ -1,6 +1,6 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { chatStickerById } from "./chat-stickers.service.js";
-import { broadcastChatMessageCreated, type ChatRealtimeBindings } from "./chat-realtime.service.js";
+import { broadcastChatMessageCreated, broadcastChatSummaryInvalidated, type ChatRealtimeBindings } from "./chat-realtime.service.js";
 import { translateFreeText, type FreeTextTranslationBindings } from "./free-text-translation.service.js";
 import { notifyInternalChatMessage, type NotificationBindings } from "./notifications.service.js";
 
@@ -856,6 +856,37 @@ function dispatchChatRealtimeBroadcast(scheduleSideEffect: ChatSideEffectSchedul
   }));
 }
 
+async function unreadRecipientUserIds(env: ChatBindings, conversationId: string, authorId: string): Promise<string[]> {
+  const participants = await env.DB.prepare(`
+    SELECT user_id
+    FROM chat_conversation_participants
+    WHERE conversation_id = ?
+      AND user_id <> ?
+  `).bind(conversationId, authorId).all<{ user_id: string }>();
+  return (participants.results ?? []).map((participant) => participant.user_id);
+}
+
+function dispatchChatSummaryInvalidation(
+  scheduleSideEffect: ChatSideEffectScheduler,
+  env: ChatBindings,
+  recipientUserIds: string[],
+  conversationId: string,
+  messageId: number,
+  label: string,
+): void {
+  scheduleSideEffect(broadcastChatSummaryInvalidated(env, recipientUserIds, {
+    conversationId,
+    eventId: `message:${messageId}`,
+  }).catch((error: unknown) => {
+    console.warn(JSON.stringify({
+      message: label,
+      error: error instanceof Error ? error.message : "unknown",
+      conversationId,
+      messageId,
+    }));
+  }));
+}
+
 export async function createChatMessage(
   env: ChatBindings,
   conversationId: string,
@@ -937,7 +968,9 @@ export async function createChatMessage(
   }
 
   const message = (await hydrateMessages(env, [row], user))[0]!;
+  const recipientUserIds = await unreadRecipientUserIds(env, conversationId, user.id);
   dispatchChatRealtimeBroadcast(scheduleSideEffect, env, conversationId, message, "Chat realtime broadcast failed");
+  dispatchChatSummaryInvalidation(scheduleSideEffect, env, recipientUserIds, conversationId, message.id, "Chat summary realtime broadcast failed");
   dispatchChatNotification(scheduleSideEffect, env, {
     conversationId,
     messageId,
@@ -1048,7 +1081,9 @@ export async function createChatAttachmentMessage(
 
   if (!row) throw new Error("Message was created but could not be loaded.");
   const message = (await hydrateMessages(env, [row], user))[0]!;
+  const recipientUserIds = await unreadRecipientUserIds(env, conversationId, user.id);
   dispatchChatRealtimeBroadcast(scheduleSideEffect, env, conversationId, message, "Chat attachment realtime broadcast failed");
+  dispatchChatSummaryInvalidation(scheduleSideEffect, env, recipientUserIds, conversationId, message.id, "Chat attachment summary realtime broadcast failed");
   dispatchChatNotification(scheduleSideEffect, env, {
     conversationId,
     messageId,

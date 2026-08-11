@@ -47,6 +47,10 @@
       {
         "name": "CHAT_CONVERSATION_ROOM",
         "class_name": "ChatConversationRoom"
+      },
+      {
+        "name": "CHAT_USER_INBOX_ROOM",
+        "class_name": "ChatUserInboxRoom"
       }
     ]
   },
@@ -55,6 +59,12 @@
       "tag": "v1_chat_conversation_room",
       "new_sqlite_classes": [
         "ChatConversationRoom"
+      ]
+    },
+    {
+      "tag": "v2_chat_user_inbox_room",
+      "new_sqlite_classes": [
+        "ChatUserInboxRoom"
       ]
     }
   ],

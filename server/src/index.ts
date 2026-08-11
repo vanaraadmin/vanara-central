@@ -22,7 +22,7 @@ import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepi
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
-import { connectChatRoomSocket } from "./services/chat-realtime.service.js";
+import { broadcastChatSummaryInvalidated, connectChatInboxSocket, connectChatRoomSocket } from "./services/chat-realtime.service.js";
 import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTranslationBindings } from "./services/free-text-translation.service.js";
 import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenancePhotoDownload, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoFormData, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, uploadMaintenancePhoto, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
@@ -79,6 +79,7 @@ import {
 } from "./services/current-user.service.js";
 
 export { ChatConversationRoom } from "./services/chat-conversation-room.do.js";
+export { ChatUserInboxRoom } from "./services/chat-user-inbox-room.do.js";
 
 export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, NotificationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, LoginRateLimitBindings {
   BEDS24_BASE_URL: string;
@@ -2005,6 +2006,18 @@ app.get("/api/chat/summary", async (c) => {
   }
 });
 
+app.get("/api/chat/live", async (c) => {
+  try {
+    if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
+      return c.text("Expected WebSocket upgrade", 426);
+    }
+    const user = await chatMember(c);
+    return connectChatInboxSocket(c.env, user);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
 app.get("/api/chat/users", async (c) => {
   try {
     const user = await chatMember(c);
@@ -2210,6 +2223,17 @@ app.post("/api/chat/conversations/:id/read", async (c) => {
     const user = await chatMember(c);
     const conversationId = conversationIdParam(c.req.param("id"));
     const conversation = await markChatConversationRead(c.env, conversationId, user);
+    scheduleChatSideEffect(c)(broadcastChatSummaryInvalidated(c.env, [user.id], {
+      conversationId,
+      eventId: `read:${conversationId}:${conversation.messageCount}`,
+    }).catch((error: unknown) => {
+      console.warn(JSON.stringify({
+        message: "Chat read summary broadcast failed",
+        error: error instanceof Error ? error.message : "unknown",
+        conversationId,
+        userId: user.id,
+      }));
+    }));
     return c.json({ success: true, data: conversation });
   } catch (error) {
     const message = errorMessage(error);

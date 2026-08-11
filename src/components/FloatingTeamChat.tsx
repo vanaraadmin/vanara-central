@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import TeamChatSurface from "./chat/TeamChatSurface";
+import { useChatInboxRealtime } from "../hooks/useChatInboxRealtime";
 import { loadCurrentUser } from "../services/auth.service";
 import { loadChatUnreadSummary } from "../services/chat.service";
 import "../styles/FloatingTeamChat.css";
@@ -19,6 +20,7 @@ function VanaraChatIcon() {
 }
 
 export default function FloatingTeamChat() {
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   const [overlayMobileView, setOverlayMobileView] = useState<"list" | "thread">("list");
   const [dragOffset, setDragOffset] = useState(0);
@@ -33,11 +35,22 @@ export default function FloatingTeamChat() {
       || user.data.views.includes("staff")
       || user.data.permissions.some((permission) => permission.module === "chat" && permission.canAccess)
     : false;
+  const reconcileUnreadSummary = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["chat", "summary"] });
+  }, [queryClient]);
+  const inboxRealtime = useChatInboxRealtime({
+    enabled: canOpenChat,
+    onSummaryChanged: reconcileUnreadSummary,
+  });
   const summary = useQuery({
     queryKey: ["chat", "summary"],
     queryFn: ({ signal }) => loadChatUnreadSummary(signal),
     enabled: canOpenChat,
-    refetchInterval: 45_000,
+    refetchInterval: inboxRealtime.connected ? 45_000 : 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const unreadCount = summary.data?.unreadCount ?? 0;
   const mentionCount = summary.data?.mentionCount ?? 0;
