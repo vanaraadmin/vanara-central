@@ -11,6 +11,7 @@ import {
   clearChatAnnouncement,
   loadChatConversation,
   loadChatConversations,
+  loadChatMessagePage,
   loadChatMessages,
   loadChatUsers,
   markChatConversationRead,
@@ -25,7 +26,13 @@ import vanaraLogo from "../../assets/img/logo.png";
 import { useChatRealtime } from "../../hooks/useChatRealtime";
 import { useLanguage } from "../../providers/language.context";
 import type { ChatConversation, ChatLanguage, ChatMessage, ChatMessageReply, ChatReactionEmoji, ChatUser } from "../../types/chat";
-import { CHAT_STICKERS, type ChatStickerDefinition } from "../../config/chatStickers";
+import {
+  CHAT_STICKER_COLLECTIONS,
+  loadChatStickerById,
+  loadChatStickerCollection,
+  type ChatStickerCollectionId,
+  type ChatStickerDefinition,
+} from "../../config/chatStickers";
 import {
   CHAT_THREAD_BOOTSTRAP_TIMEOUT_MS,
   chatThreadUnavailableCopy,
@@ -78,6 +85,12 @@ function mergeChatMessage(messages: ChatMessage[] | undefined, message: ChatMess
     return current.map((item) => item.id === message.id ? message : item);
   }
   return [...current, message].sort((a, b) => a.id - b.id);
+}
+
+function mergeChatMessagePages(current: ChatMessage[] | undefined, incoming: readonly ChatMessage[]): ChatMessage[] {
+  const byId = new Map((current ?? []).map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return [...byId.values()].sort((a, b) => a.id - b.id);
 }
 
 function avatarLabel(value: string): string {
@@ -294,11 +307,6 @@ function isExpired(value: string): boolean {
   return new Date(value).getTime() <= Date.now();
 }
 
-function stickerById(stickerId: string | null): ChatStickerDefinition | null {
-  if (!stickerId) return null;
-  return CHAT_STICKERS.find((sticker) => sticker.id === stickerId) ?? null;
-}
-
 async function copyText(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value);
@@ -468,6 +476,31 @@ function ChatMessageContextMenu({
   return typeof document === "undefined" ? null : createPortal(layer, document.body);
 }
 
+function ChatMessageSticker({ stickerId, fallbackLabel }: { stickerId: string | null; fallbackLabel: string }) {
+  const [resolved, setResolved] = useState<{ stickerId: string; sticker: ChatStickerDefinition | null } | null>(null);
+  const sticker = resolved?.stickerId === stickerId ? resolved.sticker : null;
+
+  useEffect(() => {
+    if (!stickerId) return undefined;
+    let active = true;
+    void loadChatStickerById(stickerId).then((loaded) => {
+      if (active) setResolved({ stickerId, sticker: loaded });
+    }).catch(() => {
+      if (active) setResolved({ stickerId, sticker: null });
+    });
+    return () => {
+      active = false;
+    };
+  }, [stickerId]);
+
+  return (
+    <div className={`chat-thread-message__sticker chat-thread-message__sticker--${sticker?.tone ?? "warm"}`} aria-label={sticker?.label ?? fallbackLabel}>
+      {sticker?.imageSrc ? <img src={sticker.imageSrc} alt="" loading="lazy" decoding="async" draggable={false} /> : <span aria-hidden="true" />}
+      <strong>{sticker?.label ?? fallbackLabel}</strong>
+    </div>
+  );
+}
+
 function ChatMessageBubble({
   message,
   currentUserId,
@@ -490,7 +523,6 @@ function ChatMessageBubble({
   const { language, translate } = useLanguage();
   const outgoing = message.author.id === currentUserId;
   const contextable = !outgoing && message.messageKind === "TEXT";
-  const sticker = stickerById(message.stickerId);
   const attachmentUnavailable = Boolean(
     message.attachment &&
     (message.attachment.unavailableAt || isExpired(message.attachment.expiresAt))
@@ -550,10 +582,7 @@ function ChatMessageBubble({
             </button>
           )}
           {message.messageKind === "STICKER" ? (
-            <div className={`chat-thread-message__sticker chat-thread-message__sticker--${sticker?.tone ?? "warm"}`} aria-label={sticker?.label ?? "Sticker"}>
-              {sticker?.imageSrc ? <img src={sticker.imageSrc} alt="" draggable={false} /> : <span aria-hidden="true" />}
-              <strong>{sticker?.label ?? message.body.replace(/^Sticker:\s*/i, "")}</strong>
-            </div>
+            <ChatMessageSticker stickerId={message.stickerId} fallbackLabel={message.body.replace(/^Sticker:\s*/i, "") || "Sticker"} />
           ) : message.messageKind === "ATTACHMENT" && message.attachment ? (
             attachmentUnavailable || attachmentFailed ? (
               <div className="chat-thread-message__attachment chat-thread-message__attachment--missing">
@@ -604,6 +633,95 @@ function ChatMessageBubble({
         <time>{formatChatTime(message.createdAt, language)}</time>
       </div>
     </article>
+  );
+}
+
+function ChatStickerDrawer({
+  disabled,
+  onSelect,
+}: {
+  disabled: boolean;
+  onSelect: (sticker: ChatStickerDefinition) => void;
+}) {
+  const { translate } = useLanguage();
+  const [selectedCollectionId, setSelectedCollectionId] = useState<ChatStickerCollectionId | null>(null);
+  const [loadedCollection, setLoadedCollection] = useState<{
+    collectionId: ChatStickerCollectionId;
+    stickers: readonly ChatStickerDefinition[];
+  } | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const selectedCollection = CHAT_STICKER_COLLECTIONS.find((collection) => collection.id === selectedCollectionId) ?? null;
+  const stickers = loadedCollection?.collectionId === selectedCollectionId ? loadedCollection.stickers : null;
+
+  useEffect(() => {
+    if (!selectedCollectionId) return undefined;
+    let active = true;
+    void loadChatStickerCollection(selectedCollectionId).then((loaded) => {
+      if (active) setLoadedCollection({ collectionId: selectedCollectionId, stickers: loaded });
+    }).catch(() => {
+      if (active) setLoadFailed(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedCollectionId, loadAttempt]);
+
+  if (!selectedCollectionId) {
+    return (
+      <div className="chat-sticker-drawer chat-sticker-drawer--collections" aria-label={translate("openStickers")}>
+        {CHAT_STICKER_COLLECTIONS.map((collection) => (
+          <button
+            key={collection.id}
+            type="button"
+            className="chat-sticker-collection"
+            onClick={() => {
+              setLoadFailed(false);
+              setSelectedCollectionId(collection.id);
+            }}
+            aria-label={`${translate("openStickers")} ${collection.position}`}
+          >
+            <img src={collection.coverSrc} alt="" loading="lazy" decoding="async" draggable={false} />
+            <strong>{collection.position}</strong>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-sticker-drawer" aria-label={`${translate("openStickers")} ${selectedCollection?.position ?? ""}`}>
+      <div className="chat-sticker-drawer__header">
+        <button type="button" onClick={() => setSelectedCollectionId(null)}>{translate("back")}</button>
+        <strong>{translate("openStickers")} {selectedCollection?.position}</strong>
+      </div>
+      {!stickers && !loadFailed && <span className="chat-sticker-drawer__status">{translate("loading")}</span>}
+      {loadFailed && (
+        <button
+          type="button"
+          className="chat-sticker-drawer__status"
+          onClick={() => {
+            setLoadFailed(false);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+        >
+          {translate("tryAgain")}
+        </button>
+      )}
+      {stickers?.map((sticker) => (
+        <button
+          key={sticker.id}
+          type="button"
+          className={`chat-sticker chat-sticker--${sticker.tone}`}
+          onClick={() => onSelect(sticker)}
+          disabled={disabled}
+          aria-label={sticker.label}
+        >
+          <img src={sticker.thumbnailSrc} alt="" loading="lazy" decoding="async" draggable={false} />
+          <strong>{sticker.label}</strong>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -705,21 +823,7 @@ function ChatComposer({
   return (
     <form className={`chat-composer ${isFocused ? "is-focused" : ""} ${stickersOpen ? "has-stickers" : ""}`} aria-label={translate("messageComposer")} onSubmit={submit}>
       {stickersOpen && (
-        <div className="chat-sticker-drawer" aria-label={translate("openStickers")}>
-          {CHAT_STICKERS.map((sticker) => (
-            <button
-              key={sticker.id}
-              type="button"
-              className={`chat-sticker chat-sticker--${sticker.tone}`}
-              onClick={() => stickerMutation.mutate(sticker)}
-              disabled={stickerMutation.isPending}
-              aria-label={sticker.label}
-            >
-              <img src={sticker.imageSrc} alt="" draggable={false} />
-              <strong>{sticker.label}</strong>
-            </button>
-          ))}
-        </div>
+        <ChatStickerDrawer disabled={stickerMutation.isPending} onSelect={(sticker) => stickerMutation.mutate(sticker)} />
       )}
       {replyTarget && (
         <div className="chat-composer__reply-preview">
@@ -773,11 +877,19 @@ function ChatThread({
   messages,
   currentUserId,
   viewerLanguage,
+  hasOlderMessages,
+  isLoadingOlderMessages,
+  olderMessagesFailed,
+  onLoadOlderMessages,
 }: {
   conversation: ChatConversation;
   messages: ChatMessage[];
   currentUserId: string;
   viewerLanguage: ChatLanguage;
+  hasOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
+  olderMessagesFailed: boolean;
+  onLoadOlderMessages: () => Promise<void>;
 }) {
   const { translate } = useLanguage();
   const [contextMenu, setContextMenu] = useState<ChatContextMenuState | null>(null);
@@ -785,6 +897,7 @@ function ChatThread({
   const [replyTarget, setReplyTarget] = useState<ChatMessageReply | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
   const messageRefs = useRef(new Map<number, HTMLElement>());
+  const messageListRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const reactionMutation = useMutation({
@@ -867,6 +980,21 @@ function ChatThread({
     setContextMenu(null);
   }
 
+  async function loadOlderMessages() {
+    const viewport = messageListRef.current;
+    const previousScrollHeight = viewport?.scrollHeight ?? 0;
+    const previousScrollTop = viewport?.scrollTop ?? 0;
+    try {
+      await onLoadOlderMessages();
+    } catch {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      if (!viewport) return;
+      viewport.scrollTop = previousScrollTop + viewport.scrollHeight - previousScrollHeight;
+    });
+  }
+
   return (
     <section className="chat-thread" aria-label={conversation.title}>
       <header className="chat-thread__header">
@@ -893,7 +1021,21 @@ function ChatThread({
         </div>
       )}
 
-      <div className="chat-thread__messages">
+      <div ref={messageListRef} className="chat-thread__messages">
+        {hasOlderMessages && (
+          <button
+            type="button"
+            className={`chat-thread__load-older ${olderMessagesFailed ? "is-error" : ""}`}
+            onClick={() => void loadOlderMessages()}
+            disabled={isLoadingOlderMessages}
+          >
+            {isLoadingOlderMessages
+              ? translate("loading")
+              : olderMessagesFailed
+                ? translate("tryAgain")
+                : translate("loadOlderMessages")}
+          </button>
+        )}
         {messages.length > 0 ? (
           messages.map((message) => (
             <ChatMessageBubble
@@ -947,6 +1089,7 @@ export default function TeamChatSurface({
   const [localActiveConversationId, setLocalActiveConversationId] = useState("");
   const [timedOutConversationId, setTimedOutConversationId] = useState<string | null>(null);
   const [retryingConversationId, setRetryingConversationId] = useState<string | null>(null);
+  const [historyHasMore, setHistoryHasMore] = useState<Record<string, boolean>>({});
 
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
@@ -1000,7 +1143,11 @@ export default function TeamChatSurface({
   });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedConversationId],
-    queryFn: ({ signal }) => loadChatMessages(selectedConversationId, signal),
+    queryFn: async ({ signal }) => {
+      const latestMessages = await loadChatMessages(selectedConversationId, signal);
+      const cachedMessages = queryClient.getQueryData<ChatMessage[]>(["chat", "messages", selectedConversationId]);
+      return mergeChatMessagePages(cachedMessages, latestMessages);
+    },
     enabled: Boolean(selectedConversationId && activeInList),
     refetchInterval: selectedConversationId && activeInList && !chatRealtime.connected ? ACTIVE_CHAT_REFRESH_MS : false,
     refetchIntervalInBackground: false,
@@ -1010,6 +1157,7 @@ export default function TeamChatSurface({
   });
   const conversation = conversationQuery.data;
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const hasOlderMessages = historyHasMore[selectedConversationId] ?? messages.length >= 50;
   const threadBootstrapState = chatThreadBootstrapState({
     selectedConversationId,
     activeInList,
@@ -1040,6 +1188,18 @@ export default function TeamChatSurface({
       setPickerKind(null);
       await queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
       selectConversation(conversation.id);
+    },
+  });
+  const loadOlderMessagesMutation = useMutation({
+    mutationFn: ({ conversationId, beforeMessageId }: { conversationId: string; beforeMessageId: number }) =>
+      loadChatMessagePage(conversationId, beforeMessageId),
+    onSuccess: (page, variables) => {
+      queryClient.setQueryData<ChatMessage[]>(["chat", "messages", variables.conversationId], (current) =>
+        mergeChatMessagePages(current, page.messages));
+      setHistoryHasMore((current) => ({
+        ...current,
+        [variables.conversationId]: page.hasMore,
+      }));
     },
   });
   const markReadMutation = useMutation({
@@ -1112,6 +1272,16 @@ export default function TeamChatSurface({
     });
   };
 
+  async function loadOlderMessages() {
+    const beforeMessageId = messages[0]?.id;
+    if (!selectedConversationId) return;
+    if (!beforeMessageId) {
+      setHistoryHasMore((current) => ({ ...current, [selectedConversationId]: false }));
+      return;
+    }
+    await loadOlderMessagesMutation.mutateAsync({ conversationId: selectedConversationId, beforeMessageId });
+  }
+
   const isLoading = conversationsQuery.isLoading || currentUserQuery.isLoading;
   const isError = conversationsQuery.isError || currentUserQuery.isError;
 
@@ -1180,6 +1350,10 @@ export default function TeamChatSurface({
             messages={messages}
             currentUserId={currentUserQuery.data?.id ?? ""}
             viewerLanguage={currentUserQuery.data?.preferredLanguage ?? "en"}
+            hasOlderMessages={hasOlderMessages}
+            isLoadingOlderMessages={loadOlderMessagesMutation.isPending && loadOlderMessagesMutation.variables?.conversationId === selectedConversationId}
+            olderMessagesFailed={loadOlderMessagesMutation.isError && loadOlderMessagesMutation.variables?.conversationId === selectedConversationId}
+            onLoadOlderMessages={loadOlderMessages}
           />
         ) : (
           <section className="chat-thread chat-thread--empty" aria-label={translate("selectChat")}>

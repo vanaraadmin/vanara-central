@@ -662,6 +662,7 @@ const th = {
   vanaraGroupChat: "แชตกลุ่ม Vanara",
   people: "คน",
   noMessagesYet: "ยังไม่มีข้อความ",
+  loadOlderMessages: "โหลดข้อความก่อนหน้า",
   startTeamNote: "เริ่มด้วยข้อความสั้น ๆ ถึงทีม",
   messageComposer: "ช่องพิมพ์ข้อความ",
   messageTools: "เครื่องมือข้อความ",

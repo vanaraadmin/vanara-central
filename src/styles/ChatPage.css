@@ -250,6 +250,29 @@
   padding: var(--vc-space-4) var(--vc-space-4) var(--vc-space-5);
 }
 
+.chat-thread__load-older {
+  display: block;
+  min-height: 34px;
+  margin: 0 auto var(--vc-space-3);
+  padding: 0.42rem 0.8rem;
+  border: 1px solid rgba(31, 106, 77, 0.18);
+  border-radius: 999px;
+  color: #1f6a4d;
+  background: rgba(255, 253, 246, 0.82);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.chat-thread__load-older:disabled {
+  opacity: 0.58;
+}
+
+.chat-thread__load-older.is-error {
+  border-color: rgba(150, 67, 51, 0.24);
+  color: #7a3529;
+}
+
 .chat-thread-message {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -558,6 +581,77 @@
     rgba(255, 253, 246, 0.96);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
   overscroll-behavior: contain;
+}
+
+.chat-sticker-drawer--collections {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chat-sticker-drawer__header {
+  position: sticky;
+  top: -0.48rem;
+  z-index: 1;
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.42rem 0.2rem;
+  background: rgba(255, 253, 246, 0.98);
+}
+
+.chat-sticker-drawer__header button,
+.chat-sticker-drawer__status {
+  min-width: 0;
+  border: 0;
+  color: #1f6a4d;
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.chat-sticker-drawer__header strong {
+  overflow: hidden;
+  color: #173b2d;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-sticker-drawer__status {
+  display: grid;
+  grid-column: 1 / -1;
+  min-height: 76px;
+  place-items: center;
+}
+
+.chat-sticker-collection {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  place-items: center;
+  gap: 0.16rem;
+  padding: 0.34rem;
+  border: 1px solid rgba(31, 106, 77, 0.1);
+  border-radius: 18px;
+  color: #173b2d;
+  background: rgba(31, 106, 77, 0.07);
+}
+
+.chat-sticker-collection img {
+  display: block;
+  width: 54px;
+  max-width: 100%;
+  max-height: 54px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.chat-sticker-collection strong {
+  font-size: 0.68rem;
+  font-weight: 900;
 }
 
 .chat-sticker {

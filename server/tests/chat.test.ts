@@ -121,7 +121,9 @@ class RuntimeChatStmt {
       const conversationId = this.values[0] as string;
       const rows = this.db.messages
         .filter((message) => message.conversation_id === conversationId)
-        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.message_id - b.message_id);
+        .sort((a, b) => this.sql.includes("ORDER BY m.created_at DESC")
+          ? b.created_at.localeCompare(a.created_at) || b.message_id - a.message_id
+          : a.created_at.localeCompare(b.created_at) || a.message_id - b.message_id);
       return { results: rows as T[] };
     }
     if (sql.includes("FROM chat_message_reactions")) {
@@ -764,7 +766,9 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.match(page, /type="file"/);
   assert.doesNotMatch(page, /Open camera|Choose image|cameraInputRef|galleryInputRef|capture="environment"|accept="image\/\*"/);
   assert.doesNotMatch(page, /ChatToolIcon type="camera"|ChatToolIcon type="gallery"/);
-  assert.match(page, /CHAT_STICKERS\.map/);
+  assert.match(page, /CHAT_STICKER_COLLECTIONS\.map/);
+  assert.match(page, /loadChatStickerCollection/);
+  assert.match(page, /loadChatStickerById/);
   assert.match(page, /message\.messageKind === "STICKER"/);
   assert.match(page, /sticker\.imageSrc/);
   assert.match(page, /<img src=\{sticker\.imageSrc\}/);
@@ -818,8 +822,10 @@ test("chat thread and composer follow LINE-like message patterns without voice o
   assert.doesNotMatch(page, /translateMutation|Translation is not available yet/);
   assert.match(page, /chat-thread-message__reactions/);
   assert.doesNotMatch(page + css, /microphone|Voice|voice|mic|audio/i);
-  assert.equal((stickerCatalog.match(/\{ id:/g) ?? []).length, 296);
-  assert.match(stickerCatalog, /imageSrc/);
+  assert.equal((stickerCatalog.match(/\{ id:/g) ?? []).length, 8);
+  assert.match(stickerCatalog, /collectionLoaders/);
+  assert.match(stickerCatalog, /import\("\.\/chat-sticker-collections\/collection-/);
+  assert.doesNotMatch(stickerCatalog, /\.\.\/assets\/stickers\/001\.png/);
   assert.match(stickerCatalog, /assets\/stickers/);
   assert.doesNotMatch(stickerCatalog, /symbol:\s*["']/);
   assert.doesNotMatch(stickerCatalog + serverStickerCatalog, /LINE_New_App_Icon|Doraemon|line-logo|wechat-logo|whatsapp-logo/i);

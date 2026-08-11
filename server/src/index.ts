@@ -22,7 +22,7 @@ import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
-import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessages, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
+import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessagePage, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
 import { broadcastChatSummaryInvalidated, connectChatInboxSocket, connectChatRoomSocket } from "./services/chat-realtime.service.js";
 import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTranslationBindings } from "./services/free-text-translation.service.js";
 import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
@@ -2163,15 +2163,24 @@ app.get("/api/chat/conversations/:id/messages", async (c) => {
     const user = await chatMember(c);
     c.header("Cache-Control", "no-store");
     const conversationId = conversationIdParam(c.req.param("id"));
-    const conversation = await getChatConversation(c.env, conversationId, user);
-
-    if (!conversation) {
-      return c.json({ success: false, error: "Conversation not found" }, 404);
+    const beforeValue = c.req.query("beforeMessageId");
+    const beforeMessageId = beforeValue === undefined ? null : Number(beforeValue);
+    if (beforeMessageId !== null && (!Number.isSafeInteger(beforeMessageId) || beforeMessageId <= 0)) {
+      return c.json({ success: false, error: "Message cursor is invalid" }, 400);
     }
-
-    return c.json({ success: true, data: await listChatMessages(c.env, conversationId, user) });
+    const page = await listChatMessagePage(c.env, conversationId, user, beforeMessageId);
+    return c.json({
+      success: true,
+      data: page.messages,
+      pagination: {
+        hasMore: page.hasMore,
+        nextBeforeMessageId: page.nextBeforeMessageId,
+      },
+    });
   } catch (error) {
-    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+    const message = errorMessage(error);
+    const status = message === "Chat conversation not found." ? 404 : apiErrorStatus(error);
+    return c.json({ success: false, error: message }, status);
   }
 });
 

@@ -163,6 +163,12 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  nextBeforeMessageId: number | null;
+}
+
 export interface CreateChatMessageInput {
   messageKind: ChatMessageKind;
   body: string;
@@ -781,9 +787,17 @@ export async function getChatConversation(env: ChatBindings, conversationId: str
   return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }
 
-export async function listChatMessages(env: ChatBindings, conversationId: string, user: CurrentChatUser): Promise<ChatMessage[]> {
+export async function listChatMessagePage(
+  env: ChatBindings,
+  conversationId: string,
+  user: CurrentChatUser,
+  beforeMessageId: number | null = null,
+  pageSize = 50,
+): Promise<ChatMessagePage> {
   await requireParticipant(env, conversationId, user);
-  const rows = await env.DB.prepare(`
+  const safePageSize = Math.min(Math.max(Math.trunc(pageSize), 1), 200);
+  const beforeClause = beforeMessageId === null ? "" : "AND m.message_id < ?";
+  const statement = env.DB.prepare(`
     SELECT
       m.*,
       u.profile_photo_url AS author_profile_photo_url,
@@ -795,11 +809,27 @@ export async function listChatMessages(env: ChatBindings, conversationId: string
       ON reply.message_id = m.reply_to_message_id
       AND reply.conversation_id = m.conversation_id
     WHERE m.conversation_id = ?
-    ORDER BY m.created_at ASC, m.message_id ASC
-    LIMIT 200
-  `).bind(conversationId).all<ChatMessageRow>();
+      ${beforeClause}
+    ORDER BY m.created_at DESC, m.message_id DESC
+    LIMIT ?
+  `);
+  const rows = beforeMessageId === null
+    ? await statement.bind(conversationId, safePageSize + 1).all<ChatMessageRow>()
+    : await statement.bind(conversationId, beforeMessageId, safePageSize + 1).all<ChatMessageRow>();
+  const descendingRows = rows.results ?? [];
+  const hasMore = descendingRows.length > safePageSize;
+  const pageRows = descendingRows.slice(0, safePageSize).reverse();
+  const messages = await hydrateMessages(env, pageRows, user);
 
-  return hydrateMessages(env, rows.results ?? [], user);
+  return {
+    messages,
+    hasMore,
+    nextBeforeMessageId: hasMore ? messages[0]?.id ?? null : null,
+  };
+}
+
+export async function listChatMessages(env: ChatBindings, conversationId: string, user: CurrentChatUser): Promise<ChatMessage[]> {
+  return (await listChatMessagePage(env, conversationId, user, null, 200)).messages;
 }
 
 async function persistMentions(env: ChatBindings, conversationId: string, messageId: number, authorId: string, body: string, now: string): Promise<void> {

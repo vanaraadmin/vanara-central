@@ -66,12 +66,38 @@ export async function loadChatConversation(id: string, signal?: AbortSignal): Pr
   return response.data;
 }
 
-export async function loadChatMessages(id: string, signal?: AbortSignal): Promise<ChatMessage[]> {
-  const response = await requestJson<ChatMessagesResponse>(`/api/chat/conversations/${id}/messages`, signal);
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  nextBeforeMessageId: number | null;
+}
+
+interface ChatMessagePageResponse extends ChatMessagesResponse {
+  pagination?: {
+    hasMore?: boolean;
+    nextBeforeMessageId?: number | null;
+  };
+}
+
+export async function loadChatMessagePage(
+  id: string,
+  beforeMessageId?: number,
+  signal?: AbortSignal,
+): Promise<ChatMessagePage> {
+  const query = beforeMessageId ? `?beforeMessageId=${encodeURIComponent(beforeMessageId)}` : "";
+  const response = await requestJson<ChatMessagePageResponse>(`/api/chat/conversations/${id}/messages${query}`, signal);
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Chat messages are unavailable");
   }
-  return response.data;
+  return {
+    messages: response.data,
+    hasMore: response.pagination?.hasMore ?? response.data.length >= 50,
+    nextBeforeMessageId: response.pagination?.nextBeforeMessageId ?? response.data[0]?.id ?? null,
+  };
+}
+
+export async function loadChatMessages(id: string, signal?: AbortSignal): Promise<ChatMessage[]> {
+  return (await loadChatMessagePage(id, undefined, signal)).messages;
 }
 
 export function chatRealtimeUrl(id: string): string {

@@ -662,6 +662,7 @@ const en = {
   vanaraGroupChat: "Vanara Group Chat",
   people: "people",
   noMessagesYet: "No messages yet",
+  loadOlderMessages: "Load earlier messages",
   startTeamNote: "Start with a quick team note.",
   messageComposer: "Message composer",
   messageTools: "Message tools",
