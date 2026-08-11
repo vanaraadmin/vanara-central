@@ -81,7 +81,9 @@ $releaseCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
 Invoke-Step "Frozen release and canonical lineage guard" "node" @((Join-Path $PSScriptRoot "verify-frozen-release-scope.mjs"), "--release")
 
 Invoke-Step "Preflight" "powershell" @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "deploy-preflight.ps1"), "-ConfigPath", $ConfigPath, "-ProductionUrl", $ProductionUrl, "-AllowPendingMigrations")
-$serverTestArgs = @("--import", "tsx", "--loader", (Join-Path $PSScriptRoot "cloudflare-test-loader.mjs"), "--test") + @(
+$cloudflareTestLoaderPath = (Resolve-Path (Join-Path $PSScriptRoot "cloudflare-test-loader.mjs")).Path.Replace("\", "/")
+$cloudflareTestLoaderUrl = "file:///" + $cloudflareTestLoaderPath
+$serverTestArgs = @("--import", "tsx", "--loader", $cloudflareTestLoaderUrl, "--test") + @(
   Get-ChildItem -LiteralPath (Join-Path $RepoRoot "server\tests") -Filter "*.test.ts" |
     Sort-Object Name |
     ForEach-Object { $_.FullName }
