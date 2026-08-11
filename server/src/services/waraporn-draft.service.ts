@@ -65,26 +65,18 @@ interface MessageDraftTargetRow {
 type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 type JsonRecord = Record<string, unknown>;
 
-export const OPENAI_WARAPORN_DRAFT_MODEL = "gpt-5.5";
-export const OPENAI_WARAPORN_DRAFT_TIMEOUT_MS = 60_000;
+export const OPENAI_WARAPORN_DRAFT_MODEL = "gpt-5.5-2026-04-23";
+export const OPENAI_WARAPORN_DRAFT_TIMEOUT_MS = 180_000;
 export const DEFAULT_WARAPORN_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 export const OPENAI_RESPONSES_FILE_SEARCH_INCLUDE = ["file_search_call.results"] as const;
-export const WARAPORN_MAX_TOOL_CALLS = 2;
-export const WARAPORN_PROMPT_CACHE_KEY = "waraporn-v4-rc3-payload-optimized";
-export const WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES = [
-  "Waraporn_Conversation_Composer.md",
-  "Vanara_Hospitality_Behaviour.md",
-  "Guest_Information_Relevance_Filter.md",
-  "Waraporn_Conversational_Instincts.md",
-  "Seasonal_Advices.md",
-  "Thai Holidays_TrafficLogics_Koh_Chang.md",
-] as const;
-export const WARAPORN_REQUIRED_RETRIEVAL_FILENAMES = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES;
+export const WARAPORN_FILE_SEARCH_MAX_RESULTS = 10;
+export const WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD = 8;
+export const WARAPORN_PROMPT_CACHE_KEY = "waraporn-v4-rc3-make-faithful";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const WARAPORN_FILE_SEARCH_MAX_RESULTS = 10;
 const GPT_5_5_INPUT_USD_PER_MILLION = 5;
 const GPT_5_5_CACHED_INPUT_USD_PER_MILLION = 0.5;
 const GPT_5_5_OUTPUT_USD_PER_MILLION = 30;
+const FILE_SEARCH_USD_PER_CALL = 0.0025;
 
 interface OpenAiUsage {
   inputTokens: number;
@@ -198,27 +190,6 @@ function inputPair(label: string, value: string | number | null | undefined): Ar
   ];
 }
 
-function compactRuntimeEnvelopeText(context: VerifiedMessageContext): string {
-  const lines = [
-    `Guest first name: ${valueText(context.guestFirstName)}`,
-    `Check-in date: ${valueText(context.arrivalDate)}`,
-    `Check-out date: ${valueText(context.departureDate)}`,
-    `Booking status: ${valueText(context.bookingStatus)}`,
-    `Accommodation: ${valueText(context.accommodationType)}`,
-    `Physical unit: ${valueText(context.physicalUnit)}`,
-    `Current Bangkok date/time: ${context.currentBangkokDate} ${context.currentBangkokTime}`,
-    `Travel phase: ${context.travelPhase}`,
-    `Provider/channel: ${context.provider}/${context.channel}`,
-    `Guest-message language: ${valueText(context.language)}`,
-  ];
-
-  if (context.availabilityPricesStatus !== "NOT_APPLICABLE") {
-    lines.push(`Verified availability/prices: ${context.availabilityPricesStatus}. ${context.availabilityPricesContext}`);
-  }
-
-  return lines.join("\n");
-}
-
 function parseStoredFilenames(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
@@ -307,14 +278,14 @@ function usageFrom(response: unknown): OpenAiUsage {
   };
 }
 
-function estimateGpt55CostUsd(usage: OpenAiUsage): number {
+function estimateGpt55CostUsd(usage: OpenAiUsage, fileSearchCallCount: number): number {
   const uncachedInputTokens = Math.max(usage.inputTokens - usage.cachedInputTokens, 0);
-  const cost = (
+  const tokenCost = (
     uncachedInputTokens * GPT_5_5_INPUT_USD_PER_MILLION
     + usage.cachedInputTokens * GPT_5_5_CACHED_INPUT_USD_PER_MILLION
     + usage.outputTokens * GPT_5_5_OUTPUT_USD_PER_MILLION
   ) / 1_000_000;
-  return Number(cost.toFixed(8));
+  return Number((tokenCost + fileSearchCallCount * FILE_SEARCH_USD_PER_CALL).toFixed(8));
 }
 
 function attachOpenAiResult(error: unknown, result: OpenAiResponsesResult): void {
@@ -335,7 +306,9 @@ export function buildWarapornResponsesRequest(
   storeId: string,
 ): JsonRecord {
   const content = [
-    ...inputPair("VANARA VERIFIED RUNTIME CONTEXT", compactRuntimeEnvelopeText(context)),
+    ...inputPair("GUEST FIRST NAME", context.guestFirstName),
+    ...inputPair("CHECK-IN DATE", context.arrivalDate),
+    ...inputPair("CHECK-OUT DATE", context.departureDate),
     ...inputPair("CONVERSATION CONTEXT", context.conversationContext),
     ...inputPair("CURRENT GUEST MESSAGE", context.currentGuestMessage),
   ];
@@ -343,18 +316,17 @@ export function buildWarapornResponsesRequest(
   return {
     model: OPENAI_WARAPORN_DRAFT_MODEL,
     instructions: promptText,
+    top_p: 0.98,
+    reasoning: {
+      effort: "medium",
+    },
     tools: [{
       type: "file_search",
       vector_store_ids: [storeId],
       max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
     }],
-    tool_choice: "required",
-    max_tool_calls: WARAPORN_MAX_TOOL_CALLS,
-    reasoning: {
-      effort: "low",
-    },
     text: {
-      verbosity: "low",
+      verbosity: "medium",
       format: {
         type: "text",
       },
@@ -626,7 +598,7 @@ async function callOpenAiResponses(
     fileSearchCallCount,
     usage,
     elapsedMs,
-    estimatedCostUsd: estimateGpt55CostUsd(usage),
+    estimatedCostUsd: estimateGpt55CostUsd(usage, fileSearchCallCount),
   };
   try {
     return { ...result, text: outputTextFrom(payload) };
@@ -671,13 +643,13 @@ export async function generateWarapornDraft(
     openAiRequestCount = 1;
     const generated = await callOpenAiResponses(env, requestBody, options);
     openAiResult = generated;
-    if (generated.fileSearchCallCount > WARAPORN_MAX_TOOL_CALLS) {
+    if (generated.fileSearchCallCount > WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD) {
       console.warn(JSON.stringify({
-        event: "waraporn_file_search_soft_limit_exceeded",
+        event: "waraporn_file_search_diagnostic_threshold_exceeded",
         messageId,
         responseId: generated.responseId,
         fileSearchCallCount: generated.fileSearchCallCount,
-        configuredMaxToolCalls: WARAPORN_MAX_TOOL_CALLS,
+        diagnosticThreshold: WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD,
         action: "preserve_valid_final_answer",
       }));
     }

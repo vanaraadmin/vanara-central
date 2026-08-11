@@ -10,13 +10,17 @@ import {
   generateWarapornDraft,
   OPENAI_RESPONSES_FILE_SEARCH_INCLUDE,
   OPENAI_WARAPORN_DRAFT_MODEL,
-  WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
-  WARAPORN_MAX_TOOL_CALLS,
+  OPENAI_WARAPORN_DRAFT_TIMEOUT_MS,
+  WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD,
+  WARAPORN_FILE_SEARCH_MAX_RESULTS,
   WARAPORN_PROMPT_CACHE_KEY,
 } from "../src/services/waraporn-draft.service.ts";
 
 const NOW = "2026-08-04T10:00:00.000Z";
 const READY_DRAFT_TEXT = "Of course, Khun Daniel. We can help with that.";
+const DEFAULT_RETRIEVAL_FILENAMES = ["GUEST_SERVICES_MASTER.md.md"] as const;
+const SCOOTER_DRAFT_TEXT = "We have one Vanara scooter available at 200 THB per day, or around 180 THB per day for a longer rental. Helmets are included, the deposit is 3,000 THB, and we do not keep your passport.";
+const ELEPHANT_DRAFT_TEXT = "For the option Vanara considers strongest on animal welfare, I would choose Klong Son Elephant Camp. Other known choices include Baan Chang Thai Elephant Tracking and Feed the Elephants near Khlong Phlu, plus Kai Bae Meechai Elephant Camp; the last three should be presented neutrally rather than as ethical sanctuaries.";
 
 type PermissionRow = { module_key: string; can_access: number; can_edit: number };
 type MessageRow = {
@@ -469,7 +473,7 @@ function openAiFileSearchPayload(
 
 function openAiFetcher(
   outputText = READY_DRAFT_TEXT,
-  filenames: readonly string[] = WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES,
+  filenames: readonly string[] = DEFAULT_RETRIEVAL_FILENAMES,
 ): { fetcher: typeof fetch; bodies: Array<Record<string, unknown>> } {
   const bodies: Array<Record<string, unknown>> = [];
   return {
@@ -486,7 +490,7 @@ function requestText(body: Record<string, unknown>): string {
   return input[0]!.content.map((item) => item.text).join("\n");
 }
 
-test("one OTA message creates exactly one bounded OpenAI Responses request", async () => {
+test("one OTA message creates exactly one Make-compatible OpenAI Responses request", async () => {
   const db = new FakeWarapornDB();
   const { fetcher, bodies } = openAiFetcher();
 
@@ -496,28 +500,46 @@ test("one OTA message creates exactly one bounded OpenAI Responses request", asy
   const body = bodies[0]!;
   const instructions = String(body.instructions);
   assert.match(instructions, /SYSTEM_PROMPT_V4_RC3_HARD_EXECUTION_GATE/);
-  for (const filename of WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES) {
-    assert.match(instructions, new RegExp(filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  }
+  assert.match(instructions, /Seasonal_Advices\.md/);
+  assert.match(instructions, /Thai Holidays_TrafficLogics_Koh_Chang\.md/);
   assert.equal("previous_response_id" in body, false);
-  assert.equal(body.max_tool_calls, WARAPORN_MAX_TOOL_CALLS);
-  assert.deepEqual(body.reasoning, { effort: "low" });
-  assert.equal((body.text as Record<string, unknown>).verbosity, "low");
+  assert.equal("tool_choice" in body, false);
+  assert.equal("max_tool_calls" in body, false);
+  assert.equal(body.top_p, 0.98);
+  assert.deepEqual(body.reasoning, { effort: "medium" });
+  assert.equal((body.text as Record<string, unknown>).verbosity, "medium");
   assert.equal(body.prompt_cache_key, WARAPORN_PROMPT_CACHE_KEY);
   assert.equal(body.prompt_cache_retention, "24h");
+  assert.equal(OPENAI_WARAPORN_DRAFT_TIMEOUT_MS, 180_000);
+  assert.deepEqual((body.input as Array<Record<string, unknown>>)[0]!.content, [
+    { type: "input_text", text: "GUEST FIRST NAME" },
+    { type: "input_text", text: "Daniel" },
+    { type: "input_text", text: "CHECK-IN DATE" },
+    { type: "input_text", text: "2026-12-28" },
+    { type: "input_text", text: "CHECK-OUT DATE" },
+    { type: "input_text", text: "2027-01-01" },
+    { type: "input_text", text: "CONVERSATION CONTEXT" },
+    { type: "input_text", text: "No previous conversation history stored in Vanara." },
+    { type: "input_text", text: "CURRENT GUEST MESSAGE" },
+    { type: "input_text", text: "Can we have a late check-in?" },
+  ]);
   assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: 10,
+    max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
   }]);
 });
 
-test("additional retrieval remains decision-driven without backend filename retries", async () => {
+test("scooter retrieval uses Vanara Guest Services facts instead of generic mobility documents", async () => {
   const db = new FakeWarapornDB();
-  db.messages[0]!.guest_message = "Is it safe to rent a scooter if we normally drive motorbikes?";
-  const { fetcher, bodies } = openAiFetcher(READY_DRAFT_TEXT, ["MOBILITY_REASONING_CONTRACT_v1.md"]);
+  db.messages[0]!.guest_message = "How much does it cost to rent a scooter from Vanara?";
+  const filenames = [
+    "MOBILITY_REASONING_CONTRACT_v1.md",
+    "GUEST_SERVICES_MASTER.md.md",
+  ];
+  const { fetcher, bodies } = openAiFetcher(SCOOTER_DRAFT_TEXT, filenames);
 
-  await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
   assert.equal(bodies.length, 1);
   const text = requestText(bodies[0]!);
@@ -525,7 +547,33 @@ test("additional retrieval remains decision-driven without backend filename retr
   assert.doesNotMatch(text, /RETRIEVAL RETRY REQUIRED FILENAMES/);
   assert.doesNotMatch(text, /FOUNDATION RETRIEVAL VERIFIED FILENAMES/);
   assert.equal("previous_response_id" in bodies[0]!, false);
-  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), ["MOBILITY_REASONING_CONTRACT_v1.md"]);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), filenames);
+  assert.match(draft.body, /200 THB per day/);
+  assert.match(draft.body, /180 THB per day/);
+  assert.match(draft.body, /3,000 THB/);
+  assert.match(draft.body, /do not keep your passport/);
+});
+
+test("elephant retrieval covers Vanara's preferred option and the known alternatives", async () => {
+  const db = new FakeWarapornDB();
+  db.messages[0]!.guest_message = "What elephant experiences are available on Koh Chang, and which one would Vanara recommend?";
+  const filenames = [
+    "White Sand – Ao Sapparot Ferry_Corridor_MASTER.md",
+    "Khlong Phrao - Chai Chet Corridor_MASTER.md",
+    "Kai_Bae_MASTER.md",
+  ];
+  const { fetcher, bodies } = openAiFetcher(ELEPHANT_DRAFT_TEXT, filenames);
+
+  const draft = await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
+
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), filenames);
+  assert.match(draft.body, /Klong Son Elephant Camp/);
+  assert.match(draft.body, /Baan Chang Thai Elephant Tracking/);
+  assert.match(draft.body, /Feed the Elephants/);
+  assert.match(draft.body, /Kai Bae Meechai Elephant Camp/);
+  assert.match(draft.body, /animal welfare/);
+  assert.match(draft.body, /neutrally rather than as ethical sanctuaries/);
 });
 
 test("message generates one draft and stores it with the frozen prompt checksum", async () => {
@@ -539,8 +587,8 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(draft.promptChecksum, getPromptChecksum());
   assert.equal(db.drafts.length, 1);
   assert.equal(db.drafts[0]!.prompt_checksum, getPromptChecksum());
-  assert.equal(db.drafts[0]!.retrieval_result_count, WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES.length);
-  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...WARAPORN_FOUNDATION_RETRIEVAL_FILENAMES]);
+  assert.equal(db.drafts[0]!.retrieval_result_count, DEFAULT_RETRIEVAL_FILENAMES.length);
+  assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), [...DEFAULT_RETRIEVAL_FILENAMES]);
   assert.equal(db.drafts[0]!.openai_file_search_call_count, 1);
   assert.equal(db.drafts[0]!.openai_request_count, 1);
   assert.equal(db.drafts[0]!.openai_input_tokens, 1200);
@@ -548,7 +596,7 @@ test("message generates one draft and stores it with the frozen prompt checksum"
   assert.equal(db.drafts[0]!.openai_output_tokens, 100);
   assert.equal(db.drafts[0]!.openai_reasoning_tokens, 40);
   assert.equal(db.drafts[0]!.openai_total_tokens, 1300);
-  assert.equal(db.drafts[0]!.estimated_cost_usd, 0.0081);
+  assert.equal(db.drafts[0]!.estimated_cost_usd, 0.0106);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
   assert.equal(db.conversations[0]!.state, "DRAFT_READY");
   assert.equal(db.notificationEvents.length, 1);
@@ -576,16 +624,17 @@ test("Waraporn draft request attaches the Make vector store at Responses API lev
   assert.deepEqual(body.tools, [{
     type: "file_search",
     vector_store_ids: [DEFAULT_WARAPORN_VECTOR_STORE_ID],
-    max_num_results: 10,
+    max_num_results: WARAPORN_FILE_SEARCH_MAX_RESULTS,
   }]);
-  assert.equal(body.tool_choice, "required");
-  assert.equal(body.max_tool_calls, 2);
-  assert.deepEqual(body.reasoning, { effort: "low" });
-  assert.equal((body.text as Record<string, unknown>).verbosity, "low");
+  assert.equal("tool_choice" in body, false);
+  assert.equal("max_tool_calls" in body, false);
+  assert.equal(body.top_p, 0.98);
+  assert.deepEqual(body.reasoning, { effort: "medium" });
+  assert.equal((body.text as Record<string, unknown>).verbosity, "medium");
   assert.equal("previous_response_id" in body, false);
 });
 
-test("Waraporn draft request carries one compact verified runtime envelope", async () => {
+test("Waraporn draft request keeps the Make runtime input structure", async () => {
   const db = new FakeWarapornDB();
   db.messages[0]!.guest_message = "Can we extend one more night and what is the price?";
   const { fetcher, bodies } = openAiFetcher();
@@ -593,22 +642,12 @@ test("Waraporn draft request carries one compact verified runtime envelope", asy
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
   const text = requestText(bodies[0]!);
-  assert.match(text, /VANARA VERIFIED RUNTIME CONTEXT/);
-  assert.match(text, /Guest first name: Daniel/);
-  assert.match(text, /Check-in date: 2026-12-28/);
-  assert.match(text, /Check-out date: 2027-01-01/);
+  assert.match(text, /GUEST FIRST NAME\s+Daniel/);
+  assert.match(text, /CHECK-IN DATE\s+2026-12-28/);
+  assert.match(text, /CHECK-OUT DATE\s+2027-01-01/);
   assert.match(text, /CONVERSATION CONTEXT\s+No previous conversation history stored in Vanara\./);
   assert.match(text, /CURRENT GUEST MESSAGE\s+Can we extend one more night and what is the price\?/);
-  assert.match(text, /Current Bangkok date\/time: 2026-08-04 17:00/);
-  assert.match(text, /Travel phase: pre-arrival/);
-  assert.match(text, /Booking status: Confirmed/);
-  assert.match(text, /Guest-message language: en/);
-  assert.match(text, /Provider\/channel: BEDS24\/AGODA/);
-  assert.match(text, /Accommodation: Bungalow/);
-  assert.match(text, /Physical unit: Bungalow 1/);
-  assert.match(text, /Verified availability\/prices: USED/);
-  assert.match(text, /Beds24 verified commercial cache/);
-  assert.match(text, /Bungalow: 1\/1 available/);
+  assert.doesNotMatch(text, /VANARA VERIFIED RUNTIME CONTEXT/);
   assert.doesNotMatch(text, /"messageId"/);
   const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
   assert.equal(storedContext.currentBangkokDate, "2026-08-04");
@@ -626,7 +665,8 @@ test("Waraporn reply language follows the current guest message, not booking lan
   await generateWarapornDraft(env(db, fetcher) as never, 1, { now: NOW });
 
   const text = requestText(bodies[0]!);
-  assert.match(text, /Guest-message language: en/);
+  assert.match(text, /CURRENT GUEST MESSAGE\s+We will arrive from Milan to Bangkok at around 11:00 in the morning\. We are 2 people\./);
+  assert.doesNotMatch(text, /Guest-message language:/);
   const storedContext = JSON.parse(db.drafts[0]!.runtime_context_json ?? "{}") as Record<string, unknown>;
   assert.equal(storedContext.language, "en");
 });
@@ -740,7 +780,7 @@ test("successful assistant text is accepted without backend retrieval filename r
   assert.deepEqual(JSON.parse(db.drafts[0]!.retrieval_filenames), ["Other_File.md"]);
 });
 
-test("valid final answer over the file-search soft threshold is preserved READY exactly once", async () => {
+test("many internal file searches still use one Responses POST and preserve the final answer exactly once", async () => {
   const db = new FakeWarapornDB();
   let calls = 0;
   const fetcher: typeof fetch = async () => {
@@ -749,7 +789,7 @@ test("valid final answer over the file-search soft threshold is preserved READY 
       "resp-soft-limit",
       READY_DRAFT_TEXT,
       ["MOBILITY_REASONING_CONTRACT_v1.md"],
-      WARAPORN_MAX_TOOL_CALLS + 1,
+      WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD + 1,
     ));
   };
   const bindings = env(db, fetcher) as never;
@@ -763,8 +803,32 @@ test("valid final answer over the file-search soft threshold is preserved READY 
   assert.equal(calls, 1);
   assert.equal(db.drafts.length, 1);
   assert.equal(db.drafts[0]!.status, "READY");
-  assert.equal(db.drafts[0]!.openai_file_search_call_count, WARAPORN_MAX_TOOL_CALLS + 1);
+  assert.equal(db.drafts[0]!.openai_file_search_call_count, WARAPORN_FILE_SEARCH_DIAGNOSTIC_THRESHOLD + 1);
   assert.equal(db.messages[0]!.state, "DRAFT_READY");
+});
+
+test("an ambiguous timeout performs zero automatic retries and becomes terminal", async () => {
+  const db = new FakeWarapornDB();
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls += 1;
+    const error = new Error("request aborted");
+    error.name = "AbortError";
+    throw error;
+  };
+  const bindings = env(db, fetcher) as never;
+
+  await assert.rejects(
+    generateWarapornDraft(bindings, 1, { now: NOW }),
+    /timed out/i,
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(db.messages[0]!.state, "FAILED_MANUAL_RETRY");
+  assert.equal(db.drafts[0]!.openai_request_count, 1);
+  const pending = await generatePendingWarapornDrafts(bindings, { now: NOW });
+  assert.equal(pending.attempted, 0);
+  assert.equal(calls, 1);
 });
 
 test("second generate call reuses an existing READY draft without calling OpenAI again", async () => {
