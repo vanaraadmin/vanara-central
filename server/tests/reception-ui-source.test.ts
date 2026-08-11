@@ -30,6 +30,16 @@ test("booking details sheet renders as a fullscreen glass sheet", () => {
   assert.match(receptionPage, /const root = document\.documentElement;[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
 });
 
+test("booking details and guest contacts share hardened mobile overlay containment", () => {
+  assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
+  assert.match(guestContactSheet, /const root = document\.documentElement;[\s\S]*root\.style\.overflow = "hidden";[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*max-width:\s*100vw;[\s\S]*max-height:\s*100dvh;[\s\S]*align-items:\s*stretch;[\s\S]*overflow:\s*hidden;[\s\S]*var\(--vc-safe-top\)/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*min-width:\s*0;[\s\S]*min-height:\s*0;[\s\S]*max-width:\s*100%;[\s\S]*box-sizing:\s*border-box;[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*overflow-y:\s*auto;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*2;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(guestContactCss, /@media \(min-width:\s*1024px\)[\s\S]*\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*width:\s*min\(100%, 540px\);[\s\S]*height:\s*auto;[\s\S]*max-height:\s*calc\(100dvh - 48px\);[\s\S]*border-radius:\s*30px;/);
+  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*contain:\s*layout paint;[\s\S]*background:[\s\S]*#071f18;/);
+});
+
 test("reception contact icon uses the current Design System color and centered trigger", () => {
   assert.match(receptionPage, /VanaraGuestContactTrigger/);
   assert.match(receptionPage, /VanaraGuestContactSheet/);

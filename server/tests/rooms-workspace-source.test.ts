@@ -306,6 +306,9 @@ test("Rooms reuses the Reception guest contact trigger and sheet", () => {
   assert.match(guestContactSheet, /translate\("phoneNotAvailable"\)/);
   assert.match(guestContactSheet, /translate\("emailNotAvailable"\)/);
   assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
+  assert.match(guestContactSheet, /const root = document\.documentElement;[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*overflow:\s*hidden;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*overflow-y:\s*auto;[\s\S]*background:[\s\S]*#071f18;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
   assert.doesNotMatch(`${roomsPage}\n${roomExpandedWorkspace}\n${guestCard}`, /rooms-contact|address-book-light|function AddressBookIcon/);
