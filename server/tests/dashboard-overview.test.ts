@@ -211,8 +211,8 @@ class FakeDashboardDB {
         results: [
           { entry_date: "2026-08-06", entry_type: "income", amount: 500, description: "Restaurant", note: "category: INCASSI RISTORANTE / BAR" },
           { entry_date: "2026-08-06", entry_type: "income", amount: 250, description: "Motorbike", note: "category: INCASSI AFFITTO MOTORINO" },
-          { entry_date: "2026-08-06", entry_type: "expense", amount: 300, description: "Supplies", note: "category: Resort Supplies" },
-          { entry_date: "2026-08-06", entry_type: "expense", amount: 200, description: "Internet", note: "category: Utilities & Connectivity" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 300, description: "OpenAI", note: "category: Software & Subscriptions" },
+          { entry_date: "2026-08-06", entry_type: "expense", amount: 200, description: "Garden tools", note: "category: Garden & Outdoor" },
         ].filter((row) => this.inRange(row.entry_date, range)) as T[],
       };
     }
@@ -291,8 +291,10 @@ test("dashboard overview aggregates existing module services into a compact DTO"
   assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Restaurant / Bar income" && item.amount === 500), true);
   assert.equal(data.business.financialSnapshot.manualIncome.some((item) => item.label === "Motorbike rental income" && item.amount === 250), true);
   assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Manual expenses" && item.amount === 500), true);
-  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Resort Supplies" && item.amount === 300), true);
-  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Utilities & Connectivity" && item.amount === 200), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "IT Costs" && item.amount === 300), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Garden" && item.amount === 200), true);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Software & Subscriptions"), false);
+  assert.equal(data.business.financialSnapshot.manualExpenses.some((item) => item.label === "Garden & Outdoor"), false);
   assert.equal(data.business.financialSnapshot.expenseComposition.some((item) => item.label === "Payroll / Wages" && item.amount === 13300), true);
   assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Base wages" && item.amount === 11400), true);
   assert.equal(data.business.financialSnapshot.payrollComponents.some((item) => item.label === "Social security / SSO" && item.amount === 600), true);

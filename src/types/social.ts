@@ -32,6 +32,14 @@ export interface SocialPostQueueItem {
   failureMessage: string | null;
   openaiRequestCount: number;
   estimatedCostUsd: number;
+  imagePhase?: string | null;
+  imageLeasedAt?: string | null;
+  imageSourceReadyAt?: string | null;
+  imageRequestStartedAt?: string | null;
+  imageResponseReceivedAt?: string | null;
+  imageFinalizedAt?: string | null;
+  imageWatchdogAt?: string | null;
+  imageRecoveryState?: string | null;
 }
 
 export interface SocialAutomationOverview {

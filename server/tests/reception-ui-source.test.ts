@@ -7,6 +7,8 @@ const receptionCss = await readFile(new URL("../../src/styles/ReceptionPage.css"
 const guestContactTrigger = await readFile(new URL("../../src/components/vanara/VanaraGuestContactTrigger.tsx", import.meta.url), "utf8");
 const guestContactSheet = await readFile(new URL("../../src/components/vanara/VanaraGuestContactSheet.tsx", import.meta.url), "utf8");
 const guestContactCss = await readFile(new URL("../../src/styles/VanaraGuestContact.css", import.meta.url), "utf8");
+const operationalStatusPill = await readFile(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
+const operationalStatusPillCss = await readFile(new URL("../../src/styles/OperationalStatusPill.css", import.meta.url), "utf8");
 const passportWorkflow = await readFile(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
 const passportMessages = await readFile(new URL("../../src/components/passport/passport-messages.ts", import.meta.url), "utf8");
 const passportWorkflowState = await readFile(new URL("../../src/utils/passport-workflow-state.ts", import.meta.url), "utf8");
@@ -35,9 +37,17 @@ test("booking details sheet renders as a fullscreen glass sheet", () => {
 test("booking details and guest contacts share hardened mobile overlay containment", () => {
   assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
   assert.match(guestContactSheet, /const root = document\.documentElement;[\s\S]*root\.style\.overflow = "hidden";[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
-  assert.match(guestContactCss, /\.vanara-guest-contact-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*max-width:\s*100vw;[\s\S]*max-height:\s*100dvh;[\s\S]*align-items:\s*stretch;[\s\S]*overflow:\s*hidden;[\s\S]*var\(--vc-safe-top\)/);
-  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*min-width:\s*0;[\s\S]*min-height:\s*0;[\s\S]*max-width:\s*100%;[\s\S]*box-sizing:\s*border-box;[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*overflow-y:\s*auto;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
-  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*2;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*width:\s*100vw;[\s\S]*height:\s*100dvh;[\s\S]*overflow:\s*hidden;[\s\S]*padding:\s*0;/);
+  const contactPanelCss = guestContactCss.match(/\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(contactPanelCss, /height:\s*100%/);
+  assert.match(contactPanelCss, /grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(contactPanelCss, /overflow:\s*hidden/);
+  assert.match(contactPanelCss, /background:[\s\S]*#071f18/);
+  assert.match(guestContactSheet, /className="vanara-guest-contact-sheet__scroll"[\s\S]*className="vanara-guest-contact-sheet__header"[\s\S]*className="vanara-guest-contact-sheet__actions"/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__scroll\s*\{[\s\S]*min-height:\s*0;[\s\S]*align-content:\s*start;[\s\S]*overflow-y:\s*auto;[\s\S]*-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*2;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.doesNotMatch(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[^}]*overflow-y:\s*auto/);
+  assert.doesNotMatch(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[^}]*position:\s*sticky/);
   assert.match(guestContactCss, /@media \(min-width:\s*1024px\)[\s\S]*\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*width:\s*min\(100%, 540px\);[\s\S]*height:\s*auto;[\s\S]*max-height:\s*calc\(100dvh - 48px\);[\s\S]*border-radius:\s*30px;/);
   assert.match(receptionCss, /\.reception-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*contain:\s*layout paint;[\s\S]*background:[\s\S]*#071f18;/);
 });
@@ -168,9 +178,18 @@ test("Reception suppresses floating navigation while operational overlays are op
 });
 
 test("check-in cards expose housekeeping-only cleaning labels", () => {
-  assert.match(receptionPage, /translate\("roomClean"\)/);
-  assert.match(receptionPage, /translate\("roomDirty"\)/);
-  assert.match(receptionPage, /translate\("cleaningInProgress"\)/);
+  assert.match(receptionPage, /import OperationalStatusPill from "\.\.\/components\/rooms\/OperationalStatusPill"/);
+  assert.match(receptionPage, /translateStaffLabel\(roomStatus, translate\)/);
+  assert.match(receptionPage, /<OperationalStatusPill emphasis label=\{housekeepingLabel\} tone=\{roomStatusTone\(roomStatus\)\} \/>/);
+  assert.match(receptionPage, /normalized === "clean"[\s\S]*return "success"/);
+  assert.match(receptionPage, /normalized === "cleaning"[\s\S]*return "info"/);
+  assert.match(receptionPage, /normalized === "dirty"[\s\S]*return "warning"/);
+  assert.match(operationalStatusPill, /import "\.\.\/\.\.\/styles\/OperationalStatusPill\.css"/);
+  assert.match(operationalStatusPillCss, /\.operational-status-pill--success/);
+  assert.match(operationalStatusPillCss, /\.operational-status-pill--info/);
+  assert.match(operationalStatusPillCss, /\.operational-status-pill--warning/);
+  assert.doesNotMatch(receptionPage, /selectionBackground|checkin-card__housekeeping-icon/);
+  assert.doesNotMatch(receptionCss, /selection-background\.svg|checkin-card__housekeeping-icon/);
   assert.match(serverReceptionService, /status:\s*"Clean"/);
   assert.match(serverReceptionService, /status:\s*"Dirty"/);
   assert.match(serverReceptionService, /status:\s*"Cleaning In Progress"/);

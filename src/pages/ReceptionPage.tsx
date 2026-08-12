@@ -6,9 +6,9 @@ import depositIcon from "../assets/img/hand-coins-light.svg";
 import passportIcon from "../assets/img/identification-card-light.svg";
 import keysIcon from "../assets/img/key-light.svg";
 import roomInspectedIcon from "../assets/img/magnifying-glass-light.svg";
-import selectionBackground from "../assets/img/selection-background.svg";
 import { PageError } from "../components/AsyncState";
 import { PassportWorkflow } from "../components/passport/PassportWorkflow";
+import OperationalStatusPill from "../components/rooms/OperationalStatusPill";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { RoomIcon, UserIcon } from "../components/OperationsIcons";
 import VanaraDataGrid from "../components/vanara/VanaraDataGrid";
@@ -18,15 +18,16 @@ import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import VanaraSummaryGrid from "../components/vanara/VanaraSummaryGrid";
+import type { StatusTone } from "../config/roomOperationalPresentation";
 import { useLanguage } from "../providers/language.context";
 import { loadCurrentUser } from "../services/auth.service";
 import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
 import type { BookingPassport, PassportData, ReceptionOverview, ReceptionStay } from "../types/reception";
 import { formatNationalityText } from "../utils/country-nationality";
+import { translateStaffLabel } from "../utils/staff-i18n-labels";
 import "../styles/ReceptionPage.css";
 
 type ReceptionCardType = "arrival" | "departure";
-type CleaningStatus = "clean" | "in_progress" | "dirty";
 type CompletionDraft = {
   passportRegistrationCompleted: boolean;
   roomInspected: boolean;
@@ -130,36 +131,25 @@ function receptionStayContact(stay: ReceptionStay): VanaraGuestContact {
   };
 }
 
-function cleaningStatusFromRoomStatus(roomStatus: string): CleaningStatus {
+function roomStatusTone(roomStatus: string): StatusTone {
   const normalized = roomStatus.trim().toLowerCase();
-  if (normalized === "clean" || normalized === "ready") return "clean";
-  if (normalized === "cleaning" || normalized === "cleaning in progress") return "in_progress";
-  if (normalized === "dirty" || normalized === "not ready") return "dirty";
-  return "dirty";
+  if (normalized === "clean" || normalized === "ready") return "success";
+  if (normalized === "cleaning" || normalized === "cleaning in progress") return "info";
+  if (normalized === "out of service" || normalized === "maintenance blocked") return "danger";
+  if (normalized === "dirty" || normalized === "not ready" || normalized === "maintenance") return "warning";
+  return "neutral";
 }
 
 function HousekeepingStatusRow({ roomStatus }: { roomStatus: string }) {
   const { translate } = useLanguage();
-  const cleaningStatus = cleaningStatusFromRoomStatus(roomStatus);
-  const housekeepingLabel =
-    cleaningStatus === "clean"
-      ? translate("roomClean")
-      : cleaningStatus === "in_progress"
-        ? translate("cleaningInProgress")
-        : translate("roomDirty");
+  const housekeepingLabel = translateStaffLabel(roomStatus, translate);
 
   return (
     <div
       aria-label={translate("housekeepingStatusLabel", { status: housekeepingLabel })}
-      className={`checkin-card__housekeeping checkin-card__housekeeping--${cleaningStatus}`}
+      className="checkin-card__housekeeping"
     >
-      <img
-        alt=""
-        aria-hidden="true"
-        className={`checkin-card__housekeeping-icon checkin-card__housekeeping-icon--${cleaningStatus}`}
-        src={selectionBackground}
-      />
-      <span className="checkin-card__housekeeping-label">{housekeepingLabel}</span>
+      <OperationalStatusPill emphasis label={housekeepingLabel} tone={roomStatusTone(roomStatus)} />
     </div>
   );
 }

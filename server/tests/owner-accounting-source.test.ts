@@ -128,6 +128,20 @@ test("manual accounting receipt upload uses R2 and validates expenses", () => {
   assert.match(accounting, /Amount must be greater than zero/);
 });
 
+test("manual expense taxonomy keeps historical rows while presenting canonical categories", () => {
+  assert.match(accountingPage, /value: "IT Costs", label: "IT Costs"/);
+  assert.match(accountingPage, /value: "Garden", label: "Garden"/);
+  assert.doesNotMatch(accountingPage, /value: "Garden & Pool"/);
+  assert.match(accounting, /"software & subscriptions": "IT Costs"/);
+  assert.match(accounting, /"garden & outdoor": "Garden"/);
+  assert.match(accounting, /"garden & pool": "Garden"/);
+  assert.match(accounting, /canonicalManualExpenseCategory/);
+  assert.match(dashboard, /manualAccountingCategory\(row\.note, row\.entry_type === "income" \? "Other Manual Income" : "Other Expenses"\)/);
+  assert.match(accounting, /const header = \["date", "type", "amount", "description", "category", "note", "receipt_file"\]/);
+  assert.match(accounting, /manualAccountingCategory\(row\.note, row\.entry_type === "income" \? "Other Manual Income" : "Other Expenses"\)/);
+  assert.doesNotMatch(accounting, /UPDATE manual_accounting_entries[\s\S]*Software & Subscriptions|UPDATE manual_accounting_entries[\s\S]*Garden & Outdoor/);
+});
+
 test("Accounting UI uses business language and keeps date controls contained", () => {
   assert.match(accountingPage, />Manual entry</);
   assert.match(accountingPage, />Export for accountant</);
@@ -140,6 +154,8 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.match(accountingPage, /const expenseCategories = \[/);
   assert.match(accountingPage, /value: "Resort Supplies", label: "Resort Supplies"/);
   assert.match(accountingPage, /value: "Utilities & Connectivity", label: "Utilities & Connectivity"/);
+  assert.match(accountingPage, /value: "IT Costs", label: "IT Costs"/);
+  assert.match(accountingPage, /value: "Garden", label: "Garden"/);
   assert.match(accountingPage, /<span>Category<\/span>/);
   assert.match(accountingPage, /note: accountingNote\(category\)/);
   assert.match(accountingPage, /<option key=\{item\.value\} value=\{item\.value\}>\{item\.label\}<\/option>/);

@@ -23,6 +23,7 @@ const roomDomainCard = readFileSync(new URL("../../src/components/rooms/RoomDoma
 const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/rooms/RoomOperationalSummaryCard.tsx", import.meta.url), "utf8");
 const roomHero = readFileSync(new URL("../../src/components/rooms/RoomHero.tsx", import.meta.url), "utf8");
 const statusPill = readFileSync(new URL("../../src/components/rooms/OperationalStatusPill.tsx", import.meta.url), "utf8");
+const statusPillCss = readFileSync(new URL("../../src/styles/OperationalStatusPill.css", import.meta.url), "utf8");
 const presentation = readFileSync(new URL("../../src/config/roomOperationalPresentation.ts", import.meta.url), "utf8");
 const roomsService = readFileSync(new URL("../../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const guestContactTrigger = readFileSync(new URL("../../src/components/vanara/VanaraGuestContactTrigger.tsx", import.meta.url), "utf8");
@@ -308,7 +309,13 @@ test("Rooms reuses the Reception guest contact trigger and sheet", () => {
   assert.match(guestContactSheet, /useContactSheetScrollLock\(Boolean\(contact\)\)/);
   assert.match(guestContactSheet, /const root = document\.documentElement;[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
   assert.match(guestContactCss, /\.vanara-guest-contact-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*overflow:\s*hidden;/);
-  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*overflow-y:\s*auto;[\s\S]*background:[\s\S]*#071f18;/);
+  const contactPanelCss = guestContactCss.match(/\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(contactPanelCss, /height:\s*100%/);
+  assert.match(contactPanelCss, /grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(contactPanelCss, /overflow:\s*hidden/);
+  assert.match(contactPanelCss, /background:[\s\S]*#071f18/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__scroll\s*\{[\s\S]*overflow-y:\s*auto;/);
+  assert.match(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[\s\S]*position:\s*relative;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-trigger\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-icon\s*\{[\s\S]*stroke:\s*currentColor;/);
   assert.doesNotMatch(`${roomsPage}\n${roomExpandedWorkspace}\n${guestCard}`, /rooms-contact|address-book-light|function AddressBookIcon/);
@@ -390,11 +397,13 @@ test("RoomDomainCard is reusable and not Reception-specific", () => {
 test("Operational status pill supports one reusable tone model", () => {
   for (const tone of ["success", "warning", "danger", "info", "neutral"]) {
     assert.match(statusPill, new RegExp(`operational-status-pill--\\$\\{tone\\}`));
-    assert.match(css, new RegExp(`\\.operational-status-pill--${tone}`));
+    assert.match(statusPillCss, new RegExp(`\\.operational-status-pill--${tone}`));
   }
-  assert.match(css, /\.operational-status-pill/);
-  assert.match(css, /min-height:\s*22px/);
-  assert.doesNotMatch(css, /pulse|blink|flash/);
+  assert.match(statusPill, /OperationalStatusPill\.css/);
+  assert.match(statusPillCss, /\.operational-status-pill/);
+  assert.match(statusPillCss, /min-height:\s*22px/);
+  assert.doesNotMatch(statusPillCss, /pulse|blink|flash/);
+  assert.doesNotMatch(css, /^\.operational-status-pill\s*\{/m);
 });
 
 test("Rooms Workspace no longer imports room hero photographs", () => {

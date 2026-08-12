@@ -3,6 +3,7 @@ import { listUsers, type AuthBindings } from "./current-user.service.js";
 import { listMaintenanceTickets, type MaintenanceBindings } from "./maintenance.service.js";
 import { getTodayDashboard, type TodayBindings, type TodayReservation } from "./today.service.js";
 import { rebuildOtaFinancialRecords, type OtaFinancialBindings } from "./ota-financial-normalization.service.js";
+import { manualAccountingCategory } from "./accounting.service.js";
 
 export interface DashboardBindings extends TodayBindings, HousekeepingBindings, MaintenanceBindings, AuthBindings, OtaFinancialBindings {
   DB: D1Database;
@@ -378,12 +379,6 @@ function percent(part: number, total: number): number {
   return total === 0 ? 0 : Math.round((part / total) * 1000) / 10;
 }
 
-function categoryFromNote(note: string | null, fallback: string): string {
-  const match = note?.match(/(?:^|;)\s*category:\s*([^;]+)/i);
-  const category = match?.[1]?.trim();
-  return category || fallback;
-}
-
 function ownerChannelLabel(value: string | null): string {
   const normalized = (value ?? "").trim().toLowerCase();
   if (!normalized) return "Other";
@@ -498,7 +493,7 @@ export async function buildFinancialSnapshot(
   ]);
   const manualExpenseBuckets = new Map<string, number>();
   for (const row of manualRows.results ?? []) {
-    const label = categoryFromNote(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses");
+    const label = manualAccountingCategory(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses");
     if (row.entry_type === "income") {
       addBucket(manualIncomeBuckets, ownerManualIncomeLabel(label), amount(row.amount));
     } else {

@@ -39,6 +39,14 @@ export interface SocialPostQueueItem {
   failureMessage: string | null;
   openaiRequestCount: number;
   estimatedCostUsd: number;
+  imagePhase?: string | null;
+  imageLeasedAt?: string | null;
+  imageSourceReadyAt?: string | null;
+  imageRequestStartedAt?: string | null;
+  imageResponseReceivedAt?: string | null;
+  imageFinalizedAt?: string | null;
+  imageWatchdogAt?: string | null;
+  imageRecoveryState?: string | null;
 }
 
 export interface SocialAutomationOverview {
@@ -73,6 +81,14 @@ interface SocialPostQueueRow {
   failure_message: string | null;
   openai_request_count: number;
   estimated_cost_usd: number;
+  image_phase: string | null;
+  image_leased_at: string | null;
+  image_source_ready_at: string | null;
+  image_request_started_at: string | null;
+  image_response_received_at: string | null;
+  image_finalized_at: string | null;
+  image_watchdog_at: string | null;
+  image_recovery_state: string | null;
 }
 
 interface StatusCountRow {
@@ -123,6 +139,14 @@ function rowToItem(row: SocialPostQueueRow): SocialPostQueueItem {
     failureMessage: row.failure_message,
     openaiRequestCount: row.openai_request_count,
     estimatedCostUsd: row.estimated_cost_usd,
+    imagePhase: row.image_phase,
+    imageLeasedAt: row.image_leased_at,
+    imageSourceReadyAt: row.image_source_ready_at,
+    imageRequestStartedAt: row.image_request_started_at,
+    imageResponseReceivedAt: row.image_response_received_at,
+    imageFinalizedAt: row.image_finalized_at,
+    imageWatchdogAt: row.image_watchdog_at,
+    imageRecoveryState: row.image_recovery_state,
   };
 }
 
@@ -180,7 +204,15 @@ export async function listSocialAutomationOverview(env: SocialAutomationBindings
         failure_code,
         failure_message,
         openai_request_count,
-        estimated_cost_usd
+        estimated_cost_usd,
+        image_phase,
+        image_leased_at,
+        image_source_ready_at,
+        image_request_started_at,
+        image_response_received_at,
+        image_finalized_at,
+        image_watchdog_at,
+        image_recovery_state
       FROM social_post_queue
       ORDER BY queued_at DESC, social_post_id DESC
       LIMIT ?
@@ -268,7 +300,15 @@ export async function queueSocialPhoto(
       failure_code,
       failure_message,
       openai_request_count,
-      estimated_cost_usd
+      estimated_cost_usd,
+      image_phase,
+      image_leased_at,
+      image_source_ready_at,
+      image_request_started_at,
+      image_response_received_at,
+      image_finalized_at,
+      image_watchdog_at,
+      image_recovery_state
     FROM social_post_queue
     WHERE original_object_key = ?
   `).bind(key).first<SocialPostQueueRow>();

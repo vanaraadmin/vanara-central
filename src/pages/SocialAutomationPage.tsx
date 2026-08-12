@@ -68,21 +68,26 @@ function QueueItem({
   onPrepare,
   onPrepareCaption,
   onPublish,
+  onRetry,
   preparing,
   captioning,
   publishing,
+  retrying,
 }: {
   item: SocialPostQueueItem;
   onPrepare(item: SocialPostQueueItem): void;
   onPrepareCaption(item: SocialPostQueueItem): void;
   onPublish(item: SocialPostQueueItem): void;
+  onRetry(item: SocialPostQueueItem): void;
   preparing: boolean;
   captioning: boolean;
   publishing: boolean;
+  retrying: boolean;
 }) {
   const canPrepare = item.status === "QUEUED";
   const canPrepareCaption = item.status === "IMAGE_READY";
   const canPublish = item.status === "READY_TO_POST";
+  const canRetry = item.status === "FAILED" && item.imageRecoveryState === "RETRY_SAFE";
   return (
     <li className={`social-queue-item social-queue-item--${item.status.toLowerCase().replaceAll("_", "-")}`}>
       <span className="social-queue-item__thumb" aria-hidden="true" />
@@ -130,6 +135,17 @@ function QueueItem({
             type="button"
           >
             {publishing ? "Publishing" : "Publish"}
+          </button>
+        ) : null}
+        {canRetry ? (
+          <button
+            aria-label={`Retry image preparation for ${item.originalFileName}`}
+            className="social-queue-item__prepare"
+            disabled={retrying}
+            onClick={() => onRetry(item)}
+            type="button"
+          >
+            {retrying ? "Queueing retry" : "Retry Image"}
           </button>
         ) : null}
       </span>
@@ -185,6 +201,14 @@ export default function SocialAutomationPage() {
     mutationFn: (item: SocialPostQueueItem) => prepareSocialCaption(item.id),
     onSuccess: async () => {
       setNotice("Ready to post");
+      await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
+    },
+  });
+
+  const retry = useMutation({
+    mutationFn: (item: SocialPostQueueItem) => prepareSocialImage(item.id),
+    onSuccess: async () => {
+      setNotice("Image ready");
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -274,9 +298,11 @@ export default function SocialAutomationPage() {
                 onPrepare={(queuedItem) => prepare.mutate(queuedItem)}
                 onPrepareCaption={(readyItem) => caption.mutate(readyItem)}
                 onPublish={(readyItem) => publish.mutate(readyItem)}
+                onRetry={(failedItem) => retry.mutate(failedItem)}
                 preparing={prepare.isPending && prepare.variables?.id === item.id}
                 captioning={caption.isPending && caption.variables?.id === item.id}
                 publishing={publish.isPending && publish.variables?.id === item.id}
+                retrying={retry.isPending && retry.variables?.id === item.id}
               />
             ))}
           </ul>
@@ -284,6 +310,7 @@ export default function SocialAutomationPage() {
         {prepare.isError ? <p className="social-upload__error">{prepare.error instanceof Error ? prepare.error.message : "Image could not be prepared"}</p> : null}
         {caption.isError ? <p className="social-upload__error">{caption.error instanceof Error ? caption.error.message : "Caption could not be prepared"}</p> : null}
         {publish.isError ? <p className="social-upload__error">{publish.error instanceof Error ? publish.error.message : "Post could not be published"}</p> : null}
+        {retry.isError ? <p className="social-upload__error">{retry.error instanceof Error ? retry.error.message : "Image retry could not be queued"}</p> : null}
       </VanaraGlassRegion>
     </WorkspaceShell>
   );

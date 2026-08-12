@@ -23,6 +23,11 @@ export interface PrepareSocialImageResult {
   item: SocialPostQueueItem | null;
 }
 
+export interface SocialImageWatchdogResult {
+  retrySafe: number;
+  manualReview: number;
+}
+
 interface SocialPostQueueRow {
   social_post_id: number;
   original_object_key: string;
@@ -46,6 +51,14 @@ interface SocialPostQueueRow {
   failure_message: string | null;
   openai_request_count: number;
   estimated_cost_usd: number;
+  image_phase: string | null;
+  image_leased_at: string | null;
+  image_source_ready_at: string | null;
+  image_request_started_at: string | null;
+  image_response_received_at: string | null;
+  image_finalized_at: string | null;
+  image_watchdog_at: string | null;
+  image_recovery_state: string | null;
 }
 
 interface OpenAiUsage {
@@ -121,13 +134,15 @@ export class SocialImagePreparationError extends Error {
   }
 }
 
-export const SOCIAL_IMAGE_PREPARE_CRON = "0 20 * * *";
+export const SOCIAL_IMAGE_PREPARE_CRON = "*/10 * * * *";
 export const DEFAULT_SOCIAL_IMAGE_PREP_MODEL = "gpt-5.6-terra";
 export const DEFAULT_SOCIAL_CAPTION_MODEL = "gpt-5.6-terra";
 export const SOCIAL_IMAGE_PREP_SUPPORTED_FALLBACK_MODEL = "gpt-5.6";
 export const DEFAULT_SOCIAL_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 export const SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS = 2;
 export const SOCIAL_IMAGE_PREPARE_TIMEOUT_MS = 90_000;
+export const SOCIAL_IMAGE_STALE_LEASE_MS = 15 * 60_000;
+export const SOCIAL_IMAGE_MAX_ATTEMPTS = 2;
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const SOCIAL_PROCESSED_PREFIX = "social/processed";
@@ -181,6 +196,14 @@ function rowToItem(row: SocialPostQueueRow): SocialPostQueueItem {
     failureMessage: row.failure_message,
     openaiRequestCount: row.openai_request_count,
     estimatedCostUsd: row.estimated_cost_usd,
+    imagePhase: row.image_phase,
+    imageLeasedAt: row.image_leased_at,
+    imageSourceReadyAt: row.image_source_ready_at,
+    imageRequestStartedAt: row.image_request_started_at,
+    imageResponseReceivedAt: row.image_response_received_at,
+    imageFinalizedAt: row.image_finalized_at,
+    imageWatchdogAt: row.image_watchdog_at,
+    imageRecoveryState: row.image_recovery_state,
   };
 }
 
@@ -208,7 +231,15 @@ function socialPostSelectSql(): string {
       failure_code,
       failure_message,
       openai_request_count,
-      estimated_cost_usd
+      estimated_cost_usd,
+      image_phase,
+      image_leased_at,
+      image_source_ready_at,
+      image_request_started_at,
+      image_response_received_at,
+      image_finalized_at,
+      image_watchdog_at,
+      image_recovery_state
     FROM social_post_queue
   `;
 }
@@ -656,6 +687,13 @@ async function acquireQueuedPost(env: Pick<SocialImagePreparationBindings, "DB">
       UPDATE social_post_queue
       SET status = 'PREPARING_IMAGE',
           processing_started_at = ?,
+          image_phase = 'LEASED',
+          image_leased_at = ?,
+          image_source_ready_at = NULL,
+          image_request_started_at = NULL,
+          image_response_received_at = NULL,
+          image_finalized_at = NULL,
+          image_recovery_state = NULL,
           attempt_count = attempt_count + 1,
           updated_at = ?,
           failure_code = NULL,
@@ -674,18 +712,35 @@ async function acquireQueuedPost(env: Pick<SocialImagePreparationBindings, "DB">
       UPDATE social_post_queue
       SET status = 'PREPARING_IMAGE',
           processing_started_at = ?,
+          image_phase = 'LEASED',
+          image_leased_at = ?,
+          image_source_ready_at = NULL,
+          image_request_started_at = NULL,
+          image_response_received_at = NULL,
+          image_finalized_at = NULL,
+          image_recovery_state = NULL,
           attempt_count = attempt_count + 1,
           updated_at = ?,
           failure_code = NULL,
           failure_message = NULL
       WHERE social_post_id = ?
-        AND status = 'QUEUED'
+        AND (
+          status = 'QUEUED'
+          OR (
+            status = 'FAILED'
+            AND image_recovery_state = 'RETRY_SAFE'
+            AND image_request_started_at IS NULL
+            AND image_openai_response_id IS NULL
+            AND openai_request_count = 0
+            AND attempt_count < ${SOCIAL_IMAGE_MAX_ATTEMPTS}
+          )
+        )
       RETURNING *
     `;
   const statement = env.DB.prepare(sql);
   const row = socialPostId === null
-    ? await statement.bind(now, now).first<SocialPostQueueRow>()
-    : await statement.bind(now, now, socialPostId).first<SocialPostQueueRow>();
+    ? await statement.bind(now, now, now).first<SocialPostQueueRow>()
+    : await statement.bind(now, now, now, socialPostId).first<SocialPostQueueRow>();
   return row ?? null;
 }
 
@@ -700,6 +755,8 @@ async function markFailed(
   await env.DB.prepare(`
     UPDATE social_post_queue
     SET status = 'FAILED',
+        image_phase = 'FAILED',
+        image_finalized_at = ?,
         failed_at = ?,
         updated_at = ?,
         failure_code = ?,
@@ -712,9 +769,14 @@ async function markFailed(
         openai_reasoning_tokens = CASE WHEN ? IS NULL THEN openai_reasoning_tokens ELSE ? END,
         openai_total_tokens = CASE WHEN ? IS NULL THEN openai_total_tokens ELSE ? END,
         openai_elapsed_ms = CASE WHEN ? IS NULL THEN openai_elapsed_ms ELSE ? END,
-        estimated_cost_usd = CASE WHEN ? IS NULL THEN estimated_cost_usd ELSE ? END
+        estimated_cost_usd = CASE WHEN ? IS NULL THEN estimated_cost_usd ELSE ? END,
+        image_recovery_state = CASE
+          WHEN ? = 1 AND image_request_started_at IS NULL AND image_openai_response_id IS NULL AND openai_request_count = 0 THEN 'RETRY_SAFE'
+          ELSE 'MANUAL_REVIEW'
+        END
     WHERE social_post_id = ?
   `).bind(
+    now,
     now,
     now,
     code,
@@ -735,10 +797,120 @@ async function markFailed(
     result?.elapsedMs ?? 0,
     result ? 1 : null,
     result?.estimatedCostUsd ?? 0,
+    code === "processed_image_persistence_failed" ? 1 : 0,
     socialPostId,
   ).run();
   const row = await env.DB.prepare(`${socialPostSelectSql()} WHERE social_post_id = ?`).bind(socialPostId).first<SocialPostQueueRow>();
   return row ? rowToItem(row) : null;
+}
+
+async function markImageSourceReady(env: Pick<SocialImagePreparationBindings, "DB">, socialPostId: number, now: string): Promise<void> {
+  const result = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET image_phase = 'SOURCE_READY', image_source_ready_at = ?, updated_at = ?
+    WHERE social_post_id = ? AND status = 'PREPARING_IMAGE' AND image_request_started_at IS NULL
+  `).bind(now, now, socialPostId).run();
+  if (numeric(result.meta.changes) !== 1) {
+    throw new SocialImagePreparationError("Social image source checkpoint could not be saved.", "processed_image_persistence_failed", 500);
+  }
+}
+
+async function markImageRequestStarted(env: Pick<SocialImagePreparationBindings, "DB">, socialPostId: number, now: string): Promise<void> {
+  const result = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET image_phase = 'REQUEST_STARTED',
+        image_request_started_at = ?,
+        openai_request_count = openai_request_count + 1,
+        updated_at = ?
+    WHERE social_post_id = ?
+      AND status = 'PREPARING_IMAGE'
+      AND image_request_started_at IS NULL
+      AND openai_request_count = 0
+  `).bind(now, now, socialPostId).run();
+  if (numeric(result.meta.changes) !== 1) {
+    throw new SocialImagePreparationError("Social image request checkpoint could not be saved.", "processed_image_persistence_failed", 500);
+  }
+}
+
+async function markImageResponseReceived(
+  env: Pick<SocialImagePreparationBindings, "DB">,
+  socialPostId: number,
+  result: SocialOpenAiResult,
+  now: string,
+): Promise<void> {
+  const update = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET image_phase = 'RESPONSE_RECEIVED',
+        image_response_received_at = ?,
+        image_openai_response_id = ?,
+        openai_input_tokens = ?,
+        openai_cached_input_tokens = ?,
+        openai_output_tokens = ?,
+        openai_reasoning_tokens = ?,
+        openai_total_tokens = ?,
+        openai_elapsed_ms = ?,
+        estimated_cost_usd = ?,
+        updated_at = ?
+    WHERE social_post_id = ? AND status = 'PREPARING_IMAGE' AND openai_request_count = 1
+  `).bind(
+    now,
+    result.responseId,
+    result.usage.inputTokens,
+    result.usage.cachedInputTokens,
+    result.usage.outputTokens,
+    result.usage.reasoningTokens,
+    result.usage.totalTokens,
+    result.elapsedMs,
+    result.estimatedCostUsd,
+    now,
+    socialPostId,
+  ).run();
+  if (numeric(update.meta.changes) !== 1) {
+    throw new SocialImagePreparationError("Social image response checkpoint could not be saved.", "processed_image_persistence_failed", 500);
+  }
+}
+
+export async function reconcileStaleSocialImagePreparations(
+  env: Pick<SocialImagePreparationBindings, "DB">,
+  now = new Date().toISOString(),
+): Promise<SocialImageWatchdogResult> {
+  const cutoff = new Date(new Date(now).getTime() - SOCIAL_IMAGE_STALE_LEASE_MS).toISOString();
+  const retrySafe = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET status = 'FAILED',
+        image_phase = 'FAILED',
+        image_watchdog_at = ?,
+        image_finalized_at = ?,
+        image_recovery_state = 'RETRY_SAFE',
+        failed_at = ?,
+        updated_at = ?,
+        failure_code = 'image_preparation_interrupted_retry_safe',
+        failure_message = 'Image preparation stopped before any AI request. The original is preserved and one explicit retry is available.'
+    WHERE status = 'PREPARING_IMAGE'
+      AND COALESCE(image_leased_at, processing_started_at) <= ?
+      AND image_request_started_at IS NULL
+      AND image_response_received_at IS NULL
+      AND image_openai_response_id IS NULL
+      AND openai_request_count = 0
+  `).bind(now, now, now, now, cutoff).run();
+
+  const manualReview = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET status = 'FAILED',
+        image_phase = 'FAILED',
+        image_watchdog_at = ?,
+        image_finalized_at = ?,
+        image_recovery_state = 'MANUAL_REVIEW',
+        failed_at = ?,
+        updated_at = ?,
+        failure_code = 'image_preparation_outcome_unknown_manual_review',
+        failure_message = 'Image preparation stopped after an AI request may have started. The original is preserved; automatic retry is blocked.'
+    WHERE status = 'PREPARING_IMAGE'
+      AND COALESCE(image_leased_at, processing_started_at) <= ?
+      AND (image_request_started_at IS NOT NULL OR image_response_received_at IS NOT NULL OR image_openai_response_id IS NOT NULL OR openai_request_count > 0)
+  `).bind(now, now, now, now, cutoff).run();
+
+  return { retrySafe: numeric(retrySafe.meta.changes), manualReview: numeric(manualReview.meta.changes) };
 }
 
 async function callOpenAiSocialImagePrepare(
@@ -803,6 +975,7 @@ export async function prepareSocialImage(
   options: PrepareSocialImageOptions = {},
 ): Promise<PrepareSocialImageResult> {
   const now = options.now ?? new Date().toISOString();
+  if (socialPostId === null) await reconcileStaleSocialImagePreparations(env, now);
   const leased = await acquireQueuedPost(env, socialPostId, now);
   if (!leased) {
     if (socialPostId === null) return { processed: false, item: null };
@@ -834,7 +1007,10 @@ export async function prepareSocialImage(
     const originalBytes = await original.arrayBuffer();
     const sourceMetadata = extractSocialImageMetadata(leased, originalBytes, now);
     const imageDataUrl = `data:${leased.content_type};base64,${arrayBufferToBase64(originalBytes)}`;
+    await markImageSourceReady(env, leased.social_post_id, options.now ?? new Date().toISOString());
+    await markImageRequestStarted(env, leased.social_post_id, options.now ?? new Date().toISOString());
     openAiResult = await callOpenAiSocialImagePrepare(env, imageDataUrl, storeId, socialImagePrepareContextWithMetadata(leased, now, sourceMetadata), options);
+    await markImageResponseReceived(env, leased.social_post_id, openAiResult, options.now ?? new Date().toISOString());
     if (openAiResult.toolCallCount > SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS) {
       throw new SocialImagePreparationError("OpenAI exceeded the social image preparation tool call limit.", "openai_tool_call_limit_exceeded", 502);
     }
@@ -852,6 +1028,9 @@ export async function prepareSocialImage(
     const updateResult = await env.DB.prepare(`
       UPDATE social_post_queue
       SET status = 'IMAGE_READY',
+          image_phase = 'FINALIZED',
+          image_finalized_at = ?,
+          image_recovery_state = NULL,
           processed_object_key = ?,
           image_prepared_at = ?,
           updated_at = ?,
@@ -872,6 +1051,7 @@ export async function prepareSocialImage(
       WHERE social_post_id = ?
         AND status = 'PREPARING_IMAGE'
     `).bind(
+      options.now ?? new Date().toISOString(),
       processedKey,
       now,
       now,

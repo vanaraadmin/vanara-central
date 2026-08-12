@@ -1,4 +1,5 @@
 import type { StatusTone } from "../../config/roomOperationalPresentation";
+import "../../styles/OperationalStatusPill.css";
 
 interface OperationalStatusPillProps {
   label: string;

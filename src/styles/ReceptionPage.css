@@ -352,34 +352,9 @@
 }
 
 .checkin-card__housekeeping {
+  display: flex;
   align-items: center;
-  gap: var(--vc-space-2);
   margin-top: var(--vc-space-2);
-  font-family: var(--vc-font-ui, var(--vc-font-sans));
-  font-size: var(--vc-type-body-sm);
-  font-weight: var(--vc-weight-semibold);
-  white-space: nowrap;
-}
-
-.checkin-card__housekeeping--clean {
-  color: rgba(232, 255, 236, 0.98);
-}
-
-.checkin-card__housekeeping--in_progress {
-  color: rgba(232, 247, 255, 0.98);
-}
-
-.checkin-card__housekeeping--dirty {
-  color: rgba(255, 239, 211, 0.98);
-}
-
-.checkin-card__housekeeping-icon {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  background: currentColor;
-  mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
-  -webkit-mask: url("../assets/img/selection-background.svg") center / contain no-repeat;
 }
 
 .reception-stay-facts {

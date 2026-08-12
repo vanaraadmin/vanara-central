@@ -121,6 +121,7 @@ export default function VanaraGuestContactSheet({
       <VanaraGlassSheet className="vanara-guest-contact-sheet__panel">
         <div className="vanara-guest-contact-sheet__handle" />
 
+        <div className="vanara-guest-contact-sheet__scroll">
         <header className="vanara-guest-contact-sheet__header">
           <span className="vanara-guest-contact-sheet__header-icon" aria-hidden="true">
             <AddressBookIcon />
@@ -184,6 +185,7 @@ export default function VanaraGuestContactSheet({
             {translate("emailNotAvailable")}
           </p>
         )}
+        </div>
 
         <div className="vanara-guest-contact-sheet__footer">
           <button className="vc-secondary-action" onClick={onCancel} type="button">

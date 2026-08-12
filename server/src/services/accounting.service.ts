@@ -8,6 +8,25 @@ export interface AccountingBindings extends OtaFinancialBindings {
 
 export type ManualEntryType = "income" | "expense";
 
+const MANUAL_EXPENSE_CATEGORY_ALIASES: Record<string, string> = {
+  "software & subscriptions": "IT Costs",
+  "it costs": "IT Costs",
+  "garden & outdoor": "Garden",
+  "garden & pool": "Garden",
+  garden: "Garden",
+};
+
+export function canonicalManualExpenseCategory(value: string): string {
+  const trimmed = value.trim();
+  return MANUAL_EXPENSE_CATEGORY_ALIASES[trimmed.toLowerCase()] ?? trimmed;
+}
+
+export function manualAccountingCategory(note: string | null, fallback: string): string {
+  const match = note?.match(/(?:^|;)\s*category:\s*([^;]+)/i);
+  const category = match?.[1]?.trim();
+  return canonicalManualExpenseCategory(category || fallback);
+}
+
 export interface ManualAccountingInput {
   entryType: ManualEntryType;
   entryDate: string;
@@ -317,12 +336,13 @@ export async function exportAccountingCsv(env: AccountingBindings, from: string,
     WHERE entry_date BETWEEN ? AND ?
     ORDER BY entry_date, accounting_entry_id
   `).bind(start, end).all<ManualAccountingRow>();
-  const header = ["date", "type", "amount", "description", "note", "receipt_file"].join(",");
+  const header = ["date", "type", "amount", "description", "category", "note", "receipt_file"].join(",");
   const lines = (rows.results ?? []).map((row) => [
     row.entry_date,
     row.entry_type,
     String(row.amount),
     row.description,
+    manualAccountingCategory(row.note, row.entry_type === "income" ? "Other Manual Income" : "Other Expenses"),
     row.note ?? "",
     row.receipt_file_name ?? "",
   ].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","));

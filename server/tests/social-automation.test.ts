@@ -17,6 +17,7 @@ import {
   DEFAULT_SOCIAL_IMAGE_PREP_MODEL,
   prepareNextQueuedSocialImage,
   prepareSocialImage,
+  reconcileStaleSocialImagePreparations,
   SOCIAL_IMAGE_PREPARE_CRON,
 } from "../src/services/social-image-preparation.service.ts";
 import {
@@ -64,6 +65,7 @@ type SocialRow = {
   openai_total_tokens: number;
   openai_elapsed_ms: number;
   estimated_cost_usd: number;
+  image_openai_response_id: string | null;
   analysis_json: string | null;
   caption_json: string | null;
   caption_style_fingerprint: string | null;
@@ -71,6 +73,14 @@ type SocialRow = {
   facebook_post_id: string | null;
   instagram_post_id: string | null;
   source_metadata_json: string | null;
+  image_phase: string | null;
+  image_leased_at: string | null;
+  image_source_ready_at: string | null;
+  image_request_started_at: string | null;
+  image_response_received_at: string | null;
+  image_finalized_at: string | null;
+  image_watchdog_at: string | null;
+  image_recovery_state: string | null;
 };
 
 const OWNER_ROW = {
@@ -150,6 +160,7 @@ class FakeSocialDB {
       openai_total_tokens: overrides.openai_total_tokens ?? 0,
       openai_elapsed_ms: overrides.openai_elapsed_ms ?? 0,
       estimated_cost_usd: overrides.estimated_cost_usd ?? 0,
+      image_openai_response_id: overrides.image_openai_response_id ?? null,
       analysis_json: overrides.analysis_json ?? null,
       caption_json: overrides.caption_json ?? null,
       caption_style_fingerprint: overrides.caption_style_fingerprint ?? null,
@@ -157,6 +168,14 @@ class FakeSocialDB {
       facebook_post_id: overrides.facebook_post_id ?? null,
       instagram_post_id: overrides.instagram_post_id ?? null,
       source_metadata_json: overrides.source_metadata_json ?? null,
+      image_phase: overrides.image_phase ?? null,
+      image_leased_at: overrides.image_leased_at ?? null,
+      image_source_ready_at: overrides.image_source_ready_at ?? null,
+      image_request_started_at: overrides.image_request_started_at ?? null,
+      image_response_received_at: overrides.image_response_received_at ?? null,
+      image_finalized_at: overrides.image_finalized_at ?? null,
+      image_watchdog_at: overrides.image_watchdog_at ?? null,
+      image_recovery_state: overrides.image_recovery_state ?? null,
     };
     this.nextId = Math.max(this.nextId, row.social_post_id + 1);
     this.rows.push(row);
@@ -199,15 +218,31 @@ class FakeSocialDB {
 
   async first<T>(sql: string, params: unknown[]) {
     if (sql.includes("UPDATE social_post_queue") && sql.includes("SET status = 'PREPARING_IMAGE'") && sql.includes("RETURNING *")) {
-      const targetId = params.length >= 3 ? Number(params[2]) : null;
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[3]) : null;
       const candidates = this.rows
-        .filter((row) => row.status === "QUEUED" && (targetId === null || row.social_post_id === targetId))
+        .filter((row) => (
+          row.status === "QUEUED"
+          || (targetId !== null
+            && row.status === "FAILED"
+            && row.image_recovery_state === "RETRY_SAFE"
+            && row.image_request_started_at === null
+            && row.image_openai_response_id === null
+            && row.openai_request_count === 0
+            && row.attempt_count < 2)
+        ) && (targetId === null || row.social_post_id === targetId))
         .sort((left, right) => left.queued_at.localeCompare(right.queued_at) || left.social_post_id - right.social_post_id);
       const row = candidates[0];
       if (!row) return null;
       row.status = "PREPARING_IMAGE";
       row.processing_started_at = String(params[0]);
-      row.updated_at = String(params[1]);
+      row.image_phase = "LEASED";
+      row.image_leased_at = String(params[1]);
+      row.image_source_ready_at = null;
+      row.image_request_started_at = null;
+      row.image_response_received_at = null;
+      row.image_finalized_at = null;
+      row.image_recovery_state = null;
+      row.updated_at = String(params[2]);
       row.attempt_count += 1;
       row.failure_code = null;
       row.failure_message = null;
@@ -297,6 +332,7 @@ class FakeSocialDB {
         openai_total_tokens: 0,
         openai_elapsed_ms: 0,
         estimated_cost_usd: 0,
+        image_openai_response_id: null,
         analysis_json: null,
         caption_json: null,
         caption_style_fingerprint: null,
@@ -304,28 +340,120 @@ class FakeSocialDB {
         facebook_post_id: null,
         instagram_post_id: null,
         source_metadata_json: null,
+        image_phase: null,
+        image_leased_at: null,
+        image_source_ready_at: null,
+        image_request_started_at: null,
+        image_response_received_at: null,
+        image_finalized_at: null,
+        image_watchdog_at: null,
+        image_recovery_state: null,
       });
       this.nextId += 1;
       return { meta: { changes: 1, last_row_id: this.nextId - 1 } };
     }
+    if (sql.includes("SET image_phase = 'SOURCE_READY'")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "PREPARING_IMAGE" || row.image_request_started_at) return { meta: { changes: 0, last_row_id: 0 } };
+      row.image_phase = "SOURCE_READY";
+      row.image_source_ready_at = String(params[0]);
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET image_phase = 'REQUEST_STARTED'")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "PREPARING_IMAGE" || row.image_request_started_at || row.openai_request_count !== 0) return { meta: { changes: 0, last_row_id: 0 } };
+      row.image_phase = "REQUEST_STARTED";
+      row.image_request_started_at = String(params[0]);
+      row.openai_request_count += 1;
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET image_phase = 'RESPONSE_RECEIVED'")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[10]));
+      if (!row || row.status !== "PREPARING_IMAGE" || row.openai_request_count !== 1) return { meta: { changes: 0, last_row_id: 0 } };
+      row.image_phase = "RESPONSE_RECEIVED";
+      row.image_response_received_at = String(params[0]);
+      row.openai_input_tokens = Number(params[2]);
+      row.openai_cached_input_tokens = Number(params[3]);
+      row.openai_output_tokens = Number(params[4]);
+      row.openai_reasoning_tokens = Number(params[5]);
+      row.openai_total_tokens = Number(params[6]);
+      row.openai_elapsed_ms = Number(params[7]);
+      row.estimated_cost_usd = Number(params[8]);
+      row.updated_at = String(params[9]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("image_preparation_interrupted_retry_safe")) {
+      const cutoff = String(params[4]);
+      let changes = 0;
+      for (const row of this.rows) {
+        const leasedAt = row.image_leased_at ?? row.processing_started_at;
+        if (row.status !== "PREPARING_IMAGE" || !leasedAt || leasedAt > cutoff || row.image_request_started_at || row.image_response_received_at || row.openai_request_count > 0) continue;
+        row.status = "FAILED";
+        row.image_phase = "FAILED";
+        row.image_watchdog_at = String(params[0]);
+        row.image_finalized_at = String(params[1]);
+        row.image_recovery_state = "RETRY_SAFE";
+        row.failed_at = String(params[2]);
+        row.updated_at = String(params[3]);
+        row.failure_code = "image_preparation_interrupted_retry_safe";
+        changes += 1;
+      }
+      return { meta: { changes, last_row_id: 0 } };
+    }
+    if (sql.includes("image_preparation_outcome_unknown_manual_review")) {
+      const cutoff = String(params[4]);
+      let changes = 0;
+      for (const row of this.rows) {
+        const leasedAt = row.image_leased_at ?? row.processing_started_at;
+        if (row.status !== "PREPARING_IMAGE" || !leasedAt || leasedAt > cutoff || (!row.image_request_started_at && !row.image_response_received_at && row.openai_request_count === 0)) continue;
+        row.status = "FAILED";
+        row.image_phase = "FAILED";
+        row.image_watchdog_at = String(params[0]);
+        row.image_finalized_at = String(params[1]);
+        row.image_recovery_state = "MANUAL_REVIEW";
+        row.failed_at = String(params[2]);
+        row.updated_at = String(params[3]);
+        row.failure_code = "image_preparation_outcome_unknown_manual_review";
+        changes += 1;
+      }
+      return { meta: { changes, last_row_id: 0 } };
+    }
+    if (sql.includes("SET status = 'QUEUED'") && sql.includes("RETRY_REQUESTED")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[1]));
+      if (!row || row.status !== "FAILED" || row.image_recovery_state !== "RETRY_SAFE" || row.openai_request_count !== 0 || row.attempt_count >= Number(params[2])) return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "QUEUED";
+      row.image_phase = "RETRY_QUEUED";
+      row.image_recovery_state = "RETRY_REQUESTED";
+      row.processing_started_at = null;
+      row.failed_at = null;
+      row.failure_code = null;
+      row.failure_message = null;
+      row.updated_at = String(params[0]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     if (sql.includes("SET status = 'IMAGE_READY'")) {
       if (this.options.failImageReadyUpdate) return { meta: { changes: 0, last_row_id: 0 } };
-      const row = this.rows.find((item) => item.social_post_id === Number(params[14]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[15]));
       if (!row || row.status !== "PREPARING_IMAGE") return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "IMAGE_READY";
-      row.processed_object_key = String(params[0]);
-      row.image_prepared_at = String(params[1]);
-      row.updated_at = String(params[2]);
-      row.analysis_json = String(params[3]);
-      row.source_metadata_json = String(params[6]);
+      row.image_phase = "FINALIZED";
+      row.image_finalized_at = String(params[0]);
+      row.image_recovery_state = null;
+      row.processed_object_key = String(params[1]);
+      row.image_prepared_at = String(params[2]);
+      row.updated_at = String(params[3]);
+      row.analysis_json = String(params[4]);
+      row.source_metadata_json = String(params[7]);
       row.openai_request_count = 1;
-      row.openai_input_tokens = Number(params[7]);
-      row.openai_cached_input_tokens = Number(params[8]);
-      row.openai_output_tokens = Number(params[9]);
-      row.openai_reasoning_tokens = Number(params[10]);
-      row.openai_total_tokens = Number(params[11]);
-      row.openai_elapsed_ms = Number(params[12]);
-      row.estimated_cost_usd = Number(params[13]);
+      row.openai_input_tokens = Number(params[8]);
+      row.openai_cached_input_tokens = Number(params[9]);
+      row.openai_output_tokens = Number(params[10]);
+      row.openai_reasoning_tokens = Number(params[11]);
+      row.openai_total_tokens = Number(params[12]);
+      row.openai_elapsed_ms = Number(params[13]);
+      row.estimated_cost_usd = Number(params[14]);
       row.failure_code = null;
       row.failure_message = null;
       return { meta: { changes: 1, last_row_id: 0 } };
@@ -354,13 +482,14 @@ class FakeSocialDB {
     if (sql.includes("SET status = 'FAILED'")) {
       const isCaptionFailure = sql.includes("caption_openai_response_id");
       const isPublishFailure = sql.includes("published_image_object_key = CASE WHEN");
-      const row = this.rows.find((item) => item.social_post_id === Number(params[isPublishFailure ? 8 : isCaptionFailure ? 13 : 20]));
+      const isImageFailure = sql.includes("image_phase = 'FAILED'");
+      const row = this.rows.find((item) => item.social_post_id === Number(params[isPublishFailure ? 8 : isCaptionFailure ? 13 : params.length - 1]));
       if (!row) return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "FAILED";
-      row.failed_at = String(params[0]);
-      row.updated_at = String(params[1]);
-      row.failure_code = String(params[2]);
-      row.failure_message = String(params[3]);
+      row.failed_at = String(params[isImageFailure ? 1 : 0]);
+      row.updated_at = String(params[isImageFailure ? 2 : 1]);
+      row.failure_code = String(params[isImageFailure ? 3 : 2]);
+      row.failure_message = String(params[isImageFailure ? 4 : 3]);
       if (isPublishFailure) {
         if (params[4]) row.instagram_post_id = String(params[4]);
         if (params[5]) row.facebook_post_id = String(params[5]);
@@ -379,9 +508,16 @@ class FakeSocialDB {
         row.estimated_cost_usd += Number(params[12]);
         return { meta: { changes: 1, last_row_id: 0 } };
       }
-      if (params[5] !== null) {
+      if (isImageFailure) {
+        row.image_phase = "FAILED";
+        row.image_finalized_at = String(params[0]);
+        row.image_recovery_state = params[21] === 1 && !row.image_request_started_at && row.openai_request_count === 0
+          ? "RETRY_SAFE"
+          : "MANUAL_REVIEW";
+      }
+      if (params[isImageFailure ? 6 : 5] !== null) {
         row.openai_request_count = 1;
-        row.estimated_cost_usd = Number(params[19]);
+        row.estimated_cost_usd = Number(params[isImageFailure ? 20 : 19]);
       }
       return { meta: { changes: 1, last_row_id: 0 } };
     }
@@ -760,6 +896,10 @@ test("social image preparation processes one queued photo FIFO with one OpenAI r
   assert.equal(result.item?.id, older.social_post_id);
   assert.equal(result.item?.status, "IMAGE_READY");
   assert.equal(result.item?.openaiRequestCount, 1);
+  assert.equal(result.item?.imagePhase, "FINALIZED");
+  assert.equal(result.item?.imageSourceReadyAt, "2026-08-05T20:00:00.000Z");
+  assert.equal(result.item?.imageRequestStartedAt, "2026-08-05T20:00:00.000Z");
+  assert.equal(result.item?.imageResponseReceivedAt, "2026-08-05T20:00:00.000Z");
   assert.equal(db.rows.find((row) => row.social_post_id === newer.social_post_id)?.status, "QUEUED");
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.input, "https://api.openai.com/v1/responses");
@@ -813,6 +953,87 @@ test("social image preparation fails missing original images without OpenAI", as
   assert.equal(result.item?.status, "FAILED");
   assert.equal(result.item?.failureCode, "original_image_missing");
   assert.equal(calls.length, 0);
+});
+
+test("stale image leases before the AI boundary become retry-safe without deleting originals", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const leased = db.seed({
+    social_post_id: 20,
+    status: "PREPARING_IMAGE",
+    processing_started_at: "2026-08-05T10:00:00.000Z",
+    image_phase: "LEASED",
+    image_leased_at: "2026-08-05T10:00:00.000Z",
+    attempt_count: 1,
+  });
+  const sourceReady = db.seed({
+    social_post_id: 21,
+    status: "PREPARING_IMAGE",
+    processing_started_at: "2026-08-05T10:00:00.000Z",
+    image_phase: "SOURCE_READY",
+    image_leased_at: "2026-08-05T10:00:00.000Z",
+    image_source_ready_at: "2026-08-05T10:00:02.000Z",
+    attempt_count: 1,
+  });
+  r2.objects.set(leased.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(sourceReady.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+
+  const result = await reconcileStaleSocialImagePreparations(env(db, r2), "2026-08-05T10:30:00.000Z");
+
+  assert.deepEqual(result, { retrySafe: 2, manualReview: 0 });
+  assert.equal(db.rows.every((row) => row.status === "FAILED" && row.image_recovery_state === "RETRY_SAFE"), true);
+  assert.equal(r2.objects.has(leased.original_object_key), true);
+  assert.equal(r2.objects.has(sourceReady.original_object_key), true);
+  assert.deepEqual(r2.deleted, []);
+
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  const retried = await prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), leased.social_post_id, { now: "2026-08-05T10:31:00.000Z" });
+  assert.equal(retried.processed, true);
+  assert.equal(retried.item?.status, "IMAGE_READY");
+  await assert.rejects(
+    prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), leased.social_post_id, { now: "2026-08-05T10:32:00.000Z" }),
+    /not eligible/i,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("stale leases at or after the AI request boundary require manual review and never retry", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const requestStarted = db.seed({
+    social_post_id: 30,
+    status: "PREPARING_IMAGE",
+    processing_started_at: "2026-08-05T10:00:00.000Z",
+    image_phase: "REQUEST_STARTED",
+    image_leased_at: "2026-08-05T10:00:00.000Z",
+    image_request_started_at: "2026-08-05T10:00:03.000Z",
+    openai_request_count: 1,
+    attempt_count: 1,
+  });
+  const responseReceived = db.seed({
+    social_post_id: 31,
+    status: "PREPARING_IMAGE",
+    processing_started_at: "2026-08-05T10:00:00.000Z",
+    image_phase: "RESPONSE_RECEIVED",
+    image_leased_at: "2026-08-05T10:00:00.000Z",
+    image_request_started_at: "2026-08-05T10:00:03.000Z",
+    image_response_received_at: "2026-08-05T10:01:00.000Z",
+    openai_request_count: 1,
+    attempt_count: 1,
+  });
+  r2.objects.set(requestStarted.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(responseReceived.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+
+  const result = await reconcileStaleSocialImagePreparations(env(db, r2), "2026-08-05T10:30:00.000Z");
+
+  assert.deepEqual(result, { retrySafe: 0, manualReview: 2 });
+  assert.equal(db.rows.every((row) => row.image_recovery_state === "MANUAL_REVIEW"), true);
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  await assert.rejects(prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), requestStarted.social_post_id), /not eligible/i);
+  await assert.rejects(prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), responseReceived.social_post_id), /not eligible/i);
+  assert.equal(calls.length, 0);
+  assert.equal(r2.objects.size, 2);
+  assert.deepEqual(r2.deleted, []);
 });
 
 test("social image preparation fails malformed OpenAI responses", async () => {
@@ -1350,6 +1571,7 @@ test("social publish endpoint requires owner edit permission and publishes a rea
 
 test("social automation foundation is additive, staged, and isolates Meta publishing", () => {
   const migration = readFileSync(new URL("../migrations/0035_social_automation_foundation.sql", import.meta.url), "utf8");
+  const reliabilityMigration = readFileSync(new URL("../migrations/0047_social_image_reliability.sql", import.meta.url), "utf8");
   const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/social-automation.service.ts", import.meta.url), "utf8");
   const imageService = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
@@ -1373,6 +1595,10 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(migration, /caption_style_fingerprint TEXT/);
   assert.match(migration, /openai_request_count INTEGER NOT NULL DEFAULT 0 CHECK \(openai_request_count BETWEEN 0 AND 2\)/);
   assert.doesNotMatch(migration, /\bDROP\s+TABLE\s+social_post_queue\b|\bDELETE\s+FROM\s+social_post_queue\b/i);
+  assert.match(reliabilityMigration, /image_request_started_at/);
+  assert.match(reliabilityMigration, /image_response_received_at/);
+  assert.match(reliabilityMigration, /image_recovery_state/);
+  assert.doesNotMatch(reliabilityMigration, /\bDROP\b|\bDELETE\b/i);
 
   assert.match(server, /function socialOwner/);
   assert.match(server, /requireOwner\(user\)/);
@@ -1380,16 +1606,18 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(server, /app\.get\("\/api\/social\/overview"/);
   assert.match(server, /app\.post\("\/api\/social\/posts"/);
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/prepare-image"/);
+  assert.doesNotMatch(server, /app\.post\("\/api\/social\/posts\/:id\/retry-image"/);
+  assert.match(imageService, /if \(socialPostId === null\) await reconcileStaleSocialImagePreparations\(env, now\)/);
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/prepare-caption"/);
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/publish"/);
   assert.match(server, /app\.get\("\/api\/social\/publish-assets\/:assetId"/);
   assert.match(server, /controller\.cron === SOCIAL_IMAGE_PREPARE_CRON/);
   assert.match(server, /controller\.cron === SOCIAL_CAPTION_CRON/);
   assert.match(server, /controller\.cron === SOCIAL_PUBLISH_CRON/);
-  assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "0 20 * * *");
+  assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "*/10 * * * *");
   assert.equal(SOCIAL_CAPTION_CRON, "30 23 * * *");
   assert.equal(SOCIAL_PUBLISH_CRON, "0 0 * * *");
-  assert.match(wrangler, /"0 20 \* \* \*"/);
+  assert.match(wrangler, /"\*\/10 \* \* \* \*"/);
   assert.match(wrangler, /"30 23 \* \* \*"/);
   assert.match(wrangler, /"0 0 \* \* \*"/);
   assert.match(service, /const SOCIAL_UPLOAD_PREFIX = "social\/uploads"/);
@@ -1407,6 +1635,8 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(page, /Image ready/);
   assert.match(page, /Ready to post/);
   assert.match(page, /Failed/);
+  assert.match(page, /item\.imageRecoveryState === "RETRY_SAFE"/);
+  assert.match(page, /Retry Image/);
   assert.match(page, /JPG, PNG or WebP\. HEIC is not supported\./);
   assert.match(page, /Next Social Photo/);
   assert.match(page, /Publishing Queue/);
