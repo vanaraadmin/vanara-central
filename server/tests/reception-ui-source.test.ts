@@ -8,12 +8,15 @@ const guestContactTrigger = await readFile(new URL("../../src/components/vanara/
 const guestContactSheet = await readFile(new URL("../../src/components/vanara/VanaraGuestContactSheet.tsx", import.meta.url), "utf8");
 const guestContactCss = await readFile(new URL("../../src/styles/VanaraGuestContact.css", import.meta.url), "utf8");
 const passportWorkflow = await readFile(new URL("../../src/components/passport/PassportWorkflow.tsx", import.meta.url), "utf8");
+const passportMessages = await readFile(new URL("../../src/components/passport/passport-messages.ts", import.meta.url), "utf8");
 const passportWorkflowState = await readFile(new URL("../../src/utils/passport-workflow-state.ts", import.meta.url), "utf8");
 const receptionService = await readFile(new URL("../../src/services/reception.service.ts", import.meta.url), "utf8");
 const serverReceptionService = await readFile(new URL("../src/services/reception.service.ts", import.meta.url), "utf8");
 const passportCrop = await readFile(new URL("../../src/utils/passport-crop.ts", import.meta.url), "utf8");
 const passportReview = await readFile(new URL("../../src/utils/passport-review.ts", import.meta.url), "utf8");
 const countryNationality = await readFile(new URL("../../src/utils/country-nationality.ts", import.meta.url), "utf8");
+const englishCopy = await readFile(new URL("../../src/i18n/en.ts", import.meta.url), "utf8");
+const thaiCopy = await readFile(new URL("../../src/i18n/th.ts", import.meta.url), "utf8");
 const bookingPassportsMigration = await readFile(new URL("../migrations/0013_booking_passports.sql", import.meta.url), "utf8");
 
 test("booking details sheet renders as a fullscreen glass sheet", () => {
@@ -24,9 +27,8 @@ test("booking details sheet renders as a fullscreen glass sheet", () => {
   assert.match(receptionPage, /reception-details-sheet__panel/);
   const bookingDetailsSheet = receptionPage.match(/function BookingDetailsSheet[\s\S]*?export default function ReceptionPage/)?.[0] ?? "";
   assert.doesNotMatch(bookingDetailsSheet, /reception-sheet__handle/);
-  assert.match(receptionCss, /\.reception-details-sheet\s*\{[\s\S]*align-items:\s*stretch;/);
-  assert.match(receptionCss, /\.reception-details-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);/);
-  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(receptionCss, /\.reception-sheet\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*align-items:\s*stretch;/);
+  assert.match(receptionCss, /\.reception-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
   assert.match(receptionPage, /const root = document\.documentElement;[\s\S]*body\.style\.position = "fixed";[\s\S]*window\.scrollTo\(0, scrollY\);/);
 });
 
@@ -37,7 +39,67 @@ test("booking details and guest contacts share hardened mobile overlay containme
   assert.match(guestContactCss, /\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*min-width:\s*0;[\s\S]*min-height:\s*0;[\s\S]*max-width:\s*100%;[\s\S]*box-sizing:\s*border-box;[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*contain:\s*layout paint;[\s\S]*overflow-y:\s*auto;[\s\S]*border-radius:\s*0;[\s\S]*background:[\s\S]*#071f18;/);
   assert.match(guestContactCss, /\.vanara-guest-contact-sheet__footer\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*2;[\s\S]*background:[\s\S]*#071f18;/);
   assert.match(guestContactCss, /@media \(min-width:\s*1024px\)[\s\S]*\.vanara-guest-contact-sheet__panel\s*\{[\s\S]*width:\s*min\(100%, 540px\);[\s\S]*height:\s*auto;[\s\S]*max-height:\s*calc\(100dvh - 48px\);[\s\S]*border-radius:\s*30px;/);
-  assert.match(receptionCss, /\.reception-details-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*contain:\s*layout paint;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(receptionCss, /\.reception-sheet__panel\s*\{[\s\S]*height:\s*100dvh;[\s\S]*contain:\s*layout paint;[\s\S]*background:[\s\S]*#071f18;/);
+});
+
+test("every Arrivals and Departures operational sheet uses one opaque contained surface", () => {
+  const completionModal = receptionPage.match(/function CompletionModal[\s\S]*?type PassportReviewField/)?.[0] ?? "";
+  const bookingDetailsSheet = receptionPage.match(/function BookingDetailsSheet[\s\S]*?export default function ReceptionPage/)?.[0] ?? "";
+  assert.match(completionModal, /className="reception-sheet"/);
+  assert.match(completionModal, /className="reception-sheet__panel"/);
+  assert.match(completionModal, /<PassportManagementPanel/);
+  assert.match(completionModal, /<PassportReviewPanel/);
+  assert.match(completionModal, /<PassportWorkflow/);
+  assert.match(bookingDetailsSheet, /className="reception-sheet reception-details-sheet"/);
+  assert.match(receptionCss, /\.reception-sheet__panel\s*\{[\s\S]*overflow-x:\s*hidden;[\s\S]*overflow-y:\s*auto;[\s\S]*overscroll-behavior:\s*contain;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(receptionCss, /\.reception-sheet__actions\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*2;[\s\S]*background:[\s\S]*#071f18;/);
+  assert.match(receptionCss, /@media \(min-width:\s*1024px\)[\s\S]*\.reception-sheet__panel\s*\{[\s\S]*width:\s*min\(100%, 540px\);[\s\S]*height:\s*auto;[\s\S]*max-height:\s*calc\(100dvh - 48px\);[\s\S]*border-radius:\s*30px;/);
+});
+
+test("passport capture and review stay opaque and scroll inside the viewport", () => {
+  assert.match(receptionCss, /\.passport-workflow\s*\{[\s\S]*z-index:\s*var\(--vc-z-modal\);[\s\S]*width:\s*100vw;[\s\S]*height:\s*100dvh;[\s\S]*box-sizing:\s*border-box;[\s\S]*contain:\s*layout paint;[\s\S]*overflow:\s*hidden;[\s\S]*background:\s*var\(--vc-color-sand-100\);/);
+  assert.match(receptionCss, /\.passport-workflow__content\s*\{[\s\S]*overflow-x:\s*hidden;[\s\S]*overflow-y:\s*auto;[\s\S]*overscroll-behavior:\s*contain;/);
+  assert.match(receptionCss, /\.passport-review-actions,[\s\S]*\.passport-workflow__actions\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;/);
+});
+
+test("booking details relabel the existing Beds value as Country while passport fields stay Nationality", () => {
+  assert.match(englishCopy, /country:\s*"Country"/);
+  assert.match(englishCopy, /nationality:\s*"Nationality"/);
+  assert.match(thaiCopy, /country:\s*"ประเทศ"/);
+  assert.match(thaiCopy, /nationality:\s*"สัญชาติ"/);
+  assert.match(receptionPage, /\{ label: translate\("country"\), value: nationality \?\? translate\("notAvailable"\) \}/);
+  assert.match(receptionPage, /\{ key: "nationality", label: "Nationality" \}/);
+  assert.match(passportReview, /\{ key: "nationality", label: "Nationality" \}/);
+  assert.match(serverReceptionService, /nationality:\s*row\.country \|\| row\.country_code \|\| null/);
+  assert.doesNotMatch(receptionPage, /stay\.country|countryCodeToCountry/);
+});
+
+test("deposit collection uses persisted reception state in details and completion flows", () => {
+  const completionDraft = receptionPage.match(/type CompletionDraft = \{[\s\S]*?\};/)?.[0] ?? "";
+  const completionModal = receptionPage.match(/function CompletionModal[\s\S]*?type PassportReviewField/)?.[0] ?? "";
+  assert.doesNotMatch(completionDraft, /depositCollected/);
+  assert.match(completionModal, /updateReceptionCheckIn\(request\.stay\.bookingId, "depositCollected", checked\)/);
+  assert.match(completionModal, /checked=\{request\.stay\.checkIn\.depositCollected\}/);
+  assert.match(completionModal, /queryClient\.setQueryData<ReceptionOverview>\(queryKey/);
+  assert.match(receptionPage, /depositCollected:\s*stay\.checkIn\.depositCollected/);
+  assert.doesNotMatch(receptionPage, /depositCollected:\s*completionDraft\.depositCollected/);
+});
+
+test("mobile reception cards and action rows are width-contained without clipping", () => {
+  assert.match(receptionCss, /\.reception-page\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(receptionCss, /@media \(max-width:\s*767px\)[\s\S]*\.reception-card__top\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.match(receptionCss, /@media \(max-width:\s*767px\)[\s\S]*\.reception-card__quick-actions\s*\{[\s\S]*width:\s*100%;/);
+  assert.doesNotMatch(receptionCss, /\.reception-page[^}]*overflow-x:\s*hidden/);
+});
+
+test("passport review keeps critical issues visible but only compares genuinely different numbers", () => {
+  assert.match(passportWorkflow, /passportNumberCandidatesDiffer\(\s*verification\.visualCandidate,\s*verification\.mrzCandidate,?\s*\)/);
+  assert.doesNotMatch(passportWorkflow, /verification\.issues\.includes\("PASSPORT_NUMBER_(?:CONFLICT|MISMATCH)"\)/);
+  assert.match(passportWorkflow, /\{verification\.issues\.length > 0 && \(/);
+  assert.match(passportWorkflow, /\{passportNumberHasConflict \? \(/);
+  assert.match(passportMessages, /"passport\.openAiTimeout":\s*"passportCheckTimedOut"/);
+  assert.doesNotMatch(passportMessages, /"passport\.openAiTimeout":\s*"OpenAI timeout\."/);
+  assert.match(receptionCss, /\.passport-workflow \.passport-review__verification\s*\{[\s\S]*color:\s*#4b3212;[\s\S]*background:/);
 });
 
 test("reception contact icon uses the current Design System color and centered trigger", () => {

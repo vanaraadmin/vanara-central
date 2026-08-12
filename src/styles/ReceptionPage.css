@@ -2,6 +2,9 @@
   display: grid;
   gap: var(--vc-space-6);
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .reception-date-actions {
@@ -153,11 +156,16 @@
 .reception-agenda,
 .reception-section {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--vc-space-4);
 }
 
 .reception-list {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   gap: 0;
   padding: var(--vc-space-4) 0;
 }
@@ -216,6 +224,8 @@
 }
 
 .reception-card__top {
+  min-width: 0;
+  max-width: 100%;
   justify-content: space-between;
   gap: var(--vc-space-3);
 }
@@ -244,7 +254,11 @@
 }
 
 .reception-card__quick-actions {
-  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--vc-space-2);
 }
 
@@ -526,11 +540,11 @@
 .reception-modal,
 .reception-sheet {
   position: fixed;
-  z-index: var(--vc-z-overlay);
   inset: 0;
 }
 
 .reception-modal {
+  z-index: var(--vc-z-overlay);
   display: grid;
   place-items: center;
   padding: var(--vc-space-6);
@@ -576,16 +590,12 @@
 }
 
 .reception-sheet {
+  z-index: var(--vc-z-modal);
   max-width: 100vw;
   max-height: 100dvh;
   display: grid;
-  align-items: end;
-  overflow: hidden;
-}
-
-.reception-details-sheet {
-  z-index: var(--vc-z-modal);
   align-items: stretch;
+  overflow: hidden;
   padding:
     var(--vc-safe-top)
     var(--vc-safe-right)
@@ -603,32 +613,24 @@
 }
 
 .reception-sheet__panel {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   max-width: 100%;
   box-sizing: border-box;
-  width: min(100%, 540px);
-  max-height: min(88dvh, 760px);
-  justify-self: center;
-  display: grid;
-  gap: var(--vc-space-5);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-radius: 30px 30px 0 0;
-  padding: 14px var(--vc-space-5) calc(var(--vc-space-5) + var(--vc-safe-bottom));
-  color: var(--workspace-cream);
-  animation: reception-sheet-in var(--vc-duration-normal) var(--vc-ease-emphasized);
-}
-
-.reception-details-sheet__panel {
   width: 100%;
-  max-width: none;
   height: 100dvh;
   max-height: none;
   align-self: stretch;
   justify-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--vc-space-5);
   contain: layout paint;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 0;
   background:
     linear-gradient(145deg, rgba(20, 61, 43, 0.98), rgba(6, 25, 18, 0.985)),
@@ -638,6 +640,12 @@
     max(var(--vc-space-4), var(--vc-safe-right))
     max(var(--vc-space-5), calc(var(--vc-safe-bottom) + var(--vc-space-4)))
     max(var(--vc-space-4), var(--vc-safe-left));
+  color: var(--workspace-cream);
+  animation: reception-sheet-in var(--vc-duration-normal) var(--vc-ease-emphasized);
+}
+
+.reception-details-sheet__panel {
+  max-width: none;
 }
 
 .reception-sheet__handle {
@@ -952,9 +960,21 @@
 .reception-sheet__actions {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   flex: 0 0 auto;
   gap: var(--vc-space-2);
-  padding-bottom: max(0px, var(--vc-safe-bottom));
+  margin-top: auto;
+  margin-inline-start: calc(-1 * max(var(--vc-space-4), var(--vc-safe-left)));
+  margin-inline-end: calc(-1 * max(var(--vc-space-4), var(--vc-safe-right)));
+  margin-bottom: calc(-1 * max(var(--vc-space-5), calc(var(--vc-safe-bottom) + var(--vc-space-4))));
+  padding:
+    var(--vc-space-3)
+    max(var(--vc-space-4), var(--vc-safe-right))
+    max(var(--vc-space-5), calc(var(--vc-safe-bottom) + var(--vc-space-4)))
+    max(var(--vc-space-4), var(--vc-safe-left));
+  background:
+    linear-gradient(180deg, rgba(7, 31, 24, 0.92), rgba(3, 19, 15, 0.995)),
+    #071f18;
 }
 
 .reception-sheet__actions button {
@@ -981,9 +1001,14 @@
   position: fixed;
   z-index: var(--vc-z-modal);
   inset: 0;
+  width: 100vw;
+  max-width: 100vw;
   display: flex;
   height: 100dvh;
+  max-height: 100dvh;
+  box-sizing: border-box;
   flex-direction: column;
+  contain: layout paint;
   overflow: hidden;
   padding:
     max(14px, var(--vc-safe-top))
@@ -1031,6 +1056,12 @@
 .passport-capture {
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.passport-workflow__content {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .passport-workflow__content,
@@ -1179,8 +1210,46 @@
 
 .passport-review {
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
+}
+
+.passport-workflow .passport-review__fields label {
+  color: rgba(23, 59, 45, 0.72);
+}
+
+.passport-workflow .passport-review__fields input {
+  border-color: rgba(23, 59, 45, 0.2);
+  color: var(--vc-color-jungle-900);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.passport-workflow .passport-review__verification {
+  border-color: rgba(126, 84, 25, 0.34);
+  color: #4b3212;
+  background: rgba(164, 111, 35, 0.12);
+}
+
+.passport-workflow .passport-review__verification li,
+.passport-workflow .passport-review__verification p,
+.passport-workflow .passport-review__technical,
+.passport-workflow .passport-review__save-reason {
+  color: #4b3212;
+}
+
+.passport-workflow .passport-review__verification button {
+  min-height: 44px;
+  padding-inline: var(--vc-space-4);
+  border: 0;
+  border-radius: var(--vc-radius-lg);
+  color: var(--vc-color-sand-100);
+  background: var(--vc-color-jungle-900);
+  font: inherit;
+  font-weight: var(--vc-weight-semibold);
+}
+
+.passport-workflow .passport-review__candidates dt,
+.passport-workflow .passport-review__candidates dd {
+  color: rgba(23, 59, 45, 0.78);
 }
 
 .passport-review-actions,
@@ -1218,6 +1287,29 @@
 .passport-review-actions button:disabled,
 .passport-workflow__actions button:disabled {
   opacity: 0.48;
+}
+
+@media (max-width: 767px) {
+  .reception-card__top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .reception-card__quick-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .reception-card__quick-actions .vc-secondary-action,
+  .reception-report-issue {
+    max-width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .reception-card__quick-actions .vanara-guest-contact-trigger {
+    flex: 0 0 var(--vc-touch-min);
+  }
 }
 
 @media (max-width: 420px) {
@@ -1259,10 +1351,6 @@
     grid-template-columns: 1fr;
   }
 
-  .reception-sheet__panel {
-    padding-right: var(--vc-space-4);
-    padding-left: var(--vc-space-4);
-  }
 }
 
 @media (min-width: 1024px) {
@@ -1331,7 +1419,13 @@
   }
 
   .reception-sheet__panel {
+    width: min(100%, 540px);
+    height: auto;
+    max-height: calc(100dvh - 48px);
+    align-self: center;
+    justify-self: center;
     border-radius: 30px;
+    padding: var(--vc-space-6);
   }
 
   .reception-details-sheet__panel {
@@ -1344,6 +1438,12 @@
     overscroll-behavior: contain;
     border-radius: 30px;
     padding: var(--vc-space-6);
+  }
+
+  .reception-sheet__actions {
+    margin-inline: calc(-1 * var(--vc-space-6));
+    margin-bottom: calc(-1 * var(--vc-space-6));
+    padding: var(--vc-space-3) var(--vc-space-6) var(--vc-space-6);
   }
 
   .reception-details-sheet__panel .reception-sheet__header {

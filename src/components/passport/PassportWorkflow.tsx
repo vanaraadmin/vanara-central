@@ -35,6 +35,7 @@ import {
 import {
   PASSPORT_REVIEW_FIELDS,
   normalizePassportReviewDraft,
+  passportNumberCandidatesDiffer,
   passportReviewSaveDisabledReason,
   type PassportReviewField,
 } from "../../utils/passport-review";
@@ -870,7 +871,13 @@ function PassportReviewStep({
 
   const verification = passportVerificationSummary(draft);
   const nameReview = passportNameReviewSummary(draft);
-  const passportNumberRequiresConfirmation = verification?.state !== undefined && verification.state !== "AUTO_VERIFIED" && verification.state !== "MANUALLY_VERIFIED";
+  const passportNumberHasConflict = Boolean(verification && passportNumberCandidatesDiffer(
+    verification.visualCandidate,
+    verification.mrzCandidate,
+  ));
+  const passportNumberRequiresConfirmation = passportNumberHasConflict
+    && verification?.state !== "AUTO_VERIFIED"
+    && verification?.state !== "MANUALLY_VERIFIED";
   const saveDisabledReason = passportReviewSaveDisabledReason({
     isSaving: isPending,
     ocrCompleted: true,
@@ -902,7 +909,7 @@ function PassportReviewStep({
           {verifierTimedOut && (
             <p className="passport-capture__hint">{translate("passportCheckTimedOut")}</p>
           )}
-          {verification.visualCandidate || verification.mrzCandidate ? (
+          {passportNumberHasConflict ? (
             <dl className="passport-review__candidates">
               {verification.visualCandidate && <div><dt>{translate("passportVisualCandidate")}</dt><dd>{verification.visualCandidate}</dd></div>}
               {verification.mrzCandidate && <div><dt>{translate("passportMrzCandidate")}</dt><dd>{verification.mrzCandidate}</dd></div>}

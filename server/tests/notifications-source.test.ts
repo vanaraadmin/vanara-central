@@ -304,8 +304,8 @@ test("reception completion notifications go to all active users only after compl
   assert.match(notificationService, /\$\{englishStatus\} - \$\{room\}/);
   assert.match(notificationService, /Check-in completed/);
   assert.match(notificationService, /Check-out completed/);
-  assert.match(notificationService, /"\/movements"/);
-  assert.doesNotMatch(notificationService, /notifyReceptionCompleted[\s\S]*"\/reception"/);
+  assert.match(notificationService, /notifyReceptionCompleted[\s\S]*"\/reception"/);
+  assert.doesNotMatch(notificationService, /notifyReceptionCompleted[\s\S]*"\/movements"/);
   assert.match(notificationService, /เช็กอินแล้ว/);
   assert.match(notificationService, /เช็กเอาต์แล้ว/);
   assert.match(receptionService, /UPDATE reception_stays[\s\S]*recordEvent\(env, bookingId, "checkInCompleted"[\s\S]*notifyReceptionCompleted/);

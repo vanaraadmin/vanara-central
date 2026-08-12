@@ -29,7 +29,6 @@ type ReceptionCardType = "arrival" | "departure";
 type CleaningStatus = "clean" | "in_progress" | "dirty";
 type CompletionDraft = {
   passportRegistrationCompleted: boolean;
-  depositCollected: boolean;
   roomInspected: boolean;
   keysReturned: boolean;
   depositReturned: boolean;
@@ -44,7 +43,6 @@ type PassportVerificationBadge = {
 function emptyCompletionDraft(): CompletionDraft {
   return {
     passportRegistrationCompleted: false,
-    depositCollected: false,
     roomInspected: false,
     keysReturned: false,
     depositReturned: false,
@@ -213,11 +211,13 @@ function useSheetScrollLock(active: boolean) {
 
 function ChecklistRow({
   checked,
+  disabled = false,
   icon,
   label,
   onChange,
 }: {
   checked: boolean;
+  disabled?: boolean;
   icon: string;
   label: ReactNode;
   onChange: (checked: boolean) => void;
@@ -227,6 +227,7 @@ function ChecklistRow({
       <input
         checked={checked}
         className="reception-check-row__input"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
@@ -573,6 +574,8 @@ function CompletionModal({
   onCancel,
   onConfirm,
   onDraftChange,
+  onStayUpdated,
+  queryKey,
   request,
 }: {
   draft: CompletionDraft;
@@ -581,6 +584,8 @@ function CompletionModal({
   onCancel: () => void;
   onConfirm: () => void;
   onDraftChange: (draft: CompletionDraft) => void;
+  onStayUpdated: (stay: ReceptionStay) => void;
+  queryKey: readonly ["reception", string];
   request: { stay: ReceptionStay; type: ReceptionCardType } | null;
 }) {
   const { translate } = useLanguage();
@@ -590,6 +595,7 @@ function CompletionModal({
   const [passportReview, setPassportReview] = useState<PassportReviewState | null>(null);
   const [passportManagerOpen, setPassportManagerOpen] = useState(false);
   const [passportWorkflowOpen, setPassportWorkflowOpen] = useState(false);
+  const [depositFailure, setDepositFailure] = useState<{ bookingId: ReceptionStay["bookingId"]; message: string } | null>(null);
   const passportsQueryKey = ["reception-passports", request?.stay.bookingId] as const;
   const passports = useQuery({
     enabled: Boolean(request && request.type === "arrival"),
@@ -600,6 +606,20 @@ function CompletionModal({
     },
   });
   const passportCount = passports.data?.length ?? 0;
+  const deposit = useMutation({
+    mutationFn: async (checked: boolean) => {
+      if (!request || request.type !== "arrival") throw new Error("Booking is unavailable.");
+      return updateReceptionCheckIn(request.stay.bookingId, "depositCollected", checked);
+    },
+    onMutate: () => setDepositFailure(null),
+    onSuccess: (updated) => {
+      onStayUpdated(updated);
+      queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
+    },
+    onError: () => {
+      if (request) setDepositFailure({ bookingId: request.stay.bookingId, message: translate("noteCouldNotBeSaved") });
+    },
+  });
 
   useEffect(() => {
     if (!request || request.type !== "arrival" || passports.isLoading) return;
@@ -615,7 +635,9 @@ function CompletionModal({
   if (!request) return null;
 
   const isArrival = request.type === "arrival";
-  const hasDeposit = request.stay.checkIn.depositCollected || draft.depositCollected;
+  const depositError = depositFailure?.bookingId === request.stay.bookingId ? depositFailure.message : null;
+  const hasDeposit = request.stay.checkIn.depositCollected;
+  const interactionPending = isPending || deposit.isPending;
   const canComplete = isArrival
     ? !passports.isLoading && !passportWorkflowOpen && !passportReview
     : (
@@ -663,7 +685,7 @@ function CompletionModal({
       <button
         aria-label={translate("closeChecklist")}
         className="reception-sheet__scrim"
-        disabled={isPending}
+        disabled={interactionPending}
         onClick={onCancel}
         type="button"
       />
@@ -723,14 +745,11 @@ function CompletionModal({
                       onClick={openPassportFlow}
                     />
                     <ChecklistRow
-                      checked={draft.depositCollected}
+                      checked={request.stay.checkIn.depositCollected}
+                      disabled={deposit.isPending}
                       icon={depositIcon}
                       label={translate("depositCollected")}
-                      onChange={(checked) => onDraftChange({
-                        ...draft,
-                        depositCollected: checked,
-                        depositReturned: checked ? draft.depositReturned : false,
-                      })}
+                      onChange={(checked) => deposit.mutate(checked)}
                     />
                   </>
                 ) : (
@@ -783,16 +802,16 @@ function CompletionModal({
               </div>
             </VanaraGlassRegion>
 
-            {error && (
+            {(error || depositError) && (
               <p className="reception-modal__error" role="alert">
-                {error}
+                {error || depositError}
               </p>
             )}
             <div className="reception-sheet__actions">
-              <button className="vc-secondary-action" disabled={isPending} onClick={onCancel} type="button">
+              <button className="vc-secondary-action" disabled={interactionPending} onClick={onCancel} type="button">
                 {translate("cancel")}
               </button>
-              <button className="vc-primary-action" disabled={isPending || !canComplete} onClick={onConfirm} type="button">
+              <button className="vc-primary-action" disabled={interactionPending || !canComplete} onClick={onConfirm} type="button">
                 {isPending ? translate("saving") : title}
               </button>
             </div>
@@ -1191,7 +1210,7 @@ function BookingDetailsSheet({
             ariaLabel={translate("guestInformation")}
             className="reception-details-facts"
             items={[
-              { label: translate("nationality"), value: nationality ?? translate("notAvailable") },
+              { label: translate("country"), value: nationality ?? translate("notAvailable") },
               { label: translate("guests"), value: translate("adultsChildrenCount", { adults: stay.adults, children: stay.children }) },
               { label: translate("phone"), value: stay.phone ?? translate("notAvailable") },
               { label: translate("email"), value: stay.email ?? translate("notAvailable") },
@@ -1329,12 +1348,12 @@ export default function ReceptionPage() {
       type === "arrival"
         ? completeReceptionCheckIn(stay.bookingId, {
           passportRegistrationCompleted: completionDraft.passportRegistrationCompleted,
-          depositCollected: completionDraft.depositCollected,
+          depositCollected: stay.checkIn.depositCollected,
         })
         : completeReceptionCheckOut(stay.bookingId, {
           roomInspected: completionDraft.roomInspected,
           keysReturned: completionDraft.keysReturned,
-          depositReturned: stay.checkIn.depositCollected || completionDraft.depositCollected ? completionDraft.depositReturned : undefined,
+          depositReturned: stay.checkIn.depositCollected ? completionDraft.depositReturned : undefined,
         })
     ),
     onSuccess: (updated) => {
@@ -1400,6 +1419,12 @@ export default function ReceptionPage() {
           if (completionRequest) completion.mutate(completionRequest);
         }}
         onDraftChange={setCompletionDraft}
+        onStayUpdated={(updated) => {
+          setCompletionRequest((current) => (
+            current?.stay.bookingId === updated.bookingId ? { ...current, stay: updated } : current
+          ));
+        }}
+        queryKey={queryKey}
         request={completionRequest}
       />
       <VanaraGuestContactSheet

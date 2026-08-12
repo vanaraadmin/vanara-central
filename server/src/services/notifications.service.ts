@@ -453,8 +453,8 @@ export async function notifyReceptionCompleted(env: NotificationBindings, input:
     audience: "all-active",
     data: { eventType: input.type },
     payload: {
-      en: notificationPayload(`${englishStatus} - ${room}`, "Tap to open Arrivals / Departures", `reception-${input.bookingId}`, "/movements"),
-      th: notificationPayload(`${thaiStatus} - ${room}`, "แตะเพื่อเปิด Vanara Central", `reception-${input.bookingId}`, "/movements"),
+      en: notificationPayload(`${englishStatus} - ${room}`, "Tap to open Arrivals / Departures", `reception-${input.bookingId}`, "/reception"),
+      th: notificationPayload(`${thaiStatus} - ${room}`, "แตะเพื่อเปิด Vanara Central", `reception-${input.bookingId}`, "/reception"),
     },
   });
 }

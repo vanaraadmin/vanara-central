@@ -131,6 +131,7 @@ const th = {
   emailNotAvailable: "ไม่มีอีเมล",
   frontDesk: "หน้าเคาน์เตอร์",
   bookingInformation: "ข้อมูลการจอง",
+  country: "ประเทศ",
   nationality: "สัญชาติ",
   phone: "เบอร์โทร",
   email: "อีเมล",

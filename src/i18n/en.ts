@@ -131,6 +131,7 @@ const en = {
   emailNotAvailable: "Email not available",
   frontDesk: "Front Desk",
   bookingInformation: "Booking information",
+  country: "Country",
   nationality: "Nationality",
   phone: "Phone",
   email: "Email",

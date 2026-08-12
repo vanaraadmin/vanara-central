@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PassportData } from "../../src/types/reception.ts";
 import { countryCodeToNationality, formatNationalityText } from "../../src/utils/country-nationality.ts";
-import { isPassportReviewSaveEnabled, normalizePassportReviewDraft, passportReviewSaveDisabledReason } from "../../src/utils/passport-review.ts";
+import {
+  isPassportReviewSaveEnabled,
+  normalizePassportNumberCandidate,
+  normalizePassportReviewDraft,
+  passportNumberCandidatesDiffer,
+  passportReviewSaveDisabledReason,
+} from "../../src/utils/passport-review.ts";
 
 const validPassport: PassportData = {
   birthDate: "1970-05-25",
@@ -58,4 +64,11 @@ test("country nationality mapper renders names instead of country codes", () => 
   assert.equal(formatNationalityText("IT"), "ITALIAN");
   assert.equal(formatNationalityText("UTO"), null);
   assert.equal(formatNationalityText(null), null);
+});
+
+test("passport number comparison ignores formatting but detects a real candidate mismatch", () => {
+  assert.equal(normalizePassportNumberCandidate(" ab-123 45< "), "AB12345");
+  assert.equal(passportNumberCandidatesDiffer("AB 12345", "AB12345<"), false);
+  assert.equal(passportNumberCandidatesDiffer("AB12345", "AB12346"), true);
+  assert.equal(passportNumberCandidatesDiffer("AB12345", null), false);
 });

@@ -27,6 +27,20 @@ export function normalizePassportReviewDraft(passport: PassportData): PassportDa
   };
 }
 
+export function normalizePassportNumberCandidate(value: string | null | undefined): string | null {
+  const normalized = value?.toUpperCase().replace(/[^A-Z0-9]/g, "") ?? "";
+  return normalized || null;
+}
+
+export function passportNumberCandidatesDiffer(
+  visualCandidate: string | null | undefined,
+  mrzCandidate: string | null | undefined,
+): boolean {
+  const visual = normalizePassportNumberCandidate(visualCandidate);
+  const mrz = normalizePassportNumberCandidate(mrzCandidate);
+  return Boolean(visual && mrz && visual !== mrz);
+}
+
 export function missingPassportReviewFields(passport: PassportData): PassportReviewField[] {
   return TM30_REQUIRED_REVIEW_FIELDS.filter((field) => !passport[field]?.trim());
 }
