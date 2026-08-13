@@ -1,6 +1,16 @@
 import { buildPassportConsensus, type PassportConsensus, type PassportExtraction } from "./passport-consensus.service.js";
+import {
+  createAndPollPassportOpenAiResponse,
+  PassportOpenAiBackgroundError,
+} from "./passport-openai-background.service.js";
+import {
+  runPersistedPassportOpenAiResponse,
+  type PassportOcrAttemptBindings,
+  type PassportOcrAttemptHandle,
+  type PassportOcrStage,
+} from "./passport-ocr-attempt.service.js";
 
-export interface PassportOcrBindings {
+export interface PassportOcrBindings extends PassportOcrAttemptBindings {
   OPENAI_API_KEY: string;
 }
 
@@ -9,6 +19,7 @@ export interface PassportOcrInput {
   contentType: "image/jpeg" | "image/png" | "image/heic" | "image/heif";
   passportNumberCrop?: ArrayBuffer;
   mrzCrop?: ArrayBuffer;
+  attempt?: PassportOcrAttemptHandle;
 }
 
 export interface PassportData {
@@ -71,10 +82,10 @@ const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_PASSPORT_VISUAL_MODEL = "gpt-5.6-terra";
 const OPENAI_PASSPORT_MRZ_MODEL = "gpt-5.6-terra";
 const OPENAI_PASSPORT_VERIFICATION_MODEL = "gpt-5.6-sol";
-const OPENAI_PASSPORT_TIMEOUT_MS = 15_000;
-const OPENAI_PASSPORT_VISUAL_TIMEOUT_MS = 6_000;
-const OPENAI_PASSPORT_MRZ_TIMEOUT_MS = 6_000;
-const OPENAI_PASSPORT_VERIFICATION_TIMEOUT_MS = 7_000;
+const OPENAI_PASSPORT_TIMEOUT_MS = 90_000;
+const OPENAI_PASSPORT_VISUAL_TIMEOUT_MS = 60_000;
+const OPENAI_PASSPORT_MRZ_TIMEOUT_MS = 60_000;
+const OPENAI_PASSPORT_VERIFICATION_TIMEOUT_MS = 45_000;
 const PASSPORT_FIELDS = [
   "firstName",
   "middleName",
@@ -307,6 +318,15 @@ export function validatePassportData(value: unknown): PassportData {
     }
   }
 
+  const birthDate = normalizePassportDateForStorage(typeof value.birthDate === "string" ? value.birthDate : null);
+  const expiryDate = normalizePassportDateForStorage(typeof value.expiryDate === "string" ? value.expiryDate : null);
+  if (typeof value.birthDate === "string" && value.birthDate.trim() && !birthDate) {
+    throw new PassportOcrError("Birth date is invalid. Use a date such as 11 DEC 1979.", "passport_schema_invalid");
+  }
+  if (typeof value.expiryDate === "string" && value.expiryDate.trim() && !expiryDate) {
+    throw new PassportOcrError("Expiry date is invalid. Use a date such as 07 JUL 2036.", "passport_schema_invalid");
+  }
+
   return {
     firstName: value.firstName,
     middleName: value.middleName,
@@ -314,8 +334,8 @@ export function validatePassportData(value: unknown): PassportData {
     passportNumber: value.passportNumber,
     nationality: value.nationality,
     gender: value.gender,
-    birthDate: value.birthDate,
-    expiryDate: typeof value.expiryDate === "string" || value.expiryDate === null ? value.expiryDate : null,
+    birthDate,
+    expiryDate,
     verification: isRecord(value.verification) ? value.verification as unknown as PassportReviewValidation : undefined,
   } as PassportData;
 }
@@ -522,50 +542,58 @@ async function openAiJsonRequest(
   stage: "visual_biodata" | "mrz" | "verification",
   timeoutMs: number,
   fetcher: Fetcher,
+  inputAttempt?: PassportOcrAttemptHandle,
 ): Promise<{ parsed: unknown; httpStatus: number; openAiRequestId: string | null }> {
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
-  let response: Response;
-  try {
-    response = await fetcher(OPENAI_RESPONSES_URL, {
-      method: "POST",
-      signal: abortController.signal,
-      headers: {
-        authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "content-type": "application/json",
+  let result: Awaited<ReturnType<typeof createAndPollPassportOpenAiResponse>>;
+  const persistedStage: Record<typeof stage, PassportOcrStage> = {
+    visual_biodata: "VISUAL_BIODATA",
+    mrz: "MRZ",
+    verification: "VERIFICATION",
+  };
+  const body = {
+    model,
+    input: [{ role: "user", content }],
+    reasoning: { effort: stage === "verification" ? "medium" : "low" },
+    text: {
+      format: {
+        type: "json_schema",
+        name: schemaName,
+        strict: true,
+        schema,
       },
-      body: JSON.stringify({
-        model,
-        input: [{ role: "user", content }],
-        reasoning: { effort: stage === "verification" ? "medium" : "low" },
-        text: {
-          format: {
-            type: "json_schema",
-            name: schemaName,
-            strict: true,
-            schema,
-          },
-        },
-      }),
-    });
+    },
+  };
+  try {
+    result = inputAttempt
+      ? await runPersistedPassportOpenAiResponse({
+          env,
+          attempt: inputAttempt,
+          stage: persistedStage[stage],
+          body,
+          fetcher,
+          timeoutMs,
+        })
+      : await createAndPollPassportOpenAiResponse({
+          apiKey: env.OPENAI_API_KEY,
+          fetcher,
+          timeoutMs,
+          body,
+        });
   } catch (error) {
-    if (isAbortError(error)) {
+    if (error instanceof PassportOpenAiBackgroundError && (error.code === "timeout" || error.code === "ambiguous_submission")) {
       const label = stage === "visual_biodata" ? "Visual biodata reading" : stage === "mrz" ? "MRZ reading" : "Verification";
       throw new PassportOcrError(`${label} timed out.`, "openai_timeout", stage);
     }
-    throw new PassportOcrError("OpenAI temporarily unavailable.", "openai_request_failed", stage);
-  } finally {
-    clearTimeout(timeout);
+    throw new PassportOcrError(
+      error instanceof Error ? error.message : "OpenAI temporarily unavailable.",
+      error instanceof PassportOpenAiBackgroundError && error.code === "invalid_response" ? "openai_invalid_response" : "openai_request_failed",
+      stage,
+    );
   }
 
-  const openAiRequestId = response.headers.get("x-request-id") ?? response.headers.get("openai-request-id");
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new PassportOcrError(openAiErrorMessage(payload), "openai_request_failed", stage);
-  }
-  const text = outputTextFrom(payload);
+  const text = outputTextFrom(result.payload);
   try {
-    return { parsed: JSON.parse(text), httpStatus: response.status, openAiRequestId };
+    return { parsed: JSON.parse(text), httpStatus: result.httpStatus, openAiRequestId: result.openAiRequestId };
   } catch {
     const label = stage === "visual_biodata" ? "Visual biodata response invalid." : stage === "mrz" ? "MRZ response invalid." : "Verification response invalid.";
     throw new PassportOcrError(label, "openai_invalid_response", stage);
@@ -603,6 +631,7 @@ async function readVisualBiodata(
     "visual_biodata",
     remainingMs(deadline, OPENAI_PASSPORT_VISUAL_TIMEOUT_MS),
     fetcher,
+    input.attempt,
   );
   return { extraction: validateVisualExtraction(result.parsed), ms: Date.now() - start, httpStatus: result.httpStatus, openAiRequestId: result.openAiRequestId };
 }
@@ -642,11 +671,13 @@ async function readMrzCritical(
     "mrz",
     remainingMs(deadline, OPENAI_PASSPORT_MRZ_TIMEOUT_MS),
     fetcher,
+    input.attempt,
   );
   return { extraction: validateMrzExtraction(result.parsed), ms: Date.now() - start, httpStatus: result.httpStatus, openAiRequestId: result.openAiRequestId };
 }
 
 function verifierTriggerCode(consensus: PassportConsensus, visual: PassportExtraction, mrz: PassportExtraction): PassportVerifierTriggerCode | null {
+  if (consensus.fields.passportNumber.state === "AUTO_VERIFIED") return null;
   const uncertain = [
     visual.fieldStatus.passportNumberVisual,
     mrz.fieldStatus.passportNumberVisual,
@@ -655,20 +686,71 @@ function verifierTriggerCode(consensus: PassportConsensus, visual: PassportExtra
     mrz.fieldStatus.mrzPassportNumber,
   ].includes("UNCERTAIN");
   if (uncertain) return "CRITICAL_CHARACTER_UNCERTAIN";
-  if (!consensus.mrz.mrzValid || consensus.mrz.checks.passportNumber === false) return "MRZ_CHECKSUM_FAILED";
+  if (consensus.mrz.checks.passportNumber === false) return "MRZ_CHECKSUM_FAILED";
   if (consensus.fields.passportNumber.conflicts.length > 0 || consensus.fields.passportNumber.issues.some((issue) => issue.includes("DIFFERS") || issue.includes("DISAGREE"))) {
     return "PASSPORT_NUMBER_CONFLICT";
   }
-  const mandatoryFields = [
-    consensus.fields.passportNumber,
-    consensus.fields.firstName,
-    consensus.fields.lastName,
-    consensus.fields.nationality,
-    consensus.fields.gender,
-    consensus.fields.birthDate,
-  ];
-  if (mandatoryFields.some((field) => field.state === "MISSING")) return "MANDATORY_FIELD_MISSING";
   return null;
+}
+
+const PASSPORT_MONTH_ALIASES: Record<string, number> = {
+  JAN: 1, JANV: 1, GEN: 1,
+  FEB: 2, FEV: 2,
+  MAR: 3,
+  APR: 4, AVR: 4,
+  MAY: 5, MAI: 5, MAG: 5,
+  JUN: 6, JUIN: 6, GIU: 6,
+  JUL: 7, JUIL: 7, LUG: 7,
+  AUG: 8, AOUT: 8, AGO: 8,
+  SEP: 9, SEPT: 9, SET: 9,
+  OCT: 10, OTT: 10,
+  NOV: 11,
+  DEC: 12, DIC: 12,
+};
+
+function validPassportIsoDate(year: number, month: number, day: number): string | null {
+  const value = new Date(Date.UTC(year, month - 1, day));
+  if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month - 1 || value.getUTCDate() !== day) return null;
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function normalizePassportDateForStorage(value: string | null | undefined): string | null {
+  const input = value?.trim() ?? "";
+  if (!input) return null;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(input);
+  if (iso) return validPassportIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const numeric = /^(\d{1,2})[\s./-]+(\d{1,2})[\s./-]+(\d{4})$/.exec(input);
+  if (numeric) return validPassportIsoDate(Number(numeric[3]), Number(numeric[2]), Number(numeric[1]));
+  const normalized = input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9/]+/g, " ")
+    .trim();
+  const parts = normalized.split(/\s+/);
+  if (parts.length !== 3 || !/^\d{1,2}$/.test(parts[0]) || !/^\d{4}$/.test(parts[2])) return null;
+  const month = parts[1]
+    .split("/")
+    .map((part) => PASSPORT_MONTH_ALIASES[part])
+    .find((candidate): candidate is number => Boolean(candidate));
+  return month ? validPassportIsoDate(Number(parts[2]), month, Number(parts[0])) : null;
+}
+
+function mergeVerifierWithOriginalMrz(original: PassportExtraction, verifier: PassportExtraction): PassportExtraction {
+  return {
+    ...original,
+    passportNumberVisual: verifier.passportNumberVisual ?? original.passportNumberVisual,
+    mrzPassportNumber: verifier.mrzPassportNumber ?? original.mrzPassportNumber,
+    fieldStatus: {
+      ...original.fieldStatus,
+      passportNumberVisual: verifier.passportNumberVisual
+        ? verifier.fieldStatus.passportNumberVisual
+        : original.fieldStatus.passportNumberVisual,
+      mrzPassportNumber: verifier.mrzPassportNumber
+        ? verifier.fieldStatus.mrzPassportNumber
+        : original.fieldStatus.mrzPassportNumber,
+    },
+  };
 }
 
 function markManualConfirmationRequired(consensus: PassportConsensus, reason: string): PassportConsensus {
@@ -730,6 +812,7 @@ async function runConditionalVerifier(
     "verification",
     remainingMs(deadline, OPENAI_PASSPORT_VERIFICATION_TIMEOUT_MS),
     fetcher,
+    input.attempt,
   );
   const verified = validateVerifierResult(result.parsed);
   return {
@@ -776,6 +859,7 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
   let consensus = buildPassportConsensus(visualSettled.value.extraction, mrzSettled.value.extraction);
   let mergeMs = Date.now() - mergeStart;
   let verifierResult: Awaited<ReturnType<typeof runConditionalVerifier>> | null = null;
+  let secondPass = mrzSettled.value.extraction;
   const triggerCode = verifierTriggerCode(consensus, visualSettled.value.extraction, mrzSettled.value.extraction);
   let verifierTimedOut = false;
   let manualConfirmationRequired = false;
@@ -783,7 +867,8 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
     try {
       verifierResult = await runConditionalVerifier(env, input, consensus, triggerCode, deadline, fetcher);
       const verifiedMergeStart = Date.now();
-      consensus = buildPassportConsensus(visualSettled.value.extraction, verifierResult.extraction);
+      secondPass = mergeVerifierWithOriginalMrz(mrzSettled.value.extraction, verifierResult.extraction);
+      consensus = buildPassportConsensus(visualSettled.value.extraction, secondPass);
       if (consensus.fields.passportNumber.state !== "AUTO_VERIFIED") {
         manualConfirmationRequired = true;
         consensus = markManualConfirmationRequired(consensus, "VERIFICATION_UNRESOLVED");
@@ -799,7 +884,7 @@ export async function extractPassportReview(env: PassportOcrBindings, input: Pas
 
   const validation: PassportReviewValidation = {
     firstPass: visualSettled.value.extraction,
-    secondPass: verifierResult?.extraction ?? mrzSettled.value.extraction,
+    secondPass,
     consensus,
     ocrModel: `${OPENAI_PASSPORT_VISUAL_MODEL}+${OPENAI_PASSPORT_MRZ_MODEL}`,
     verificationModel: triggerCode ? OPENAI_PASSPORT_VERIFICATION_MODEL : null,

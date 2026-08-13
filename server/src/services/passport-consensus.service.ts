@@ -58,6 +58,11 @@ function clean(value: string | null | undefined): string | null {
   return text || null;
 }
 
+function cleanPassportNumber(value: string | null | undefined): string | null {
+  const text = value?.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") ?? "";
+  return text || null;
+}
+
 function cleanName(value: string | null | undefined): string | null {
   const text = value?.trim().replace(/\s+/g, " ") ?? "";
   return text || null;
@@ -120,11 +125,11 @@ function simpleField(value: string | null, source: PassportFieldSource, required
 
 export function buildPassportConsensus(first: PassportExtraction, second: PassportExtraction): PassportConsensus {
   const mrz = parseTd3Mrz(first.mrzLine1 || second.mrzLine1, first.mrzLine2 || second.mrzLine2);
-  const visualPass1 = clean(first.passportNumberVisual);
-  const visualPass2 = clean(second.passportNumberVisual);
-  const mrzPass1 = clean(first.mrzPassportNumber);
-  const mrzPass2 = clean(second.mrzPassportNumber);
-  const parsedMrzPassport = clean(mrz.passportNumber);
+  const visualPass1 = cleanPassportNumber(first.passportNumberVisual);
+  const visualPass2 = cleanPassportNumber(second.passportNumberVisual);
+  const mrzPass1 = cleanPassportNumber(first.mrzPassportNumber);
+  const mrzPass2 = cleanPassportNumber(second.mrzPassportNumber);
+  const parsedMrzPassport = cleanPassportNumber(mrz.passportNumber);
   const issues: string[] = [];
 
   if (!visualPass1) issues.push("VISUAL_PASS_1_MISSING");
@@ -137,22 +142,14 @@ export function buildPassportConsensus(first: PassportExtraction, second: Passpo
   if (parsedMrzPassport && visualPass1 && parsedMrzPassport !== visualPass1) issues.push("VISUAL_PASS_1_DIFFERS_FROM_MRZ");
   if (parsedMrzPassport && visualPass2 && parsedMrzPassport !== visualPass2) issues.push("VISUAL_PASS_2_DIFFERS_FROM_MRZ");
 
-  const presentMrzPassports = [mrzPass1, mrzPass2].filter((value): value is string => Boolean(value));
-  const presentVisualPassports = [visualPass1, visualPass2].filter((value): value is string => Boolean(value));
-  const autoVerifiedPassport = Boolean(
-    parsedMrzPassport
-    && mrz.mrzValid
-    && mrz.checks.passportNumber === true
-    && presentMrzPassports.length > 0
-    && presentVisualPassports.length > 0
-    && presentMrzPassports.every((value) => value === parsedMrzPassport)
-    && presentVisualPassports.every((value) => value === parsedMrzPassport),
-  );
+  // A deterministic, fully valid TD3 MRZ is authoritative. Visual differences remain
+  // in audit issues but cannot create another operational confirmation gate.
+  const autoVerifiedPassport = Boolean(parsedMrzPassport && mrz.mrzValid);
 
   const passportNumber = {
     value: autoVerifiedPassport ? parsedMrzPassport : parsedMrzPassport ?? visualPass1 ?? visualPass2,
     state: autoVerifiedPassport ? "AUTO_VERIFIED" as const : (parsedMrzPassport || visualPass1 || visualPass2 ? "NEEDS_CONFIRMATION" as const : "MISSING" as const),
-    source: autoVerifiedPassport ? "both" as const : (parsedMrzPassport ? "MRZ" as const : "visual" as const),
+    source: autoVerifiedPassport ? "MRZ" as const : (parsedMrzPassport ? "MRZ" as const : "visual" as const),
     issues,
     visualPass1,
     visualPass2,
@@ -165,12 +162,30 @@ export function buildPassportConsensus(first: PassportExtraction, second: Passpo
     ],
   };
 
-  const firstName = givenNamesField(first, second, mrz.givenNames);
-  const lastName = simpleField(cleanName(first.surname ?? second.surname ?? mrz.surname), mrz.surname ? "MRZ" : "visual");
-  const nationality = simpleField(clean(first.nationality ?? second.nationality ?? mrz.nationality), mrz.nationality ? "MRZ" : "visual");
-  const gender = simpleField(clean(first.sex ?? second.sex ?? mrz.sex), mrz.sex ? "MRZ" : "visual");
-  const birthDate = simpleField(first.dateOfBirth ?? second.dateOfBirth ?? mrz.dateOfBirth, mrz.dateOfBirth ? "MRZ" : "visual");
-  const expiryDate = simpleField(first.expiryDate ?? second.expiryDate ?? mrz.expiryDate, mrz.expiryDate ? "MRZ" : "visual");
+  const comparedFirstName = givenNamesField(first, second, mrz.givenNames);
+  const firstName = mrz.mrzValid
+    ? { ...comparedFirstName, value: cleanName(mrz.givenNames), state: "AUTO_VERIFIED" as const, source: "MRZ" as const }
+    : comparedFirstName;
+  const lastName = simpleField(
+    cleanName(mrz.mrzValid ? mrz.surname : first.surname ?? second.surname ?? mrz.surname),
+    mrz.mrzValid || Boolean(mrz.surname) ? "MRZ" : "visual",
+  );
+  const nationality = simpleField(
+    clean(mrz.mrzValid ? mrz.nationality : first.nationality ?? second.nationality ?? mrz.nationality),
+    mrz.mrzValid || Boolean(mrz.nationality) ? "MRZ" : "visual",
+  );
+  const gender = simpleField(
+    clean(mrz.mrzValid ? mrz.sex : first.sex ?? second.sex ?? mrz.sex),
+    mrz.mrzValid || Boolean(mrz.sex) ? "MRZ" : "visual",
+  );
+  const birthDate = simpleField(
+    mrz.mrzValid ? mrz.dateOfBirth : first.dateOfBirth ?? second.dateOfBirth ?? mrz.dateOfBirth,
+    mrz.mrzValid || Boolean(mrz.dateOfBirth) ? "MRZ" : "visual",
+  );
+  const expiryDate = simpleField(
+    mrz.mrzValid ? mrz.expiryDate : first.expiryDate ?? second.expiryDate ?? mrz.expiryDate,
+    mrz.mrzValid || Boolean(mrz.expiryDate) ? "MRZ" : "visual",
+  );
 
   const fieldList = [passportNumber, firstName, lastName, nationality, gender, birthDate, expiryDate];
   const unresolvedCriticalConflicts = fieldList.filter((field) => field.state !== "AUTO_VERIFIED").length;

@@ -168,7 +168,11 @@ function mapBookingPassport(row: BookingPassportRow): BookingPassportRecord {
 export async function createBookingPassport(env: BookingPassportBindings, input: CreateBookingPassportInput): Promise<BookingPassportRecord> {
   const createdAt = new Date().toISOString();
   const validation = input.validation ?? fallbackValidation(input);
-  const tm30Status = validation.consensus.tm30Ready ? "READY" : "NOT_READY";
+  const passportNumberState = validation.consensus.fields.passportNumber.state;
+  const manualReviewComplete = passportNumberState === "MANUALLY_VERIFIED"
+    && [input.passport.firstName, input.passport.lastName, input.passport.passportNumber, input.passport.nationality, input.passport.gender, input.passport.birthDate]
+      .every((value) => Boolean(value?.trim()));
+  const tm30Status = validation.consensus.tm30Ready || manualReviewComplete ? "READY" : "NOT_READY";
   const result = await env.DB.prepare(`
     INSERT INTO booking_passports (
       booking_id,

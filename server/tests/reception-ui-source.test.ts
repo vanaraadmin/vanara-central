@@ -20,6 +20,7 @@ const countryNationality = await readFile(new URL("../../src/utils/country-natio
 const englishCopy = await readFile(new URL("../../src/i18n/en.ts", import.meta.url), "utf8");
 const thaiCopy = await readFile(new URL("../../src/i18n/th.ts", import.meta.url), "utf8");
 const bookingPassportsMigration = await readFile(new URL("../migrations/0013_booking_passports.sql", import.meta.url), "utf8");
+const passportOcrAttemptsMigration = await readFile(new URL("../migrations/0049_passport_ocr_attempts.sql", import.meta.url), "utf8");
 
 test("booking details sheet renders as a fullscreen glass sheet", () => {
   assert.match(receptionPage, /function BookingDetailsSheet/);
@@ -102,10 +103,10 @@ test("mobile reception cards and action rows are width-contained without clippin
   assert.doesNotMatch(receptionCss, /\.reception-page[^}]*overflow-x:\s*hidden/);
 });
 
-test("passport review keeps critical issues visible but only compares genuinely different numbers", () => {
+test("passport review hides audit-only OCR issues and only compares genuinely different numbers", () => {
   assert.match(passportWorkflow, /passportNumberCandidatesDiffer\(\s*verification\.visualCandidate,\s*verification\.mrzCandidate,?\s*\)/);
   assert.doesNotMatch(passportWorkflow, /verification\.issues\.includes\("PASSPORT_NUMBER_(?:CONFLICT|MISMATCH)"\)/);
-  assert.match(passportWorkflow, /\{verification\.issues\.length > 0 && \(/);
+  assert.doesNotMatch(passportWorkflow, /\{verification\.issues\.length > 0 && \(/);
   assert.match(passportWorkflow, /\{passportNumberHasConflict \? \(/);
   assert.match(passportMessages, /"passport\.openAiTimeout":\s*"passportCheckTimedOut"/);
   assert.doesNotMatch(passportMessages, /"passport\.openAiTimeout":\s*"OpenAI timeout\."/);
@@ -206,7 +207,7 @@ test("passport acquired status is derived from backend data and refreshed after 
   assert.match(receptionPage, /loadBookingPassports\(stay\.bookingId, signal\)/);
   assert.match(receptionPage, /const passportCount = passports\.data\?\.length \?\? 0;/);
   assert.match(passportWorkflow, /classifyPassportForScan/);
-  assert.match(passportWorkflow, /uploadPassportForReview\(current\.file\)/);
+  assert.match(passportWorkflow, /uploadPassportForReview\(bookingId, slotKey, current\.file\)/);
   assert.match(passportWorkflow, /saveBookingPassport\(bookingId, current\.objectKey, passport\)/);
   assert.match(receptionPage, /queryClient\.invalidateQueries\({ queryKey: passportsQueryKey }\)/);
 });
@@ -223,7 +224,7 @@ test("complete check-in passport row is an action derived from persisted booking
   assert.match(receptionPage, /<PassportWorkflow/);
   assert.match(receptionPage, /loadBookingPassports\(request\.stay\.bookingId, signal\)/);
   assert.match(passportWorkflow, /classifyPassportForScan/);
-  assert.match(passportWorkflow, /uploadPassportForReview\(current\.file\)/);
+  assert.match(passportWorkflow, /uploadPassportForReview\(bookingId, slotKey, current\.file\)/);
   assert.match(passportWorkflow, /saveBookingPassport\(bookingId, current\.objectKey, passport\)/);
   assert.match(receptionPage, /passportRegistrationCompleted: completed/);
 });
@@ -242,6 +243,18 @@ test("booking passports schema allows one booking to have many passport records"
   assert.doesNotMatch(bookingPassportsMigration, /UNIQUE\s*\(\s*booking_id\s*\)/i);
   assert.match(bookingPassportsMigration, /object_key TEXT NOT NULL UNIQUE/);
   assert.match(bookingPassportsMigration, /CREATE INDEX idx_booking_passports_booking\s+ON booking_passports\(booking_id, created_at\)/);
+});
+
+test("paid passport OCR attempts persist provider recovery without duplicate POSTs", () => {
+  assert.match(passportWorkflow, /passportCaptureSlotKey\(bookingId, file\)/);
+  assert.match(passportWorkflow, /classifyPassportForScan\(bookingId, slotKey, file\)/);
+  assert.match(passportWorkflow, /uploadPassportForReview\(bookingId, slotKey, current\.file\)/);
+  assert.match(receptionService, /formData\.set\("bookingId", String\(bookingId\)\)/);
+  assert.match(receptionService, /formData\.set\("passportSlotKey", slotKey\)/);
+  assert.match(passportOcrAttemptsMigration, /UNIQUE \(booking_id, slot_key, image_sha256\)/);
+  assert.match(passportOcrAttemptsMigration, /client_request_id TEXT NOT NULL/);
+  assert.match(passportOcrAttemptsMigration, /response_id TEXT/);
+  assert.match(passportOcrAttemptsMigration, /state IN \('PENDING', 'SUBMITTING', 'POLLING', 'COMPLETED', 'FAILED', 'MANUAL_REVIEW'\)/);
 });
 
 test("passport action opens a capture panel before file selection and OCR", () => {
@@ -349,6 +362,9 @@ test("verification timeout opens review with manual confirmation and technical d
   assert.match(passportWorkflow, /translate\("passportCheckTimedOut"\)/);
   assert.match(passportWorkflow, /translate\("confirmPassportNumber"\)/);
   assert.match(passportWorkflow, /MANUALLY_VERIFIED/);
+  assert.doesNotMatch(passportWorkflow, /verification\.issues\.map/);
+  assert.doesNotMatch(passportWorkflow, /passportNameReviewSummary/);
+  assert.match(passportWorkflow, /missingRequiredFields\.length === 0/);
   assert.match(passportWorkflow, /<details className="passport-review__technical">/);
   assert.match(passportWorkflow, /<summary>\{translate\("details"\)\}<\/summary>/);
   assert.doesNotMatch(passportWorkflow, /<p className="passport-capture__hint">Request ID:/);
@@ -361,8 +377,8 @@ test("passport review save button always explains disabled state", () => {
   assert.match(passportWorkflow, /passport-review__save-reason/);
   assert.match(passportWorkflow, /disabled=\{Boolean\(saveDisabledReason\)\}/);
   assert.match(passportWorkflow, /markPassportNumberNeedsConfirmation/);
-  assert.match(passportWorkflow, /passportNameReviewSummary/);
-  assert.match(passportWorkflow, /translate\("passportGivenNamesNeedReview"\)/);
+  assert.doesNotMatch(passportWorkflow, /passportNameReviewSummary/);
+  assert.doesNotMatch(passportWorkflow, /translate\("passportGivenNamesNeedReview"\)/);
 });
 
 test("passport review is a compact quick review with one sticky action bar", () => {

@@ -861,18 +861,13 @@ function passportDataFromRecord(passport: BookingPassport): PassportData {
   };
 }
 
-function passportVerificationSummary(passport: PassportData): { state: string; issues: string[] } | null {
+function passportVerificationSummary(passport: PassportData): { state: string } | null {
   const verification = passport.verification;
   if (!verification || typeof verification !== "object" || !("consensus" in verification)) return null;
-  const consensus = verification.consensus as { fields?: { passportNumber?: { state?: string; issues?: string[]; conflicts?: unknown[] } }; unresolvedCriticalConflicts?: number };
+  const consensus = verification.consensus as { fields?: { passportNumber?: { state?: string } } };
   const passportNumber = consensus.fields?.passportNumber;
   return {
     state: passportNumber?.state ?? "NEEDS_CONFIRMATION",
-    issues: [
-      ...(passportNumber?.issues ?? []),
-      ...((passportNumber?.conflicts?.length ?? 0) > 0 ? ["PASSPORT_NUMBER_CONFLICT"] : []),
-      ...((consensus.unresolvedCriticalConflicts ?? 0) > 0 ? ["UNRESOLVED_CRITICAL_FIELDS"] : []),
-    ],
   };
 }
 
@@ -1004,11 +999,6 @@ function PassportReviewPanel({
       {verification && (
         <section className="passport-review__verification" aria-label={translate("verification")}>
           <strong>{translate("passportNumber")}: {verification.state.replace(/_/g, " ")}</strong>
-          {verification.issues.length > 0 && (
-            <ul>
-              {verification.issues.map((issue) => <li key={issue}>{issue.replace(/_/g, " ")}</li>)}
-            </ul>
-          )}
         </section>
       )}
 

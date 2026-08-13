@@ -973,11 +973,8 @@ test("passport OCR primary visual and MRZ reads start in parallel with focused p
   assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, false);
 });
 
-test("passport OCR invokes Sol verifier only when visual and MRZ passport numbers conflict", async () => {
+test("passport OCR trusts a valid deterministic MRZ without a visual mismatch gate", async () => {
   const models: string[] = [];
-  let verifierImages = 0;
-  let verifierPrompt = "";
-  let verifierSchema = "";
   const fetcher = (async (_input: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body)) as {
       model: string;
@@ -986,19 +983,8 @@ test("passport OCR invokes Sol verifier only when visual and MRZ passport number
     };
     models.push(body.model);
     const prompt = body.input[0]?.content[0]?.text ?? "";
-    const images = body.input[0]?.content.filter((item) => item.type === "input_image") ?? [];
     if (body.model === "gpt-5.6-sol") {
-      verifierImages = images.length;
-      verifierPrompt = prompt;
-      verifierSchema = JSON.stringify(body.text.format.schema);
-      return new Response(JSON.stringify({
-        output: [{ content: [{ type: "output_text", text: JSON.stringify({
-          resolved: true,
-          passportNumber: "L898902C3",
-          confidence: 0.94,
-          needsManualConfirmation: false,
-        }) }] }],
-      }), { status: 200, headers: { "content-type": "application/json" } });
+      throw new Error("A valid MRZ must not invoke the verifier.");
     }
     const responseText = prompt.includes("human-readable biodata")
       ? JSON.stringify({
@@ -1051,14 +1037,13 @@ test("passport OCR invokes Sol verifier only when visual and MRZ passport number
     fetcher,
   );
 
-  assert.deepEqual(models, ["gpt-5.6-terra", "gpt-5.6-terra", "gpt-5.6-sol"]);
-  assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, true);
-  assert.equal(passport.verification?.timing?.verifierTriggerCode, "PASSPORT_NUMBER_CONFLICT");
-  assert.equal(verifierImages, 2);
-  assert.match(verifierPrompt, /Trigger code: PASSPORT_NUMBER_CONFLICT/);
-  assert.doesNotMatch(verifierPrompt, /given names|surname|nationality|date of birth/i);
-  assert.match(verifierSchema, /needsManualConfirmation/);
-  assert.doesNotMatch(verifierSchema, /mrzLine1|givenNames|surname/);
+  assert.deepEqual(models, ["gpt-5.6-terra", "gpt-5.6-terra"]);
+  assert.equal(passport.verification?.timing?.conditionalVerificationInvoked, false);
+  assert.equal(passport.verification?.consensus.fields.passportNumber.state, "AUTO_VERIFIED");
+  assert.equal(passport.passportNumber, "L898902C3");
+  assert.equal(passport.verification?.secondPass.mrzLine1, "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<");
+  assert.equal(passport.verification?.secondPass.mrzLine2, "L898902C36UTO7408122F1204159ZE184226B<<<<<10");
+  assert.equal(passport.verification?.consensus.mrz.checks.passportNumber, true);
 });
 
 test("passport OCR verifier timeout preserves primary results for manual confirmation review", async () => {
@@ -1102,7 +1087,7 @@ test("passport OCR verifier timeout preserves primary results for manual confirm
         })
         : JSON.stringify({
           mrzLine1: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
-          mrzLine2: "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+          mrzLine2: "L898902C37UTO7408122F1204159ZE184226B<<<<<10",
           mrzPassportNumber: "L898902C3",
           passportNumberVisual: "L898902C3",
           fieldStatus: {
@@ -1621,6 +1606,72 @@ test("booking scoped passport OCR endpoint rolls back R2 after persistence failu
   assert.equal(payload.error?.message, "D1 unavailable");
   assert.equal(r2.objects.size, 0);
   assert.equal(db.passports.length, 0);
+});
+
+test("manual passport review saves human dates as ISO and marks TM30 ready", async () => {
+  const data = env([movementsAccess], true, [], BOOKING, new FakePassportR2());
+  const db = data.DB as unknown as FakeReceptionDB;
+  const emptyExtraction = {
+    documentType: "P",
+    issuingCountry: "CAN",
+    surname: "SEGALOTTO",
+    givenNames: "JEAN FRANCOIS",
+    passportNumberVisual: "P942021XP",
+    nationality: "CANADIAN",
+    dateOfBirth: "11 DIC/DEC 1979",
+    sex: "M",
+    expiryDate: "07 JUL/JUIL 2036",
+    personalNumber: null,
+    mrzLine1: null,
+    mrzLine2: null,
+    mrzPassportNumber: null,
+    rawVisualText: null,
+    imageQualityAssessment: null,
+    fieldStatus: {},
+  };
+  const response = await request("/api/reception/stays/9001/passports", {
+    method: "POST",
+    headers: { cookie: "vanara_session=x", "content-type": "application/json" },
+    body: JSON.stringify({
+      objectKey: "passports/manual-review.jpg",
+      passport: {
+        firstName: "JEAN FRANCOIS",
+        middleName: null,
+        lastName: "SEGALOTTO",
+        passportNumber: "P942021XP",
+        nationality: "CANADIAN",
+        gender: "M",
+        birthDate: "11 DIC/DEC 1979",
+        expiryDate: "07 JUL/JUIL 2036",
+        verification: {
+          firstPass: emptyExtraction,
+          secondPass: emptyExtraction,
+          consensus: {
+            mrz: { mrzValid: false, checks: { passportNumber: false } },
+            fields: {
+              passportNumber: { value: "P942021XP", state: "MANUALLY_VERIFIED", source: "manual", issues: [], conflicts: [] },
+              firstName: { value: "JEAN FRANCOIS", state: "AUTO_VERIFIED" },
+              lastName: { value: "SEGALOTTO", state: "AUTO_VERIFIED" },
+              nationality: { value: "CANADIAN", state: "AUTO_VERIFIED" },
+              gender: { value: "M", state: "AUTO_VERIFIED" },
+              birthDate: { value: "11 DIC/DEC 1979", state: "AUTO_VERIFIED" },
+              expiryDate: { value: "07 JUL/JUIL 2036", state: "AUTO_VERIFIED" },
+            },
+            unresolvedCriticalConflicts: 1,
+            tm30Ready: false,
+          },
+          ocrModel: "fixture",
+          schemaVersion: "fixture",
+        },
+      },
+    }),
+  }, data);
+
+  assert.equal(response.status, 201);
+  assert.equal(db.passports.length, 1);
+  assert.equal(db.passports[0]?.birth_date, "1979-12-11");
+  assert.equal(db.passports[0]?.expiry_date, "2036-07-07");
+  assert.equal(db.passports[0]?.tm30_status, "READY");
 });
 
 test("reception completion endpoints require authentication and staff operational access", async () => {

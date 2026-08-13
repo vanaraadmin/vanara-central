@@ -1211,6 +1211,15 @@
   color: #4b3212;
 }
 
+.passport-workflow .reception-modal__error {
+  padding: var(--vc-space-3) var(--vc-space-4);
+  border: 1px solid rgba(139, 43, 35, 0.34);
+  border-radius: var(--vc-radius-md);
+  color: #7a211b !important;
+  background: rgba(255, 235, 231, 0.96);
+  font-weight: var(--vc-weight-semibold);
+}
+
 .passport-workflow .passport-review__verification button {
   min-height: 44px;
   padding-inline: var(--vc-space-4);

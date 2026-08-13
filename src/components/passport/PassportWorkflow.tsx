@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type ChangeEvent } from "react";
 import { ApiError } from "../../services/api.client";
 import { useLanguage } from "../../providers/language.context";
-import { saveBookingPassport, classifyPassportForScan, livePassportPreflight, uploadPassportForReview } from "../../services/reception.service";
+import { saveBookingPassport, classifyPassportForScan, livePassportPreflight, passportCaptureSlotKey, uploadPassportForReview } from "../../services/reception.service";
 import type { BookingPassport, PassportData, PassportLivePreflight } from "../../types/reception";
 import { analyzeCanvasFrame, type PassportQualityResult } from "../../utils/passport-quality";
 import {
@@ -33,9 +33,13 @@ import {
   type PassportAutoCaptureCandidate,
 } from "../../utils/passport-auto-capture";
 import {
+  invalidPassportReviewDateField,
   PASSPORT_REVIEW_FIELDS,
   normalizePassportReviewDraft,
+  normalizePassportReviewForSave,
+  missingPassportReviewFields,
   passportNumberCandidatesDiffer,
+  passportNumberNeedsManualConfirmation,
   passportReviewSaveDisabledReason,
   type PassportReviewField,
 } from "../../utils/passport-review";
@@ -96,6 +100,7 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
   const activeCaptureIdRef = useRef(0);
+  const captureSlotKeysRef = useRef(new Map<number, string>());
   const previewUrlsRef = useRef(new Set<string>());
   const [state, dispatchBase] = useReducer(passportWorkflowReducer, initialPassportWorkflowState);
   const stateRef = useRef(state);
@@ -114,7 +119,7 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
   }
 
   useEffect(() => {
-    if (open && state.phase === "CLOSED") {
+    if (open && (state.phase === "CLOSED" || state.phase === "COMPLETED")) {
       activeCaptureIdRef.current += 1;
       dispatchBase({ type: "OPEN", captureId: activeCaptureIdRef.current });
     }
@@ -151,6 +156,7 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
 
   async function processCapturedFile(file: File, debug?: CaptureDebug) {
     const captureId = activeCaptureIdRef.current;
+    captureSlotKeysRef.current.set(captureId, await passportCaptureSlotKey(bookingId, file));
     const previewUrl = URL.createObjectURL(file);
     previewUrlsRef.current.add(previewUrl);
     dispatch({ type: "CAPTURE", captureId, file, previewUrl, debug });
@@ -195,7 +201,9 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
     const file = "file" in current ? current.file : null;
     if (!file) return;
     try {
-      const result = await classifyPassportForScan(file);
+      const slotKey = captureSlotKeysRef.current.get(captureId);
+      if (!slotKey) throw new Error("Passport capture identity is unavailable.");
+      const result = await classifyPassportForScan(bookingId, slotKey, file);
       if (activeCaptureIdRef.current !== captureId) return;
       if (result.decision.ready) {
         dispatchBase({ type: "CLASSIFICATION_ACCEPTED", captureId, classification: result.classification });
@@ -218,7 +226,9 @@ export function PassportWorkflow({ bookingId, guestName, isMobile, onCancel, onS
     const captureId = current.captureId;
     dispatchBase({ type: "START_OCR", captureId });
     try {
-      const result = await uploadPassportForReview(current.file);
+      const slotKey = captureSlotKeysRef.current.get(captureId);
+      if (!slotKey) throw new Error("Passport capture identity is unavailable.");
+      const result = await uploadPassportForReview(bookingId, slotKey, current.file);
       if (activeCaptureIdRef.current !== captureId) return;
       dispatchBase({ type: "OCR_SUCCESS", captureId, objectKey: result.objectKey, passport: result.passport });
     } catch (error) {
@@ -870,15 +880,18 @@ function PassportReviewStep({
   const [draft, setDraft] = useState<PassportData>(() => normalizePassportReviewDraft(passport));
 
   const verification = passportVerificationSummary(draft);
-  const nameReview = passportNameReviewSummary(draft);
   const passportNumberHasConflict = Boolean(verification && passportNumberCandidatesDiffer(
     verification.visualCandidate,
     verification.mrzCandidate,
   ));
-  const passportNumberRequiresConfirmation = passportNumberHasConflict
-    && verification?.state !== "AUTO_VERIFIED"
-    && verification?.state !== "MANUALLY_VERIFIED";
+  const passportNumberRequiresConfirmation = passportNumberNeedsManualConfirmation(draft);
+  const missingRequiredFields = missingPassportReviewFields(draft);
+  const invalidDateField = invalidPassportReviewDateField(draft);
   const saveDisabledReason = passportReviewSaveDisabledReason({
+    blockingValidationError: invalidDateField
+      ? translate(invalidDateField === "birthDate" ? "passportBirthDateInvalid" : "passportExpiryDateInvalid")
+      : null,
+    confirmationRequiredError: translate("passportNumberConfirmationRequired"),
     isSaving: isPending,
     ocrCompleted: true,
     passport: draft,
@@ -897,7 +910,7 @@ function PassportReviewStep({
           <label key={field.key}>
             <span>{passportFieldLabel(field.key, translate)}</span>
             <input
-              onChange={(event) => setDraft(updateDraftField(draft, field.key, event.target.value.trim() || null))}
+              onChange={(event) => setDraft(updateDraftField(draft, field.key, event.target.value || null))}
               value={draft[field.key] ?? ""}
             />
           </label>
@@ -915,12 +928,7 @@ function PassportReviewStep({
               {verification.mrzCandidate && <div><dt>{translate("passportMrzCandidate")}</dt><dd>{verification.mrzCandidate}</dd></div>}
             </dl>
           ) : null}
-          {verification.issues.length > 0 && (
-            <ul>
-              {verification.issues.map((issue) => <li key={issue}>{issue.replace(/_/g, " ")}</li>)}
-            </ul>
-          )}
-          {passportNumberRequiresConfirmation && draft.passportNumber && (
+          {passportNumberRequiresConfirmation && missingRequiredFields.length === 0 && draft.passportNumber && (
             <button
               disabled={isPending}
               onClick={() => setDraft(markPassportNumberManuallyVerified(draft))}
@@ -939,20 +947,12 @@ function PassportReviewStep({
           )}
         </section>
       )}
-      {nameReview.length > 0 && (
-        <section className="passport-review__verification" aria-label={translate("passportGivenNamesNeedReview")}>
-          <strong>{translate("passportGivenNamesNeedReview")}</strong>
-          <ul>
-            {nameReview.map((issue) => <li key={issue}>{issue.replace(/_/g, " ")}</li>)}
-          </ul>
-        </section>
-      )}
       {error && <p className="reception-modal__error" role="alert">{error}</p>}
       {saveDisabledReason && <p className="passport-review__save-reason" role="status">{saveDisabledReason}</p>}
       <div className="passport-workflow__actions passport-review-actions">
         <button disabled={isPending} onClick={onCancel} type="button">{translate("cancel")}</button>
         <button disabled={isPending} onClick={onRetake} type="button">{translate("retakePhoto")}</button>
-        <button disabled={Boolean(saveDisabledReason)} onClick={() => onSave(normalizePassportReviewDraft(draft))} type="button">
+        <button disabled={Boolean(saveDisabledReason)} onClick={() => onSave(normalizePassportReviewForSave(draft))} type="button">
           {isPending ? translate("saving") : translate("savePassport")}
         </button>
       </div>
@@ -996,25 +996,14 @@ function passportVerificationSummary(passport: PassportData): { state: string; i
   };
 }
 
-function passportNameReviewSummary(passport: PassportData): string[] {
-  const verification = passport.verification;
-  if (!verification || typeof verification !== "object" || !("consensus" in verification)) return [];
-  const consensus = verification.consensus as {
-    fields?: {
-      firstName?: {
-        issues?: string[];
-      };
-    };
-  };
-  return consensus.fields?.firstName?.issues?.filter((issue) => issue.includes("GIVEN_NAMES")) ?? [];
-}
-
 function markPassportNumberManuallyVerified(passport: PassportData): PassportData {
   if (!passport.passportNumber) return passport;
   const verification = passport.verification;
   if (!verification || typeof verification !== "object" || !("consensus" in verification)) return passport;
   const nextVerification = structuredClone(verification) as {
     consensus?: {
+      tm30Ready?: boolean;
+      unresolvedCriticalConflicts?: number;
       fields?: {
         passportNumber?: {
           value?: string | null;
@@ -1037,6 +1026,10 @@ function markPassportNumberManuallyVerified(passport: PassportData): PassportDat
   passportNumber.conflicts = [];
   passportNumber.visualPass1 = passport.passportNumber.trim();
   passportNumber.visualPass2 = passport.passportNumber.trim();
+  if (nextVerification.consensus) {
+    nextVerification.consensus.unresolvedCriticalConflicts = 0;
+    nextVerification.consensus.tm30Ready = true;
+  }
   return { ...passport, verification: nextVerification };
 }
 

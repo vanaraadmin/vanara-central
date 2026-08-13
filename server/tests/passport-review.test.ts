@@ -4,8 +4,11 @@ import type { PassportData } from "../../src/types/reception.ts";
 import { countryCodeToNationality, formatNationalityText } from "../../src/utils/country-nationality.ts";
 import {
   isPassportReviewSaveEnabled,
+  invalidPassportReviewDateField,
+  normalizePassportDateInput,
   normalizePassportNumberCandidate,
   normalizePassportReviewDraft,
+  normalizePassportReviewForSave,
   passportNumberCandidatesDiffer,
   passportReviewSaveDisabledReason,
 } from "../../src/utils/passport-review.ts";
@@ -33,11 +36,34 @@ const validPassport: PassportData = {
   },
 };
 
-test("passport review enables save after successful OCR when mandatory fields are valid", () => {
+test("passport review requires explicit confirmation when OCR cannot verify the passport number", () => {
   const passport = normalizePassportReviewDraft(validPassport);
   assert.equal(passport.nationality, "ITALIAN");
-  assert.equal(passportReviewSaveDisabledReason({ isSaving: false, ocrCompleted: true, passport }), null);
-  assert.equal(isPassportReviewSaveEnabled({ isSaving: false, ocrCompleted: true, passport }), true);
+  assert.equal(passportReviewSaveDisabledReason({ isSaving: false, ocrCompleted: true, passport }), "Confirm the passport details before saving.");
+  assert.equal(isPassportReviewSaveEnabled({ isSaving: false, ocrCompleted: true, passport }), false);
+  const verified = structuredClone(passport);
+  if (verified.verification?.consensus?.fields?.passportNumber) {
+    verified.verification.consensus.fields.passportNumber.state = "MANUALLY_VERIFIED";
+  }
+  assert.equal(passportReviewSaveDisabledReason({ isSaving: false, ocrCompleted: true, passport: verified }), null);
+});
+
+test("passport review accepts human bilingual dates and normalizes only for save", () => {
+  assert.equal(normalizePassportDateInput("11 DIC/DEC 1979"), "1979-12-11");
+  assert.equal(normalizePassportDateInput("11 SET/SEP 2027"), "2027-09-11");
+  assert.equal(normalizePassportDateInput("07 JUL/JUIL 2036"), "2036-07-07");
+  assert.equal(normalizePassportDateInput("31 FEB 2036"), null);
+  const draft = { ...validPassport, birthDate: "11 DIC/DEC 1979", expiryDate: "07 JUL/JUIL 2036" };
+  assert.equal(invalidPassportReviewDateField(draft), null);
+  const prepared = normalizePassportReviewForSave(draft);
+  assert.equal(prepared.birthDate, "1979-12-11");
+  assert.equal(prepared.expiryDate, "2036-07-07");
+});
+
+test("passport review keeps spaces while editing and reports invalid dates before save", () => {
+  const draft = { ...validPassport, birthDate: "11 DEC 19" };
+  assert.equal(draft.birthDate, "11 DEC 19");
+  assert.equal(invalidPassportReviewDateField(draft), "birthDate");
 });
 
 test("passport review disables save only for saving, incomplete OCR or blocking validation", () => {

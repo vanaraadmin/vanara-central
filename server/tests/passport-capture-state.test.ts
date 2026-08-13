@@ -135,6 +135,13 @@ test("successful save completes workflow", () => {
   assert.deepEqual(state, { phase: "COMPLETED", passportId: 99 });
 });
 
+test("add another passport reopens a clean capture after preserving the completed record", () => {
+  const completed: PassportWorkflowState = { phase: "COMPLETED", passportId: 99 };
+  const reopened = passportWorkflowReducer(completed, { type: "OPEN", captureId: 2 });
+  assert.deepEqual(reopened, { phase: "CAMERA", captureId: 2 });
+  assert.equal(completed.passportId, 99);
+});
+
 test("READY latch remains active for tap micro-movement", () => {
   const now = 1_000;
   const readyUntil = nextReadyLatchUntil(true, now);

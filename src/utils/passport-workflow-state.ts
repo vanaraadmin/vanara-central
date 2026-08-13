@@ -81,7 +81,9 @@ export function passportWorkflowReducer(
 ): PassportWorkflowState {
   switch (action.type) {
     case "OPEN":
-      return state.phase === "CLOSED" ? { phase: "CAMERA", captureId: action.captureId } : state;
+      return state.phase === "CLOSED" || state.phase === "COMPLETED"
+        ? { phase: "CAMERA", captureId: action.captureId }
+        : state;
     case "CAPTURE":
       return state.phase === "CAMERA" && state.captureId === action.captureId
         ? { phase: "CAPTURED", captureId: action.captureId, file: action.file, previewUrl: action.previewUrl, debug: action.debug }

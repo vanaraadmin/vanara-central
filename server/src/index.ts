@@ -41,6 +41,15 @@ import { deletePassport, uploadPassport, type PassportStorageBindings, type Uplo
 import { normalizePassportImageFormData, passportImageDiagnostics, PassportUploadError } from "./services/passport-upload.service.js";
 import { createBookingPassport, listBookingPassports, type BookingPassportBindings } from "./services/booking-passports.service.js";
 import { cleanupExpiredPassports, PASSPORT_RETENTION_CRON, type PassportRetentionBindings } from "./services/passport-retention.service.js";
+import {
+  attachPassportOcrObjectKey,
+  cleanupExpiredPassportOcrAttempts,
+  ensurePassportOcrAttempt,
+  markPassportOcrAttemptSavedByObjectKey,
+  markPassportOcrAttemptState,
+  sha256Hex as passportImageSha256,
+  type PassportOcrAttemptHandle,
+} from "./services/passport-ocr-attempt.service.js";
 import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
@@ -282,6 +291,46 @@ function positiveIntegerParam(value: string, name: string): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return parsed;
+}
+
+function passportOcrSlotKey(formData: FormData, fallback: string): string {
+  const value = formData.get("passportSlotKey");
+  if (typeof value !== "string" || !/^[a-zA-Z0-9:_-]{16,160}$/.test(value)) return fallback;
+  return value;
+}
+
+async function passportOcrAttemptFromUpload(
+  env: Bindings,
+  formData: FormData,
+  upload: { bytes: ArrayBuffer },
+  createdBy: string,
+  forcedBookingId?: number,
+): Promise<PassportOcrAttemptHandle | null> {
+  const bookingValue = formData.get("bookingId");
+  const slotValue = formData.get("passportSlotKey");
+  if (typeof slotValue !== "string" || !slotValue.trim()) return null;
+  const bookingId = forcedBookingId ?? (typeof bookingValue === "string" && /^\d+$/.test(bookingValue) ? Number(bookingValue) : null);
+  if (!bookingId || !Number.isSafeInteger(bookingId) || bookingId <= 0) return null;
+  const imageSha256 = await passportImageSha256(upload.bytes);
+  return ensurePassportOcrAttempt(env, {
+    bookingId,
+    slotKey: passportOcrSlotKey(formData, `image:${imageSha256}`),
+    imageSha256,
+    createdBy,
+  });
+}
+
+async function passportOcrObjectKey(
+  env: Bindings,
+  upload: { bytes: ArrayBuffer; contentType: "image/jpeg" | "image/png" | "image/heic" | "image/heif" },
+  attempt: PassportOcrAttemptHandle | null,
+): Promise<string> {
+  if (attempt?.objectKey) return attempt.objectKey;
+  const stored = await storePassportUpload(env, upload);
+  if (!attempt) return stored.objectKey;
+  const canonicalKey = await attachPassportOcrObjectKey(env, attempt.id, stored.objectKey);
+  if (canonicalKey !== stored.objectKey) await deletePassport(env, stored.objectKey).catch(() => undefined);
+  return canonicalKey;
 }
 
 async function authenticated(c: AppContext, module: ModuleKey, action: "access" | "edit" = "access"): Promise<CurrentUser> {
@@ -1010,9 +1059,16 @@ app.get("/api/reception", async (c) => {
 
 app.post("/api/reception/passports/ocr", async (c) => {
   const requestId = crypto.randomUUID();
+  let attempt: PassportOcrAttemptHandle | null | undefined;
+  let objectKey: string | null | undefined;
   try {
-    await authenticated(c, "movements", "access");
-    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const user = await authenticated(c, "movements", "access");
+    const formData = await c.req.formData();
+    const upload = await normalizePassportImageFormData(formData);
+    attempt = await passportOcrAttemptFromUpload(c.env, formData, upload, user.id);
+    if (attempt && !(await getReceptionStay(c.env, attempt.bookingId))) {
+      return c.json({ success: false, error: { code: "passport_upload_invalid", message: "Reception stay not found.", requestId } }, 404);
+    }
     const fullImage = passportImageDiagnostics(upload.bytes, upload.contentType);
     const passportNumberCrop = passportImageDiagnostics(upload.passportNumberCrop, upload.contentType);
     const mrzCrop = passportImageDiagnostics(upload.mrzCrop, upload.contentType);
@@ -1023,7 +1079,7 @@ app.post("/api/reception/passports/ocr", async (c) => {
       passportNumberCrop,
       mrzCrop,
     });
-    const stored = await storePassportUpload(c.env, upload);
+    objectKey = await passportOcrObjectKey(c.env, upload, attempt);
     let passport: PassportData;
     try {
       passport = await extractPassportReview(c.env, {
@@ -1031,11 +1087,13 @@ app.post("/api/reception/passports/ocr", async (c) => {
         contentType: upload.contentType,
         passportNumberCrop: upload.passportNumberCrop,
         mrzCrop: upload.mrzCrop,
+        attempt: attempt ?? undefined,
       });
     } catch (error) {
-      await rollbackPassportUpload(c.env, stored.objectKey, "ocr_failed");
+      if (!attempt && objectKey) await rollbackPassportUpload(c.env, objectKey, "ocr_failed");
       throw error;
     }
+    if (attempt) await markPassportOcrAttemptState(c.env, attempt.id, "OCR_COMPLETED");
     logPassportEvent({
       event: "passport_ocr_timing",
       requestId,
@@ -1072,7 +1130,7 @@ app.post("/api/reception/passports/ocr", async (c) => {
 
     return c.json({
       success: true,
-      objectKey: stored.objectKey,
+      objectKey,
       passport,
       timing: passport.verification?.timing,
       requestId,
@@ -1091,8 +1149,13 @@ app.post("/api/reception/passports/ocr", async (c) => {
 app.post("/api/reception/passports/classify", async (c) => {
   const requestId = crypto.randomUUID();
   try {
-    await authenticated(c, "movements", "access");
-    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const user = await authenticated(c, "movements", "access");
+    const formData = await c.req.formData();
+    const upload = await normalizePassportImageFormData(formData);
+    const attempt = await passportOcrAttemptFromUpload(c.env, formData, upload, user.id);
+    if (attempt && !(await getReceptionStay(c.env, attempt.bookingId))) {
+      return c.json({ success: false, error: { code: "passport_upload_invalid", message: "Reception stay not found.", requestId } }, 404);
+    }
     const image = passportImageDiagnostics(upload.bytes, upload.contentType);
     const mrzCrop = passportImageDiagnostics(upload.mrzCrop, upload.contentType);
     logPassportEvent({
@@ -1105,8 +1168,10 @@ app.post("/api/reception/passports/classify", async (c) => {
       image: upload.bytes,
       contentType: upload.contentType,
       mrzCrop: upload.mrzCrop,
+      attempt: attempt ?? undefined,
     });
     const decision = decidePassportClassification(result.classification);
+    if (attempt) await markPassportOcrAttemptState(c.env, attempt.id, "CLASSIFIED");
     logPassportEvent({
       event: "passport_classification_timing",
       requestId,
@@ -1230,6 +1295,7 @@ app.post("/api/reception/stays/:bookingId/passports", async (c) => {
       createdBy: user.id,
       verifiedBy: user.id,
     });
+    await markPassportOcrAttemptSavedByObjectKey(c.env, input.objectKey);
     return c.json({ success: true, data: passport }, 201);
   } catch (error) {
     if (objectKey) await rollbackPassportUpload(c.env, objectKey, "passport_persistence_failed");
@@ -1239,12 +1305,16 @@ app.post("/api/reception/stays/:bookingId/passports", async (c) => {
 
 app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
   const requestId = crypto.randomUUID();
+  let attempt: PassportOcrAttemptHandle | null | undefined;
+  let objectKey: string | null | undefined;
   try {
     const user = await authenticated(c, "movements", "access");
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const stay = await getReceptionStay(c.env, bookingId);
     if (!stay) return c.json({ success: false, error: "Reception stay not found" }, 404);
-    const upload = await normalizePassportImageFormData(await c.req.formData());
+    const formData = await c.req.formData();
+    const upload = await normalizePassportImageFormData(formData);
+    attempt = await passportOcrAttemptFromUpload(c.env, formData, upload, user.id, bookingId);
     logPassportEvent({
       event: "passport_ocr_started",
       requestId,
@@ -1253,7 +1323,7 @@ app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
       mrzCrop: passportImageDiagnostics(upload.mrzCrop, upload.contentType),
       bookingScoped: true,
     });
-    const stored = await storePassportUpload(c.env, upload);
+    objectKey = await passportOcrObjectKey(c.env, upload, attempt);
     let passport: PassportData;
     try {
       passport = await extractPassportReview(c.env, {
@@ -1261,19 +1331,21 @@ app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
         contentType: upload.contentType,
         passportNumberCrop: upload.passportNumberCrop,
         mrzCrop: upload.mrzCrop,
+        attempt: attempt ?? undefined,
       });
       if (!passport.verification) throw new PassportOcrError("Passport verification data is missing.", "passport_schema_invalid");
       await createBookingPassport(c.env, {
         bookingId,
-        objectKey: stored.objectKey,
+        objectKey,
         passport,
         validation: passport.verification,
         manualCorrections: {},
         createdBy: user.id,
         verifiedBy: user.id,
       });
+      if (attempt) await markPassportOcrAttemptState(c.env, attempt.id, "PASSPORT_SAVED");
     } catch (error) {
-      await rollbackPassportUpload(c.env, stored.objectKey, error instanceof PassportOcrError ? "ocr_failed" : "passport_persistence_failed");
+      if (!attempt && objectKey) await rollbackPassportUpload(c.env, objectKey, error instanceof PassportOcrError ? "ocr_failed" : "passport_persistence_failed");
       throw error;
     }
     logPassportEvent({
@@ -1312,7 +1384,7 @@ app.post("/api/reception/stays/:bookingId/passports/ocr", async (c) => {
 
     return c.json({
       success: true,
-      objectKey: stored.objectKey,
+      objectKey,
       passport,
       timing: passport.verification?.timing,
       requestId,
@@ -2592,6 +2664,7 @@ export default {
     if (controller.cron === PASSPORT_RETENTION_CRON) {
       ctx.waitUntil(Promise.all([
         cleanupExpiredPassports(env),
+        cleanupExpiredPassportOcrAttempts(env),
         cleanupExpiredChatAttachments(env),
       ]).then(() => undefined));
       return;

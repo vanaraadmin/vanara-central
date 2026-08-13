@@ -1,4 +1,14 @@
-export interface PassportClassificationBindings {
+import {
+  createAndPollPassportOpenAiResponse,
+  PassportOpenAiBackgroundError,
+} from "./passport-openai-background.service.js";
+import {
+  runPersistedPassportOpenAiResponse,
+  type PassportOcrAttemptBindings,
+  type PassportOcrAttemptHandle,
+} from "./passport-ocr-attempt.service.js";
+
+export interface PassportClassificationBindings extends PassportOcrAttemptBindings {
   OPENAI_API_KEY: string;
 }
 
@@ -6,6 +16,7 @@ export interface PassportClassificationInput {
   image: ArrayBuffer;
   contentType: "image/jpeg" | "image/png" | "image/heic" | "image/heif";
   mrzCrop?: ArrayBuffer;
+  attempt?: PassportOcrAttemptHandle;
 }
 
 export interface PassportClassification {
@@ -58,9 +69,8 @@ export interface PassportClassificationResult {
 type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 type JsonRecord = Record<string, unknown>;
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 export const OPENAI_PASSPORT_CLASSIFICATION_MODEL = "gpt-5.6-terra";
-const OPENAI_PASSPORT_CLASSIFICATION_TIMEOUT_MS = 8_000;
+const OPENAI_PASSPORT_CLASSIFICATION_TIMEOUT_MS = 45_000;
 
 const PASSPORT_CLASSIFICATION_SCHEMA = {
   type: "object",
@@ -111,17 +121,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     binary += String.fromCharCode(...chunk);
   }
   return btoa(binary);
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
-
-function openAiErrorMessage(payload: unknown): string {
-  if (!isRecord(payload) || !isRecord(payload.error) || typeof payload.error.message !== "string") {
-    return "OpenAI passport classification request failed.";
-  }
-  return payload.error.message;
 }
 
 function outputTextFrom(response: unknown): string {
@@ -231,19 +230,9 @@ async function classifyPassportImageWithMetadata(
 ): Promise<{ classification: PassportClassification; httpStatus: number; openAiRequestId: string | null }> {
   const imageUrl = `data:${input.contentType};base64,${arrayBufferToBase64(input.image)}`;
   const mrzCropUrl = input.mrzCrop ? `data:${input.contentType};base64,${arrayBufferToBase64(input.mrzCrop)}` : null;
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), OPENAI_PASSPORT_CLASSIFICATION_TIMEOUT_MS);
-
-  let response: Response;
+  let result: Awaited<ReturnType<typeof createAndPollPassportOpenAiResponse>>;
   try {
-    response = await fetcher(OPENAI_RESPONSES_URL, {
-      method: "POST",
-      signal: abortController.signal,
-      headers: {
-        authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    const body = {
         model: OPENAI_PASSPORT_CLASSIFICATION_MODEL,
         input: [{
           role: "user",
@@ -285,23 +274,33 @@ async function classifyPassportImageWithMetadata(
             schema: PASSPORT_CLASSIFICATION_SCHEMA,
           },
         },
-      }),
-    });
+      };
+    result = input.attempt
+      ? await runPersistedPassportOpenAiResponse({
+          env,
+          attempt: input.attempt,
+          stage: "CLASSIFICATION",
+          body,
+          fetcher,
+          timeoutMs: OPENAI_PASSPORT_CLASSIFICATION_TIMEOUT_MS,
+        })
+      : await createAndPollPassportOpenAiResponse({
+          apiKey: env.OPENAI_API_KEY,
+          fetcher,
+          timeoutMs: OPENAI_PASSPORT_CLASSIFICATION_TIMEOUT_MS,
+          body,
+        });
   } catch (error) {
-    if (isAbortError(error)) {
+    if (error instanceof PassportOpenAiBackgroundError && (error.code === "timeout" || error.code === "ambiguous_submission")) {
       throw new PassportClassificationError("OpenAI passport classification request timed out.", "openai_timeout");
     }
-    throw new PassportClassificationError("OpenAI passport classification request failed.", "openai_request_failed");
-  } finally {
-    clearTimeout(timeout);
+    throw new PassportClassificationError(
+      error instanceof Error ? error.message : "OpenAI passport classification request failed.",
+      error instanceof PassportOpenAiBackgroundError && error.code === "invalid_response" ? "openai_invalid_response" : "openai_request_failed",
+    );
   }
 
-  const openAiRequestId = response.headers.get("x-request-id") ?? response.headers.get("openai-request-id");
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new PassportClassificationError(openAiErrorMessage(payload), "openai_request_failed");
-  }
-  const text = outputTextFrom(payload);
+  const text = outputTextFrom(result.payload);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -310,8 +309,8 @@ async function classifyPassportImageWithMetadata(
   }
   return {
     classification: validatePassportClassification(parsed),
-    httpStatus: response.status,
-    openAiRequestId,
+    httpStatus: result.httpStatus,
+    openAiRequestId: result.openAiRequestId,
   };
 }
 

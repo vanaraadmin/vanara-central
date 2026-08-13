@@ -99,7 +99,7 @@ test("Passport staff-facing edge messages avoid visible OCR/OpenAI wording in Th
   }
 
   assert.match(passportWorkflow, /translate\("passportVisualCandidate"\)/);
-  assert.match(passportWorkflow, /translate\("passportGivenNamesNeedReview"\)/);
+  assert.doesNotMatch(passportWorkflow, /translate\("passportGivenNamesNeedReview"\)/);
   assert.match(passportMessages, /PASSPORT_MESSAGE_I18N_KEYS/);
   assert.doesNotMatch(th, /OCR|OpenAI|MRZ/);
 });

@@ -23,6 +23,17 @@ const MRZ_CROP_MAX_LONG_EDGE = 1600;
 const PASSPORT_JPEG_QUALITY = 0.94;
 const CLASSIFICATION_JPEG_QUALITY = 0.9;
 
+export async function passportCaptureSlotKey(bookingId: number, file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `booking:${bookingId}:image:${hash}`;
+}
+
+function appendPassportAttemptIdentity(formData: FormData, bookingId: number, slotKey: string): void {
+  formData.set("bookingId", String(bookingId));
+  formData.set("passportSlotKey", slotKey);
+}
+
 async function encodePassportImage(file: File, filename: string, maxLongEdge: number, quality: number): Promise<File> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const scale = Math.min(1, maxLongEdge / Math.max(bitmap.width, bitmap.height));
@@ -143,9 +154,10 @@ export async function uploadBookingPassport(bookingId: number, file: File, signa
   return body;
 }
 
-export async function uploadPassportForReview(file: File, signal?: AbortSignal): Promise<Required<Pick<PassportOcrResponse, "objectKey" | "passport">> & Pick<PassportOcrResponse, "timing">> {
+export async function uploadPassportForReview(bookingId: number, slotKey: string, file: File, signal?: AbortSignal): Promise<Required<Pick<PassportOcrResponse, "objectKey" | "passport">> & Pick<PassportOcrResponse, "timing">> {
   const formData = new FormData();
   await appendPassportOcrImages(formData, file);
+  appendPassportAttemptIdentity(formData, bookingId, slotKey);
   const response = await fetch("/api/reception/passports/ocr", {
     method: "POST",
     credentials: "same-origin",
@@ -164,9 +176,10 @@ export async function uploadPassportForReview(file: File, signal?: AbortSignal):
   };
 }
 
-export async function classifyPassportForScan(file: File, signal?: AbortSignal): Promise<Required<Pick<PassportClassificationResponse, "classification" | "decision">> & Pick<PassportClassificationResponse, "timing">> {
+export async function classifyPassportForScan(bookingId: number, slotKey: string, file: File, signal?: AbortSignal): Promise<Required<Pick<PassportClassificationResponse, "classification" | "decision">> & Pick<PassportClassificationResponse, "timing">> {
   const formData = new FormData();
   await appendPassportClassificationImages(formData, file);
+  appendPassportAttemptIdentity(formData, bookingId, slotKey);
   const response = await fetch("/api/reception/passports/classify", {
     method: "POST",
     credentials: "same-origin",
