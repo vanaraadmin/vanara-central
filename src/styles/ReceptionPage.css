@@ -849,13 +849,29 @@
 }
 
 .passport-management__list {
-  max-height: min(48vh, 420px);
-  overflow-y: auto;
+  min-width: 0;
+  max-height: none;
+  grid-auto-rows: max-content;
+  align-content: start;
+  overflow: visible;
+}
+
+.passport-management {
+  min-width: 0;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
 }
 
 .passport-management-card {
   display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(3, max-content);
   align-items: stretch;
+  align-self: start;
 }
 
 .passport-management-card > div:first-child,
@@ -886,6 +902,13 @@
 .passport-management-card button {
   justify-self: start;
   padding-inline: var(--vc-space-4);
+}
+
+.passport-management > .reception-sheet__actions {
+  position: static;
+  margin: 0;
+  padding: var(--vc-space-3) 0 0;
+  background: none;
 }
 
 .passport-management-card__status--ready {

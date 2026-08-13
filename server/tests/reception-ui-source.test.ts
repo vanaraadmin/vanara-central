@@ -393,6 +393,22 @@ test("passport review is a compact quick review with one sticky action bar", () 
   assert.match(reviewCss, /var\(--vc-safe-bottom\)/);
 });
 
+test("multiple saved passports remain natural-height cards in the sheet scroll flow", () => {
+  const managementCss = receptionCss.match(/\.passport-management__list\s*\{[\s\S]*?\.passport-review__fields label/)?.[0] ?? "";
+  assert.match(receptionPage, /<div className="passport-management__list">/);
+  assert.match(receptionPage, /<article className="passport-management-card" key=\{passport\.id\}>/);
+  assert.match(managementCss, /\.passport-management__list\s*\{[\s\S]*?max-height:\s*none/);
+  assert.match(managementCss, /grid-auto-rows:\s*max-content/);
+  assert.match(managementCss, /overflow:\s*visible/);
+  assert.match(managementCss, /\.passport-management\s*\{[\s\S]*?flex:\s*0 0 auto/);
+  assert.match(managementCss, /\.passport-management-card\s*\{[\s\S]*?height:\s*auto/);
+  assert.match(managementCss, /grid-template-rows:\s*repeat\(3, max-content\)/);
+  assert.match(managementCss, /\.passport-management > \.reception-sheet__actions\s*\{[\s\S]*?position:\s*static/);
+  assert.match(managementCss, /\.passport-management > \.reception-sheet__actions\s*\{[\s\S]*?margin:\s*0/);
+  assert.doesNotMatch(managementCss, /\.passport-management-card[^}]*position:\s*absolute/);
+  assert.doesNotMatch(managementCss, /\.passport-management-card button[^}]*position:\s*absolute/);
+});
+
 test("passport camera latches READY through tap micro-movement", () => {
   assert.match(passportWorkflow, /nextReadyLatchUntil\(true, Date\.now\(\)\)/);
   assert.match(passportWorkflow, /shouldIgnoreReadyDegradationDuringTap/);
