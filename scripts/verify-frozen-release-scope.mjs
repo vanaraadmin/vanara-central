@@ -16,6 +16,14 @@ function hashFile(relativePath) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function normalizedSource(relativePath) {
+  return readFileSync(join(repoRoot, relativePath), "utf8").replace(/\r\n/g, "\n");
+}
+
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function git(...args) {
   return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
 }
@@ -45,6 +53,23 @@ for (const [relativePath, expectedHash] of Object.entries(manifest.files)) {
   }
   const actualHash = hashFile(relativePath);
   if (actualHash !== expectedHash) failures.push(`${relativePath}: frozen hash changed`);
+}
+
+for (const section of manifest.frozenSections ?? []) {
+  if (!existsSync(join(repoRoot, section.path))) {
+    failures.push(`${section.path}: frozen section file missing`);
+    continue;
+  }
+  const source = normalizedSource(section.path);
+  const start = source.indexOf(section.start);
+  const end = section.end ? source.indexOf(section.end, start + section.start.length) : source.length;
+  if (start < 0 || end < 0 || end <= start) {
+    failures.push(`${section.path}: frozen section markers missing`);
+    continue;
+  }
+  if (hashText(source.slice(start, end)) !== section.sha256) {
+    failures.push(`${section.path}: frozen push/notification section changed`);
+  }
 }
 
 const workerConfig = JSON.parse(readFileSync(join(repoRoot, "wrangler.jsonc"), "utf8"));

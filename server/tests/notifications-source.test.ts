@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
@@ -327,9 +328,8 @@ test("maintenance notifications fire only for blocking creation or false-to-true
 
 test("service worker always displays a speaking push notification and excludes API data", () => {
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
-  assert.match(serviceWorker, /const VANARA_SW_VERSION = "2026-08-11-chat-push-v1"/);
-  assert.match(serviceWorker, /const SHELL_ASSETS = \[/);
-  assert.match(serviceWorker, /cache\.addAll\(SHELL_ASSETS\)/);
+  assert.match(serviceWorker, /const VANARA_BUILD_ID = "__VANARA_BUILD_ID__"/);
+  assert.doesNotMatch(serviceWorker, /cache\.addAll\(SHELL_ASSETS\)/);
   assert.doesNotMatch(serviceWorker, /if \(!event\.data\) return;/);
   assert.match(serviceWorker, /event\.waitUntil\(\(async \(\) =>/);
   assert.match(serviceWorker, /title: "New message received"/);
@@ -342,7 +342,16 @@ test("service worker always displays a speaking push notification and excludes A
   assert.match(serviceWorker, /self\.addEventListener\("fetch"/);
   assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
-  assert.match(serviceWorker, /fetch\(request\)\.catch\(\(\) => caches\.match\("\/"\) \|\| Response\.error\(\)\)/);
+  assert.match(serviceWorker, /fetch\(new Request\(request, \{ cache: "no-store" \}\)\)/);
+  assert.doesNotMatch(serviceWorker, /caches\.match\(request\)|caches\.match\("\/"\)/);
+});
+
+test("PWA versioning leaves push and notification click handlers byte-identical", () => {
+  const normalized = serviceWorker.replace(/\r\n/g, "\n");
+  const pushBlock = normalized.slice(normalized.indexOf('self.addEventListener("push"'), normalized.indexOf('self.addEventListener("notificationclick"'));
+  const clickBlock = normalized.slice(normalized.indexOf('self.addEventListener("notificationclick"'), normalized.indexOf('self.addEventListener("fetch"'));
+  assert.equal(createHash("sha256").update(pushBlock).digest("hex"), "6ae446328cb82f9075fff7190fd6a1e3e76902ae06b5be47896b050e1e631ee8");
+  assert.equal(createHash("sha256").update(clickBlock).digest("hex"), "3d757a2db18e1d038ec40afbb148a0559c30026feba847975faf96d7c3721e21");
 });
 
 test("service worker shows a visible fallback for missing or invalid push data", async () => {

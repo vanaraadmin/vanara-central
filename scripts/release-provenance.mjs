@@ -46,11 +46,13 @@ async function capture() {
     sha256(readFileSync(file)),
   ]));
   const indexHtml = readFileSync(join(distRoot, "index.html"), "utf8");
+  const appVersion = JSON.parse(readFileSync(join(distRoot, "app-version.json"), "utf8"));
   const record = {
     commit,
     capturedAt: new Date().toISOString(),
     files,
     entryAssets: entryAssets(indexHtml),
+    appVersion,
   };
 
   mkdirSync(dirname(manifestPath(commit)), { recursive: true });
@@ -81,6 +83,18 @@ async function verifyOnline() {
     verifiedAssets[relativePath] = actualHash;
   }
 
+  const versionResponse = await fetch(new URL(`/app-version.json?release_check=${Date.now()}`, productionUrl), { cache: "no-store" });
+  if (!versionResponse.ok) throw new Error(`Production app-version.json returned HTTP ${versionResponse.status}`);
+  if (!/no-store/i.test(versionResponse.headers.get("cache-control") ?? "")) throw new Error("Production app-version.json is missing no-store caching");
+  const onlineVersion = await versionResponse.json();
+  if (JSON.stringify(onlineVersion) !== JSON.stringify(record.appVersion)) throw new Error(`Online app-version.json does not match commit ${commit}`);
+
+  const swResponse = await fetch(new URL(`/sw.js?release_check=${Date.now()}`, productionUrl), { cache: "no-store" });
+  if (!swResponse.ok) throw new Error(`Production sw.js returned HTTP ${swResponse.status}`);
+  if (!/no-store/i.test(swResponse.headers.get("cache-control") ?? "")) throw new Error("Production sw.js is missing no-store caching");
+  const onlineSwHash = sha256(Buffer.from(await swResponse.arrayBuffer()));
+  if (onlineSwHash !== record.files["sw.js"]) throw new Error(`Online sw.js does not match commit ${commit}`);
+
   const healthResponse = await fetch(new URL("/health", productionUrl), { cache: "no-store" });
   if (!healthResponse.ok) throw new Error(`Production health returned HTTP ${healthResponse.status}`);
 
@@ -91,6 +105,8 @@ async function verifyOnline() {
     productionUrl: productionUrl.origin,
     healthStatus: healthResponse.status,
     verifiedAssets,
+    verifiedBuildId: onlineVersion.buildId,
+    verifiedServiceWorkerHash: onlineSwHash,
   };
   writeFileSync(manifestPath(commit), `${JSON.stringify(verifiedRecord, null, 2)}\n`);
   console.log(`RELEASE_ONLINE_VERIFIED=PASS commit=${commit} version=${versionId} health=${healthResponse.status}`);

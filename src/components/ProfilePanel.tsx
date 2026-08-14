@@ -10,7 +10,7 @@ import {
   logout,
   updateCurrentUserProfile,
 } from "../services/auth.service";
-import { applyVanaraUpdate, checkPushNotificationStatus, checkVanaraUpdate, enablePushNotifications, type PushNotificationStatus, type PwaUpdateStatus } from "../services/pwa.service";
+import { applyVanaraUpdate, checkPushNotificationStatus, checkVanaraUpdate, enablePushNotifications, getVanaraBuildInfo, shortVanaraBuildId, type PushNotificationStatus, type PwaBuildInfo, type PwaUpdateStatus } from "../services/pwa.service";
 import { useLanguage } from "../providers/language.context";
 import { DownloadIcon, SettingsGearIcon } from "./OperationsIcons";
 import type { CurrentUserView, ManagedUser, ModuleKey, ModulePermission, SaveUserPayload } from "../types/auth";
@@ -104,6 +104,7 @@ export default function ProfilePanel() {
   const [showUserForm, setShowUserForm] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
+  const [pwaBuildInfo, setPwaBuildInfo] = useState<PwaBuildInfo | null>(null);
   const [pushStatus, setPushStatus] = useState<PushNotificationStatus>("idle");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [checkingPush, setCheckingPush] = useState(false);
@@ -137,6 +138,11 @@ export default function ProfilePanel() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || tab !== "updates") return;
+    void getVanaraBuildInfo().then(setPwaBuildInfo);
+  }, [open, tab]);
 
   const saveProfile = useMutation({
     mutationFn: () => updateCurrentUserProfile(profileDraft),
@@ -261,6 +267,7 @@ export default function ProfilePanel() {
     try {
       const nextStatus = pwaStatus === "update-available" ? await applyVanaraUpdate() : await checkVanaraUpdate();
       setPwaStatus(nextStatus);
+      setPwaBuildInfo(await getVanaraBuildInfo());
     } catch {
       setPwaStatus("unsupported");
     } finally {
@@ -394,6 +401,10 @@ export default function ProfilePanel() {
                 <section className="profile-panel__section profile-panel__update" aria-label={translate("updateVanaraCentral")}>
                   <h3>{translate("updateVanaraCentral")}</h3>
                   <p className="profile-panel__empty">{pwaStatus === "ready" ? translate("vanaraCentralUpToDate") : translate("pwaUpdatePlaceholder")}</p>
+                  <dl className="profile-panel__facts" aria-label={translate("buildInformation")}>
+                    <div><dt>{translate("clientBuild")}</dt><dd>{shortVanaraBuildId(pwaBuildInfo?.clientBuildId ?? null)}</dd></div>
+                    <div><dt>{translate("serverBuild")}</dt><dd>{shortVanaraBuildId(pwaBuildInfo?.serverBuildId ?? null)}</dd></div>
+                  </dl>
                   <button className="profile-panel__primary" disabled={checkingUpdate || pwaStatus === "unsupported"} onClick={() => void onCheckOrApplyUpdate()} type="button">{checkingUpdate ? translate("loading") : translate("updateVanaraCentral")}</button>
                 </section>
               ) : null}

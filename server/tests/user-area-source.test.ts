@@ -94,12 +94,19 @@ test("Vanara Central is installable as a PWA without caching operational API dat
   assert.equal(parsed.display, "standalone");
   assert.ok(parsed.icons?.some((icon) => icon.sizes === "192x192" && icon.purpose === "any"));
   assert.ok(parsed.icons?.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
-  assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/"/);
+  assert.match(pwaService, /navigator\.serviceWorker\.register\("\/sw\.js",\s*\{\s*scope:\s*"\/",\s*updateViaCache:\s*"none"\s*\}/);
+  assert.match(pwaService, /window\.addEventListener\("pageshow"/);
+  assert.match(pwaService, /document\.addEventListener\("visibilitychange"/);
+  assert.match(profilePanel, /getVanaraBuildInfo/);
+  assert.match(profilePanel, /translate\("clientBuild"\)/);
+  assert.match(profilePanel, /translate\("serverBuild"\)/);
   assert.match(serviceWorker, /self\.addEventListener\("push"/);
   assert.match(serviceWorker, /self\.addEventListener\("notificationclick"/);
   assert.match(serviceWorker, /self\.addEventListener\("fetch"/);
   assert.match(serviceWorker, /if \(url\.pathname\.startsWith\("\/api\/"\)\) return;/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll\([^)]*\/api\//);
+  assert.doesNotMatch(serviceWorker, /caches\.match\(request\)/);
+  assert.match(serviceWorker, /fetch\(new Request\(request, \{ cache: "no-store" \}\)\)/);
 });
 
 test("installed PWA reduces native browser callouts without blocking forms or chat actions", () => {

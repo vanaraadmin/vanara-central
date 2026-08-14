@@ -9,6 +9,7 @@
     "release:provenance": "node scripts/release-provenance.mjs",
     "prebuild": "npm run release:guard",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/verify-pwa-build.mjs",
     "lint": "eslint .",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run deploy:production",

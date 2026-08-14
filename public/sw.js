@@ -1,31 +1,43 @@
-const VANARA_SW_VERSION = "2026-08-11-chat-push-v1";
-const VANARA_CACHE = `vanara-central-${VANARA_SW_VERSION}`;
-const SHELL_ASSETS = [
-  "/",
-  "/manifest.webmanifest",
-  "/favicon.svg",
-  "/pwa/icon-192.png",
-  "/pwa/icon-512.png",
-  "/pwa/icon-maskable-192.png",
-  "/pwa/icon-maskable-512.png",
-  "/pwa/apple-touch-icon.png"
-];
+const VANARA_BUILD_ID = "__VANARA_BUILD_ID__";
+const VANARA_CACHE = `vanara-central-${VANARA_BUILD_ID}`;
+const CLIENT_BUILD_TIMEOUT_MS = 750;
+
+function readClientBuild(client) {
+  if (typeof MessageChannel !== "function") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timeout = setTimeout(() => resolve(null), CLIENT_BUILD_TIMEOUT_MS);
+    channel.port1.onmessage = (message) => {
+      clearTimeout(timeout);
+      resolve(typeof message.data?.buildId === "string" ? message.data.buildId : null);
+    };
+    client.postMessage({ type: "VANARA_BUILD_ACTIVATED", buildId: VANARA_BUILD_ID }, [channel.port2]);
+  });
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(VANARA_CACHE)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
       .then(() => self.skipWaiting())
       .catch(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("vanara-central-") && key !== VANARA_CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter((key) => key.startsWith("vanara-central-") && key !== VANARA_CACHE)
+      .map((key) => caches.delete(key)));
+    await self.clients.claim();
+
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    await Promise.all(windows.map(async (client) => {
+      const clientBuild = await readClientBuild(client);
+      if (clientBuild === VANARA_BUILD_ID || !("navigate" in client)) return;
+      await client.navigate(client.url).catch(() => null);
+    }));
+  })());
 });
 
 self.addEventListener("message", (event) => {
@@ -107,13 +119,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() => caches.match("/") || Response.error())
-    );
+    event.respondWith(fetch(new Request(request, { cache: "no-store" })));
     return;
   }
-
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request))
-  );
 });

@@ -1,0 +1,6 @@
+/sw.js
+  Cache-Control: no-store, no-cache, must-revalidate
+  Service-Worker-Allowed: /
+
+/app-version.json
+  Cache-Control: no-store, no-cache, must-revalidate
