@@ -1,9 +1,11 @@
 import { SOCIAL_CAPTION_PROMPT } from "../assets/prompts/social-caption-v1.prompt.js";
 import type { SocialAutomationBindings, SocialPostQueueItem } from "./social-automation.service.js";
 import {
-  DEFAULT_SOCIAL_CAPTION_MODEL,
-  DEFAULT_SOCIAL_VECTOR_STORE_ID,
-} from "./social-image-preparation.service.js";
+  runSocialOpenAiBackgroundResponse,
+  SocialOpenAiBackgroundError,
+  type SocialOpenAiBackgroundCheckpoint,
+} from "./social-openai-background.service.js";
+import { socialBangkokDayBounds, socialPublishSlotForBangkokDate } from "./social-schedule.service.js";
 
 type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 type JsonRecord = Record<string, unknown>;
@@ -18,12 +20,20 @@ export interface SocialCaptionBindings extends SocialAutomationBindings {
 
 export interface PrepareSocialCaptionOptions {
   now?: string;
+  dueBy?: string;
   fetcher?: Fetcher;
+  backgroundTimeoutMs?: number;
+  pollIntervalMs?: number;
 }
 
 export interface PrepareSocialCaptionResult {
   processed: boolean;
   item: SocialPostQueueItem | null;
+}
+
+export interface SocialCaptionWatchdogResult {
+  retrySafe: number;
+  manualReview: number;
 }
 
 interface SocialPostQueueRow {
@@ -59,6 +69,22 @@ interface SocialPostQueueRow {
   caption_json: string | null;
   caption_style_fingerprint: string | null;
   source_metadata_json: string | null;
+  image_openai_response_id: string | null;
+  caption_openai_response_id: string | null;
+  caption_client_request_id: string | null;
+  caption_provider_request_id: string | null;
+  caption_provider_status: string | null;
+  caption_submitted_at: string | null;
+  caption_last_polled_at: string | null;
+  caption_provider_terminal_at: string | null;
+  caption_provider_error_code: string | null;
+  caption_provider_error_message: string | null;
+  caption_poll_lease_token: string | null;
+  caption_poll_lease_at: string | null;
+  caption_leased_at: string | null;
+  caption_request_started_at: string | null;
+  caption_response_received_at: string | null;
+  caption_attempt_count: number;
 }
 
 interface OpenAiUsage {
@@ -124,11 +150,13 @@ export class SocialCaptionError extends Error {
   }
 }
 
-export const SOCIAL_CAPTION_CRON = "30 23 * * *";
+export const SOCIAL_CAPTION_CRON = "*/10 22 * * *";
 export const SOCIAL_CAPTION_MAX_TOOL_CALLS = 1;
 export const SOCIAL_CAPTION_TIMEOUT_MS = 60_000;
+export const DEFAULT_SOCIAL_CAPTION_MODEL = "gpt-5.6-terra";
+export const DEFAULT_SOCIAL_VECTOR_STORE_ID = "vs_6a48c08b24a88191b45bc43c2579d37f";
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const SOCIAL_CAPTION_STALE_LEASE_MS = 15 * 60_000;
 const SOCIAL_CAPTION_FILE_SEARCH_MAX_RESULTS = 5;
 const RECENT_CAPTION_LIMIT = 8;
 const SOCIAL_MODEL_PRICING_USD_PER_MILLION: Record<string, { input: number; cachedInput: number; output: number }> = {
@@ -149,10 +177,6 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function numeric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(Math.trunc(value), 0) : 0;
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function rowToItem(row: SocialPostQueueRow): SocialPostQueueItem {
@@ -216,7 +240,23 @@ function socialPostSelectSql(): string {
       analysis_json,
       caption_json,
       caption_style_fingerprint,
-      source_metadata_json
+      source_metadata_json,
+      image_openai_response_id,
+      caption_openai_response_id,
+      caption_client_request_id,
+      caption_provider_request_id,
+      caption_provider_status,
+      caption_submitted_at,
+      caption_last_polled_at,
+      caption_provider_terminal_at,
+      caption_provider_error_code,
+      caption_provider_error_message,
+      caption_poll_lease_token,
+      caption_poll_lease_at,
+      caption_leased_at,
+      caption_request_started_at,
+      caption_response_received_at,
+      caption_attempt_count
     FROM social_post_queue
   `;
 }
@@ -253,17 +293,6 @@ function estimateSocialCaptionCostUsd(usage: OpenAiUsage, model: string): number
     + usage.outputTokens * pricing.output
   ) / 1_000_000;
   return Number(cost.toFixed(8));
-}
-
-function openAiResponseId(payload: unknown): string | null {
-  return isRecord(payload) && typeof payload.id === "string" ? payload.id : null;
-}
-
-function openAiErrorMessage(payload: unknown): string {
-  if (!isRecord(payload) || !isRecord(payload.error) || typeof payload.error.message !== "string") {
-    return "OpenAI social caption request failed.";
-  }
-  return payload.error.message;
 }
 
 function fileSearchCallCountFrom(response: unknown): number {
@@ -462,22 +491,112 @@ async function recentCaptionFingerprints(env: Pick<SocialCaptionBindings, "DB">,
   return (result.results ?? []).map(compactRecentFingerprint);
 }
 
-async function acquireCaptionPost(env: Pick<SocialCaptionBindings, "DB">, socialPostId: number | null, now: string): Promise<SocialPostQueueRow | null> {
+async function acquireCaptionPost(
+  env: Pick<SocialCaptionBindings, "DB">,
+  socialPostId: number | null,
+  now: string,
+  dueBy: string,
+): Promise<SocialPostQueueRow | null> {
+  const leaseToken = crypto.randomUUID();
+  const clientRequestId = crypto.randomUUID();
+  const staleLeaseCutoff = new Date(new Date(now).getTime() - SOCIAL_CAPTION_STALE_LEASE_MS).toISOString();
+  const recoverySql = socialPostId === null
+    ? `
+      UPDATE social_post_queue
+      SET caption_poll_lease_token = ?,
+          caption_poll_lease_at = ?,
+          caption_client_request_id = COALESCE(caption_client_request_id, ?),
+          updated_at = ?
+      WHERE social_post_id = (
+        SELECT social_post_id
+        FROM social_post_queue
+        WHERE status = 'CAPTIONING'
+          AND caption_openai_response_id IS NOT NULL
+          AND scheduled_publish_at IS NOT NULL
+          AND scheduled_publish_at <= ?
+          AND (caption_poll_lease_at IS NULL OR caption_poll_lease_at <= ?)
+        ORDER BY scheduled_publish_at ASC, queued_at ASC, social_post_id ASC
+        LIMIT 1
+      )
+        AND status = 'CAPTIONING'
+        AND caption_openai_response_id IS NOT NULL
+        AND (caption_poll_lease_at IS NULL OR caption_poll_lease_at <= ?)
+      RETURNING *
+    `
+    : `
+      UPDATE social_post_queue
+      SET caption_poll_lease_token = ?,
+          caption_poll_lease_at = ?,
+          caption_client_request_id = COALESCE(caption_client_request_id, ?),
+          updated_at = ?
+      WHERE social_post_id = ?
+        AND status = 'CAPTIONING'
+        AND caption_openai_response_id IS NOT NULL
+        AND (caption_poll_lease_at IS NULL OR caption_poll_lease_at <= ?)
+      RETURNING *
+    `;
+  const recovery = socialPostId === null
+    ? await env.DB.prepare(recoverySql).bind(
+      leaseToken,
+      now,
+      clientRequestId,
+      now,
+      dueBy,
+      staleLeaseCutoff,
+      staleLeaseCutoff,
+    ).first<SocialPostQueueRow>()
+    : await env.DB.prepare(recoverySql).bind(
+      leaseToken,
+      now,
+      clientRequestId,
+      now,
+      socialPostId,
+      staleLeaseCutoff,
+    ).first<SocialPostQueueRow>();
+  if (recovery) return recovery;
+
+  const bounds = socialBangkokDayBounds(now);
   const sql = socialPostId === null
     ? `
       UPDATE social_post_queue
       SET status = 'CAPTIONING',
+          caption_leased_at = ?,
+          caption_client_request_id = COALESCE(caption_client_request_id, ?),
+          caption_provider_status = 'created',
+          caption_provider_error_code = NULL,
+          caption_provider_error_message = NULL,
+          caption_poll_lease_token = ?,
+          caption_poll_lease_at = ?,
+          caption_attempt_count = caption_attempt_count + 1,
           updated_at = ?,
           failure_code = NULL,
           failure_message = NULL
       WHERE social_post_id = (
-        SELECT social_post_id
-        FROM social_post_queue
-        WHERE status = 'IMAGE_READY'
-          AND processed_object_key IS NOT NULL
-          AND analysis_json IS NOT NULL
-          AND openai_request_count <= 1
-        ORDER BY queued_at ASC, social_post_id ASC
+        SELECT candidate.social_post_id
+        FROM social_post_queue candidate
+        WHERE candidate.status = 'IMAGE_READY'
+          AND candidate.processed_object_key IS NOT NULL
+          AND candidate.analysis_json IS NOT NULL
+          AND candidate.image_openai_response_id IS NOT NULL
+          AND candidate.openai_request_count = 1
+          AND candidate.scheduled_publish_at IS NOT NULL
+          AND candidate.scheduled_publish_at <= ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM social_post_queue active
+            WHERE active.social_post_id <> candidate.social_post_id
+              AND active.status IN ('CAPTIONING','READY_TO_POST','POSTING')
+              AND active.scheduled_publish_at IS NOT NULL
+              AND active.scheduled_publish_at <= ?
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM social_post_queue started
+            WHERE started.social_post_id <> candidate.social_post_id
+              AND started.caption_leased_at >= ?
+              AND started.caption_leased_at < ?
+          )
+        ORDER BY candidate.scheduled_publish_at ASC, candidate.queued_at ASC, candidate.social_post_id ASC
         LIMIT 1
       )
         AND status = 'IMAGE_READY'
@@ -486,6 +605,14 @@ async function acquireCaptionPost(env: Pick<SocialCaptionBindings, "DB">, social
     : `
       UPDATE social_post_queue
       SET status = 'CAPTIONING',
+          caption_leased_at = ?,
+          caption_client_request_id = COALESCE(caption_client_request_id, ?),
+          caption_provider_status = 'created',
+          caption_provider_error_code = NULL,
+          caption_provider_error_message = NULL,
+          caption_poll_lease_token = ?,
+          caption_poll_lease_at = ?,
+          caption_attempt_count = caption_attempt_count + 1,
           updated_at = ?,
           failure_code = NULL,
           failure_message = NULL
@@ -493,14 +620,208 @@ async function acquireCaptionPost(env: Pick<SocialCaptionBindings, "DB">, social
         AND status = 'IMAGE_READY'
         AND processed_object_key IS NOT NULL
         AND analysis_json IS NOT NULL
-        AND openai_request_count <= 1
+        AND image_openai_response_id IS NOT NULL
+        AND openai_request_count = 1
       RETURNING *
-    `;
-  const statement = env.DB.prepare(sql);
+  `;
   const row = socialPostId === null
-    ? await statement.bind(now).first<SocialPostQueueRow>()
-    : await statement.bind(now, socialPostId).first<SocialPostQueueRow>();
+    ? await env.DB.prepare(sql).bind(
+      now,
+      clientRequestId,
+      leaseToken,
+      now,
+      now,
+      dueBy,
+      dueBy,
+      bounds.start,
+      bounds.end,
+    ).first<SocialPostQueueRow>()
+    : await env.DB.prepare(sql).bind(now, clientRequestId, leaseToken, now, now, socialPostId).first<SocialPostQueueRow>();
   return row ?? null;
+}
+
+async function markCaptionPrerequisiteWaiting(
+  env: Pick<SocialCaptionBindings, "DB">,
+  dueBy: string,
+  now: string,
+): Promise<void> {
+  await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET pipeline_stage = 'CAPTION_WAITING_FOR_IMAGE', updated_at = ?
+    WHERE social_post_id = (
+      SELECT social_post_id
+      FROM social_post_queue
+      WHERE status IN ('QUEUED','PREPARING_IMAGE')
+        AND scheduled_publish_at IS NOT NULL
+        AND scheduled_publish_at <= ?
+      ORDER BY scheduled_publish_at ASC, queued_at ASC, social_post_id ASC
+      LIMIT 1
+    )
+  `).bind(now, dueBy).run();
+}
+
+export async function reconcileStaleSocialCaptionPreparations(
+  env: Pick<SocialCaptionBindings, "DB">,
+  now = new Date().toISOString(),
+): Promise<SocialCaptionWatchdogResult> {
+  const cutoff = new Date(new Date(now).getTime() - SOCIAL_CAPTION_STALE_LEASE_MS).toISOString();
+  const retrySafe = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET status = 'IMAGE_READY',
+        caption_provider_status = 'retry_safe',
+        caption_poll_lease_token = NULL,
+        caption_poll_lease_at = NULL,
+        caption_leased_at = NULL,
+        updated_at = ?,
+        failure_code = 'caption_preparation_interrupted_retry_safe',
+        failure_message = 'Caption preparation stopped before any AI request. The prepared image is preserved.'
+    WHERE status = 'CAPTIONING'
+      AND COALESCE(caption_poll_lease_at, caption_leased_at) <= ?
+      AND caption_request_started_at IS NULL
+      AND caption_openai_response_id IS NULL
+      AND openai_request_count = 1
+  `).bind(now, cutoff).run();
+
+  const manualReview = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET status = 'FAILED',
+        pipeline_stage = 'MANUAL_REVIEW',
+        caption_provider_status = 'failed',
+        caption_provider_error_code = 'ambiguous_submission',
+        caption_provider_error_message = 'Caption request outcome is unknown. Automatic retry is blocked.',
+        caption_provider_terminal_at = ?,
+        caption_poll_lease_token = NULL,
+        caption_poll_lease_at = NULL,
+        failed_at = ?,
+        updated_at = ?,
+        failure_code = 'caption_ambiguous_submission_manual_review',
+        failure_message = 'Caption request outcome is unknown. Automatic retry is blocked.'
+    WHERE status = 'CAPTIONING'
+      AND COALESCE(caption_poll_lease_at, caption_leased_at) <= ?
+      AND caption_openai_response_id IS NULL
+      AND (caption_request_started_at IS NOT NULL OR openai_request_count > 1)
+  `).bind(now, now, now, cutoff).run();
+
+  return {
+    retrySafe: numeric(retrySafe.meta.changes),
+    manualReview: numeric(manualReview.meta.changes),
+  };
+}
+
+async function markCaptionRequestStarted(
+  env: Pick<SocialCaptionBindings, "DB">,
+  socialPostId: number,
+  now: string,
+): Promise<void> {
+  const result = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET caption_request_started_at = ?,
+        caption_submitted_at = ?,
+        caption_provider_status = 'submitting',
+        openai_request_count = openai_request_count + 1,
+        updated_at = ?
+    WHERE social_post_id = ?
+      AND status = 'CAPTIONING'
+      AND caption_request_started_at IS NULL
+      AND caption_client_request_id IS NOT NULL
+      AND caption_openai_response_id IS NULL
+      AND openai_request_count = 1
+  `).bind(now, now, now, socialPostId).run();
+  if (numeric(result.meta.changes) !== 1) {
+    throw new SocialCaptionError("Social caption request checkpoint could not be saved.", "caption_persistence_failed", 500);
+  }
+}
+
+async function checkpointCaptionResponse(
+  env: Pick<SocialCaptionBindings, "DB">,
+  socialPostId: number,
+  checkpoint: SocialOpenAiBackgroundCheckpoint,
+  now: string,
+): Promise<void> {
+  const result = await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET caption_response_received_at = ?,
+        caption_openai_response_id = ?,
+        caption_provider_request_id = COALESCE(?, caption_provider_request_id),
+        caption_provider_status = ?,
+        caption_last_polled_at = ?,
+        caption_poll_lease_at = ?,
+        caption_provider_terminal_at = CASE WHEN ? IN ('completed','failed','cancelled','incomplete') THEN ? ELSE caption_provider_terminal_at END,
+        updated_at = ?
+    WHERE social_post_id = ?
+      AND status = 'CAPTIONING'
+      AND openai_request_count = 2
+      AND caption_client_request_id IS NOT NULL
+  `).bind(
+    now,
+    checkpoint.responseId,
+    checkpoint.providerRequestId,
+    checkpoint.status,
+    now,
+    now,
+    checkpoint.status,
+    now,
+    now,
+    socialPostId,
+  ).run();
+  if (numeric(result.meta.changes) !== 1) {
+    throw new SocialCaptionError("Social caption response checkpoint could not be saved.", "caption_persistence_failed", 500);
+  }
+}
+
+async function releaseCaptionPollLease(
+  env: Pick<SocialCaptionBindings, "DB">,
+  socialPostId: number,
+  providerStatus: string,
+  now: string,
+): Promise<SocialPostQueueItem | null> {
+  await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET caption_provider_status = ?,
+        caption_last_polled_at = ?,
+        caption_poll_lease_token = NULL,
+        caption_poll_lease_at = NULL,
+        updated_at = ?
+    WHERE social_post_id = ?
+      AND status = 'CAPTIONING'
+      AND caption_openai_response_id IS NOT NULL
+  `).bind(providerStatus, now, now, socialPostId).run();
+  const row = await env.DB.prepare(`${socialPostSelectSql()} WHERE social_post_id = ?`).bind(socialPostId).first<SocialPostQueueRow>();
+  return row ? rowToItem(row) : null;
+}
+
+async function markCaptionProviderFailure(
+  env: Pick<SocialCaptionBindings, "DB">,
+  socialPostId: number,
+  error: SocialOpenAiBackgroundError,
+  now: string,
+): Promise<SocialPostQueueItem | null> {
+  await env.DB.prepare(`
+    UPDATE social_post_queue
+    SET status = 'FAILED',
+        caption_provider_status = 'failed',
+        caption_provider_error_code = ?,
+        caption_provider_error_message = ?,
+        caption_provider_terminal_at = ?,
+        caption_poll_lease_token = NULL,
+        caption_poll_lease_at = NULL,
+        failed_at = ?,
+        updated_at = ?,
+        failure_code = ?,
+        failure_message = ?
+    WHERE social_post_id = ?
+  `).bind(
+    error.code,
+    error.message.slice(0, 240),
+    now,
+    now,
+    now,
+    `caption_${error.code}_manual_review`,
+    error.message.slice(0, 240),
+    socialPostId,
+  ).run();
+  const row = await env.DB.prepare(`${socialPostSelectSql()} WHERE social_post_id = ?`).bind(socialPostId).first<SocialPostQueueRow>();
+  return row ? rowToItem(row) : null;
 }
 
 async function markFailed(
@@ -550,6 +871,7 @@ async function markFailed(
 
 async function callOpenAiSocialCaption(
   env: SocialCaptionBindings,
+  row: SocialPostQueueRow,
   analysis: JsonRecord,
   sourceMetadata: JsonRecord | null,
   recentFingerprints: JsonRecord[],
@@ -558,39 +880,32 @@ async function callOpenAiSocialCaption(
 ): Promise<SocialCaptionOpenAiResult> {
   const apiKey = clean(env.OPENAI_API_KEY);
   if (!apiKey) throw new SocialCaptionError("OPENAI_API_KEY is missing.", "openai_request_failed", 502);
-
-  const model = socialCaptionModel(env);
-  const requestBody = buildSocialCaptionRequest(analysis, sourceMetadata, recentFingerprints, storeId, model, options.now);
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), SOCIAL_CAPTION_TIMEOUT_MS);
-  const fetcher = options.fetcher ?? env.fetcher ?? fetch;
-  const started = Date.now();
-  let response: Response;
-
-  try {
-    response = await fetcher(OPENAI_RESPONSES_URL, {
-      method: "POST",
-      signal: abortController.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
-  } catch (error) {
-    if (isAbortError(error)) throw new SocialCaptionError("OpenAI social caption request timed out.", "openai_timeout", 502);
-    throw new SocialCaptionError(
-      error instanceof Error ? error.message : "OpenAI social caption request failed.",
-      "openai_request_failed",
-      502,
-    );
-  } finally {
-    clearTimeout(timeout);
+  if (!row.caption_client_request_id) {
+    throw new SocialCaptionError("Social caption request id is missing.", "caption_persistence_failed", 500);
   }
 
-  const payload: unknown = await response.json().catch(() => null);
+  const model = socialCaptionModel(env);
+  const fetcher = options.fetcher ?? env.fetcher ?? fetch;
+  const started = Date.now();
+  const backgroundResult = await runSocialOpenAiBackgroundResponse({
+    apiKey,
+    body: row.caption_openai_response_id
+      ? null
+      : buildSocialCaptionRequest(analysis, sourceMetadata, recentFingerprints, storeId, model, options.now),
+    clientRequestId: row.caption_client_request_id,
+    fetcher,
+    responseId: row.caption_openai_response_id,
+    timeoutMs: options.backgroundTimeoutMs ?? SOCIAL_CAPTION_TIMEOUT_MS,
+    pollIntervalMs: options.pollIntervalMs,
+    onCheckpoint: (checkpoint) => checkpointCaptionResponse(
+      env,
+      row.social_post_id,
+      checkpoint,
+      options.now ?? new Date().toISOString(),
+    ),
+  });
+  const payload = backgroundResult.payload;
   const elapsedMs = Date.now() - started;
-  if (!response.ok) throw new SocialCaptionError(openAiErrorMessage(payload), "openai_request_failed", 502);
 
   const usage = usageFrom(payload);
   let normalized: NormalizedCaptionJson;
@@ -601,7 +916,7 @@ async function callOpenAiSocialCaption(
       throw new SocialCaptionError(error.message, error.code, error.status, {
         captionJson: "",
         captionStyleFingerprint: "",
-        responseId: openAiResponseId(payload) ?? response.headers.get("x-request-id") ?? response.headers.get("openai-request-id"),
+        responseId: backgroundResult.responseId,
         usage,
         elapsedMs,
         estimatedCostUsd: estimateSocialCaptionCostUsd(usage, model),
@@ -613,7 +928,7 @@ async function callOpenAiSocialCaption(
   return {
     captionJson: JSON.stringify(normalized),
     captionStyleFingerprint: JSON.stringify(normalized.caption_style_fingerprint),
-    responseId: openAiResponseId(payload) ?? response.headers.get("x-request-id") ?? response.headers.get("openai-request-id"),
+    responseId: backgroundResult.responseId,
     usage,
     elapsedMs,
     estimatedCostUsd: estimateSocialCaptionCostUsd(usage, model),
@@ -627,9 +942,14 @@ export async function prepareSocialCaption(
   options: PrepareSocialCaptionOptions = {},
 ): Promise<PrepareSocialCaptionResult> {
   const now = options.now ?? new Date().toISOString();
-  const leased = await acquireCaptionPost(env, socialPostId, now);
+  if (socialPostId === null) await reconcileStaleSocialCaptionPreparations(env, now);
+  const dueBy = options.dueBy ?? socialPublishSlotForBangkokDate(now);
+  const leased = await acquireCaptionPost(env, socialPostId, now, dueBy);
   if (!leased) {
-    if (socialPostId === null) return { processed: false, item: null };
+    if (socialPostId === null) {
+      await markCaptionPrerequisiteWaiting(env, dueBy, now);
+      return { processed: false, item: null };
+    }
     throw new SocialCaptionError("Social post is not eligible for caption preparation.", "social_post_not_eligible", 400);
   }
 
@@ -644,7 +964,10 @@ export async function prepareSocialCaption(
     const recent = await recentCaptionFingerprints(env, leased.social_post_id);
     const storeId = socialVectorStoreId(env);
 
-    openAiResult = await callOpenAiSocialCaption(env, analysis, sourceMetadata, recent, storeId, options);
+    if (!leased.caption_openai_response_id) {
+      await markCaptionRequestStarted(env, leased.social_post_id, options.now ?? new Date().toISOString());
+    }
+    openAiResult = await callOpenAiSocialCaption(env, leased, analysis, sourceMetadata, recent, storeId, options);
     if (openAiResult.fileSearchCallCount > SOCIAL_CAPTION_MAX_TOOL_CALLS) {
       throw new SocialCaptionError("OpenAI exceeded the social caption file_search call limit.", "openai_tool_call_limit_exceeded", 502);
     }
@@ -656,6 +979,12 @@ export async function prepareSocialCaption(
           updated_at = ?,
           caption_json = ?,
           caption_openai_response_id = ?,
+          caption_provider_status = 'completed',
+          caption_provider_terminal_at = ?,
+          caption_provider_error_code = NULL,
+          caption_provider_error_message = NULL,
+          caption_poll_lease_token = NULL,
+          caption_poll_lease_at = NULL,
           caption_style_fingerprint = ?,
           openai_request_count = 2,
           openai_input_tokens = openai_input_tokens + ?,
@@ -669,11 +998,16 @@ export async function prepareSocialCaption(
           failure_message = NULL
       WHERE social_post_id = ?
         AND status = 'CAPTIONING'
+        AND processed_object_key IS NOT NULL
+        AND image_openai_response_id IS NOT NULL
+        AND caption_openai_response_id IS NOT NULL
+        AND openai_request_count = 2
     `).bind(
       now,
       now,
       openAiResult.captionJson,
       openAiResult.responseId,
+      options.now ?? new Date().toISOString(),
       openAiResult.captionStyleFingerprint,
       openAiResult.usage.inputTokens,
       openAiResult.usage.cachedInputTokens,
@@ -691,6 +1025,14 @@ export async function prepareSocialCaption(
     const row = await env.DB.prepare(`${socialPostSelectSql()} WHERE social_post_id = ?`).bind(leased.social_post_id).first<SocialPostQueueRow>();
     return { processed: true, item: row ? rowToItem(row) : null };
   } catch (error) {
+    if (error instanceof SocialOpenAiBackgroundError) {
+      if (error.code === "timeout" && error.responseId) {
+        const item = await releaseCaptionPollLease(env, leased.social_post_id, "in_progress", now);
+        return { processed: false, item };
+      }
+      const item = await markCaptionProviderFailure(env, leased.social_post_id, error, now);
+      return { processed: false, item };
+    }
     if (error instanceof SocialCaptionError && error.code !== "caption_persistence_failed") {
       const item = await markFailed(env, leased.social_post_id, error.code, error.message, now, openAiResult ?? error.openAiResult);
       return { processed: false, item };

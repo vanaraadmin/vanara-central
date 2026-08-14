@@ -25,6 +25,8 @@ import {
   buildSocialCaptionRequest,
   prepareNextSocialCaption,
   prepareSocialCaption,
+  reconcileStaleSocialCaptionPreparations,
+  SOCIAL_CAPTION_CRON,
 } from "../src/services/social-caption.service.ts";
 import {
   getSocialPublishAsset,
@@ -76,6 +78,7 @@ type SocialRow = {
   openai_elapsed_ms: number;
   estimated_cost_usd: number;
   image_openai_response_id: string | null;
+  caption_openai_response_id: string | null;
   analysis_json: string | null;
   caption_json: string | null;
   caption_style_fingerprint: string | null;
@@ -91,6 +94,31 @@ type SocialRow = {
   image_finalized_at: string | null;
   image_watchdog_at: string | null;
   image_recovery_state: string | null;
+  image_client_request_id: string | null;
+  image_provider_request_id: string | null;
+  image_provider_status: string | null;
+  image_submitted_at: string | null;
+  image_last_polled_at: string | null;
+  image_provider_terminal_at: string | null;
+  image_provider_error_code: string | null;
+  image_provider_error_message: string | null;
+  image_poll_lease_token: string | null;
+  image_poll_lease_at: string | null;
+  caption_client_request_id: string | null;
+  caption_provider_request_id: string | null;
+  caption_provider_status: string | null;
+  caption_submitted_at: string | null;
+  caption_last_polled_at: string | null;
+  caption_provider_terminal_at: string | null;
+  caption_provider_error_code: string | null;
+  caption_provider_error_message: string | null;
+  caption_poll_lease_token: string | null;
+  caption_poll_lease_at: string | null;
+  caption_leased_at: string | null;
+  caption_request_started_at: string | null;
+  caption_response_received_at: string | null;
+  caption_attempt_count: number;
+  vector_store_id: string | null;
   pipeline_stage: string | null;
   pipeline_acquired_at: string | null;
   pipeline_lease_token: string | null;
@@ -186,7 +214,14 @@ class FakeSocialDB {
       openai_total_tokens: overrides.openai_total_tokens ?? 0,
       openai_elapsed_ms: overrides.openai_elapsed_ms ?? 0,
       estimated_cost_usd: overrides.estimated_cost_usd ?? 0,
-      image_openai_response_id: overrides.image_openai_response_id ?? null,
+      image_openai_response_id: overrides.image_openai_response_id
+        ?? (["IMAGE_READY", "CAPTIONING", "READY_TO_POST", "POSTING", "POSTED"].includes(overrides.status ?? "QUEUED")
+          ? `resp_image_${overrides.social_post_id ?? this.nextId}`
+          : null),
+      caption_openai_response_id: overrides.caption_openai_response_id
+        ?? (["READY_TO_POST", "POSTING", "POSTED"].includes(overrides.status ?? "QUEUED")
+          ? `resp_caption_${overrides.social_post_id ?? this.nextId}`
+          : null),
       analysis_json: overrides.analysis_json ?? null,
       caption_json: overrides.caption_json ?? null,
       caption_style_fingerprint: overrides.caption_style_fingerprint ?? null,
@@ -202,6 +237,31 @@ class FakeSocialDB {
       image_finalized_at: overrides.image_finalized_at ?? null,
       image_watchdog_at: overrides.image_watchdog_at ?? null,
       image_recovery_state: overrides.image_recovery_state ?? null,
+      image_client_request_id: overrides.image_client_request_id ?? null,
+      image_provider_request_id: overrides.image_provider_request_id ?? null,
+      image_provider_status: overrides.image_provider_status ?? null,
+      image_submitted_at: overrides.image_submitted_at ?? null,
+      image_last_polled_at: overrides.image_last_polled_at ?? null,
+      image_provider_terminal_at: overrides.image_provider_terminal_at ?? null,
+      image_provider_error_code: overrides.image_provider_error_code ?? null,
+      image_provider_error_message: overrides.image_provider_error_message ?? null,
+      image_poll_lease_token: overrides.image_poll_lease_token ?? null,
+      image_poll_lease_at: overrides.image_poll_lease_at ?? null,
+      caption_client_request_id: overrides.caption_client_request_id ?? null,
+      caption_provider_request_id: overrides.caption_provider_request_id ?? null,
+      caption_provider_status: overrides.caption_provider_status ?? null,
+      caption_submitted_at: overrides.caption_submitted_at ?? null,
+      caption_last_polled_at: overrides.caption_last_polled_at ?? null,
+      caption_provider_terminal_at: overrides.caption_provider_terminal_at ?? null,
+      caption_provider_error_code: overrides.caption_provider_error_code ?? null,
+      caption_provider_error_message: overrides.caption_provider_error_message ?? null,
+      caption_poll_lease_token: overrides.caption_poll_lease_token ?? null,
+      caption_poll_lease_at: overrides.caption_poll_lease_at ?? null,
+      caption_leased_at: overrides.caption_leased_at ?? null,
+      caption_request_started_at: overrides.caption_request_started_at ?? null,
+      caption_response_received_at: overrides.caption_response_received_at ?? null,
+      caption_attempt_count: overrides.caption_attempt_count ?? 0,
+      vector_store_id: overrides.vector_store_id ?? null,
       pipeline_stage: overrides.pipeline_stage ?? null,
       pipeline_acquired_at: overrides.pipeline_acquired_at ?? null,
       pipeline_lease_token: overrides.pipeline_lease_token ?? null,
@@ -258,13 +318,36 @@ class FakeSocialDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM social_post_events") && sql.includes("event_type = 'FB_PUBLISHED'")) {
+      const event = this.events.find((item) => item.event_type === "FB_PUBLISHED"
+        && item.created_at >= String(params[0])
+        && item.created_at < String(params[1]));
+      return (event ? { social_post_event_id: 1 } : null) as T | null;
+    }
+    if (sql.includes("SET image_poll_lease_token = ?") && sql.includes("RETURNING *")) {
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[4]) : null;
+      const row = this.rows.find((item) => item.status === "PREPARING_IMAGE"
+        && item.image_openai_response_id
+        && (targetId === null || item.social_post_id === targetId));
+      if (!row) return null;
+      row.image_poll_lease_token = String(params[0]);
+      row.image_poll_lease_at = String(params[1]);
+      row.image_client_request_id = row.image_client_request_id ?? String(params[2]);
+      row.image_phase = "POLLING";
+      row.updated_at = String(params[3]);
+      return { ...row } as T;
+    }
     if (sql.includes("UPDATE social_post_queue") && sql.includes("SET status = 'PREPARING_IMAGE'") && sql.includes("RETURNING *")) {
-      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[3]) : null;
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[6]) : null;
+      if (targetId === null && this.rows.some((item) => ["PREPARING_IMAGE", "IMAGE_READY", "CAPTIONING", "READY_TO_POST", "POSTING"].includes(item.status)
+        && item.scheduled_publish_at !== null
+        && item.scheduled_publish_at <= String(params[6]))) {
+        return null;
+      }
       const candidates = this.rows
         .filter((row) => (
           row.status === "QUEUED"
-          || (targetId !== null
-            && row.status === "FAILED"
+          || (row.status === "FAILED"
             && row.image_recovery_state === "RETRY_SAFE"
             && row.image_request_started_at === null
             && row.image_openai_response_id === null
@@ -278,30 +361,58 @@ class FakeSocialDB {
       row.processing_started_at = String(params[0]);
       row.image_phase = "LEASED";
       row.image_leased_at = String(params[1]);
+      row.image_client_request_id = row.image_client_request_id ?? String(params[2]);
+      row.image_provider_status = "created";
+      row.image_poll_lease_token = String(params[3]);
+      row.image_poll_lease_at = String(params[4]);
       row.image_source_ready_at = null;
       row.image_request_started_at = null;
       row.image_response_received_at = null;
       row.image_finalized_at = null;
       row.image_recovery_state = null;
-      row.updated_at = String(params[2]);
+      row.updated_at = String(params[5]);
       row.attempt_count += 1;
       row.failure_code = null;
       row.failure_message = null;
       return { ...row } as T;
     }
+    if (sql.includes("SET caption_poll_lease_token = ?") && sql.includes("RETURNING *")) {
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[4]) : null;
+      const row = this.rows.find((item) => item.status === "CAPTIONING"
+        && item.caption_openai_response_id
+        && (targetId === null || item.social_post_id === targetId));
+      if (!row) return null;
+      row.caption_poll_lease_token = String(params[0]);
+      row.caption_poll_lease_at = String(params[1]);
+      row.caption_client_request_id = row.caption_client_request_id ?? String(params[2]);
+      row.updated_at = String(params[3]);
+      return { ...row } as T;
+    }
     if (sql.includes("UPDATE social_post_queue") && sql.includes("SET status = 'CAPTIONING'") && sql.includes("RETURNING *")) {
-      const targetId = params.length >= 2 ? Number(params[1]) : null;
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[5]) : null;
+      if (targetId === null && this.rows.some((item) => ["CAPTIONING", "READY_TO_POST", "POSTING"].includes(item.status)
+        && item.scheduled_publish_at !== null
+        && item.scheduled_publish_at <= String(params[5]))) {
+        return null;
+      }
       const candidates = this.rows
         .filter((row) => row.status === "IMAGE_READY"
           && row.processed_object_key
           && row.analysis_json
-          && row.openai_request_count <= 1
+          && row.image_openai_response_id
+          && row.openai_request_count === 1
           && (targetId === null || row.social_post_id === targetId))
         .sort((left, right) => left.queued_at.localeCompare(right.queued_at) || left.social_post_id - right.social_post_id);
       const row = candidates[0];
       if (!row) return null;
       row.status = "CAPTIONING";
-      row.updated_at = String(params[0]);
+      row.caption_leased_at = String(params[0]);
+      row.caption_client_request_id = row.caption_client_request_id ?? String(params[1]);
+      row.caption_provider_status = "created";
+      row.caption_poll_lease_token = String(params[2]);
+      row.caption_poll_lease_at = String(params[3]);
+      row.caption_attempt_count += 1;
+      row.updated_at = String(params[4]);
       row.failure_code = null;
       row.failure_message = null;
       return { ...row } as T;
@@ -406,6 +517,7 @@ class FakeSocialDB {
         openai_elapsed_ms: 0,
         estimated_cost_usd: 0,
         image_openai_response_id: null,
+        caption_openai_response_id: null,
         analysis_json: null,
         caption_json: null,
         caption_style_fingerprint: null,
@@ -421,6 +533,31 @@ class FakeSocialDB {
         image_finalized_at: null,
         image_watchdog_at: null,
         image_recovery_state: null,
+        image_client_request_id: null,
+        image_provider_request_id: null,
+        image_provider_status: null,
+        image_submitted_at: null,
+        image_last_polled_at: null,
+        image_provider_terminal_at: null,
+        image_provider_error_code: null,
+        image_provider_error_message: null,
+        image_poll_lease_token: null,
+        image_poll_lease_at: null,
+        caption_client_request_id: null,
+        caption_provider_request_id: null,
+        caption_provider_status: null,
+        caption_submitted_at: null,
+        caption_last_polled_at: null,
+        caption_provider_terminal_at: null,
+        caption_provider_error_code: null,
+        caption_provider_error_message: null,
+        caption_poll_lease_token: null,
+        caption_poll_lease_at: null,
+        caption_leased_at: null,
+        caption_request_started_at: null,
+        caption_response_received_at: null,
+        caption_attempt_count: 0,
+        vector_store_id: null,
         pipeline_stage: null,
         pipeline_acquired_at: null,
         pipeline_lease_token: null,
@@ -441,35 +578,82 @@ class FakeSocialDB {
       return { meta: { changes: 1, last_row_id: this.nextId - 1 } };
     }
     if (sql.includes("SET image_phase = 'SOURCE_READY'")) {
-      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[4]));
       if (!row || row.status !== "PREPARING_IMAGE" || row.image_request_started_at) return { meta: { changes: 0, last_row_id: 0 } };
       row.image_phase = "SOURCE_READY";
       row.image_source_ready_at = String(params[0]);
-      row.updated_at = String(params[1]);
+      row.source_metadata_json = String(params[1]);
+      row.vector_store_id = String(params[2]);
+      row.updated_at = String(params[3]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("SET image_phase = 'REQUEST_STARTED'")) {
-      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
       if (!row || row.status !== "PREPARING_IMAGE" || row.image_request_started_at || row.openai_request_count !== 0) return { meta: { changes: 0, last_row_id: 0 } };
       row.image_phase = "REQUEST_STARTED";
       row.image_request_started_at = String(params[0]);
+      row.image_submitted_at = String(params[1]);
+      row.image_provider_status = "submitting";
       row.openai_request_count += 1;
-      row.updated_at = String(params[1]);
+      row.updated_at = String(params[2]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
-    if (sql.includes("SET image_phase = 'RESPONSE_RECEIVED'")) {
+    if (sql.includes("SET image_phase = CASE WHEN ? = 'completed'")) {
       const row = this.rows.find((item) => item.social_post_id === Number(params[10]));
       if (!row || row.status !== "PREPARING_IMAGE" || row.openai_request_count !== 1) return { meta: { changes: 0, last_row_id: 0 } };
-      row.image_phase = "RESPONSE_RECEIVED";
-      row.image_response_received_at = String(params[0]);
-      row.openai_input_tokens = Number(params[2]);
-      row.openai_cached_input_tokens = Number(params[3]);
-      row.openai_output_tokens = Number(params[4]);
-      row.openai_reasoning_tokens = Number(params[5]);
-      row.openai_total_tokens = Number(params[6]);
-      row.openai_elapsed_ms = Number(params[7]);
-      row.estimated_cost_usd = Number(params[8]);
+      row.image_phase = params[0] === "completed" ? "RESPONSE_RECEIVED" : "POLLING";
+      row.image_response_received_at = String(params[1]);
+      row.image_openai_response_id = String(params[2]);
+      row.image_provider_request_id = params[3] ? String(params[3]) : row.image_provider_request_id;
+      row.image_provider_status = String(params[4]);
+      row.image_last_polled_at = String(params[5]);
+      row.image_poll_lease_at = String(params[6]);
+      if (["completed", "failed", "cancelled", "incomplete"].includes(String(params[7]))) row.image_provider_terminal_at = String(params[8]);
       row.updated_at = String(params[9]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET image_phase = 'POLLING'") && sql.includes("image_poll_lease_token = NULL")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.image_phase = "POLLING";
+      row.image_provider_status = String(params[0]);
+      row.image_last_polled_at = String(params[1]);
+      row.image_poll_lease_token = null;
+      row.image_poll_lease_at = null;
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("caption_request_started_at = ?") && sql.includes("caption_submitted_at = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row || row.status !== "CAPTIONING" || row.caption_request_started_at || row.openai_request_count !== 1) return { meta: { changes: 0, last_row_id: 0 } };
+      row.caption_request_started_at = String(params[0]);
+      row.caption_submitted_at = String(params[1]);
+      row.caption_provider_status = "submitting";
+      row.openai_request_count += 1;
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("caption_response_received_at = ?") && sql.includes("caption_provider_request_id")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[9]));
+      if (!row || row.status !== "CAPTIONING" || row.openai_request_count !== 2) return { meta: { changes: 0, last_row_id: 0 } };
+      row.caption_response_received_at = String(params[0]);
+      row.caption_openai_response_id = String(params[1]);
+      row.caption_provider_request_id = params[2] ? String(params[2]) : row.caption_provider_request_id;
+      row.caption_provider_status = String(params[3]);
+      row.caption_last_polled_at = String(params[4]);
+      row.caption_poll_lease_at = String(params[5]);
+      if (["completed", "failed", "cancelled", "incomplete"].includes(String(params[6]))) row.caption_provider_terminal_at = String(params[7]);
+      row.updated_at = String(params[8]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET caption_provider_status = ?") && sql.includes("caption_poll_lease_token = NULL")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.caption_provider_status = String(params[0]);
+      row.caption_last_polled_at = String(params[1]);
+      row.caption_poll_lease_token = null;
+      row.caption_poll_lease_at = null;
+      row.updated_at = String(params[2]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("image_preparation_interrupted_retry_safe")) {
@@ -495,7 +679,7 @@ class FakeSocialDB {
       let changes = 0;
       for (const row of this.rows) {
         const leasedAt = row.image_leased_at ?? row.processing_started_at;
-        if (row.status !== "PREPARING_IMAGE" || !leasedAt || leasedAt > cutoff || (!row.image_request_started_at && !row.image_response_received_at && row.openai_request_count === 0)) continue;
+        if (row.status !== "PREPARING_IMAGE" || !leasedAt || leasedAt > cutoff || row.image_openai_response_id || (!row.image_request_started_at && !row.image_response_received_at && row.openai_request_count === 0)) continue;
         row.status = "FAILED";
         row.image_phase = "FAILED";
         row.image_watchdog_at = String(params[0]);
@@ -521,48 +705,95 @@ class FakeSocialDB {
       row.updated_at = String(params[0]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
+    if (sql.includes("caption_preparation_interrupted_retry_safe")) {
+      const cutoff = String(params[1]);
+      let changes = 0;
+      for (const row of this.rows) {
+        const leasedAt = row.caption_poll_lease_at ?? row.caption_leased_at;
+        if (row.status !== "CAPTIONING" || !leasedAt || leasedAt > cutoff || row.caption_request_started_at || row.caption_openai_response_id || row.openai_request_count !== 1) continue;
+        row.status = "IMAGE_READY";
+        row.caption_provider_status = "retry_safe";
+        row.caption_poll_lease_token = null;
+        row.caption_poll_lease_at = null;
+        row.caption_leased_at = null;
+        row.updated_at = String(params[0]);
+        row.failure_code = "caption_preparation_interrupted_retry_safe";
+        changes += 1;
+      }
+      return { meta: { changes, last_row_id: 0 } };
+    }
+    if (sql.includes("caption_ambiguous_submission_manual_review")) {
+      const cutoff = String(params[3]);
+      let changes = 0;
+      for (const row of this.rows) {
+        const leasedAt = row.caption_poll_lease_at ?? row.caption_leased_at;
+        if (row.status !== "CAPTIONING" || !leasedAt || leasedAt > cutoff || row.caption_openai_response_id || (!row.caption_request_started_at && row.openai_request_count <= 1)) continue;
+        row.status = "FAILED";
+        row.pipeline_stage = "MANUAL_REVIEW";
+        row.caption_provider_status = "failed";
+        row.caption_provider_error_code = "ambiguous_submission";
+        row.caption_provider_error_message = "Caption request outcome is unknown. Automatic retry is blocked.";
+        row.caption_provider_terminal_at = String(params[0]);
+        row.caption_poll_lease_token = null;
+        row.caption_poll_lease_at = null;
+        row.failed_at = String(params[1]);
+        row.updated_at = String(params[2]);
+        row.failure_code = "caption_ambiguous_submission_manual_review";
+        changes += 1;
+      }
+      return { meta: { changes, last_row_id: 0 } };
+    }
     if (sql.includes("SET status = 'IMAGE_READY'")) {
       if (this.options.failImageReadyUpdate) return { meta: { changes: 0, last_row_id: 0 } };
-      const row = this.rows.find((item) => item.social_post_id === Number(params[15]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[16]));
       if (!row || row.status !== "PREPARING_IMAGE") return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "IMAGE_READY";
       row.image_phase = "FINALIZED";
       row.image_finalized_at = String(params[0]);
       row.image_recovery_state = null;
-      row.processed_object_key = String(params[1]);
-      row.image_prepared_at = String(params[2]);
-      row.updated_at = String(params[3]);
-      row.analysis_json = String(params[4]);
-      row.source_metadata_json = String(params[7]);
+      row.image_provider_status = "completed";
+      row.image_provider_terminal_at = String(params[1]);
+      row.image_poll_lease_token = null;
+      row.image_poll_lease_at = null;
+      row.processed_object_key = String(params[2]);
+      row.image_prepared_at = String(params[3]);
+      row.updated_at = String(params[4]);
+      row.analysis_json = String(params[5]);
+      row.image_openai_response_id = String(params[6]);
+      row.vector_store_id = String(params[7]);
+      row.source_metadata_json = String(params[8]);
       row.openai_request_count = 1;
-      row.openai_input_tokens = Number(params[8]);
-      row.openai_cached_input_tokens = Number(params[9]);
-      row.openai_output_tokens = Number(params[10]);
-      row.openai_reasoning_tokens = Number(params[11]);
-      row.openai_total_tokens = Number(params[12]);
-      row.openai_elapsed_ms = Number(params[13]);
-      row.estimated_cost_usd = Number(params[14]);
+      row.openai_input_tokens = Number(params[9]);
+      row.openai_cached_input_tokens = Number(params[10]);
+      row.openai_output_tokens = Number(params[11]);
+      row.openai_reasoning_tokens = Number(params[12]);
+      row.openai_total_tokens = Number(params[13]);
+      row.openai_elapsed_ms = Number(params[14]);
+      row.estimated_cost_usd = Number(params[15]);
       row.failure_code = null;
       row.failure_message = null;
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("SET status = 'READY_TO_POST'")) {
       if (this.options.failCaptionReadyUpdate) return { meta: { changes: 0, last_row_id: 0 } };
-      const row = this.rows.find((item) => item.social_post_id === Number(params[12]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[13]));
       if (!row || row.status !== "CAPTIONING") return { meta: { changes: 0, last_row_id: 0 } };
       row.status = "READY_TO_POST";
       row.caption_prepared_at = String(params[0]);
       row.updated_at = String(params[1]);
       row.caption_json = String(params[2]);
-      row.caption_style_fingerprint = String(params[4]);
+      row.caption_openai_response_id = String(params[3]);
+      row.caption_provider_status = "completed";
+      row.caption_provider_terminal_at = String(params[4]);
+      row.caption_style_fingerprint = String(params[5]);
       row.openai_request_count = 2;
-      row.openai_input_tokens += Number(params[5]);
-      row.openai_cached_input_tokens += Number(params[6]);
-      row.openai_output_tokens += Number(params[7]);
-      row.openai_reasoning_tokens += Number(params[8]);
-      row.openai_total_tokens += Number(params[9]);
-      row.openai_elapsed_ms += Number(params[10]);
-      row.estimated_cost_usd += Number(params[11]);
+      row.openai_input_tokens += Number(params[6]);
+      row.openai_cached_input_tokens += Number(params[7]);
+      row.openai_output_tokens += Number(params[8]);
+      row.openai_reasoning_tokens += Number(params[9]);
+      row.openai_total_tokens += Number(params[10]);
+      row.openai_elapsed_ms += Number(params[11]);
+      row.estimated_cost_usd += Number(params[12]);
       row.failure_code = null;
       row.failure_message = null;
       return { meta: { changes: 1, last_row_id: 0 } };
@@ -579,6 +810,40 @@ class FakeSocialDB {
       row.pipeline_acquired_at = null;
       row.pipeline_lease_token = null;
       row.updated_at = String(params[3]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("image_provider_error_code = ?") && sql.includes("image_poll_lease_token = NULL")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[7]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "FAILED";
+      row.image_phase = "FAILED";
+      row.image_recovery_state = "MANUAL_REVIEW";
+      row.image_provider_status = "failed";
+      row.image_provider_error_code = String(params[0]);
+      row.image_provider_error_message = String(params[1]);
+      row.image_provider_terminal_at = String(params[2]);
+      row.image_poll_lease_token = null;
+      row.image_poll_lease_at = null;
+      row.failed_at = String(params[3]);
+      row.updated_at = String(params[4]);
+      row.failure_code = String(params[5]);
+      row.failure_message = String(params[6]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("caption_provider_error_code = ?") && sql.includes("caption_poll_lease_token = NULL")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[7]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "FAILED";
+      row.caption_provider_status = "failed";
+      row.caption_provider_error_code = String(params[0]);
+      row.caption_provider_error_message = String(params[1]);
+      row.caption_provider_terminal_at = String(params[2]);
+      row.caption_poll_lease_token = null;
+      row.caption_poll_lease_at = null;
+      row.failed_at = String(params[3]);
+      row.updated_at = String(params[4]);
+      row.failure_code = String(params[5]);
+      row.failure_message = String(params[6]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("SET pipeline_stage = ?") && sql.includes("pipeline_acquired_at = CASE")) {
@@ -831,12 +1096,16 @@ function fakeJpegBuffer(): ArrayBuffer {
   return new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer;
 }
 
-function successfulOpenAiFetcher(calls: Array<{ input: string; init: RequestInit; body: unknown }>): typeof fetch {
+function successfulOpenAiFetcher(
+  calls: Array<{ input: string; init: RequestInit; body: unknown }>,
+  responseId = "resp_social_image_1",
+): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}")) as unknown;
     calls.push({ input: String(input), init: init ?? {}, body });
     return new Response(JSON.stringify({
-      id: "resp_social_image_1",
+      id: responseId,
+      status: "completed",
       output: [
         { type: "file_search_call", results: [{ filename: "Vanara_Social_Style.md" }] },
         { type: "image_generation_call", result: Buffer.from("processed-jpeg").toString("base64") },
@@ -934,12 +1203,17 @@ function captionPayload(overrides: Record<string, unknown> = {}): Record<string,
   };
 }
 
-function successfulCaptionFetcher(calls: Array<{ input: string; init: RequestInit; body: unknown }>, overrides: Record<string, unknown> = {}): typeof fetch {
+function successfulCaptionFetcher(
+  calls: Array<{ input: string; init: RequestInit; body: unknown }>,
+  overrides: Record<string, unknown> = {},
+  responseId = "resp_social_caption_1",
+): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}")) as unknown;
     calls.push({ input: String(input), init: init ?? {}, body });
     return new Response(JSON.stringify({
-      id: "resp_social_caption_1",
+      id: responseId,
+      status: "completed",
       output: [
         { type: "file_search_call", results: [{ filename: "Vanara_Social_Style.md" }] },
         {
@@ -1118,7 +1392,7 @@ test("social image preparation processes one queued photo FIFO with one OpenAI r
     now: "2026-08-05T20:00:00.000Z",
   });
 
-  assert.equal(result.processed, true);
+  assert.equal(result.processed, true, JSON.stringify(result));
   assert.equal(result.item?.id, older.social_post_id);
   assert.equal(result.item?.status, "IMAGE_READY");
   assert.equal(result.item?.openaiRequestCount, 1);
@@ -1146,6 +1420,75 @@ test("social image preparation processes one queued photo FIFO with one OpenAI r
   assert.match(JSON.stringify(requestBody), /upload_date/);
   assert.match(JSON.stringify(requestBody), /image_capture_date/);
   assert.equal([...r2.objects.keys()].some((key) => key.startsWith("social/processed/2026-08-05/") && key.endsWith(".jpg")), true);
+});
+
+test("04:00 image stage resumes a persisted response by GET after a Worker restart", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({
+    social_post_id: 12,
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
+    queued_at: "2026-08-05T01:00:00.000Z",
+  });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  const interruptedFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ input: String(input), init: init ?? {}, body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (method === "POST") {
+      return new Response(JSON.stringify({ id: "resp_image_restart", status: "queued" }), { status: 200 });
+    }
+    throw new Error("simulated Worker interruption while polling");
+  }) as typeof fetch;
+
+  const submitted = await prepareNextQueuedSocialImage(env(db, r2, interruptedFetcher), {
+    now: "2026-08-05T21:00:00.000Z",
+    backgroundTimeoutMs: 20,
+    pollIntervalMs: 0,
+  });
+  assert.equal(submitted.processed, false);
+  assert.equal(submitted.item?.status, "PREPARING_IMAGE");
+  assert.equal(db.rows[0]?.image_openai_response_id, "resp_image_restart");
+  assert.equal(db.rows[0]?.openai_request_count, 1);
+
+  const recovered = await prepareNextQueuedSocialImage(
+    env(db, r2, successfulOpenAiFetcher(calls, "resp_image_restart")),
+    { now: "2026-08-05T21:10:00.000Z", backgroundTimeoutMs: 100, pollIntervalMs: 0 },
+  );
+  assert.equal(recovered.processed, true, JSON.stringify(recovered));
+  assert.equal(recovered.item?.status, "IMAGE_READY");
+  assert.equal(calls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(calls.at(-1)?.init.method, "GET");
+  assert.equal(db.rows[0]?.openai_request_count, 1);
+  assert.equal(r2.objects.has(row.original_object_key), true);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith("social/processed/")), true);
+});
+
+test("04:00 image stage acquires a provably pre-AI RETRY_SAFE job once", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({
+    social_post_id: 13,
+    status: "FAILED",
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
+    image_phase: "FAILED",
+    image_recovery_state: "RETRY_SAFE",
+    image_request_started_at: null,
+    image_openai_response_id: null,
+    openai_request_count: 0,
+    attempt_count: 1,
+  });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const result = await prepareNextQueuedSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), {
+    now: "2026-08-05T21:00:00.000Z",
+  });
+
+  assert.equal(result.processed, true, JSON.stringify(result));
+  assert.equal(result.item?.status, "IMAGE_READY");
+  assert.equal(calls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(result.item?.openaiRequestCount, 1);
 });
 
 test("social image preparation fails unsupported image types without conversion or OpenAI", async () => {
@@ -1214,7 +1557,7 @@ test("stale image leases before the AI boundary become retry-safe without deleti
 
   const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
   const retried = await prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), leased.social_post_id, { now: "2026-08-05T10:31:00.000Z" });
-  assert.equal(retried.processed, true);
+  assert.equal(retried.processed, true, JSON.stringify(retried));
   assert.equal(retried.item?.status, "IMAGE_READY");
   await assert.rejects(
     prepareSocialImage(env(db, r2, successfulOpenAiFetcher(calls)), leased.social_post_id, { now: "2026-08-05T10:32:00.000Z" }),
@@ -1269,6 +1612,7 @@ test("social image preparation fails malformed OpenAI responses", async () => {
   r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
   const fetcher = (async () => new Response(JSON.stringify({
     id: "resp_bad",
+    status: "completed",
     output: [{ type: "file_search_call", results: [] }],
     output_text: JSON.stringify({ visual_subject: "pool" }),
   }), { status: 200 })) as typeof fetch;
@@ -1282,7 +1626,7 @@ test("social image preparation fails malformed OpenAI responses", async () => {
   assert.equal(result.item?.failureCode, "openai_invalid_response");
 });
 
-test("social image preparation rolls back processed R2 image when D1 update fails", async () => {
+test("social image preparation retains deterministic processed R2 image when D1 checkpoint fails", async () => {
   const db = new FakeSocialDB({ failImageReadyUpdate: true });
   const r2 = new FakeR2Storage();
   const row = db.seed({ original_object_key: "social/uploads/2026-08-05/photo.jpg" });
@@ -1296,7 +1640,8 @@ test("social image preparation rolls back processed R2 image when D1 update fail
   assert.equal(result.processed, false);
   assert.equal(result.item?.status, "FAILED");
   assert.equal(result.item?.failureCode, "processed_image_persistence_failed");
-  assert.equal(r2.deleted.some((key) => key.startsWith("social/processed/")), true);
+  assert.equal(r2.deleted.some((key) => key.startsWith("social/processed/")), false);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith("social/processed/")), true);
 });
 
 test("social caption preparation processes one image-ready post with one text-only OpenAI request", async () => {
@@ -1379,6 +1724,110 @@ test("social caption preparation processes one image-ready post with one text-on
   assert.equal(captionJson.repetitive_warning, false);
 });
 
+test("05:00 caption stage resumes a persisted response by GET and reaches READY_TO_POST once", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  db.seed({
+    social_post_id: 22,
+    status: "IMAGE_READY",
+    processed_object_key: "social/processed/2026-08-05/restart.jpg",
+    analysis_json: socialAnalysisJson(),
+    source_metadata_json: JSON.stringify({ upload_date: "2026-08-05" }),
+    openai_request_count: 1,
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
+    image_prepared_at: "2026-08-05T21:10:00.000Z",
+  });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  const interruptedFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push({ input: String(input), init: init ?? {}, body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (method === "POST") {
+      return new Response(JSON.stringify({ id: "resp_caption_restart", status: "queued" }), { status: 200 });
+    }
+    throw new Error("simulated Worker interruption while polling caption");
+  }) as typeof fetch;
+
+  const submitted = await prepareNextSocialCaption(env(db, r2, interruptedFetcher), {
+    now: "2026-08-05T22:00:00.000Z",
+    backgroundTimeoutMs: 20,
+    pollIntervalMs: 0,
+  });
+  assert.equal(submitted.processed, false);
+  assert.equal(submitted.item?.status, "CAPTIONING");
+  assert.equal(db.rows[0]?.caption_openai_response_id, "resp_caption_restart");
+  assert.equal(db.rows[0]?.openai_request_count, 2);
+
+  const recovered = await prepareNextSocialCaption(
+    env(db, r2, successfulCaptionFetcher(calls, {}, "resp_caption_restart")),
+    { now: "2026-08-05T22:10:00.000Z", backgroundTimeoutMs: 100, pollIntervalMs: 0 },
+  );
+  assert.equal(recovered.processed, true, JSON.stringify(recovered));
+  assert.equal(recovered.item?.status, "READY_TO_POST");
+  assert.equal(calls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(calls.at(-1)?.init.method, "GET");
+  assert.equal(recovered.item?.openaiRequestCount, 2);
+  const caption = JSON.parse(db.rows[0]!.caption_json!) as { instagram_hashtags: string[] };
+  assert.equal(caption.instagram_hashtags.length, 7);
+});
+
+test("05:00 caption watchdog retries only a provably pre-AI interruption", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  db.seed({
+    social_post_id: 23,
+    status: "CAPTIONING",
+    processed_object_key: "social/processed/2026-08-05/pre-ai.jpg",
+    analysis_json: socialAnalysisJson(),
+    openai_request_count: 1,
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
+    caption_leased_at: "2026-08-05T21:30:00.000Z",
+    caption_poll_lease_at: "2026-08-05T21:30:00.000Z",
+    caption_request_started_at: null,
+    caption_openai_response_id: null,
+  });
+  const calls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+
+  const watchdog = await reconcileStaleSocialCaptionPreparations(
+    env(db, r2),
+    "2026-08-05T22:00:00.000Z",
+  );
+  assert.deepEqual(watchdog, { retrySafe: 1, manualReview: 0 });
+  assert.equal(db.rows[0]?.status, "IMAGE_READY");
+
+  const result = await prepareNextSocialCaption(env(db, r2, successfulCaptionFetcher(calls)), {
+    now: "2026-08-05T22:00:00.000Z",
+  });
+  assert.equal(result.processed, true, JSON.stringify(result));
+  assert.equal(result.item?.status, "READY_TO_POST");
+  assert.equal(calls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(result.item?.openaiRequestCount, 2);
+});
+
+test("05:00 caption watchdog blocks an ambiguous POST without a response id", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  db.seed({
+    social_post_id: 24,
+    status: "CAPTIONING",
+    processed_object_key: "social/processed/2026-08-05/ambiguous.jpg",
+    analysis_json: socialAnalysisJson(),
+    openai_request_count: 2,
+    caption_leased_at: "2026-08-05T21:30:00.000Z",
+    caption_poll_lease_at: "2026-08-05T21:30:00.000Z",
+    caption_request_started_at: "2026-08-05T21:31:00.000Z",
+    caption_openai_response_id: null,
+  });
+
+  const watchdog = await reconcileStaleSocialCaptionPreparations(
+    env(db, r2),
+    "2026-08-05T22:00:00.000Z",
+  );
+  assert.deepEqual(watchdog, { retrySafe: 0, manualReview: 1 });
+  assert.equal(db.rows[0]?.status, "FAILED");
+  assert.equal(db.rows[0]?.pipeline_stage, "MANUAL_REVIEW");
+  assert.equal(db.rows[0]?.processed_object_key, "social/processed/2026-08-05/ambiguous.jpg");
+});
+
 test("social caption preparation does not call OpenAI when analysis JSON is missing or invalid", async () => {
   const missingDb = new FakeSocialDB();
   const r2 = new FakeR2Storage();
@@ -1425,6 +1874,7 @@ test("social caption preparation fails malformed OpenAI output after one caption
   });
   const fetcher = (async () => new Response(JSON.stringify({
     id: "resp_bad_caption",
+    status: "completed",
     output: [
       { type: "file_search_call", results: [] },
       { type: "message", content: [{ type: "output_text", text: JSON.stringify({ instagram_caption_en: "Missing required fields" }) }] },
@@ -1907,6 +2357,47 @@ test("social scheduling uses the next 06:00 Bangkok slot and cron ignores future
   assert.equal(calls.length, 0);
 });
 
+test("04 IMAGE, 05 CAPTION, and 06 PUBLISH remain three independent daily stages", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed({
+    social_post_id: 110,
+    status: "QUEUED",
+    queued_at: "2026-08-05T01:00:00.000Z",
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
+  });
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const imageCalls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  const captionCalls: Array<{ input: string; init: RequestInit; body: unknown }> = [];
+  const metaCalls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const image = await prepareNextQueuedSocialImage(env(db, r2, successfulOpenAiFetcher(imageCalls)), {
+    now: "2026-08-05T21:00:00.000Z",
+  });
+  assert.equal(image.item?.status, "IMAGE_READY");
+  assert.equal(imageCalls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(captionCalls.length, 0);
+  assert.equal(metaCalls.length, 0);
+
+  const caption = await prepareNextSocialCaption(env(db, r2, successfulCaptionFetcher(captionCalls)), {
+    now: "2026-08-05T22:00:00.000Z",
+  });
+  assert.equal(caption.item?.status, "READY_TO_POST");
+  assert.equal(imageCalls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(captionCalls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(metaCalls.length, 0);
+
+  const published = await publishNextSocialPost(env(db, r2, successfulMetaFetcher(metaCalls)), {
+    now: "2026-08-05T23:00:00.000Z",
+  });
+  assert.equal(published.published, true);
+  assert.equal(imageCalls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(captionCalls.filter((call) => call.init.method === "POST").length, 1);
+  assert.equal(metaCalls.some((call) => call.input.includes("api.openai.com")), false);
+  assert.equal(db.rows.some((item) => item.social_post_id === row.social_post_id), false);
+  assert.equal(r2.objects.has(row.original_object_key), false);
+});
+
 test("social automation endpoints are owner-only and use the dedicated social permission", async () => {
   const unauthenticated = await request("/api/social/overview", { method: "GET" }, env(new FakeSocialDB({ authenticated: false })));
   assert.equal(unauthenticated.status, 401);
@@ -1943,7 +2434,7 @@ test("social automation endpoints are owner-only and use the dedicated social pe
   const response = await request("/api/social/posts", { method: "POST", headers: { cookie: "vanara_session=x" }, body: upload }, env(db, r2));
   assert.equal(response.status, 201);
   const body = await json(response);
-  assert.equal(body.success, true);
+  assert.equal(body.success, true, JSON.stringify(body));
   assert.equal((body.data as SocialPostQueueItem).status, "QUEUED");
   assert.equal(db.rows.length, 1);
   assert.equal(r2.objects.size, 1);
@@ -2021,11 +2512,13 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   const migration = readFileSync(new URL("../migrations/0035_social_automation_foundation.sql", import.meta.url), "utf8");
   const reliabilityMigration = readFileSync(new URL("../migrations/0047_social_image_reliability.sql", import.meta.url), "utf8");
   const metaRecoveryMigration = readFileSync(new URL("../migrations/0052_social_meta_publish_recovery.sql", import.meta.url), "utf8");
+  const aiRecoveryMigration = readFileSync(new URL("../migrations/0053_social_ai_response_recovery.sql", import.meta.url), "utf8");
   const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/social-automation.service.ts", import.meta.url), "utf8");
   const imageService = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
   const captionService = readFileSync(new URL("../src/services/social-caption.service.ts", import.meta.url), "utf8");
   const publishService = readFileSync(new URL("../src/services/social-publish.service.ts", import.meta.url), "utf8");
+  const backgroundService = readFileSync(new URL("../src/services/social-openai-background.service.ts", import.meta.url), "utf8");
   const imagePrompt = readFileSync(new URL("../src/assets/prompts/social-image-prepare-v1.prompt.ts", import.meta.url), "utf8");
   const captionPrompt = readFileSync(new URL("../src/assets/prompts/social-caption-v1.prompt.ts", import.meta.url), "utf8");
   const wrangler = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
@@ -2054,6 +2547,10 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(metaRecoveryMigration, /CREATE TABLE IF NOT EXISTS social_post_events/);
   assert.match(metaRecoveryMigration, /UNIQUE \(social_post_id, dedupe_key\)/);
   assert.doesNotMatch(metaRecoveryMigration, /\bDROP\b|\bDELETE\b/i);
+  assert.match(aiRecoveryMigration, /caption_client_request_id/);
+  assert.match(aiRecoveryMigration, /caption_provider_status/);
+  assert.match(aiRecoveryMigration, /caption_poll_lease_token/);
+  assert.doesNotMatch(aiRecoveryMigration, /\bDROP\b|\bDELETE\b/i);
 
   assert.match(server, /function socialOwner/);
   assert.match(server, /requireOwner\(user\)/);
@@ -2067,14 +2564,26 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/publish"/);
   assert.match(server, /app\.get\("\/api\/social\/publish-assets\/:assetId"/);
   assert.match(server, /controller\.cron === SOCIAL_IMAGE_PREPARE_CRON/);
+  assert.match(server, /controller\.cron === SOCIAL_CAPTION_CRON/);
   assert.match(server, /controller\.cron === SOCIAL_PUBLISH_CRON/);
-  assert.match(server, /prepareNextSocialCaption\(env\)/);
-  assert.match(server, /resumePendingSocialPost\(env\)/);
-  assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "*/10 * * * *");
-  assert.equal(SOCIAL_PUBLISH_CRON, "0 23 * * *");
-  assert.match(wrangler, /"\*\/10 \* \* \* \*"/);
-  assert.match(wrangler, /"0 23 \* \* \*"/);
+  assert.match(server, /prepareNextQueuedSocialImage\(env, \{ now:/);
+  assert.match(server, /prepareNextSocialCaption\(env, \{ now:/);
+  assert.match(server, /publishNextSocialPost\(env, \{ now:/);
+  assert.doesNotMatch(server, /resumePendingSocialPost\(env/);
+  assert.doesNotMatch(server, /prepareNextQueuedSocialImage\([\s\S]{0,200}\.then\([\s\S]{0,200}prepareNextSocialCaption/);
+  assert.doesNotMatch(server, /prepareNextSocialCaption\([\s\S]{0,200}\.then\([\s\S]{0,200}publishNextSocialPost/);
+  assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "*/10 21 * * *");
+  assert.equal(SOCIAL_CAPTION_CRON, "*/10 22 * * *");
+  assert.equal(SOCIAL_PUBLISH_CRON, "*/10 23 * * *");
+  assert.match(wrangler, /"\*\/10 21 \* \* \*"/);
+  assert.match(wrangler, /"\*\/10 22 \* \* \*"/);
+  assert.match(wrangler, /"\*\/10 23 \* \* \*"/);
   assert.doesNotMatch(wrangler, /"30 23 \* \* \*"|"0 0 \* \* \*"/);
+  assert.match(backgroundService, /body: JSON\.stringify\(\{ \.\.\.body, background: true \}\)/);
+  assert.match(backgroundService, /method: "GET"/);
+  assert.doesNotMatch(imageService, /social-caption\.service|social-publish\.service/);
+  assert.doesNotMatch(captionService, /social-image-preparation\.service|social-publish\.service/);
+  assert.doesNotMatch(publishService, /social-openai-background|social-caption\.service|social-image-preparation\.service|OPENAI_API_KEY/);
   assert.match(service, /const SOCIAL_UPLOAD_PREFIX = "social\/uploads"/);
   assert.match(service, /"image\/jpeg": "jpg"/);
   assert.match(service, /"image\/png": "png"/);
@@ -2177,7 +2686,9 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(captionService, /openai_input_tokens = openai_input_tokens \+ \?/);
   assert.match(captionService, /recentCaptionFingerprints/);
   assert.match(captionService, /repetitive_warning/);
-  assert.match(captionService, /openai_request_count <= 1/);
+  assert.match(captionService, /openai_request_count = 1/);
+  assert.match(captionService, /reconcileStaleSocialCaptionPreparations/);
+  assert.match(captionService, /caption_openai_response_id IS NOT NULL/);
   assert.doesNotMatch(captionService, /while\s*\(|for\s*\([^)]*retry|retryCaption|regenerate/i);
   assert.doesNotMatch(captionService, /input_image|data:image|image_generation/);
   assert.match(captionPrompt, /Facebook gold standard/);

@@ -98,6 +98,7 @@ class RecoveryDb {
           const candidates = this.rows.filter((item) =>
             item.status === "PREPARING_IMAGE"
             && String(item.image_leased_at ?? item.processing_started_at) <= cutoff
+            && item.image_openai_response_id === null
             && (item.image_request_started_at !== null
               || item.image_response_received_at !== null
               || item.image_openai_response_id !== null
@@ -151,7 +152,7 @@ test("crashes after lease or R2 source validation become retry-safe without touc
   ]);
 });
 
-test("crashes at the request boundary or after the AI response require manual review", async () => {
+test("ambiguous request without response id needs review while a persisted response id remains recoverable", async () => {
   const requestStarted = row(3, {
     image_phase: "REQUEST_STARTED",
     image_request_started_at: "2026-08-12T01:02:00.000Z",
@@ -171,28 +172,32 @@ test("crashes at the request boundary or after the AI response require manual re
     "2026-08-12T01:30:00.000Z",
   );
 
-  assert.deepEqual(result, { retrySafe: 0, manualReview: 2 });
-  assert.equal(db.rows.every((item) => item.image_recovery_state === "MANUAL_REVIEW"), true);
+  assert.deepEqual(result, { retrySafe: 0, manualReview: 1 });
+  assert.equal(requestStarted.image_recovery_state, "MANUAL_REVIEW");
+  assert.equal(responseReceived.status, "PREPARING_IMAGE");
+  assert.equal(responseReceived.image_recovery_state, null);
 });
 
 test("checkpoint ordering and cron recovery guard the paid request boundary", () => {
   const service = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
+  const background = readFileSync(new URL("../src/services/social-openai-background.service.ts", import.meta.url), "utf8");
   const config = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
-  const migration = readFileSync(new URL("../migrations/0047_social_image_reliability.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../migrations/0053_social_ai_response_recovery.sql", import.meta.url), "utf8");
   const prepareFlow = service.slice(service.indexOf("export async function prepareSocialImage"));
 
   assert.ok(prepareFlow.indexOf("markImageSourceReady") < prepareFlow.indexOf("markImageRequestStarted"));
   assert.ok(prepareFlow.indexOf("markImageRequestStarted") < prepareFlow.indexOf("callOpenAiSocialImagePrepare"));
-  assert.ok(prepareFlow.indexOf("callOpenAiSocialImagePrepare") < prepareFlow.indexOf("markImageResponseReceived"));
   assert.equal(prepareFlow.match(/callOpenAiSocialImagePrepare\(/g)?.length, 1);
   assert.match(service, /openai_request_count = openai_request_count \+ 1/);
-  assert.match(service, /SOCIAL_IMAGE_PREPARE_CRON = "\*\/10 \* \* \* \*"/);
-  assert.match(config, /"\*\/10 \* \* \* \*"/);
+  assert.match(service, /SOCIAL_IMAGE_PREPARE_CRON = "\*\/10 21 \* \* \*"/);
+  assert.match(config, /"\*\/10 21 \* \* \*"/);
   assert.match(prepareFlow, /if \(socialPostId === null\) await reconcileStaleSocialImagePreparations/);
-  assert.doesNotMatch(service.slice(service.indexOf("export async function reconcileStaleSocialImagePreparations"), service.indexOf("async function callOpenAiSocialImagePrepare")), /callOpenAi|prepareSocialImage/);
+  assert.match(background, /body: JSON\.stringify\(\{ \.\.\.body, background: true \}\)/);
+  assert.match(background, /method: "GET"/);
+  assert.doesNotMatch(background.slice(background.indexOf("while (status")), /method: "POST"/);
   assert.match(service, /status = 'FAILED'[\s\S]*image_recovery_state = 'RETRY_SAFE'[\s\S]*openai_request_count = 0[\s\S]*attempt_count < \$\{SOCIAL_IMAGE_MAX_ATTEMPTS\}/);
   assert.doesNotMatch(service, /R2_STORAGE\.delete\(leased\.original_object_key\)/);
-  assert.match(migration, /image_request_started_at/);
-  assert.match(migration, /image_response_received_at/);
+  assert.match(migration, /caption_client_request_id/);
+  assert.match(migration, /caption_provider_status/);
   assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM social_post_queue/i);
 });

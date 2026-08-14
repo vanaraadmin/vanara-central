@@ -1,4 +1,5 @@
 import type { SocialAutomationBindings, SocialPostQueueItem } from "./social-automation.service.js";
+import { socialBangkokDayBounds } from "./social-schedule.service.js";
 
 type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 type Sleeper = (milliseconds: number) => Promise<void>;
@@ -95,7 +96,7 @@ export class SocialPublishError extends Error {
   }
 }
 
-export const SOCIAL_PUBLISH_CRON = "0 23 * * *";
+export const SOCIAL_PUBLISH_CRON = "*/10 23 * * *";
 export const SOCIAL_PUBLISH_RECOVERY_CRON = "*/10 * * * *";
 export const SOCIAL_PUBLIC_PUBLISH_PREFIX = "social/public-publish";
 const DEFAULT_META_GRAPH_API_VERSION = "v25.0";
@@ -704,7 +705,35 @@ export async function publishNextSocialPost(
   env: SocialPublishBindings,
   options: PublishSocialPostOptions = {},
 ): Promise<PublishSocialPostResult> {
-  return publishSocialPost(env, null, options);
+  const now = options.now ?? new Date().toISOString();
+  const bounds = socialBangkokDayBounds(now);
+  const alreadyPublished = await env.DB.prepare(`
+    SELECT social_post_event_id
+    FROM social_post_events
+    WHERE event_type = 'FB_PUBLISHED'
+      AND created_at >= ?
+      AND created_at < ?
+    LIMIT 1
+  `).bind(bounds.start, bounds.end).first<{ social_post_event_id: number }>();
+  if (alreadyPublished) return idleResult();
+
+  const result = await publishSocialPost(env, null, options);
+  if (!result.published && !result.pending && !result.manualReview) {
+    await env.DB.prepare(`
+      UPDATE social_post_queue
+      SET pipeline_stage = 'PUBLISH_WAITING_FOR_CAPTION', updated_at = ?
+      WHERE social_post_id = (
+        SELECT social_post_id
+        FROM social_post_queue
+        WHERE status IN ('QUEUED','PREPARING_IMAGE','IMAGE_READY','CAPTIONING')
+          AND scheduled_publish_at IS NOT NULL
+          AND scheduled_publish_at <= ?
+        ORDER BY scheduled_publish_at ASC, queued_at ASC, social_post_id ASC
+        LIMIT 1
+      )
+    `).bind(now, now).run();
+  }
+  return result;
 }
 
 export async function resumePendingSocialPost(
