@@ -6,6 +6,7 @@ import worker from "../src/index.ts";
 import type { CurrentUser, ModuleKey, UserRole, UserView } from "../src/services/current-user.service.ts";
 import {
   listSocialAutomationOverview,
+  nextSocialPublishAt,
   normalizeSocialPhotoUploadFormData,
   queueSocialPhoto,
   type SocialPostQueueItem,
@@ -24,18 +25,27 @@ import {
   buildSocialCaptionRequest,
   prepareNextSocialCaption,
   prepareSocialCaption,
-  SOCIAL_CAPTION_CRON,
 } from "../src/services/social-caption.service.ts";
 import {
   getSocialPublishAsset,
   publishNextSocialPost,
   publishSocialPost,
+  resumePendingSocialPost,
   SOCIAL_PUBLIC_PUBLISH_PREFIX,
   SOCIAL_PUBLISH_CRON,
   socialPublishAssetTokenFromKey,
 } from "../src/services/social-publish.service.ts";
 
 type PermissionRow = { module_key: ModuleKey; can_access: number; can_edit: number };
+type SocialEventRow = {
+  social_post_id: number;
+  event_type: string;
+  stage: string;
+  detail_code: string | null;
+  provider_id: string | null;
+  dedupe_key: string;
+  created_at: string;
+};
 type SocialRow = {
   social_post_id: number;
   original_object_key: string;
@@ -81,6 +91,21 @@ type SocialRow = {
   image_finalized_at: string | null;
   image_watchdog_at: string | null;
   image_recovery_state: string | null;
+  pipeline_stage: string | null;
+  pipeline_acquired_at: string | null;
+  pipeline_lease_token: string | null;
+  publish_r2_completed_at: string | null;
+  instagram_container_id: string | null;
+  instagram_container_status: string | null;
+  instagram_container_request_started_at: string | null;
+  instagram_container_created_at: string | null;
+  instagram_container_last_polled_at: string | null;
+  instagram_publish_request_started_at: string | null;
+  instagram_publish_response_received_at: string | null;
+  instagram_request_started_at: string | null;
+  instagram_response_received_at: string | null;
+  facebook_request_started_at: string | null;
+  facebook_response_received_at: string | null;
 };
 
 const OWNER_ROW = {
@@ -114,6 +139,7 @@ class FakeSocialStmt {
 
 class FakeSocialDB {
   rows: SocialRow[] = [];
+  events: SocialEventRow[] = [];
   private nextId = 1;
 
   constructor(private options: {
@@ -176,6 +202,21 @@ class FakeSocialDB {
       image_finalized_at: overrides.image_finalized_at ?? null,
       image_watchdog_at: overrides.image_watchdog_at ?? null,
       image_recovery_state: overrides.image_recovery_state ?? null,
+      pipeline_stage: overrides.pipeline_stage ?? null,
+      pipeline_acquired_at: overrides.pipeline_acquired_at ?? null,
+      pipeline_lease_token: overrides.pipeline_lease_token ?? null,
+      publish_r2_completed_at: overrides.publish_r2_completed_at ?? null,
+      instagram_container_id: overrides.instagram_container_id ?? null,
+      instagram_container_status: overrides.instagram_container_status ?? null,
+      instagram_container_request_started_at: overrides.instagram_container_request_started_at ?? null,
+      instagram_container_created_at: overrides.instagram_container_created_at ?? null,
+      instagram_container_last_polled_at: overrides.instagram_container_last_polled_at ?? null,
+      instagram_publish_request_started_at: overrides.instagram_publish_request_started_at ?? null,
+      instagram_publish_response_received_at: overrides.instagram_publish_response_received_at ?? null,
+      instagram_request_started_at: overrides.instagram_request_started_at ?? null,
+      instagram_response_received_at: overrides.instagram_response_received_at ?? null,
+      facebook_request_started_at: overrides.facebook_request_started_at ?? null,
+      facebook_response_received_at: overrides.facebook_response_received_at ?? null,
     };
     this.nextId = Math.max(this.nextId, row.social_post_id + 1);
     this.rows.push(row);
@@ -266,20 +307,36 @@ class FakeSocialDB {
       return { ...row } as T;
     }
     if (sql.includes("UPDATE social_post_queue") && sql.includes("SET status = 'POSTING'") && sql.includes("RETURNING *")) {
-      const targetId = params.length >= 3 ? Number(params[2]) : null;
+      const targetId = sql.includes("WHERE social_post_id = ?") ? Number(params[4]) : null;
       const candidates = this.rows
         .filter((row) => row.status === "READY_TO_POST"
           && row.processed_object_key
           && row.caption_json
+          && (targetId !== null || (row.scheduled_publish_at !== null && row.scheduled_publish_at <= String(params[4])))
           && (targetId === null || row.social_post_id === targetId))
-        .sort((left, right) => left.queued_at.localeCompare(right.queued_at) || left.social_post_id - right.social_post_id);
+        .sort((left, right) => (left.scheduled_publish_at ?? "").localeCompare(right.scheduled_publish_at ?? "") || left.social_post_id - right.social_post_id);
       const row = candidates[0];
       if (!row) return null;
       row.status = "POSTING";
-      row.processing_started_at = row.processing_started_at ?? String(params[0]);
-      row.updated_at = String(params[1]);
+      row.pipeline_stage = "META_LEASED";
+      row.pipeline_acquired_at = String(params[0]);
+      row.pipeline_lease_token = String(params[1]);
+      row.processing_started_at = row.processing_started_at ?? String(params[2]);
+      row.updated_at = String(params[3]);
       row.failure_code = null;
       row.failure_message = null;
+      return { ...row } as T;
+    }
+    if (sql.includes("UPDATE social_post_queue") && sql.includes("SET pipeline_acquired_at = ?") && sql.includes("RETURNING *")) {
+      const targetId = sql.includes("social_post_id = ?") ? Number(params[3]) : null;
+      const cutoff = String(params[params.length - 1]);
+      const row = this.rows.find((item) => item.status === "POSTING"
+        && (targetId === null || item.social_post_id === targetId)
+        && (!item.pipeline_acquired_at || item.pipeline_acquired_at <= cutoff));
+      if (!row) return null;
+      row.pipeline_acquired_at = String(params[0]);
+      row.pipeline_lease_token = String(params[1]);
+      row.updated_at = String(params[2]);
       return { ...row } as T;
     }
     if (sql.includes("SELECT s.session_id")) {
@@ -301,6 +358,22 @@ class FakeSocialDB {
   }
 
   async run(sql: string, params: unknown[]) {
+    if (sql.includes("INSERT OR IGNORE INTO social_post_events")) {
+      const event: SocialEventRow = {
+        social_post_id: Number(params[0]),
+        event_type: String(params[1]),
+        stage: String(params[2]),
+        detail_code: params[3] === null ? null : String(params[3]),
+        provider_id: params[4] === null ? null : String(params[4]),
+        dedupe_key: String(params[5]),
+        created_at: String(params[6]),
+      };
+      if (!this.events.some((item) => item.social_post_id === event.social_post_id && item.dedupe_key === event.dedupe_key)) {
+        this.events.push(event);
+        return { meta: { changes: 1, last_row_id: this.events.length } };
+      }
+      return { meta: { changes: 0, last_row_id: 0 } };
+    }
     if (sql.includes("INSERT INTO social_post_queue")) {
       if (this.options.failInsert) throw new Error("D1 insert failed");
       this.rows.push({
@@ -317,10 +390,10 @@ class FakeSocialDB {
         processing_started_at: null,
         image_prepared_at: null,
         caption_prepared_at: null,
-        scheduled_publish_at: null,
+        scheduled_publish_at: String(params[7]),
         posted_at: null,
         failed_at: null,
-        updated_at: String(params[7]),
+        updated_at: String(params[8]),
         attempt_count: 0,
         failure_code: null,
         failure_message: null,
@@ -348,6 +421,21 @@ class FakeSocialDB {
         image_finalized_at: null,
         image_watchdog_at: null,
         image_recovery_state: null,
+        pipeline_stage: null,
+        pipeline_acquired_at: null,
+        pipeline_lease_token: null,
+        publish_r2_completed_at: null,
+        instagram_container_id: null,
+        instagram_container_status: null,
+        instagram_container_request_started_at: null,
+        instagram_container_created_at: null,
+        instagram_container_last_polled_at: null,
+        instagram_publish_request_started_at: null,
+        instagram_publish_response_received_at: null,
+        instagram_request_started_at: null,
+        instagram_response_received_at: null,
+        facebook_request_started_at: null,
+        facebook_response_received_at: null,
       });
       this.nextId += 1;
       return { meta: { changes: 1, last_row_id: this.nextId - 1 } };
@@ -479,6 +567,103 @@ class FakeSocialDB {
       row.failure_message = null;
       return { meta: { changes: 1, last_row_id: 0 } };
     }
+    if (sql.includes("SET status = 'FAILED'") && sql.includes("pipeline_stage = 'MANUAL_REVIEW'")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[4]));
+      if (!row) return { meta: { changes: 0, last_row_id: 0 } };
+      row.status = "FAILED";
+      row.pipeline_stage = "MANUAL_REVIEW";
+      row.image_recovery_state = "MANUAL_REVIEW";
+      row.failed_at = String(params[0]);
+      row.failure_code = String(params[1]);
+      row.failure_message = String(params[2]);
+      row.pipeline_acquired_at = null;
+      row.pipeline_lease_token = null;
+      row.updated_at = String(params[3]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("SET pipeline_stage = ?") && sql.includes("pipeline_acquired_at = CASE")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[4]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.pipeline_stage = String(params[0]);
+      if (Number(params[1]) === 1) row.pipeline_acquired_at = null;
+      if (Number(params[2]) === 1) row.pipeline_lease_token = null;
+      row.updated_at = String(params[3]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_container_request_started_at = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "POSTING" || row.instagram_container_request_started_at || row.instagram_container_id) return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_container_request_started_at = String(params[0]);
+      row.pipeline_stage = "IG_CONTAINER_CREATE_STARTED";
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_container_id = ?") && sql.includes("IG_CONTAINER_CREATED")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row || row.status !== "POSTING" || row.instagram_container_id) return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_container_id = String(params[0]);
+      row.instagram_container_status = "IN_PROGRESS";
+      row.instagram_container_created_at = String(params[1]);
+      row.pipeline_stage = "IG_CONTAINER_CREATED";
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_container_status = ?") && sql.includes("IG_CONTAINER_POLLED")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_container_status = String(params[0]);
+      row.instagram_container_last_polled_at = String(params[1]);
+      row.pipeline_stage = "IG_CONTAINER_POLLED";
+      row.failure_code = null;
+      row.failure_message = null;
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_container_last_polled_at = ?") && sql.includes("failure_code = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[4]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_container_last_polled_at = String(params[0]);
+      row.failure_code = String(params[1]);
+      row.failure_message = String(params[2]);
+      row.updated_at = String(params[3]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_publish_request_started_at = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row || row.status !== "POSTING" || row.instagram_container_status !== "FINISHED" || row.instagram_publish_request_started_at || row.instagram_post_id) return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_publish_request_started_at = String(params[0]);
+      row.instagram_request_started_at = String(params[1]);
+      row.pipeline_stage = "IG_PUBLISH_STARTED";
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("instagram_publish_response_received_at = ?")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[4]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.instagram_post_id = String(params[0]);
+      row.instagram_publish_response_received_at = String(params[1]);
+      row.instagram_response_received_at = String(params[2]);
+      row.pipeline_stage = "IG_PUBLISHED";
+      row.updated_at = String(params[3]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("facebook_request_started_at = ?") && sql.includes("FB_PUBLISH_STARTED")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      if (!row || row.status !== "POSTING" || !row.instagram_post_id || row.facebook_request_started_at || row.facebook_post_id) return { meta: { changes: 0, last_row_id: 0 } };
+      row.facebook_request_started_at = String(params[0]);
+      row.pipeline_stage = "FB_PUBLISH_STARTED";
+      row.updated_at = String(params[1]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
+    if (sql.includes("facebook_response_received_at = ?") && sql.includes("FB_PUBLISHED")) {
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
+      if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
+      row.facebook_post_id = String(params[0]);
+      row.facebook_response_received_at = String(params[1]);
+      row.pipeline_stage = "FB_PUBLISHED";
+      row.updated_at = String(params[2]);
+      return { meta: { changes: 1, last_row_id: 0 } };
+    }
     if (sql.includes("SET status = 'FAILED'")) {
       const isCaptionFailure = sql.includes("caption_openai_response_id");
       const isPublishFailure = sql.includes("published_image_object_key = CASE WHEN");
@@ -522,10 +707,12 @@ class FakeSocialDB {
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("SET published_image_object_key = ?")) {
-      const row = this.rows.find((item) => item.social_post_id === Number(params[2]));
+      const row = this.rows.find((item) => item.social_post_id === Number(params[3]));
       if (!row || row.status !== "POSTING") return { meta: { changes: 0, last_row_id: 0 } };
       row.published_image_object_key = String(params[0]);
-      row.updated_at = String(params[1]);
+      row.publish_r2_completed_at = String(params[1]);
+      row.pipeline_stage = "PUBLIC_ASSET_READY";
+      row.updated_at = String(params[2]);
       return { meta: { changes: 1, last_row_id: 0 } };
     }
     if (sql.includes("SET instagram_post_id = ?")) {
@@ -782,6 +969,7 @@ function readyToPostSeed(overrides: Partial<SocialRow> = {}): Partial<SocialRow>
     processed_object_key: "social/processed/2026-08-05/processed.jpg",
     caption_json: socialCaptionJson(),
     openai_request_count: 2,
+    scheduled_publish_at: "2026-08-05T23:00:00.000Z",
     ...overrides,
   };
 }
@@ -791,6 +979,44 @@ function successfulMetaFetcher(calls: Array<{ input: string; init: RequestInit; 
     const url = String(input);
     const body = String(init?.body ?? "");
     calls.push({ input: url, init: init ?? {}, body });
+    if ((init?.method ?? "GET") === "GET" && url.includes("ig-container-1")) {
+      return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    }
+    if (url.includes("/media_publish")) {
+      if (failures.igPublish) return new Response(JSON.stringify({ error: { message: "IG publish failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ id: "ig-post-1" }), { status: 200 });
+    }
+    if (url.includes("/media")) {
+      if (failures.igCreate) return new Response(JSON.stringify({ error: { message: "IG create failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ id: "ig-container-1" }), { status: 200 });
+    }
+    if (url.includes("/photos")) {
+      if (failures.fb) return new Response(JSON.stringify({ error: { message: "FB publish failed" } }), { status: 400 });
+      return new Response(JSON.stringify({ post_id: "fb-post-1" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "Unexpected Meta endpoint" } }), { status: 404 });
+  }) as typeof fetch;
+}
+
+type MetaPollResult = "IN_PROGRESS" | "FINISHED" | "ERROR" | "EXPIRED" | "NETWORK_ERROR" | "HTTP_401";
+
+function lifecycleMetaFetcher(
+  calls: Array<{ input: string; init: RequestInit; body: string }>,
+  statuses: MetaPollResult[],
+  failures: Partial<Record<"igCreate" | "igPublish" | "fb", boolean>> = {},
+): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = String(init?.body ?? "");
+    calls.push({ input: url, init: init ?? {}, body });
+    if ((init?.method ?? "GET") === "GET" && url.includes("ig-container-1")) {
+      const status = statuses.shift() ?? "IN_PROGRESS";
+      if (status === "NETWORK_ERROR") throw new Error("simulated Meta network timeout");
+      if (status === "HTTP_401") {
+        return new Response(JSON.stringify({ error: { message: "Invalid OAuth access token" } }), { status: 401 });
+      }
+      return new Response(JSON.stringify({ status_code: status }), { status: 200 });
+    }
     if (url.includes("/media_publish")) {
       if (failures.igPublish) return new Response(JSON.stringify({ error: { message: "IG publish failed" } }), { status: 400 });
       return new Response(JSON.stringify({ id: "ig-post-1" }), { status: 200 });
@@ -1357,16 +1583,18 @@ test("social publish processes one ready post, publishes IG and FB, then deletes
   assert.equal(result.cleaned, true);
   assert.equal(result.instagramPostId, "ig-post-1");
   assert.equal(result.facebookPostId, "fb-post-1");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.match(calls[0]!.input, /graph\.facebook\.com\/v25\.0\/ig-business-1\/media$/);
-  assert.match(calls[1]!.input, /graph\.facebook\.com\/v25\.0\/ig-business-1\/media_publish$/);
-  assert.match(calls[2]!.input, /graph\.facebook\.com\/v25\.0\/fb-page-1\/photos$/);
+  assert.equal(calls[1]!.init.method, "GET");
+  assert.match(calls[1]!.input, /graph\.facebook\.com\/v25\.0\/ig-container-1\?fields=status_code,status$/);
+  assert.match(calls[2]!.input, /graph\.facebook\.com\/v25\.0\/ig-business-1\/media_publish$/);
+  assert.match(calls[3]!.input, /graph\.facebook\.com\/v25\.0\/fb-page-1\/photos$/);
   assert.equal(calls.every((call) => call.init.headers && String((call.init.headers as Record<string, string>).authorization).startsWith("Bearer ")), true);
   assert.match(calls[0]!.body, /image_url=/);
   assert.match(calls[0]!.body, /caption=/);
   assert.match(calls[0]!.body, /Wood\+grain/);
-  assert.match(calls[2]!.body, /caption=/);
-  assert.match(calls[2]!.body, /Wood\+grain/);
+  assert.match(calls[3]!.body, /caption=/);
+  assert.match(calls[3]!.body, /Wood\+grain/);
   assert.equal(db.rows.some((row) => row.social_post_id === older.social_post_id), false);
   assert.equal(db.rows.find((row) => row.social_post_id === newer.social_post_id)?.status, "READY_TO_POST");
   assert.equal(r2.objects.has(older.original_object_key), false);
@@ -1390,7 +1618,7 @@ test("social publish serves only temporary public publish assets", async () => {
   assert.equal(blocked.status, 404);
 });
 
-test("social publish failure keeps private images, removes public temp copy, and preserves partial provider ids", async () => {
+test("social publish failure keeps private and public images and preserves partial provider ids", async () => {
   const db = new FakeSocialDB();
   const r2 = new FakeR2Storage();
   const row = db.seed(readyToPostSeed({ social_post_id: 70 }));
@@ -1410,10 +1638,10 @@ test("social publish failure keeps private images, removes public temp copy, and
   assert.equal(saved?.status, "FAILED");
   assert.equal(saved?.failure_code, "meta_facebook_publish_failed");
   assert.equal(saved?.instagram_post_id, "ig-post-1");
-  assert.equal(saved?.published_image_object_key, null);
+  assert.match(saved?.published_image_object_key ?? "", /^social\/public-publish\//);
   assert.equal(r2.objects.has(row.original_object_key), true);
   assert.equal(r2.objects.has(row.processed_object_key!), true);
-  assert.equal([...r2.objects.keys()].some((key) => key.startsWith(`${SOCIAL_PUBLIC_PUBLISH_PREFIX}/`)), false);
+  assert.equal([...r2.objects.keys()].some((key) => key.startsWith(`${SOCIAL_PUBLIC_PUBLISH_PREFIX}/`)), true);
 });
 
 test("social publish marks cleanup failure and retains DB row when R2 deletion fails", async () => {
@@ -1457,6 +1685,226 @@ test("social publish blocks invalid captions and non-ready items without Meta ca
     /not eligible/,
   );
   assert.equal(failedCalls.length, 0);
+});
+
+test("social publish waits for a delayed Instagram container and resumes by GET without recreating it", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 92 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const fetcher = lifecycleMetaFetcher(calls, ["IN_PROGRESS", "FINISHED"]);
+
+  const first = await publishNextSocialPost(env(db, r2, fetcher), {
+    now: "2026-08-06T00:00:00.000Z",
+    maxContainerPolls: 1,
+    sleep: async () => undefined,
+  });
+  assert.equal(first.pending, true);
+  assert.equal(db.rows[0]?.status, "POSTING");
+  assert.equal(db.rows[0]?.instagram_container_id, "ig-container-1");
+  assert.equal(db.rows[0]?.openai_request_count, 2);
+  const publicKey = db.rows[0]?.published_image_object_key;
+  assert.ok(publicKey);
+  assert.equal((await getSocialPublishAsset(env(db, r2), `${socialPublishAssetTokenFromKey(publicKey)}.jpg`)).status, 200);
+
+  const second = await resumePendingSocialPost(env(db, r2, fetcher), {
+    now: "2026-08-06T00:10:00.000Z",
+    maxContainerPolls: 1,
+    sleep: async () => undefined,
+  });
+  assert.equal(second.published, true);
+  assert.equal(second.cleaned, true);
+  assert.equal(db.rows.length, 0);
+  assert.equal(calls.filter((call) => call.init.method === "POST" && /\/media$/.test(call.input)).length, 1);
+  assert.equal(calls.filter((call) => call.init.method === "GET" && call.input.includes("ig-container-1")).length, 2);
+  assert.equal(calls.filter((call) => call.input.includes("/media_publish")).length, 1);
+  assert.equal(calls.filter((call) => call.input.includes("/photos")).length, 1);
+  assert.equal(calls.some((call) => call.input.includes("api.openai.com")), false);
+  assert.equal(db.events.some((event) => event.event_type === "IG_CONTAINER_CREATED"), true);
+  assert.equal(db.events.some((event) => event.event_type === "IG_PUBLISHED"), true);
+  assert.equal(db.events.some((event) => event.event_type === "FB_PUBLISHED"), true);
+});
+
+test("social publish defers a transient container poll failure and later resumes without a second create POST", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 93 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const fetcher = lifecycleMetaFetcher(calls, ["NETWORK_ERROR", "FINISHED"]);
+
+  const first = await publishNextSocialPost(env(db, r2, fetcher), {
+    now: "2026-08-06T00:00:00.000Z",
+    maxContainerPolls: 1,
+  });
+  assert.equal(first.pending, true);
+  assert.equal(db.rows[0]?.pipeline_stage, "IG_CONTAINER_POLL_DEFERRED");
+
+  const resumed = await resumePendingSocialPost(env(db, r2, fetcher), {
+    now: "2026-08-06T00:10:00.000Z",
+    maxContainerPolls: 1,
+    sleep: async () => undefined,
+  });
+  assert.equal(resumed.published, true);
+  assert.equal(calls.filter((call) => call.init.method === "POST" && /\/media$/.test(call.input)).length, 1);
+});
+
+test("social publish sends terminal container and invalid-token states to manual review with assets retained", async () => {
+  for (const status of ["ERROR", "EXPIRED", "HTTP_401"] as const) {
+    const db = new FakeSocialDB();
+    const r2 = new FakeR2Storage();
+    const row = db.seed(readyToPostSeed({ social_post_id: status === "ERROR" ? 94 : status === "EXPIRED" ? 95 : 96 }));
+    r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+    r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+    const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+    const result = await publishNextSocialPost(env(db, r2, lifecycleMetaFetcher(calls, [status])), {
+      now: "2026-08-06T00:00:00.000Z",
+      maxContainerPolls: 1,
+      sleep: async () => undefined,
+    });
+    assert.equal(result.manualReview, true);
+    assert.equal(db.rows[0]?.status, "FAILED");
+    assert.equal(db.rows[0]?.pipeline_stage, "MANUAL_REVIEW");
+    assert.equal(r2.objects.has(row.original_object_key), true);
+    assert.equal(r2.objects.has(row.processed_object_key!), true);
+    assert.equal(calls.filter((call) => call.input.includes("/media_publish")).length, 0);
+    assert.equal(calls.filter((call) => call.input.includes("/photos")).length, 0);
+  }
+});
+
+test("social publish restart after Instagram confirmation skips Instagram and publishes Facebook once", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const publicKey = "social/public-publish/2026-08-06/restart.jpg";
+  const row = db.seed(readyToPostSeed({
+    social_post_id: 97,
+    status: "POSTING",
+    pipeline_stage: "IG_PUBLISHED",
+    pipeline_acquired_at: null,
+    pipeline_lease_token: null,
+    published_image_object_key: publicKey,
+    instagram_container_id: "ig-container-1",
+    instagram_container_status: "FINISHED",
+    instagram_post_id: "ig-post-1",
+    instagram_publish_request_started_at: "2026-08-06T00:00:00.000Z",
+    instagram_publish_response_received_at: "2026-08-06T00:00:01.000Z",
+  }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(publicKey, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const result = await resumePendingSocialPost(env(db, r2, lifecycleMetaFetcher(calls, [])), {
+    now: "2026-08-06T00:20:00.000Z",
+  });
+  assert.equal(result.published, true);
+  assert.equal(calls.filter((call) => call.input.includes("/media")).length, 0);
+  assert.equal(calls.filter((call) => call.input.includes("ig-container-1")).length, 0);
+  assert.equal(calls.filter((call) => call.input.includes("/photos")).length, 1);
+});
+
+test("social publish lease prevents duplicate cron container creation", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 98 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const data = env(db, r2, lifecycleMetaFetcher(calls, ["IN_PROGRESS"]));
+
+  const results = await Promise.all([
+    publishNextSocialPost(data, { now: "2026-08-06T00:00:00.000Z", maxContainerPolls: 1, sleep: async () => undefined }),
+    publishNextSocialPost(data, { now: "2026-08-06T00:00:00.000Z", maxContainerPolls: 1, sleep: async () => undefined }),
+  ]);
+  assert.equal(results.filter((result) => result.pending).length, 1);
+  assert.equal(calls.filter((call) => call.init.method === "POST" && /\/media$/.test(call.input)).length, 1);
+  assert.equal(db.rows[0]?.openai_request_count, 2);
+});
+
+test("ambiguous Instagram create never issues a second container POST", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 101 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ input: String(input), init: init ?? {}, body: String(init?.body ?? "") });
+    throw new Error("simulated timeout after request dispatch");
+  }) as typeof fetch;
+
+  const first = await publishNextSocialPost(env(db, r2, fetcher), { now: "2026-08-06T00:00:00.000Z" });
+  assert.equal(first.manualReview, true);
+  assert.equal(db.rows[0]?.instagram_container_request_started_at, "2026-08-06T00:00:00.000Z");
+  assert.equal(db.rows[0]?.instagram_container_id, null);
+  assert.equal(calls.length, 1);
+  const second = await publishNextSocialPost(env(db, r2, fetcher), { now: "2026-08-06T00:20:00.000Z" });
+  assert.equal(second.published, false);
+  assert.equal(calls.length, 1);
+  assert.equal(r2.objects.has(row.original_object_key), true);
+  assert.equal(r2.objects.has(row.processed_object_key!), true);
+});
+
+test("ambiguous Facebook outcome retains the Instagram id and cannot duplicate either platform", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 102 }));
+  r2.objects.set(row.original_object_key, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const baseFetcher = lifecycleMetaFetcher(calls, ["FINISHED"]);
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/photos")) {
+      calls.push({ input: String(input), init: init ?? {}, body: String(init?.body ?? "") });
+      throw new Error("simulated Facebook timeout after dispatch");
+    }
+    return baseFetcher(input, init);
+  }) as typeof fetch;
+
+  const first = await publishNextSocialPost(env(db, r2, fetcher), { now: "2026-08-06T00:00:00.000Z" });
+  assert.equal(first.manualReview, true);
+  assert.equal(db.rows[0]?.instagram_post_id, "ig-post-1");
+  assert.equal(db.rows[0]?.facebook_post_id, null);
+  assert.equal(db.rows[0]?.facebook_request_started_at, "2026-08-06T00:00:00.000Z");
+  assert.equal(calls.filter((call) => call.input.includes("/media_publish")).length, 1);
+  assert.equal(calls.filter((call) => call.input.includes("/photos")).length, 1);
+  await publishNextSocialPost(env(db, r2, fetcher), { now: "2026-08-06T00:20:00.000Z" });
+  assert.equal(calls.filter((call) => call.input.includes("/media_publish")).length, 1);
+  assert.equal(calls.filter((call) => call.input.includes("/photos")).length, 1);
+  assert.equal(r2.objects.has(row.original_object_key), true);
+  assert.equal(r2.objects.has(row.processed_object_key!), true);
+});
+
+test("social publish never calls Meta when the processed public source is missing", async () => {
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  db.seed(readyToPostSeed({ social_post_id: 99 }));
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+
+  const result = await publishNextSocialPost(env(db, r2, lifecycleMetaFetcher(calls, [])), {
+    now: "2026-08-06T00:00:00.000Z",
+  });
+  assert.equal(result.manualReview, true);
+  assert.equal(db.rows[0]?.failure_code, "processed_image_missing");
+  assert.equal(calls.length, 0);
+});
+
+test("social scheduling uses the next 06:00 Bangkok slot and cron ignores future jobs", async () => {
+  assert.equal(nextSocialPublishAt("2026-08-13T20:00:00.000Z"), "2026-08-13T23:00:00.000Z");
+  assert.equal(nextSocialPublishAt("2026-08-13T23:01:00.000Z"), "2026-08-14T23:00:00.000Z");
+  const db = new FakeSocialDB();
+  const r2 = new FakeR2Storage();
+  const row = db.seed(readyToPostSeed({ social_post_id: 100, scheduled_publish_at: "2026-08-14T23:00:00.000Z" }));
+  r2.objects.set(row.processed_object_key!, { body: fakeJpegBuffer(), contentType: "image/jpeg" });
+  const calls: Array<{ input: string; init: RequestInit; body: string }> = [];
+  const result = await publishNextSocialPost(env(db, r2, lifecycleMetaFetcher(calls, [])), { now: "2026-08-14T22:59:59.000Z" });
+  assert.equal(result.published, false);
+  assert.equal(db.rows[0]?.status, "READY_TO_POST");
+  assert.equal(calls.length, 0);
 });
 
 test("social automation endpoints are owner-only and use the dedicated social permission", async () => {
@@ -1565,13 +2013,14 @@ test("social publish endpoint requires owner edit permission and publishes a rea
   assert.equal(body.success, true);
   assert.equal((body.data as { published: boolean; cleaned: boolean }).published, true);
   assert.equal((body.data as { published: boolean; cleaned: boolean }).cleaned, true);
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.equal(db.rows.length, 0);
 });
 
 test("social automation foundation is additive, staged, and isolates Meta publishing", () => {
   const migration = readFileSync(new URL("../migrations/0035_social_automation_foundation.sql", import.meta.url), "utf8");
   const reliabilityMigration = readFileSync(new URL("../migrations/0047_social_image_reliability.sql", import.meta.url), "utf8");
+  const metaRecoveryMigration = readFileSync(new URL("../migrations/0052_social_meta_publish_recovery.sql", import.meta.url), "utf8");
   const server = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/social-automation.service.ts", import.meta.url), "utf8");
   const imageService = readFileSync(new URL("../src/services/social-image-preparation.service.ts", import.meta.url), "utf8");
@@ -1599,6 +2048,12 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(reliabilityMigration, /image_response_received_at/);
   assert.match(reliabilityMigration, /image_recovery_state/);
   assert.doesNotMatch(reliabilityMigration, /\bDROP\b|\bDELETE\b/i);
+  assert.match(metaRecoveryMigration, /instagram_container_id/);
+  assert.match(metaRecoveryMigration, /instagram_container_status/);
+  assert.match(metaRecoveryMigration, /instagram_container_last_polled_at/);
+  assert.match(metaRecoveryMigration, /CREATE TABLE IF NOT EXISTS social_post_events/);
+  assert.match(metaRecoveryMigration, /UNIQUE \(social_post_id, dedupe_key\)/);
+  assert.doesNotMatch(metaRecoveryMigration, /\bDROP\b|\bDELETE\b/i);
 
   assert.match(server, /function socialOwner/);
   assert.match(server, /requireOwner\(user\)/);
@@ -1612,14 +2067,14 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(server, /app\.post\("\/api\/social\/posts\/:id\/publish"/);
   assert.match(server, /app\.get\("\/api\/social\/publish-assets\/:assetId"/);
   assert.match(server, /controller\.cron === SOCIAL_IMAGE_PREPARE_CRON/);
-  assert.match(server, /controller\.cron === SOCIAL_CAPTION_CRON/);
   assert.match(server, /controller\.cron === SOCIAL_PUBLISH_CRON/);
+  assert.match(server, /prepareNextSocialCaption\(env\)/);
+  assert.match(server, /resumePendingSocialPost\(env\)/);
   assert.equal(SOCIAL_IMAGE_PREPARE_CRON, "*/10 * * * *");
-  assert.equal(SOCIAL_CAPTION_CRON, "30 23 * * *");
-  assert.equal(SOCIAL_PUBLISH_CRON, "0 0 * * *");
+  assert.equal(SOCIAL_PUBLISH_CRON, "0 23 * * *");
   assert.match(wrangler, /"\*\/10 \* \* \* \*"/);
-  assert.match(wrangler, /"30 23 \* \* \*"/);
-  assert.match(wrangler, /"0 0 \* \* \*"/);
+  assert.match(wrangler, /"0 23 \* \* \*"/);
+  assert.doesNotMatch(wrangler, /"30 23 \* \* \*"|"0 0 \* \* \*"/);
   assert.match(service, /const SOCIAL_UPLOAD_PREFIX = "social\/uploads"/);
   assert.match(service, /"image\/jpeg": "jpg"/);
   assert.match(service, /"image\/png": "png"/);
@@ -1745,14 +2200,15 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(publishService, /\/media_publish/);
   assert.match(publishService, /\/photos/);
   assert.match(publishService, /DELETE FROM social_post_queue WHERE social_post_id = \?/);
-  assert.match(publishService, /env\.R2_STORAGE\.delete\(leased\.original_object_key\)|cleanupKeys/);
+  assert.match(publishService, /const keys = \[row\.original_object_key, row\.processed_object_key, row\.published_image_object_key\]/);
+  assert.match(publishService, /Promise\.all\(keys\.map\(\(key\) => env\.R2_STORAGE\.delete\(key\)\)\)/);
   assert.match(publishService, /publish_cleanup_failed/);
   assert.match(publishService, /social_publish_config_missing/);
   assert.match(publishService, /getSocialPublishAsset/);
   assert.match(publishService, /startsWith\(`\$\{SOCIAL_PUBLIC_PUBLISH_PREFIX\}\//);
   assert.match(publishService, /"cache-control": "no-store, max-age=0"/);
   assert.doesNotMatch(publishService, /max-age=300/);
-  assert.match(publishService, /clearPublishedImageObjectKey: true/);
+  assert.match(publishService, /Both Meta confirmations are required before cleanup/);
   assert.doesNotMatch(publishService, /error\.code, error\.message, now, \{ instagramPostId, facebookPostId, publishedImageObjectKey: publicKey \}/);
   assert.doesNotMatch(publishService, /OPENAI_RESPONSES_URL|OPENAI_API_KEY|input_image|image_generation|Cloudinary|google-drive|Google Drive|APP_SECRET/i);
   assert.doesNotMatch(publishService, /access_token/);

@@ -16,7 +16,7 @@
     "server/migrations/0042_push_notifications.sql": "0202a19c97233c0049f825e0ba98d754904e852c11618f23f363e28cf0a5ae65",
     "server/migrations/0044_notification_event_sound_type.sql": "402bc953d965f5ac637871465de26e99342e0c86f632d5456aa8456b69a00809",
     "server/package.json": "3d66ca225e1852f4750106adaf96972dd9e69b3e75b287762c172850cafecb3b",
-    "server/src/index.ts": "0eaa256439a26e4d57df09d1df85df2b379f39911126b895c8e465f1d5faabe3",
+    "server/src/index.ts": "0a130abffc81d814d3d363831a01beecffa4b8ec7eb99d7489025a996125cac6",
     "server/src/services/chat-conversation-room.do.ts": "ac3bd2066aea4dca5f1de41bdd6306362441870be226baad96bafaa3ea6f6618",
     "server/src/services/chat-realtime.service.ts": "7c7fa56d5771afcfaa87517ee98a6950956fdd38a8aefb751583c425d6078e72",
     "server/src/services/chat-stickers.service.ts": "18a8f386c4c6ede49845bd76d1359b14f5836e2da8fccfd0b2a63ad204a32383",

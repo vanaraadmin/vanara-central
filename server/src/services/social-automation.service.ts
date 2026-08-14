@@ -47,6 +47,8 @@ export interface SocialPostQueueItem {
   imageFinalizedAt?: string | null;
   imageWatchdogAt?: string | null;
   imageRecoveryState?: string | null;
+  pipelineStage?: string | null;
+  instagramContainerStatus?: string | null;
 }
 
 export interface SocialAutomationOverview {
@@ -89,6 +91,8 @@ interface SocialPostQueueRow {
   image_finalized_at: string | null;
   image_watchdog_at: string | null;
   image_recovery_state: string | null;
+  pipeline_stage: string | null;
+  instagram_container_status: string | null;
 }
 
 interface StatusCountRow {
@@ -147,7 +151,20 @@ function rowToItem(row: SocialPostQueueRow): SocialPostQueueItem {
     imageFinalizedAt: row.image_finalized_at,
     imageWatchdogAt: row.image_watchdog_at,
     imageRecoveryState: row.image_recovery_state,
+    pipelineStage: row.pipeline_stage,
+    instagramContainerStatus: row.instagram_container_status,
   };
+}
+
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+export function nextSocialPublishAt(nowIso: string): string {
+  const now = new Date(nowIso);
+  if (Number.isNaN(now.getTime())) throw new Error("Invalid social upload timestamp.");
+  const bangkok = new Date(now.getTime() + BANGKOK_OFFSET_MS);
+  const targetDay = bangkok.getUTCHours() < 6 ? bangkok.getUTCDate() : bangkok.getUTCDate() + 1;
+  const localSix = Date.UTC(bangkok.getUTCFullYear(), bangkok.getUTCMonth(), targetDay, 6, 0, 0, 0);
+  return new Date(localSix - BANGKOK_OFFSET_MS).toISOString();
 }
 
 function cleanFileName(value: string): string {
@@ -212,7 +229,9 @@ export async function listSocialAutomationOverview(env: SocialAutomationBindings
         image_response_received_at,
         image_finalized_at,
         image_watchdog_at,
-        image_recovery_state
+        image_recovery_state,
+        pipeline_stage,
+        instagram_container_status
       FROM social_post_queue
       ORDER BY queued_at DESC, social_post_id DESC
       LIMIT ?
@@ -238,6 +257,7 @@ export async function queueSocialPhoto(
 ): Promise<SocialPostQueueItem> {
   const fileName = cleanFileName(input.file.name);
   const key = objectKey(input.file.type, now);
+  const scheduledPublishAt = nextSocialPublishAt(now);
   const bytes = await input.file.arrayBuffer();
 
   await env.R2_STORAGE.put(key, bytes, {
@@ -260,8 +280,9 @@ export async function queueSocialPhoto(
         uploaded_by_name,
         status,
         queued_at,
+        scheduled_publish_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)
     `).bind(
       key,
       fileName,
@@ -270,6 +291,7 @@ export async function queueSocialPhoto(
       user.id,
       user.displayName,
       now,
+      scheduledPublishAt,
       now,
     ).run();
   } catch (error) {
@@ -308,7 +330,9 @@ export async function queueSocialPhoto(
       image_response_received_at,
       image_finalized_at,
       image_watchdog_at,
-      image_recovery_state
+      image_recovery_state,
+      pipeline_stage,
+      instagram_container_status
     FROM social_post_queue
     WHERE original_object_key = ?
   `).bind(key).first<SocialPostQueueRow>();

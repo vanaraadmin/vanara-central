@@ -30,10 +30,10 @@ import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, creat
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
 import { addPayrollEvent, finalizePayroll, generatePayrollStatementPdf, getPayrollOverview, getPayrollWorker, normalizePayrollEventInput, normalizePayrollMonth, normalizePayrollSettingsInput, savePayrollDraft, savePayrollSettings, type PayrollBindings } from "./services/payroll.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
-import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, SOCIAL_CAPTION_CRON, type SocialCaptionBindings } from "./services/social-caption.service.js";
+import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, type SocialCaptionBindings } from "./services/social-caption.service.js";
 import { runSocialCommentAutomation, SOCIAL_COMMENT_CRON, type SocialCommentBindings } from "./services/social-comments.service.js";
 import { prepareSocialImage, SocialImagePreparationError, SOCIAL_IMAGE_PREPARE_CRON, type SocialImagePreparationBindings } from "./services/social-image-preparation.service.js";
-import { getSocialPublishAsset, publishNextSocialPost, publishSocialPost, SocialPublishError, SOCIAL_PUBLISH_CRON, type SocialPublishBindings } from "./services/social-publish.service.js";
+import { getSocialPublishAsset, publishNextSocialPost, publishSocialPost, resumePendingSocialPost, SocialPublishError, SOCIAL_PUBLISH_CRON, type SocialPublishBindings } from "./services/social-publish.service.js";
 import { extractPassportReview, PassportOcrError, validatePassportData, type PassportData, type PassportOcrBindings, type PassportReviewValidation } from "./services/passport-ocr.service.js";
 import { classifyPassportImageWithTiming, decidePassportClassification, PassportClassificationError, type PassportClassificationBindings } from "./services/passport-classification.service.js";
 import { isPassportLivePreflightReady, PassportLivePreflightError, runPassportLivePreflight, type PassportLivePreflightBindings } from "./services/passport-live-preflight.service.js";
@@ -2649,12 +2649,13 @@ export default {
       ctx.waitUntil(publishNextSocialPost(env).then(() => undefined));
       return;
     }
-    if (controller.cron === SOCIAL_CAPTION_CRON) {
-      ctx.waitUntil(prepareNextSocialCaption(env).then(() => undefined));
-      return;
-    }
     if (controller.cron === SOCIAL_IMAGE_PREPARE_CRON) {
-      ctx.waitUntil(prepareSocialImage(env).then(() => undefined));
+      ctx.waitUntil(
+        prepareSocialImage(env)
+          .then(() => prepareNextSocialCaption(env))
+          .then(() => resumePendingSocialPost(env))
+          .then(() => undefined),
+      );
       return;
     }
     if (controller.cron === "15 3 1 * *") {
