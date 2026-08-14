@@ -229,12 +229,14 @@ test("housekeeping generation uses internal booking ids while UI still exposes B
   assert.match(roomService, /WHERE booking_id = \?/);
 });
 
-test("housekeeping and room read models resolve internal unit codes into readable room labels", () => {
-  assert.match(roomDisplayLabelService, /function looksLikeInternalUnitCode/);
-  assert.match(roomDisplayLabelService, /\[4,\s*"Bungalow 2"\]/);
+test("housekeeping and room read models require canonical unit names without hardcoded room guessing", () => {
+  assert.match(roomDisplayLabelService, /export function looksLikeExternalUnitCode/);
+  assert.match(roomDisplayLabelService, /export function canonicalUnitName/);
   assert.match(roomDisplayLabelService, /export function readableUnitName/);
+  assert.doesNotMatch(roomDisplayLabelService, /VANARA_UNIT_NAMES|new Map<number, string>|Bungalow 2/);
 
-  assert.match(overviewService, /import \{ readableUnitName \} from "\.\/room-display-label\.service\.js"/);
+  assert.match(overviewService, /canonicalUnitName, readableUnitName/);
+  assert.match(overviewService, /housekeeping_raw_external_unit_code/);
   assert.match(overviewService, /unitName:\s*readableUnitName\(context\.unit\)/);
   assert.match(roomService, /unitName:\s*readableUnitName\(unit\)/);
   assert.match(roomDetailService, /roomName:\s*readableUnitName\(unit\)/);

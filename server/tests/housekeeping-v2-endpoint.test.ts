@@ -226,7 +226,7 @@ class FakeHousekeepingV2DB {
     if (sql.includes("INSERT OR IGNORE INTO housekeeping_task_checklist_items")) return { meta: { changes: 1, last_row_id: 1 } };
     if (sql.includes("INSERT INTO housekeeping_room_counters") && sql.includes("last_standard_cleaning_at")) return this.insertCompletionCounter(params);
     if (sql.includes("INSERT INTO housekeeping_room_counters")) return this.upsertCounter(params);
-    if (sql.includes("UPDATE housekeeping_tasks SET")) return this.updateTask(sql, params);
+    if (sql.includes("UPDATE housekeeping_tasks")) return this.updateTask(sql, params);
     if (sql.includes("UPDATE housekeeping_room_counters SET")) return { meta: { changes: 1, last_row_id: 0 } };
     return { meta: { changes: 0, last_row_id: 0 } };
   }
@@ -297,6 +297,12 @@ class FakeHousekeepingV2DB {
     const expectedVersion = Number(params.at(-1));
     const task = this.tasks.find((item) => item.task_id === taskId && item.version === expectedVersion);
     if (!task) return { meta: { changes: 0, last_row_id: 0 } };
+    if (sql.includes("SET priority = ?")) {
+      task.priority = params[0] as TaskRow["priority"];
+      task.updated_at = String(params[1]);
+      task.version += 1;
+      return { meta: { changes: 1, last_row_id: taskId } };
+    }
     const now = String(params[1]);
     task.status = params[0] as HousekeepingTaskStatus;
     task.updated_at = now;
@@ -471,7 +477,7 @@ test("housekeeping v2 tasks returns 200 when repeated water refill creation repl
   assert.equal(quantities.get(3), 4);
 });
 
-test("water refill cards use readable Vanara unit labels instead of internal room codes", async () => {
+test("water refill tasks with an unmapped external room code are diagnosed and excluded", async () => {
   const db = new FakeHousekeepingV2DB();
   db.unitRows = [
     { unit_id: 4, unit_name: "E2", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 2 },
@@ -485,9 +491,137 @@ test("water refill cards use readable Vanara unit labels instead of internal roo
 
   assert.equal(response.status, 200, JSON.stringify(body));
   const waterTask = body.data.tasks.find((card) => card.taskType === "WATER_REFILL");
+  assert.equal(waterTask, undefined);
+  assert.equal(body.data.tasks.some((card) => card.unitName === "E2"), false);
+});
+
+test("water refill resolves canonical unit id 3 as Bungalow 1 without external-code fallback", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 3, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 1 },
+  ];
+  db.bookings = [
+    { ...booking(105, 900105, 3, "Water Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
+  ];
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
+  const body = await response.json() as { success: boolean; data: { tasks: Array<{ taskType: string | null; unitId: number; unitName: string }> } };
+  const waterTask = body.data.tasks.find((card) => card.taskType === "WATER_REFILL");
+  assert.equal(response.status, 200, JSON.stringify(body));
   assert.ok(waterTask);
-  assert.equal(waterTask.unitName, "Bungalow 2");
-  assert.notEqual(waterTask.unitName, "E2");
+  assert.equal(waterTask.unitId, 3);
+  assert.equal(waterTask.unitName, "Bungalow 1");
+});
+
+test("three checkouts and zero same-day incoming stays produce three normal tasks and remain idempotent", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.bookings = [
+    { ...booking(106, 900106, 1, "Departure One", 2, 0), departure_date: "2026-08-14", room_released: 0 },
+    { ...booking(107, 900107, 2, "Departure Two", 2, 0), departure_date: "2026-08-14", room_released: 0 },
+    { ...booking(108, 900108, 3, "Departure Three", 2, 0), departure_date: "2026-08-14", room_released: 0 },
+  ];
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
+    const body = await response.json() as { data: { sections: Array<{ id: string; cards: Array<{ taskType: string; priority: string }> }> } };
+    assert.equal(response.status, 200, JSON.stringify(body));
+    const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
+    const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
+    assert.equal(priority.filter((card) => card.taskType === "TURNOVER").length, 0);
+    assert.equal(normal.filter((card) => card.taskType === "TURNOVER" && card.priority === "NORMAL").length, 3);
+  }
+  assert.equal(db.tasks.filter((task) => task.task_type === "TURNOVER").length, 3);
+});
+
+test("same-day incoming moved from Bungalow 2 to Bungalow 3 moves priority and demotes stale room", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 2, unit_name: "Bungalow 2", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 2 },
+    { unit_id: 3, unit_name: "Bungalow 3", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 3 },
+  ];
+  db.bookings = [
+    { ...booking(109, 900109, 2, "Departure B2", 2, 0), departure_date: "2026-08-14", room_released: 1 },
+    { ...booking(110, 900110, 3, "Departure B3", 2, 0), departure_date: "2026-08-14", room_released: 1 },
+    { ...booking(111, 900111, 3, "Incoming moved to B3", 2, 0), arrival_date: "2026-08-14", departure_date: "2026-08-18", guest_arrived: 0, room_released: 0 },
+  ];
+  db.tasks.push(
+    storedTask({ task_id: 140, task_type: "TURNOVER", unit_id: 2, booking_id: 109, stay_id: 900109, operational_date: "2026-08-14", due_cycle_date: "2026-08-14", priority: "HIGH", status: "AVAILABLE_FOR_CLAIM" }),
+    storedTask({ task_id: 141, task_type: "TURNOVER", unit_id: 3, booking_id: 110, stay_id: 900110, operational_date: "2026-08-14", due_cycle_date: "2026-08-14", priority: "NORMAL", status: "AVAILABLE_FOR_CLAIM" }),
+  );
+
+  const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
+  const body = await response.json() as { data: { tasks: Array<{ unitId: number; taskType: string; priority: string; currentQueue: string }> } };
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const b2 = body.data.tasks.find((card) => card.unitId === 2 && card.taskType === "TURNOVER");
+  const b3 = body.data.tasks.find((card) => card.unitId === 3 && card.taskType === "TURNOVER");
+  assert.deepEqual([b2?.priority, b2?.currentQueue], ["NORMAL", "normal-cleaning"]);
+  assert.deepEqual([b3?.priority, b3?.currentQueue], ["HIGH", "priority-turnover"]);
+  assert.equal(db.tasks.find((task) => task.task_id === 140)?.priority, "NORMAL");
+  assert.equal(db.tasks.find((task) => task.task_id === 141)?.priority, "HIGH");
+});
+
+test("a newer room cycle cancels overdue active tasks from the previous stay exactly once", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 3, unit_name: "Bungalow 3", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 3 },
+  ];
+  db.bookings = [
+    { ...booking(112, 900112, 3, "Previous Stay", 2, 0), arrival_date: "2026-08-02", departure_date: "2026-08-07", guest_arrived: 1, room_released: 1 },
+    { ...booking(113, 900113, 3, "Current Stay", 2, 0), arrival_date: "2026-08-12", departure_date: "2026-08-14", guest_arrived: 1, room_released: 0 },
+  ];
+  db.tasks.push(
+    storedTask({ task_id: 150, task_type: "STANDARD_CLEANING", unit_id: 3, booking_id: 112, stay_id: 900112, operational_date: "2026-08-06", due_cycle_date: "2026-08-05", status: "AVAILABLE_FOR_CLAIM" }),
+    storedTask({ task_id: 151, task_type: "WATER_REFILL", unit_id: 3, booking_id: 112, stay_id: 900112, operational_date: "2026-08-06", due_cycle_date: "2026-08-06", status: "AVAILABLE_FOR_CLAIM" }),
+    storedTask({ task_id: 152, task_type: "TURNOVER", unit_id: 3, booking_id: 112, stay_id: 900112, operational_date: "2026-08-07", due_cycle_date: "2026-08-07", status: "AVAILABLE_FOR_CLAIM", priority: "HIGH" }),
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(db.tasks.filter((task) => [150, 151, 152].includes(task.task_id)).map((task) => task.status), ["CANCELLED", "CANCELLED", "CANCELLED"]);
+  assert.equal(db.events.filter((event) => [150, 151, 152].includes(event.task_id) && event.event_type === "cancel").length, 3);
+});
+
+test("an overdue task remains active when no later operational room cycle exists", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 3, unit_name: "Bungalow 3", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 3 },
+  ];
+  db.bookings = [
+    { ...booking(114, 900114, 3, "Previous Stay", 2, 0), arrival_date: "2026-08-02", departure_date: "2026-08-07", guest_arrived: 1, room_released: 1 },
+  ];
+  db.tasks.push(
+    storedTask({ task_id: 153, task_type: "TURNOVER", unit_id: 3, booking_id: 114, stay_id: 900114, operational_date: "2026-08-07", due_cycle_date: "2026-08-07", status: "AVAILABLE_FOR_CLAIM", priority: "NORMAL" }),
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
+    assert.equal(response.status, 200);
+  }
+  assert.equal(db.tasks.find((task) => task.task_id === 153)?.status, "AVAILABLE_FOR_CLAIM");
+  assert.equal(db.events.filter((event) => event.task_id === 153 && event.event_type === "cancel").length, 0);
+});
+
+test("a future booking does not cancel an active water refill from the current stay", async () => {
+  const db = new FakeHousekeepingV2DB();
+  db.unitRows = [
+    { unit_id: 3, unit_name: "Bungalow 1", unit_type: "bungalow", room_type_name: "Bungalow", room_name: "Bungalow", position: 1 },
+  ];
+  db.bookings = [
+    { ...booking(115, 900115, 3, "Current Stay", 2, 0), arrival_date: "2026-08-12", departure_date: "2026-08-20", guest_arrived: 1, room_released: 0 },
+    { ...booking(116, 900116, 3, "Future Stay", 2, 0), arrival_date: "2026-09-10", departure_date: "2026-09-15", guest_arrived: 0, room_released: 0 },
+  ];
+  db.tasks.push(
+    storedTask({ task_id: 154, task_type: "WATER_REFILL", unit_id: 3, booking_id: 115, stay_id: 900115, operational_date: "2026-08-13", due_cycle_date: "2026-08-13", status: "AVAILABLE_FOR_CLAIM", priority: "NORMAL" }),
+  );
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
+    assert.equal(response.status, 200);
+  }
+  assert.equal(db.tasks.find((task) => task.task_id === 154)?.status, "AVAILABLE_FOR_CLAIM");
+  assert.equal(db.events.filter((event) => event.task_id === 154 && event.event_type === "cancel").length, 0);
 });
 
 test("water refill is not generated on arrival day and starts the following occupied day", async () => {
@@ -728,7 +862,7 @@ test("Beds room swap reconciles both old-unit turnovers and keeps one valid task
 });
 
 for (const scenario of [
-  { label: "next-day", arrivalDate: "2026-08-04", expectedQueue: "priority-turnover" },
+  { label: "next-day", arrivalDate: "2026-08-04", expectedQueue: "normal-cleaning" },
   { label: "later future", arrivalDate: "2026-08-05", expectedQueue: "normal-cleaning" },
 ] as const) {
   test(`released turnover with ${scenario.label} arrival uses ${scenario.expectedQueue}`, async () => {
@@ -1316,10 +1450,11 @@ test("previous-day on-demand cleaning stays out of Housekeeping while Water rema
   assert.equal(body.data.summary.waterDue, 1);
 });
 
-test("turnover remains Priority and keeps Reception release gate unchanged", async () => {
+test("same-day incoming keeps turnover Priority while Reception release gate remains unchanged", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
     { ...booking(401, 940401, 1, "Departing Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", room_released: 0 },
+    { ...booking(403, 940403, 1, "Incoming Guest", 2, 0), arrival_date: "2026-08-02", departure_date: "2026-08-07", guest_arrived: 0, room_released: 0 },
   ];
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);

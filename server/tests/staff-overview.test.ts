@@ -96,7 +96,7 @@ class FakeStmt {
   }
   all<T>() { return this.db.all<T>(this.sql, this.params); }
   first<T>() { return this.db.first<T>(this.sql, this.params); }
-  run() { return Promise.resolve({ meta: { changes: 0, last_row_id: 0 } }); }
+  run() { return this.db.run(this.sql, this.params); }
 }
 
 class FakeStaffDB {
@@ -127,6 +127,28 @@ class FakeStaffDB {
   }
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
+
+  async run(sql: string, params: unknown[]) {
+    if (sql.includes("UPDATE housekeeping_tasks")) {
+      const taskId = Number(params.at(-2));
+      const expectedVersion = Number(params.at(-1));
+      const task = this.housekeepingTasks.find((row) => row.task_id === taskId && row.version === expectedVersion);
+      if (!task) return { meta: { changes: 0, last_row_id: 0 } };
+      if (sql.includes("SET priority = ?")) task.priority = params[0] as TaskRow["priority"];
+      else {
+        task.status = params[0] as HousekeepingTaskStatus;
+        if (sql.includes("cancelled_at = ?")) {
+          task.cancelled_at = String(params[4]);
+          task.cancellation_reason = params[5] as string | null;
+        }
+      }
+      task.updated_at = String(params[1]);
+      task.version += 1;
+      return { meta: { changes: 1, last_row_id: taskId } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO housekeeping_task_events")) return { meta: { changes: 1, last_row_id: 1 } };
+    return { meta: { changes: 0, last_row_id: 0 } };
+  }
 
   async all<T>(sql: string, _params: unknown[]) {
     void _params;
@@ -290,6 +312,7 @@ class FakeStaffDB {
       };
     }
     if (sql.includes("FROM housekeeping_tasks ht") && sql.includes("rs.room_released = 1")) return { results: [] as T[] };
+    if (sql.includes("LEFT JOIN room_housekeeping_state") && sql.includes("has_actionable_replacement")) return { results: [] as T[] };
     if (sql.includes("FROM housekeeping_tasks")) return { results: [...this.housekeepingTasks] as T[] };
     if (sql.includes("FROM housekeeping_room_counters")) return { results: [] as T[] };
     if (sql.includes("FROM reception_room_alerts")) return { results: [] as T[] };
@@ -367,6 +390,10 @@ class FakeStaffDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM housekeeping_tasks WHERE task_id")) {
+      return (this.housekeepingTasks.find((task) => task.task_id === Number(params[0])) as T) ?? null;
+    }
+    if (sql.includes("FROM housekeeping_task_events")) return null;
     if (sql.includes("SELECT s.session_id")) {
       if (this.options.authenticated === false) return null;
       return {

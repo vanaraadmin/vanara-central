@@ -1,5 +1,6 @@
 import { requestJson } from "./api.client";
 import type { HousekeepingV2Overview, HousekeepingV2Response, HousekeepingV2RoomDetail, HousekeepingV2RoomResponse } from "../types/housekeeping-v2";
+import { safeHousekeepingRoomLabel } from "../utils/housekeeping-room-label";
 
 export interface HousekeepingAssignableUser {
   id: string;
@@ -18,7 +19,21 @@ export async function loadHousekeepingV2Overview(date?: string, signal?: AbortSi
   if (!response.success || !response.data) {
     throw new Error(response.error ?? "Housekeeping tasks are unavailable");
   }
-  return response.data;
+  const cards = new Map(response.data.tasks.map((card) => [card.taskId, {
+    ...card,
+    unitName: safeHousekeepingRoomLabel(card.unitName),
+  }]));
+  return {
+    ...response.data,
+    tasks: [...cards.values()],
+    sections: response.data.sections.map((section) => ({
+      ...section,
+      cards: section.cards.map((card) => cards.get(card.taskId) ?? {
+        ...card,
+        unitName: safeHousekeepingRoomLabel(card.unitName),
+      }),
+    })),
+  };
 }
 
 async function sendHousekeepingV2Action(path: string, payload: unknown, signal?: AbortSignal): Promise<HousekeepingV2RoomDetail> {

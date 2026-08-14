@@ -1,9 +1,10 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
-import { createHousekeepingTask, reconcileStaleWaitingTurnoverTasks, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { createHousekeepingTask, reconcileHousekeepingTaskPriority, reconcileStaleWaitingTurnoverTasks, ROOM_READY_OVERRIDE_SOURCE, syncReleasedTurnoverTasks, transitionHousekeepingTask, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import type { CurrentUser } from "./current-user.service.js";
-import { readableUnitName } from "./room-display-label.service.js";
+import { canonicalUnitName, readableUnitName } from "./room-display-label.service.js";
 import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
+import { buildTurnoverReconciliationPlan, departureForOperationalDate, hasSupersedingRoomCycle, qualifyingIncomingForOperationalDate } from "./housekeeping-reconciliation-policy.service.js";
 
 export interface HousekeepingV2Bindings {
   DB: D1Database;
@@ -185,6 +186,7 @@ const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CH
 const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
 const ACTIVE_NOW_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "WATER_REFILL", "ON_DEMAND_CLEANING"]);
 const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING"]);
+const ROOM_CYCLE_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
 const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STANDARD_INTERVAL_DAYS = 3;
@@ -239,19 +241,25 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
 }
 
 async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: CurrentUser, date: string): Promise<{ attempted: number; createdOrReused: number }> {
-  const [bookings, tasks, counters, waterConfig] = await Promise.all([
+  const [units, bookings, loadedTasks, counters, waterConfig] = await Promise.all([
+    loadUnits(env),
     loadBookings(env, date),
     loadTasks(env, date),
     loadCounters(env),
     loadWaterConfig(env),
   ]);
 
-  const activeTasks = tasks.filter((task) => task.status !== "CANCELLED");
+  await reconcileCurrentDateTasks(env, user, date, bookings, loadedTasks);
+  const tasks = await loadTasks(env, date);
+  const activeTasks = tasks.filter((task) => ACTIVE_TASK_STATUSES.has(task.status));
+  const canonicalUnitIds = new Set(units.map((unit) => unit.unit_id));
   let attempted = 0;
   let createdOrReused = 0;
 
-  for (const booking of bookings) {
-    if (booking.departure_date === date && !hasTask(activeTasks, "TURNOVER", booking.unit_id, booking.booking_id, booking.beds24_booking_id, date)) {
+  const turnoverPlan = buildTurnoverReconciliationPlan(bookings, tasks, date);
+  for (const { booking, priority } of turnoverPlan.departures) {
+    if (!canonicalUnitIds.has(booking.unit_id)) continue;
+    if (!hasTask(activeTasks, "TURNOVER", booking.unit_id, booking.booking_id, booking.beds24_booking_id, date)) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "TURNOVER",
@@ -260,13 +268,16 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
         stayId: booking.beds24_booking_id,
         operationalDate: date,
         dueCycleDate: date,
-        priority: booking.room_released === 1 ? "NORMAL" : "HIGH",
+        priority,
         source: "system",
         idempotencyKey: `housekeeping:v2:turnover:${booking.unit_id}:${booking.beds24_booking_id}:${date}`,
       }, user);
       createdOrReused += 1;
     }
+  }
 
+  for (const booking of bookings) {
+    if (!canonicalUnitIds.has(booking.unit_id)) continue;
     if (!isOccupiedOn(booking, date) || booking.departure_date === date || booking.guest_arrived !== 1) continue;
 
     const counter = counterForActiveStay(counters.get(booking.unit_id) ?? null, booking);
@@ -306,7 +317,7 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
 
     if (!isWaterRefillEligible(booking, date)) continue;
 
-    const completedWaterToday = activeTasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && task.operationalDate === date && (task.status === "COMPLETED" || task.status === "SKIPPED"));
+    const completedWaterToday = tasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && task.operationalDate === date && (task.status === "COMPLETED" || task.status === "SKIPPED"));
     if (!completedWaterToday && !hasTask(activeTasks, "WATER_REFILL", booking.unit_id, null, null, date)) {
       attempted += 1;
       await createHousekeepingTask(env, {
@@ -326,6 +337,90 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
 
   void waterConfig;
   return { attempted, createdOrReused };
+}
+
+async function reconcileCurrentDateTasks(
+  env: HousekeepingV2Bindings,
+  user: CurrentUser,
+  date: string,
+  bookings: BookingRow[],
+  tasks: HousekeepingTask[],
+): Promise<void> {
+  const turnoverPlan = buildTurnoverReconciliationPlan(bookings, tasks, date);
+  for (const { task, reason } of turnoverPlan.cancellations) {
+    await transitionHousekeepingTask(env, task.id, {
+      action: "cancel",
+      expectedVersion: task.version,
+      actor: user,
+      idempotencyKey: `housekeeping:truth-reconcile:cancel:${task.id}:${task.version}`,
+      reason: reason === "duplicate_room_cycle"
+        ? "Duplicate active turnover for the same canonical room and operational day."
+        : "Task no longer matches the current booking and room assignment.",
+      metadata: { source: "housekeeping_truth_reconciliation", reason, operationalDate: date },
+    });
+  }
+  for (const { task, priority } of turnoverPlan.priorityUpdates) {
+    await reconcileHousekeepingTaskPriority(
+      env,
+      task.id,
+      task.version,
+      priority,
+      user,
+      priority === "HIGH" ? "Same-day incoming stay requires priority turnover." : "No same-day incoming stay; post-checkout cleaning is normal.",
+    );
+  }
+
+  for (const task of tasks) {
+    if (task.operationalDate !== date || !ACTIVE_TASK_STATUSES.has(task.status)) continue;
+    if (task.source !== "system" && task.source !== "reception_release") continue;
+    if (task.taskType === "TURNOVER") continue;
+    if (taskMatchesCurrentTruth(task, bookings, date)) {
+      continue;
+    }
+
+    await transitionHousekeepingTask(env, task.id, {
+      action: "cancel",
+      expectedVersion: task.version,
+      actor: user,
+      idempotencyKey: `housekeeping:truth-reconcile:cancel:${task.id}:${task.version}`,
+      reason: "Task no longer matches the current booking and room assignment.",
+      metadata: { source: "housekeeping_truth_reconciliation", operationalDate: date },
+    });
+  }
+
+  for (const task of tasks) {
+    if (task.operationalDate >= date || !ACTIVE_TASK_STATUSES.has(task.status)) continue;
+    if (task.source !== "system" && task.source !== "reception_release") continue;
+    if (task.taskType === "WATER_REFILL") {
+      if (taskMatchesCurrentTruth(task, bookings, date)) continue;
+    } else {
+      if (!ROOM_CYCLE_TASK_TYPES.has(task.taskType)) continue;
+      if (!hasSupersedingRoomCycle(bookings, task.unitId, task.operationalDate, date)) continue;
+    }
+
+    await transitionHousekeepingTask(env, task.id, {
+      action: "cancel",
+      expectedVersion: task.version,
+      actor: user,
+      idempotencyKey: `housekeeping:truth-reconcile:superseded-cycle:${task.id}:${task.version}`,
+      reason: "Task belongs to a room cycle superseded by a later operational stay.",
+      metadata: { source: "housekeeping_truth_reconciliation", reason: "superseded_room_cycle", operationalDate: date },
+    });
+  }
+}
+
+function taskMatchesCurrentTruth(task: HousekeepingTask, bookings: BookingRow[], date: string): boolean {
+  if (task.taskType === "TURNOVER") {
+    const departure = departureForOperationalDate(bookings, task.unitId, date);
+    return Boolean(departure && taskMatchesBooking(task, departure));
+  }
+  const booking = bookings.find((candidate) => candidate.unit_id === task.unitId && taskMatchesBooking(task, candidate));
+  if (!booking) return false;
+  if (task.taskType === "WATER_REFILL") return isWaterRefillEligible(booking, date);
+  if (task.taskType === "STANDARD_CLEANING" || task.taskType === "LINEN_CHANGE") {
+    return isOccupiedOn(booking, date) && booking.guest_arrived === 1;
+  }
+  return true;
 }
 
 function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unitId: number, bookingId: number | null, stayId: number | null, dateOrCycle: string): boolean {
@@ -401,7 +496,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
     taskVersion: task.version,
     taskType,
     taskStatus: task.status,
-    priority: task.priority,
+    priority: taskType === "TURNOVER" ? (hasQualifyingIncomingToday(context) ? "HIGH" : "NORMAL") : task.priority,
     operationalDate: task.operationalDate,
     currentQueue,
     displayReason: displayReasonFor(reasonCodes),
@@ -558,8 +653,7 @@ function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
 
 function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
   if (task.taskType === "TURNOVER") {
-    if (waitingRelease || task.status === "BLOCKED" || hasImminentArrival(context)) return "priority-turnover";
-    return "normal-cleaning";
+    return hasQualifyingIncomingToday(context) ? "priority-turnover" : "normal-cleaning";
   }
   if (task.taskType === "WATER_REFILL") return "water-refill";
   if (reasonCodes.includes("standard_cleaning_previous_day")) return "priority-turnover";
@@ -604,17 +698,13 @@ function taskMatchesBooking(task: HousekeepingTask, booking: BookingRow): boolea
   return false;
 }
 
-function hasImminentArrival(context: OperationalContext): boolean {
-  if (!context.nextArrival) return false;
-  const days = daysBetween(context.date, context.nextArrival.arrival_date);
-  return days >= 0 && days <= 1;
-}
-
-function daysBetween(startDate: string, endDate: string): number {
-  const start = Date.parse(`${startDate}T00:00:00.000Z`);
-  const end = Date.parse(`${endDate}T00:00:00.000Z`);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return Number.POSITIVE_INFINITY;
-  return Math.round((end - start) / 86_400_000);
+function hasQualifyingIncomingToday(context: OperationalContext): boolean {
+  return Boolean(qualifyingIncomingForOperationalDate(
+    context.nextArrival ? [context.nextArrival] : [],
+    context.unit.unit_id,
+    context.date,
+    context.departure,
+  ));
 }
 
 function overviewTaskCapabilities(task: HousekeepingTask, user: CurrentUser, isWaitingRelease: boolean, maintenanceBlocked: boolean) {
@@ -780,7 +870,15 @@ async function loadUnits(env: HousekeepingV2Bindings): Promise<UnitRow[]> {
     WHERE u.active = 1
     ORDER BY COALESCE(u.position, 999), u.unit_name, u.unit_id
   `).all<UnitRow>();
-  return rows.results ?? [];
+  return (rows.results ?? []).filter((unit) => {
+    if (canonicalUnitName(unit)) return true;
+    console.error(JSON.stringify({
+      message: "Housekeeping unit mapping is not canonical",
+      unitId: unit.unit_id,
+      code: "housekeeping_raw_external_unit_code",
+    }));
+    return false;
+  });
 }
 
 async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<BookingRow[]> {

@@ -8,6 +8,7 @@ import {
   createHousekeepingTask,
   housekeepingTaskCapabilities,
   initialHousekeepingTaskStatus,
+  reconcileHousekeepingTaskPriority,
   transitionHousekeepingTask,
   type HousekeepingTaskStatus,
   type HousekeepingTaskType,
@@ -179,6 +180,14 @@ class FakeHousekeepingTaskDB {
     const expectedVersion = Number(params.at(-1));
     const task = this.tasks.find((row) => row.task_id === taskId && row.version === expectedVersion);
     if (!task) return { meta: { changes: 0, last_row_id: 0 } };
+    if (sql.includes("SET priority = ?")) {
+      task.priority = params[0] as TaskRow["priority"];
+      task.updated_at = String(params[1]);
+      task.updated_by = params[2] as string | null;
+      task.updated_by_name = params[3] as string | null;
+      task.version += 1;
+      return { meta: { changes: 1, last_row_id: task.task_id } };
+    }
     task.status = params[0] as HousekeepingTaskStatus;
     task.updated_at = String(params[1]);
     task.updated_by = params[2] as string | null;
@@ -385,6 +394,19 @@ test("task creation is idempotent and duplicate active tasks are rejected", asyn
     operationalDate: "2026-08-01",
     dueCycleDate: "2026-08-01",
   }, actor()), HousekeepingTaskDomainError);
+});
+
+test("turnover priority reconciliation persists once and records an audit event", async () => {
+  const { data, db, task } = await createTask("TURNOVER", undefined, { priority: "HIGH" });
+  const demoted = await reconcileHousekeepingTaskPriority(data, task.id, task.version, "NORMAL", actor(), "No same-day incoming stay.");
+  assert.equal(demoted?.priority, "NORMAL");
+  assert.equal(demoted?.version, 2);
+  assert.equal(db.events.filter((event) => event.event_type === "priority_reconciled").length, 1);
+
+  const replay = await reconcileHousekeepingTaskPriority(data, task.id, 2, "NORMAL", actor(), "No same-day incoming stay.");
+  assert.equal(replay?.priority, "NORMAL");
+  assert.equal(replay?.version, 2);
+  assert.equal(db.events.filter((event) => event.event_type === "priority_reconciled").length, 1);
 });
 
 test("water refill duplicate insert with the same idempotency key replays the existing task", async () => {

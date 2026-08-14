@@ -481,6 +481,42 @@ export async function transitionHousekeepingTask(env: HousekeepingTaskBindings, 
   return updated;
 }
 
+export async function reconcileHousekeepingTaskPriority(
+  env: HousekeepingTaskBindings,
+  taskId: number,
+  expectedVersion: number,
+  priority: HousekeepingTaskPriority,
+  actor: HousekeepingActor | CurrentUser,
+  reason: string,
+): Promise<HousekeepingTask | null> {
+  const current = await getHousekeepingTask(env, taskId);
+  if (!current) return null;
+  if (current.priority === priority) return current;
+
+  const normalizedActor = normalizeActor(actor);
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(`
+    UPDATE housekeeping_tasks
+    SET priority = ?, version = version + 1, updated_at = ?, updated_by = ?, updated_by_name = ?
+    WHERE task_id = ? AND version = ?
+  `).bind(priority, now, normalizedActor.id, normalizedActor.displayName, taskId, expectedVersion).run();
+  if (Number(result.meta.changes ?? 0) !== 1) return getHousekeepingTask(env, taskId);
+
+  await insertTaskEvent(
+    env,
+    taskId,
+    "priority_reconciled",
+    current.status,
+    current.status,
+    normalizedActor,
+    reason,
+    { previousPriority: current.priority, priority },
+    `housekeeping:priority-reconcile:${taskId}:${expectedVersion}:${priority}`,
+    now,
+  );
+  return getHousekeepingTask(env, taskId);
+}
+
 async function markRoomNotReadyAfterStart(env: HousekeepingTaskBindings, task: HousekeepingTask, actor: HousekeepingActor, idempotencyKey: string | null | undefined, now: string): Promise<void> {
   if (task.taskType === "WATER_REFILL") return;
   await setRoomHousekeepingState(
