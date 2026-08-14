@@ -1,5 +1,6 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import type { CurrentUser } from "./current-user.service.js";
+import { readableUnitName } from "./room-display-label.service.js";
 
 export type HousekeepingWorkflowStatus = "Dirty" | "Cleaning" | "Ready";
 export type HousekeepingFutureStatus = "Inspection";
@@ -291,7 +292,7 @@ function toRoom(row: HousekeepingRow, bangkokMinutes: number): HousekeepingRoom 
   return {
     id: `unit:${row.unit_id}`,
     unitId: row.unit_id,
-    unitName: row.unit_name || "Unit not assigned",
+    unitName: readableUnitName(row),
     group,
     operationalPriority: GROUP_META[group].title as HousekeepingRoom["operationalPriority"],
     priority: priority(group, blocked),

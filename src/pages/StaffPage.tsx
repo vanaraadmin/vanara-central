@@ -237,7 +237,7 @@ function WorkspaceCard({
         {visibleMetrics.length > 0 ? (
           <VanaraSummaryGrid
             ariaLabel={`${title} operational counters`}
-            className="staff-workspace__summary-grid"
+            className={`staff-workspace__summary-grid staff-workspace__summary-grid--${workspace.id}`}
             items={visibleMetrics}
             variant="compact"
           />

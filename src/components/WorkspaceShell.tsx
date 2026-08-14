@@ -4,11 +4,6 @@ import shadowCanopy from "../assets/img/shadow-canopy.svg";
 import StickyGlassHeader from "./StickyGlassHeader";
 import VanaraStaffHomeAction from "./vanara/VanaraStaffHomeAction";
 import WorkspaceHero from "./WorkspaceHero";
-import {
-  preloadWorkspaceBackground,
-  workspaceBackgroundStyle,
-  type WorkspaceBackgroundKey,
-} from "../config/workspaceBackgrounds";
 import { useLanguage } from "../providers/language.context";
 import "../styles/WorkspaceShell.css";
 
@@ -28,21 +23,6 @@ const workspaceNumbers = {
 } as const;
 
 type WorkspaceKey = keyof typeof workspaceNumbers;
-
-const workspaceBackgroundKeys: Record<WorkspaceKey, WorkspaceBackgroundKey> = {
-  staffHome: "staffHome",
-  reception: "reception",
-  housekeeping: "housekeeping",
-  maintenance: "maintenance",
-  procurement: "procurement",
-  rooms: "rooms",
-  chat: "chat",
-  messages: "messages",
-  social: "social",
-  payroll: "payroll",
-  accounting: "payroll",
-  ownerDashboard: "payroll",
-};
 
 interface WorkspaceShellProps {
   children: React.ReactNode;
@@ -83,17 +63,12 @@ export default function WorkspaceShell({
   workspace,
 }: WorkspaceShellProps) {
   const { language, translate } = useLanguage();
-  const backgroundKey = workspaceBackgroundKeys[workspace];
   const stickyTriggerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const today = useMemo(() => formatToday(language), [language]);
   const heroActionNode = workspace === "staffHome" ? heroAction : (heroAction ?? <VanaraStaffHomeAction />);
   const navigationTitle = stickyNavigationTitle ?? title;
-
-  useEffect(() => {
-    preloadWorkspaceBackground(backgroundKey);
-  }, [backgroundKey]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -142,9 +117,7 @@ export default function WorkspaceShell({
   }, []);
 
   return (
-    <main className="workspace-page" style={workspaceBackgroundStyle(backgroundKey)}>
-      <div className="workspace-page__veil" aria-hidden="true" />
-
+    <main className="workspace-page">
       <section className={wide ? "workspace-shell workspace-shell--wide" : "workspace-shell"} aria-label={`${title} ${translate("workspace")}`}>
         {!suppressStickyNavigation ? (
           <StickyGlassHeader progress={progress} title={navigationTitle} />

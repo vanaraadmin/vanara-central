@@ -12,14 +12,6 @@ export function looksLikeExternalUnitCode(value: string): boolean {
   return /^[A-Z]{1,3}\d{1,3}$/i.test(normalized) && !/\b(?:bungalow|villa|tent|yurt|room)\b/i.test(normalized);
 }
 
-function familyLabel(unit: UnitDisplaySource): string | null {
-  const source = `${unit.unit_type ?? ""} ${unit.room_type_name ?? ""} ${unit.room_name ?? ""}`.toLowerCase();
-  if (source.includes("bungalow")) return "Bungalow";
-  if (source.includes("villa")) return "Villa";
-  if (source.includes("tent") || source.includes("yurt")) return "Tent";
-  return null;
-}
-
 export function canonicalUnitName(unit: UnitDisplaySource): string | null {
   const raw = unit.unit_name?.trim() ?? "";
   if (!raw || looksLikeExternalUnitCode(raw)) return null;
@@ -28,7 +20,5 @@ export function canonicalUnitName(unit: UnitDisplaySource): string | null {
 
 export function readableUnitName(unit: UnitDisplaySource): string {
   const canonical = canonicalUnitName(unit);
-  if (canonical) return canonical;
-  const family = familyLabel(unit);
-  return family ? `${family} not assigned` : "Room not assigned";
+  return canonical ?? "Room not assigned";
 }

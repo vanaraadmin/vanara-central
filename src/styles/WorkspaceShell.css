@@ -2,32 +2,13 @@
   --workspace-cream: #f4eddf;
   --workspace-ink: #173429;
   --workspace-line: rgba(244, 237, 223, 0.16);
-  --workspace-background-fallback: #0c241a;
 
   position: relative;
   min-height: 100dvh;
   overflow-x: hidden;
   color: var(--workspace-cream);
-  background-color: var(--workspace-background-fallback, #031c15);
-  background-image: var(--workspace-background, none);
-  background-position: center top;
-  background-size: cover;
-  background-repeat: no-repeat;
+  background: transparent;
   font-family: var(--vc-font-display);
-}
-
-.workspace-page__veil {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(4, 17, 12, 0.22) 0%,
-      rgba(5, 22, 15, 0.5) 46%,
-      rgba(4, 17, 12, 0.84) 100%
-    );
 }
 
 .workspace-shell {

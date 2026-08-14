@@ -11,6 +11,7 @@ const passportMessages = readFileSync(new URL("../../src/components/passport/pas
 const staffLabels = readFileSync(new URL("../../src/utils/staff-i18n-labels.ts", import.meta.url), "utf8");
 const staffPage = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
 const staffOverviewService = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
+const staffCss = readFileSync(new URL("../../src/styles/StaffPage.css", import.meta.url), "utf8");
 const housekeepingCard = readFileSync(new URL("../../src/components/rooms/HousekeepingCard.tsx", import.meta.url), "utf8");
 const maintenanceCard = readFileSync(new URL("../../src/components/rooms/MaintenanceCard.tsx", import.meta.url), "utf8");
 const roomOperationalSummaryCard = readFileSync(new URL("../../src/components/rooms/RoomOperationalSummaryCard.tsx", import.meta.url), "utf8");
@@ -162,6 +163,14 @@ test("Staff Home Thai source translates greeting, metrics, and summary lines wit
   assert.match(staffPage, /"Owner decision":\s*"ownerDecision"/);
   assert.doesNotMatch(th, /:\s*"(Arrival|Arrivals|Departure|Departures|In House|Completed Cleaning Today|Vacant|Clear|Active|Free-text request|Owner decision|Maintenance Blocked)"/);
   assert.doesNotMatch(staffPage, /translation\.service|translateFreeText|\/api\/translations\/free-text/);
+});
+
+test("Owner and staff Housekeeping summaries share the same stable two-by-two grid", () => {
+  assert.match(staffPage, /staff-workspace__summary-grid--\$\{workspace\.id\}/);
+  assert.match(staffCss, /\.staff-workspace__summary-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(staffCss, /\.staff-workspace__summary-grid--housekeeping\s*\{[\s\S]*grid-auto-rows:\s*minmax\(58px, auto\)/);
+  assert.match(staffCss, /\.staff-workspace__summary-grid--housekeeping \.vc-summary-item__label\s*\{[\s\S]*white-space:\s*normal/);
+  assert.doesNotMatch(staffPage, /isOwnerHome[\s\S]{0,1200}summary-grid/);
 });
 
 test("Room Detail Thai source translates generated room and maintenance labels before rendering", () => {

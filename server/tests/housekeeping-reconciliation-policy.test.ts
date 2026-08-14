@@ -130,7 +130,7 @@ test("a later operational stay supersedes old active tasks without guessing from
 test("canonical room labels never guess or expose raw external codes", () => {
   const rawUnit = { unit_id: 3, unit_name: "E2", unit_type: "bungalow", position: 1 };
   assert.equal(canonicalUnitName(rawUnit), null);
-  assert.equal(readableUnitName(rawUnit), "Bungalow not assigned");
+  assert.equal(readableUnitName(rawUnit), "Room not assigned");
   assert.equal(safeHousekeepingRoomLabel("E2"), "Room not assigned");
   assert.equal(safeHousekeepingRoomLabel("A12"), "Room not assigned");
   assert.equal(safeHousekeepingRoomLabel("Bungalow 1"), "Bungalow 1");

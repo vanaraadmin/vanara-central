@@ -182,6 +182,21 @@
   font-size: var(--vc-type-utility-xs);
 }
 
+.staff-workspace__summary-grid--housekeeping {
+  grid-auto-rows: minmax(58px, auto);
+}
+
+.staff-workspace__summary-grid--housekeeping .vc-summary-item {
+  min-height: 58px;
+}
+
+.staff-workspace__summary-grid--housekeeping .vc-summary-item__label {
+  min-width: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .staff-workspace__arrow {
   display: grid;
   justify-self: end;

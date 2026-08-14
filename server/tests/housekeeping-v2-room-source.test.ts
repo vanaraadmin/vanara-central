@@ -7,6 +7,8 @@ const overviewService = await readFile(new URL("../src/services/housekeeping-v2-
 const roomDetailService = await readFile(new URL("../src/services/room-detail.service.ts", import.meta.url), "utf8");
 const roomsWorkspaceService = await readFile(new URL("../src/services/rooms-workspace.service.ts", import.meta.url), "utf8");
 const roomDisplayLabelService = await readFile(new URL("../src/services/room-display-label.service.ts", import.meta.url), "utf8");
+const legacyOverviewService = await readFile(new URL("../src/services/housekeeping-overview.service.ts", import.meta.url), "utf8");
+const propertySyncService = await readFile(new URL("../src/services/property-sync.service.ts", import.meta.url), "utf8");
 const index = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const router = await readFile(new URL("../../src/router/AppRouter.tsx", import.meta.url), "utf8");
 const homePage = await readFile(new URL("../../src/pages/HousekeepingV2Page.tsx", import.meta.url), "utf8");
@@ -241,4 +243,8 @@ test("housekeeping and room read models require canonical unit names without har
   assert.match(roomService, /unitName:\s*readableUnitName\(unit\)/);
   assert.match(roomDetailService, /roomName:\s*readableUnitName\(unit\)/);
   assert.match(roomsWorkspaceService, /roomName:\s*readableRoomName/);
+  assert.match(legacyOverviewService, /unitName:\s*readableUnitName\(row\)/);
+  assert.match(propertySyncService, /property_sync_unit_mapping_missing/);
+  assert.doesNotMatch(propertySyncService, /unit_name\s*=\s*excluded\.unit_name/);
+  assert.doesNotMatch(`${overviewService}\n${roomService}\n${roomDetailService}\n${legacyOverviewService}`, /VANARA_UNIT_NAMES|new Map<number, string>/);
 });

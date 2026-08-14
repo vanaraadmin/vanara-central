@@ -8,6 +8,7 @@ import {
   recordSkippedSyncRun,
   releaseSyncLock,
 } from "./sync-lock.service.js";
+import { canonicalUnitName } from "./room-display-label.service.js";
 
 export interface PropertySyncBindings extends Beds24Bindings {
   DB: D1Database;
@@ -64,6 +65,38 @@ interface Beds24PropertiesResponse {
   success?: boolean;
   data?: Beds24Property[];
   [key: string]: unknown;
+}
+
+export const PROPERTY_UNIT_UPSERT_SQL = `
+  INSERT INTO units (
+    room_type_id,
+    beds24_unit_id,
+    unit_name,
+    unit_type,
+    position,
+    active,
+    raw_json,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    (
+      SELECT room_type_id
+      FROM room_types
+      WHERE beds24_room_id = ?
+    ),
+    ?, ?, ?, ?, 1, ?, ?, ?
+  )
+  ON CONFLICT (room_type_id, beds24_unit_id) DO UPDATE SET
+    unit_type = excluded.unit_type,
+    position = excluded.position,
+    active = 1,
+    raw_json = excluded.raw_json,
+    updated_at = excluded.updated_at
+`;
+
+export function propertySyncCanonicalUnitName(unitId: number, externalName: string): string {
+  return canonicalUnitName({ unit_id: unitId, unit_name: externalName }) ?? "Room not assigned";
 }
 
 export interface PropertySyncResult {
@@ -248,39 +281,20 @@ export async function syncProperties(
 
         units.forEach((unit, index) => {
           unitCount += 1;
+          const canonicalName = propertySyncCanonicalUnitName(unit.id, unit.name);
+          if (canonicalName === "Room not assigned") {
+            console.warn(JSON.stringify({
+              event: "property_sync_unit_mapping_missing",
+              beds24RoomId: roomType.id,
+              beds24UnitId: unit.id,
+            }));
+          }
 
           statements.push(
-            env.DB.prepare(`
-              INSERT INTO units (
-                room_type_id,
-                beds24_unit_id,
-                unit_name,
-                unit_type,
-                position,
-                active,
-                raw_json,
-                created_at,
-                updated_at
-              )
-              VALUES (
-                (
-                  SELECT room_type_id
-                  FROM room_types
-                  WHERE beds24_room_id = ?
-                ),
-                ?, ?, ?, ?, 1, ?, ?, ?
-              )
-              ON CONFLICT (room_type_id, beds24_unit_id) DO UPDATE SET
-                unit_name = excluded.unit_name,
-                unit_type = excluded.unit_type,
-                position = excluded.position,
-                active = 1,
-                raw_json = excluded.raw_json,
-                updated_at = excluded.updated_at
-            `).bind(
+            env.DB.prepare(PROPERTY_UNIT_UPSERT_SQL).bind(
               roomType.id,
               unit.id,
-              unit.name,
+              canonicalName,
               normalizeUnitType(roomType.roomType),
               index + 1,
               JSON.stringify(unit),
