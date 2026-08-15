@@ -10,6 +10,7 @@ const index = read("src/index.ts");
 const accounting = read("src/services/accounting.service.ts");
 const dashboard = read("src/services/dashboard.service.ts");
 const migration = read("migrations/0043_owner_accounting.sql");
+const attachmentsMigration = read("migrations/0054_accounting_entry_attachments.sql");
 const staffOverview = read("src/services/staff-overview.service.ts");
 const workspaceShell = read("../src/components/WorkspaceShell.tsx");
 const englishCopy = read("../src/i18n/en.ts");
@@ -33,6 +34,11 @@ test("financial migration stores normalized OTA records and manual receipt refer
   assert.match(migration, /CREATE TABLE manual_accounting_entries/);
   assert.match(migration, /receipt_object_key TEXT/);
   assert.match(migration, /module_key IN \([\s\S]*'accounting'/);
+  assert.match(attachmentsMigration, /CREATE TABLE IF NOT EXISTS accounting_entry_attachments/);
+  assert.match(attachmentsMigration, /UNIQUE \(accounting_entry_id, sort_order\)/);
+  assert.match(attachmentsMigration, /INSERT OR IGNORE INTO accounting_entry_attachments/);
+  assert.match(attachmentsMigration, /SELECT[\s\S]*receipt_object_key[\s\S]*FROM manual_accounting_entries/);
+  assert.doesNotMatch(attachmentsMigration, /\bDELETE\s+FROM\b|\bDROP\s+(?:TABLE|INDEX)\b/i);
 });
 
 test("dashboard uses normalized expected net payout and does not sum raw Beds24 booking price as revenue", () => {
@@ -123,9 +129,16 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
 
 test("manual accounting receipt upload uses R2 and validates expenses", () => {
   assert.match(accounting, /R2_STORAGE\.put/);
+  assert.match(accounting, /Promise\.allSettled/);
+  assert.match(accounting, /rollbackNewAccountingEntry/);
   assert.match(accounting, /MAX_RECEIPT_BYTES/);
+  assert.match(accounting, /MAX_RECEIPTS_PER_ENTRY/);
   assert.match(accounting, /Entry type must be income or expense/);
   assert.match(accounting, /Amount must be greater than zero/);
+  assert.match(accounting, /Add at least one receipt, or mark Receipt unavailable/);
+  assert.match(index, /\/api\/accounting\/entries\/:entryId\/attachments/);
+  assert.match(index, /\/api\/accounting\/entries\/:entryId\/attachments\/:attachmentId/);
+  assert.doesNotMatch(`${accounting}\n${index}`, /app\.delete\("\/api\/accounting|cleanupAccountingReceipt|ACCOUNTING_RECEIPT_RETENTION/);
 });
 
 test("manual expense taxonomy keeps historical rows while presenting canonical categories", () => {
@@ -137,7 +150,7 @@ test("manual expense taxonomy keeps historical rows while presenting canonical c
   assert.match(accounting, /"garden & pool": "Garden"/);
   assert.match(accounting, /canonicalManualExpenseCategory/);
   assert.match(dashboard, /manualAccountingCategory\(row\.note, row\.entry_type === "income" \? "Other Manual Income" : "Other Expenses"\)/);
-  assert.match(accounting, /const header = \["date", "type", "amount", "description", "category", "note", "receipt_file"\]/);
+  assert.match(accounting, /const header = \["date", "type", "amount", "description", "category", "note", "receipt_file", "receipt_files"\]/);
   assert.match(accounting, /manualAccountingCategory\(row\.note, row\.entry_type === "income" \? "Other Manual Income" : "Other Expenses"\)/);
   assert.doesNotMatch(accounting, /UPDATE manual_accounting_entries[\s\S]*Software & Subscriptions|UPDATE manual_accounting_entries[\s\S]*Garden & Outdoor/);
 });
@@ -163,7 +176,13 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.doesNotMatch(accountingPage, /<span>Note<\/span>/);
   assert.match(accountingPage, /capture="environment"/);
   assert.match(accountingPage, /Take receipt photo/);
-  assert.match(accountingPage, /Choose file\/PDF/);
+  assert.match(accountingPage, /Choose files\/PDFs/);
+  assert.match(accountingPage, /multiple onChange=\{onReceipt\}/);
+  assert.match(accountingPage, /appendAccountingReceiptSelections/);
+  assert.match(accountingPage, /removeAccountingReceiptSelection/);
+  assert.match(accountingPage, />Receipt unavailable</);
+  assert.match(accountingPage, /receipts\.length > 0 \|\| receiptUnavailable/);
+  assert.match(accountingPage, /loading="lazy" decoding="async"/);
   const afterExport = accountingPage.slice(accountingPage.indexOf(">Export for accountant<"));
   assert.doesNotMatch(afterExport, /<section className="accounting-panel"[\s\S]*<h2>/);
   assert.match(`${englishCopy}\n${thaiCopy}\n${staffOverview}`, /Income, expenses, and accountant export\./);
@@ -178,6 +197,8 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.match(accountingCss, /::-webkit-calendar-picker-indicator[\s\S]*color: var\(--vc-color-jungle-900\)/);
   assert.match(accountingCss, /\.accounting-form input:focus-visible,[\s\S]*\.accounting-export-range input:focus-visible[\s\S]*border-color: rgba\(23, 71, 52, 0\.72\)/);
   assert.match(accountingCss, /\.accounting-upload__actions[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(accountingCss, /\.accounting-upload__item[\s\S]*grid-template-columns: 56px minmax\(0, 1fr\) auto[\s\S]*max-width: 100%/);
+  assert.match(accountingCss, /@media \(max-width: 360px\)[\s\S]*\.accounting-upload__item[\s\S]*grid-template-columns: 48px minmax\(0, 1fr\)/);
   assert.match(accountingCss, /\.accounting-upload__button input[\s\S]*opacity: 0/);
   assert.match(accountingCss, /@media \(max-width: 640px\)[\s\S]*\.accounting-upload__actions[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(accountingCss, /\.workspace-shell--accounting \.vc-staff-home-action[\s\S]*color: var\(--vc-text-inverse\)[\s\S]*background: linear-gradient/);

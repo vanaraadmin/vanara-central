@@ -19,6 +19,8 @@ export async function createAccountingEntry(payload: {
   amount: number;
   description: string;
   note: string | null;
+  receipts?: Array<{ dataUrl: string; fileName: string }>;
+  receiptUnavailable?: boolean;
   receiptDataUrl?: string | null;
   receiptFileName?: string | null;
 }, signal?: AbortSignal): Promise<AccountingEntry> {

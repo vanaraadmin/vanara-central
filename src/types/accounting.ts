@@ -32,13 +32,28 @@ export interface AccountingEntry {
   description: string;
   note: string | null;
   receipt: {
+    id: number | null;
+    page: number;
     fileName: string;
     contentType: string;
+    byteSize: number | null;
     uploadedAt: string;
     downloadUrl: string;
   } | null;
+  attachments: AccountingAttachment[];
+  receiptUnavailable: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AccountingAttachment {
+  id: number;
+  page: number;
+  fileName: string;
+  contentType: string;
+  byteSize: number | null;
+  uploadedAt: string;
+  downloadUrl: string;
 }
 
 export interface AccountingOverview {

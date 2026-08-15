@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { getDashboard, getDashboardOverview } from "./services/dashboard.service.js";
-import { createManualAccountingEntry, exportAccountingCsv, getAccountingOverview, getAccountingReceipt, normalizeManualAccountingInput, normalizeReceiptInput, type AccountingBindings } from "./services/accounting.service.js";
+import { createManualAccountingEntry, exportAccountingCsv, getAccountingAttachment, getAccountingOverview, getAccountingReceipt, listAccountingAttachments, normalizeManualAccountingInput, normalizeReceiptInput, type AccountingBindings } from "./services/accounting.service.js";
 import { getStaffOverview, type StaffOverviewBindings } from "./services/staff-overview.service.js";
 import { createRoomMaintenanceTicket, createRoomNote, getRoomDetail, normalizeRoomHousekeepingInput, normalizeRoomNoteInput, normalizeStartRoomStandardCleaningInput, startRoomStandardCleaning, updateRoomHousekeepingStatus, type RoomDetailBindings } from "./services/room-detail.service.js";
 import { getRoomsWorkspaceOverview, type RoomsWorkspaceBindings } from "./services/rooms-workspace.service.js";
@@ -853,6 +853,36 @@ app.get("/api/accounting/entries/:entryId/receipt", async (c) => {
     await accountingOwner(c, "access");
     const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
     const receipt = await getAccountingReceipt(c.env, entryId);
+    if (!receipt) return c.json({ success: false, error: "Receipt not found." }, 404);
+    return new Response(receipt.object.body, {
+      headers: {
+        "Content-Type": receipt.contentType,
+        "Content-Disposition": `inline; filename="${receipt.fileName.replace(/"/g, "")}"`,
+        "Cache-Control": "private, max-age=300",
+      },
+    });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/accounting/entries/:entryId/attachments", async (c) => {
+  try {
+    await accountingOwner(c, "access");
+    const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await listAccountingAttachments(c.env, entryId) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, apiErrorStatus(error));
+  }
+});
+
+app.get("/api/accounting/entries/:entryId/attachments/:attachmentId", async (c) => {
+  try {
+    await accountingOwner(c, "access");
+    const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
+    const attachmentId = positiveIntegerParam(c.req.param("attachmentId"), "attachmentId");
+    const receipt = await getAccountingAttachment(c.env, entryId, attachmentId);
     if (!receipt) return c.json({ success: false, error: "Receipt not found." }, 404);
     return new Response(receipt.object.body, {
       headers: {

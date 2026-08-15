@@ -187,6 +187,93 @@
   outline-offset: 3px;
 }
 
+.accounting-upload__list {
+  display: grid;
+  gap: var(--vc-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.accounting-upload__item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--vc-space-2);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--vc-space-2);
+  border: 1px solid rgba(23, 71, 52, 0.16);
+  border-radius: var(--vc-radius-md);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.accounting-upload__item img,
+.accounting-upload__file-type {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--vc-radius-sm);
+}
+
+.accounting-upload__item img {
+  display: block;
+  object-fit: cover;
+}
+
+.accounting-upload__file-type {
+  display: grid;
+  place-items: center;
+  background: rgba(23, 71, 52, 0.12);
+  color: var(--vc-text-primary);
+  font-size: var(--vc-text-xs);
+  font-weight: var(--vc-weight-heavy);
+}
+
+.accounting-upload__file-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.accounting-upload__file-name small {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.accounting-upload__item button {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--vc-color-danger);
+  font: inherit;
+  font-weight: var(--vc-weight-bold);
+  cursor: pointer;
+}
+
+.accounting-upload__item button:focus-visible {
+  outline: 2px solid var(--vc-focus-glass);
+  outline-offset: 2px;
+}
+
+.accounting-upload__unavailable {
+  display: flex;
+  align-items: center;
+  gap: var(--vc-space-2);
+  overflow: visible;
+  font-weight: var(--vc-weight-bold);
+}
+
+.accounting-form .accounting-upload__unavailable input {
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  margin: 0;
+  padding: 0;
+}
+
 .accounting-form__wide,
 .accounting-upload {
   grid-column: 1 / -1;
@@ -246,5 +333,23 @@
 
   .accounting-upload__actions {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 360px) {
+  .accounting-upload__item {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .accounting-upload__item img,
+  .accounting-upload__file-type {
+    width: 48px;
+    height: 48px;
+  }
+
+  .accounting-upload__item button {
+    grid-column: 2;
+    justify-self: start;
+    padding: 0;
   }
 }

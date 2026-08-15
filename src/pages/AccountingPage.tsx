@@ -2,6 +2,7 @@ import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
+import { appendAccountingReceiptSelections, removeAccountingReceiptSelection, type PendingAccountingReceipt } from "../services/accounting-receipt-selection";
 import { accountingExportUrl, createAccountingEntry, loadAccountingOverview } from "../services/accounting.service";
 import type { ManualEntryType } from "../types/accounting";
 import "../styles/AccountingPage.css";
@@ -64,8 +65,9 @@ export default function AccountingPage() {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<string>(expenseCategories[0].value);
   const [description, setDescription] = useState("");
-  const [receiptDataUrl, setReceiptDataUrl] = useState<string | null>(null);
-  const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
+  const [receipts, setReceipts] = useState<PendingAccountingReceipt[]>([]);
+  const [receiptUnavailable, setReceiptUnavailable] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
   const [from, setFrom] = useState(startOfMonth());
   const [to, setTo] = useState(today());
   const activeCategories = categoriesFor(entryType);
@@ -82,26 +84,45 @@ export default function AccountingPage() {
       amount: Number(amount),
       description: description.trim(),
       note: accountingNote(category),
-      receiptDataUrl,
-      receiptFileName,
+      receipts: receipts.map((receipt) => ({ dataUrl: receipt.dataUrl, fileName: receipt.fileName })),
+      receiptUnavailable,
     }),
     onSuccess: async () => {
       setAmount("");
       setDescription("");
-      setReceiptDataUrl(null);
-      setReceiptFileName(null);
+      setReceipts([]);
+      setReceiptUnavailable(false);
+      setReceiptError(null);
       await queryClient.invalidateQueries({ queryKey: ["accounting"] });
     },
   });
 
-  const canSubmit = entryDate && Number(amount) > 0 && category.trim().length > 0 && description.trim().length > 0;
+  const receiptRequirementMet = entryType === "income" || receipts.length > 0 || receiptUnavailable;
+  const canSubmit = entryDate && Number(amount) > 0 && category.trim().length > 0 && description.trim().length > 0 && receiptRequirementMet;
   const totals = accounting.data?.totals;
 
   async function onReceipt(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setReceiptDataUrl(await fileToDataUrl(file));
-    setReceiptFileName(file.name);
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    setReceiptError(null);
+    try {
+      const additions = await Promise.all(files.map(async (file) => ({
+        id: crypto.randomUUID(),
+        dataUrl: await fileToDataUrl(file),
+        fileName: file.name,
+        contentType: file.type,
+        byteSize: file.size,
+      })));
+      setReceipts((current) => appendAccountingReceiptSelections(current, additions));
+      setReceiptUnavailable(false);
+    } catch (error) {
+      setReceiptError(error instanceof Error ? error.message : "Receipt could not be read.");
+    }
+  }
+
+  function removeReceipt(id: string) {
+    setReceipts((current) => removeAccountingReceiptSelection(current, id));
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -136,6 +157,7 @@ export default function AccountingPage() {
                   const nextType = event.target.value as ManualEntryType;
                   setEntryType(nextType);
                   setCategory(categoriesFor(nextType)[0].value);
+                  if (nextType === "income") setReceiptUnavailable(false);
                 }}><option value="income">Income</option><option value="expense">Expense</option></select></label>
                 <label><span>Date</span><input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} /></label>
                 <label><span>Amount</span><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
@@ -147,22 +169,45 @@ export default function AccountingPage() {
                 </label>
                 <label className="accounting-form__wide"><span>Description</span><textarea value={description} placeholder={entryType === "expense" ? "What was bought?" : "What was collected?"} onChange={(event) => setDescription(event.target.value)} /></label>
                 <div className="accounting-upload">
-                  <span>Receipt photo/PDF</span>
+                  <span>Receipt photos/PDFs</span>
                   <div className="accounting-upload__actions">
                     <label className="accounting-upload__button">
                       <input type="file" accept="image/*" capture="environment" onChange={onReceipt} />
                       <span>Take receipt photo</span>
                     </label>
                     <label className="accounting-upload__button accounting-upload__button--secondary">
-                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={onReceipt} />
-                      <span>Choose file/PDF</span>
+                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={onReceipt} />
+                      <span>Choose files/PDFs</span>
                     </label>
                   </div>
-                  <small>{receiptFileName ?? "Use a readable receipt photo, or attach JPG, PNG, WebP or PDF."}</small>
+                  {receipts.length > 0 ? (
+                    <ol className="accounting-upload__list" aria-label="Selected receipt pages">
+                      {receipts.map((receipt, index) => (
+                        <li key={receipt.id} className="accounting-upload__item">
+                          {receipt.contentType.startsWith("image/")
+                            ? <img src={receipt.dataUrl} alt="" loading="lazy" decoding="async" />
+                            : <span className="accounting-upload__file-type" aria-hidden="true">PDF</span>}
+                          <span className="accounting-upload__file-name"><strong>Page {index + 1}</strong><small>{receipt.fileName}</small></span>
+                          <button type="button" onClick={() => removeReceipt(receipt.id)} aria-label={`Remove ${receipt.fileName}`}>Remove</button>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+                  <small>{receipts.length > 0 ? `${receipts.length} receipt page${receipts.length === 1 ? "" : "s"} selected.` : "Add readable JPG, PNG, WebP or PDF receipt pages."}</small>
+                  {entryType === "expense" ? (
+                    <label className="accounting-upload__unavailable">
+                      <input type="checkbox" checked={receiptUnavailable} onChange={(event) => {
+                        setReceiptUnavailable(event.target.checked);
+                        if (event.target.checked) setReceipts([]);
+                      }} />
+                      <span>Receipt unavailable</span>
+                    </label>
+                  ) : null}
+                  {receiptError ? <small className="accounting-error">{receiptError}</small> : null}
                 </div>
                 <button className="accounting-action" disabled={!canSubmit || saveEntry.isPending} type="submit">{saveEntry.isPending ? "Saving" : "Save entry"}</button>
               </form>
-              {saveEntry.isError ? <p className="accounting-error">Entry could not be saved.</p> : null}
+              {saveEntry.isError ? <p className="accounting-error">{saveEntry.error instanceof Error ? saveEntry.error.message : "Entry could not be saved."}</p> : null}
             </section>
 
             <section className="accounting-panel">
