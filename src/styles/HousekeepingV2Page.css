@@ -458,9 +458,67 @@
   }
 }
 
+@media (max-width: 480px) {
+  .housekeeping-v2-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .housekeeping-v2-summary .vc-summary-item {
+    min-height: 72px;
+  }
+
+  .housekeeping-v2-summary .vc-summary-item:nth-child(3):last-child {
+    grid-column: 1 / -1;
+  }
+
+  .housekeeping-v2-summary .vc-summary-item__label {
+    min-height: 2.4em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .housekeeping-v2-task-row--water {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: var(--vc-space-2);
+    padding: var(--vc-space-4) var(--vc-space-3);
+  }
+
+  .housekeeping-v2-task-row--water .housekeeping-v2-room-link,
+  .housekeeping-v2-task-row--water .housekeeping-v2-task-row__identity > strong,
+  .housekeeping-v2-task-row--water .housekeeping-v2-intervention,
+  .housekeeping-v2-task-row--water .housekeeping-v2-task-row__state strong,
+  .housekeeping-v2-task-row--water .housekeeping-v2-task-row__state span {
+    overflow: visible;
+    max-width: 100%;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .housekeeping-v2-task-row--water .housekeeping-v2-task-row__state {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .housekeeping-v2-water-delivery {
+    grid-column: 2;
+    width: min(100%, 240px);
+    max-width: 100%;
+    min-width: 0;
+    justify-self: start;
+    margin-top: var(--vc-space-1);
+    padding-block: var(--vc-space-2);
+    line-height: 1.15;
+    white-space: normal;
+  }
+}
 @media (max-width: 420px) {
   .housekeeping-v2-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .housekeeping-v2-section__list {
@@ -510,6 +568,15 @@
   }
 }
 
+@media (max-width: 340px) {
+  .housekeeping-v2-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .housekeeping-v2-summary .vc-summary-item:nth-child(3):last-child {
+    grid-column: auto;
+  }
+}
 @media (display-mode: standalone) and (max-width: 520px) {
   .workspace-body.housekeeping-v2-page + .workspace-canopy {
     min-height: 148px;

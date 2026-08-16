@@ -256,7 +256,10 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.match(page, /translate\("taskChangedRefreshing"\)/);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{/);
   assert.match(css, /\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*40px minmax\(0, 1fr\) minmax\(112px, auto\) auto;/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*36px minmax\(0, 1fr\);/);
   assert.match(css, /@media \(max-width: 420px\)[\s\S]*\.housekeeping-v2-task-row--water\s*\{[\s\S]*grid-template-columns:\s*36px minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-task-row--water \.housekeeping-v2-room-link,[\s\S]*white-space:\s*normal;/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-water-delivery\s*\{[\s\S]*width:\s*min\(100%, 240px\);[\s\S]*max-width:\s*100%;[\s\S]*white-space:\s*normal;/);
   assert.match(css, /\.housekeeping-v2-water-delivery\s*\{[\s\S]*min-height:\s*44px;/);
   assert.match(css, /\.housekeeping-v2-water-delivery\.is-delivered/);
   assert.doesNotMatch(taskCard, /<button[\s\S]*<button[\s\S]*<\/button>[\s\S]*<\/button>/);
@@ -319,6 +322,10 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(service, /No water refills\./);
   assert.match(css, /\.housekeeping-v2-summary/);
   assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(css, /\.housekeeping-v2-summary \.vc-summary-item:nth-child\(3\):last-child\s*\{[\s\S]*grid-column:\s*1 \/ -1;/);
+  assert.match(css, /\.housekeeping-v2-summary \.vc-summary-item__label\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
+  assert.match(css, /@media \(max-width: 340px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
   assert.match(page, /VanaraSummaryGrid/);
   assert.match(css, /\.housekeeping-v2-card__actions/);
   assert.match(css, /@media \(max-width: 420px\)/);
