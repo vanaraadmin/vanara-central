@@ -1407,7 +1407,7 @@ test("previous-stay standard cleaning does not escalate into a new active stay",
 test("previous-day on-demand cleaning stays out of Housekeeping while Water remains in Water", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
-    { ...booking(101, 900101, 1, "Bungalow Guest", 1, 3), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
+    { ...booking(101, 900101, 1, "Bungalow Guest", 1, 3), arrival_date: "2026-07-31", departure_date: "2026-08-05" },
   ];
   db.tasks.push(
     storedTask({
@@ -1443,6 +1443,7 @@ test("previous-day on-demand cleaning stays out of Housekeeping while Water rema
   assert.equal(normal.some((card) => card.taskId === 81), false);
   assert.equal(priority.some((card) => card.taskType === "WATER_REFILL"), false);
   assert.equal(water.some((card) => card.taskType === "WATER_REFILL" && card.waterQuantity === 2), true);
+  assert.equal(water[0]?.reasonCodes.includes("water_refill_overdue"), true);
   assert.equal(priority.length, 0);
   assert.equal(normal.length, 0);
   assert.equal(water.length, 1);

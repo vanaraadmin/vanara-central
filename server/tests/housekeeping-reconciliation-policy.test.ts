@@ -237,6 +237,93 @@ test("migration 0051 restores only valid current tasks and is idempotent", async
   db.close();
 });
 
+test("migration 0055 keeps completed history and deduplicates active water obligations idempotently", async () => {
+  const migration = await readFile(new URL("../migrations/0055_housekeeping_single_water_obligation.sql", import.meta.url), "utf8");
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE housekeeping_tasks (
+      task_id INTEGER PRIMARY KEY,
+      task_type TEXT NOT NULL,
+      unit_id INTEGER NOT NULL,
+      operational_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      cancelled_at TEXT,
+      cancellation_reason TEXT,
+      version INTEGER NOT NULL,
+      updated_by TEXT,
+      updated_by_name TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE housekeeping_task_events (
+      event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      actor_user_id TEXT,
+      actor_name TEXT,
+      previous_status TEXT,
+      new_status TEXT,
+      reason TEXT,
+      metadata_json TEXT,
+      idempotency_key TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_test_water_event_key
+      ON housekeeping_task_events(task_id, idempotency_key);
+  `);
+  const insert = db.prepare(`
+    INSERT INTO housekeeping_tasks (
+      task_id, task_type, unit_id, operational_date, status, cancelled_at,
+      cancellation_reason, version, updated_by, updated_by_name, updated_at
+    ) VALUES (?, 'WATER_REFILL', ?, ?, ?, NULL, NULL, ?, NULL, NULL, ?)
+  `);
+  const createdAt = "2026-08-17T00:00:00.000Z";
+  insert.run(1, 1, "2026-08-13", "COMPLETED", 2, createdAt);
+  insert.run(2, 1, "2026-08-14", "AVAILABLE_FOR_CLAIM", 1, createdAt);
+  insert.run(3, 1, "2026-08-15", "AVAILABLE_FOR_CLAIM", 1, createdAt);
+  insert.run(4, 1, "2026-08-16", "AVAILABLE_FOR_CLAIM", 1, createdAt);
+  insert.run(5, 2, "2026-08-16", "AVAILABLE_FOR_CLAIM", 1, createdAt);
+
+  db.exec(migration);
+  const rows = db.prepare(`
+    SELECT task_id, unit_id, operational_date, status, version, cancellation_reason
+    FROM housekeeping_tasks
+    ORDER BY task_id
+  `).all() as Array<Record<string, unknown>>;
+  assert.deepEqual(rows.map((row) => [row.task_id, row.status]), [
+    [1, "COMPLETED"],
+    [2, "AVAILABLE_FOR_CLAIM"],
+    [3, "CANCELLED"],
+    [4, "CANCELLED"],
+    [5, "AVAILABLE_FOR_CLAIM"],
+  ]);
+  assert.equal(rows[0]?.version, 2);
+  assert.equal(rows[0]?.cancellation_reason, null);
+  assert.equal(rows[2]?.cancellation_reason, "Duplicate active water refill superseded by the oldest room obligation.");
+  assert.equal(rows[3]?.cancellation_reason, "Duplicate active water refill superseded by the oldest room obligation.");
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM housekeeping_tasks
+    WHERE task_type = 'WATER_REFILL'
+      AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED')
+  `).get()?.count, 2);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM housekeeping_task_events
+    WHERE event_type = 'water_refill_superseded'
+  `).get()?.count, 2);
+
+  const before = Number(db.prepare("SELECT total_changes() AS count").get()?.count);
+  db.exec(migration);
+  const after = Number(db.prepare("SELECT total_changes() AS count").get()?.count);
+  assert.equal(after - before, 0);
+
+  assert.throws(() => {
+    insert.run(6, 1, "2026-08-17", "AVAILABLE_FOR_CLAIM", 1, createdAt);
+  }, /UNIQUE constraint failed/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM housekeeping_tasks WHERE status = 'COMPLETED'").get()?.count, 1);
+  db.close();
+});
+
 function bangkokDateOffset(days: number): string {
   const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
   now.setUTCDate(now.getUTCDate() + days);

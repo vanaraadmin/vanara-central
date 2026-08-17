@@ -27,7 +27,9 @@ test("housekeeping v2 uses the task-oriented Sprint 1 domain and idempotency key
   assert.match(service, /housekeeping:v2:water:\$\{booking\.unit_id}:\$\{date}/);
   assert.match(service, /hasTask\(activeTasks, "TURNOVER"/);
   assert.match(service, /hasTask\(activeTasks, "STANDARD_CLEANING"/);
-  assert.match(service, /hasTask\(activeTasks, "WATER_REFILL"/);
+  assert.match(service, /async function reconcileDuplicateActiveWaterRefills\(/);
+  assert.match(service, /const activeWaterObligation = activeTasks\.some\(\(task\) => task\.taskType === "WATER_REFILL" && task\.unitId === booking\.unit_id\)/);
+  assert.match(service, /if \(!completedWaterToday && !activeWaterObligation\)/);
 });
 
 test("turnover release gate reads the real Reception booking key", () => {
@@ -103,7 +105,7 @@ test("summary exposes only the approved actionable Housekeeping counters and fix
   assert.match(service, /taskCountsAsActiveNow/);
   assert.match(service, /"ON_DEMAND_CLEANING"/);
   assert.match(service, /cleaningInProgress: tasks\.filter\(\(task\) => taskCountsAsActiveNow\(task\)\)\.length/);
-  assert.match(service, /completed_at IS NOT NULL AND substr\(completed_at, 1, 10\) = \?/);
+  assert.match(service, /completed_at IS NOT NULL AND date\(completed_at, '\+7 hours'\) = \?/);
   assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
   assert.doesNotMatch(service, /"ready", "procurement"/);
 });
@@ -232,7 +234,8 @@ test("water cards stay one-tap and avoid workflow indicators", () => {
   assert.match(page, /translate\("waterDeliveredFor", \{ room: card\.unitName \}\)/);
   assert.match(page, /waterDeliveryStateLabel\(card, translate\)/);
   assert.match(page, /return translate\("pending"\)/);
-  assert.match(page, /return translate\("delivered"\)/);
+  assert.match(page, /return translate\("waterDelivered"\)/);
+  assert.match(page, /reasonCodes\.includes\("water_refill_overdue"\)\) return translate\("waterRefillOverdue"\)/);
   assert.doesNotMatch(page, /Complete Water|Start Water/);
 });
 
@@ -308,7 +311,7 @@ test("priority escalation is derived from original operational date without ente
   assert.match(service, /taskBelongsToActiveStay/);
   assert.match(page, /translate\("wasDueYesterday"\)/);
   assert.doesNotMatch(service, /escalation_level|SLA|breach/);
-  assert.doesNotMatch(page, /overdue|breach|escalation level|overdue priority/i);
+  assert.doesNotMatch(page, /breach|escalation level|overdue priority/i);
   assert.doesNotMatch(page, /\bSLA\b/);
 });
 

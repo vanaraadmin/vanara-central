@@ -359,6 +359,7 @@ const en = {
   priorityTurnover: "Priority Turnover",
   normalCleaning: "Normal Cleaning",
   waterRefill: "Water refill",
+  waterRefillOverdue: "Overdue",
   water: "Water",
   toClean: "To Clean",
   activeNow: "Active Now",

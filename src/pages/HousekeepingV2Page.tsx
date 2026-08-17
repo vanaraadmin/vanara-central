@@ -122,6 +122,7 @@ function taskDetails(card: HousekeepingV2TaskCard, language: "en" | "th", transl
 function reasonLabel(code: string, translate: Translate): string {
   if (code === "standard_cleaning_previous_day") return translate("wasDueYesterday");
   if (code === "cleaning_due_today") return translate("dueToday");
+  if (code === "water_refill_overdue") return translate("waterRefillOverdue");
   if (code === "linen_required") return translate("linen");
   if (code === "linen_override") return translate("override");
   if (code === "waiting_reception") return translate("waitingForCheckout");
@@ -145,9 +146,10 @@ function statusLabel(card: HousekeepingV2TaskCard, translate: Translate): string
 }
 
 function waterDeliveryStateLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
-  if (card.taskStatus === "COMPLETED" || card.taskStatus === "READY") return translate("delivered");
+  if (card.taskStatus === "COMPLETED" || card.taskStatus === "READY") return translate("waterDelivered");
   if (card.taskStatus === "SKIPPED") return translate("skipped");
   if (card.isBlocked || card.taskStatus === "BLOCKED") return translate("blocked");
+  if (card.reasonCodes.includes("water_refill_overdue")) return translate("waterRefillOverdue");
   return translate("pending");
 }
 

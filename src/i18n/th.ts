@@ -359,6 +359,7 @@ const th = {
   priorityTurnover: "ต้องเตรียมห้องด่วน",
   normalCleaning: "ทำความสะอาดทั่วไป",
   waterRefill: "เติมน้ำ",
+  waterRefillOverdue: "เติมน้ำเลยวันแล้ว",
   water: "น้ำ",
   toClean: "ต้องทำความสะอาด",
   activeNow: "กำลังทำอยู่",

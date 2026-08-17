@@ -51,7 +51,7 @@ export interface HousekeepingV2TaskCard {
   };
 }
 
-export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "cleaning_due_today" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
+export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "cleaning_due_today" | "water_refill_overdue" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Section {
   id: HousekeepingV2SectionId;
@@ -317,8 +317,9 @@ async function generateHousekeepingV2Tasks(env: HousekeepingV2Bindings, user: Cu
 
     if (!isWaterRefillEligible(booking, date)) continue;
 
-    const completedWaterToday = tasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && task.operationalDate === date && (task.status === "COMPLETED" || task.status === "SKIPPED"));
-    if (!completedWaterToday && !hasTask(activeTasks, "WATER_REFILL", booking.unit_id, null, null, date)) {
+    const completedWaterToday = tasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id && waterTaskCompletedOnBangkokDate(task, date));
+    const activeWaterObligation = activeTasks.some((task) => task.taskType === "WATER_REFILL" && task.unitId === booking.unit_id);
+    if (!completedWaterToday && !activeWaterObligation) {
       attempted += 1;
       await createHousekeepingTask(env, {
         taskType: "WATER_REFILL",
@@ -347,6 +348,7 @@ async function reconcileCurrentDateTasks(
   tasks: HousekeepingTask[],
 ): Promise<void> {
   const turnoverPlan = buildTurnoverReconciliationPlan(bookings, tasks, date);
+  await reconcileDuplicateActiveWaterRefills(env, user, tasks);
   for (const { task, reason } of turnoverPlan.cancellations) {
     await transitionHousekeepingTask(env, task.id, {
       action: "cancel",
@@ -405,6 +407,37 @@ async function reconcileCurrentDateTasks(
       idempotencyKey: `housekeeping:truth-reconcile:superseded-cycle:${task.id}:${task.version}`,
       reason: "Task belongs to a room cycle superseded by a later operational stay.",
       metadata: { source: "housekeeping_truth_reconciliation", reason: "superseded_room_cycle", operationalDate: date },
+    });
+  }
+}
+
+async function reconcileDuplicateActiveWaterRefills(
+  env: HousekeepingV2Bindings,
+  user: CurrentUser,
+  tasks: HousekeepingTask[],
+): Promise<void> {
+  const canonicalByUnit = new Map<number, HousekeepingTask>();
+  const activeWaterTasks = tasks
+    .filter((task) => task.taskType === "WATER_REFILL" && ACTIVE_TASK_STATUSES.has(task.status))
+    .sort((left, right) => left.unitId - right.unitId || left.operationalDate.localeCompare(right.operationalDate) || left.id - right.id);
+
+  for (const task of activeWaterTasks) {
+    const canonical = canonicalByUnit.get(task.unitId);
+    if (!canonical) {
+      canonicalByUnit.set(task.unitId, task);
+      continue;
+    }
+    await transitionHousekeepingTask(env, task.id, {
+      action: "cancel",
+      expectedVersion: task.version,
+      actor: user,
+      idempotencyKey: `housekeeping:water-obligation:supersede:${task.id}:${task.version}`,
+      reason: "Duplicate active water refill superseded by the oldest room obligation.",
+      metadata: {
+        source: "water_obligation_reconciliation",
+        canonicalTaskId: canonical.id,
+        canonicalOperationalDate: canonical.operationalDate,
+      },
     });
   }
 }
@@ -632,6 +665,7 @@ function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, tas
     if (task.operationalDate < context.date) codes.push("standard_cleaning_previous_day");
     else if (task.dueCycleDate === context.date || task.operationalDate === context.date) codes.push("cleaning_due_today");
   }
+  if (taskType === "WATER_REFILL" && task.operationalDate < context.date) codes.push("water_refill_overdue");
   if (taskType === "LINEN_CHANGE" || context.counter?.linen_required_override === 1 || (taskType === "STANDARD_CLEANING" && linenChangeDueCycle(context.counter, context.date))) {
     codes.push("linen_required");
     if (context.counter?.linen_required_override === 1) codes.push("linen_override");
@@ -665,6 +699,7 @@ function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask
 function displayReasonFor(reasonCodes: HousekeepingV2ReasonCode[]): string | null {
   if (reasonCodes.includes("standard_cleaning_previous_day")) return "Was due yesterday";
   if (reasonCodes.includes("waiting_reception")) return "Waiting for Check-out";
+  if (reasonCodes.includes("water_refill_overdue")) return "Overdue";
   if (reasonCodes.includes("maintenance_block")) return "Maintenance Block";
   if (reasonCodes.includes("cleaning_due_today")) return "Due today";
   if (reasonCodes.includes("linen_override")) return "Full Cleaning requested";
@@ -917,10 +952,17 @@ async function loadTasks(env: HousekeepingV2Bindings, date: string): Promise<Hou
     FROM housekeeping_tasks
     WHERE operational_date = ?
        OR (due_cycle_date <= ? AND status NOT IN ('COMPLETED', 'SKIPPED', 'CANCELLED'))
-       OR (completed_at IS NOT NULL AND substr(completed_at, 1, 10) = ?)
+       OR (completed_at IS NOT NULL AND date(completed_at, '+7 hours') = ?)
     ORDER BY operational_date, task_id
   `).bind(date, date, date).all<TaskRow>();
   return (rows.results ?? []).map(mapTaskRow);
+}
+
+function waterTaskCompletedOnBangkokDate(task: HousekeepingTask, date: string): boolean {
+  if (task.status !== "COMPLETED" && task.status !== "SKIPPED") return false;
+  if (task.operationalDate === date) return true;
+  const completedAt = task.completedAt ? new Date(task.completedAt) : null;
+  return Boolean(completedAt && !Number.isNaN(completedAt.getTime()) && formatBangkokDate(completedAt) === date);
 }
 
 async function loadCounters(env: HousekeepingV2Bindings): Promise<Map<number, CounterRow>> {

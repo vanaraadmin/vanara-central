@@ -509,6 +509,11 @@ export async function markHousekeepingV2LinenRequired(env: HousekeepingV2RoomBin
 
 export async function performHousekeepingV2TaskAction(env: HousekeepingV2RoomBindings, user: CurrentUser, taskId: number, action: "claim" | "release-claim" | "start" | "complete" | "skip" | "cancel" | "reopen", input: ActionInput): Promise<HousekeepingV2RoomDetail> {
   const task = await getRequiredTask(env, taskId);
+  if (action === "complete" && task.taskType === "WATER_REFILL" && task.status === "COMPLETED") {
+    const replayedDetail = await getHousekeepingV2RoomDetail(env, user, task.unitId, task.operationalDate);
+    if (!replayedDetail) throw new HousekeepingV2RoomError("Room not found.", 404);
+    return replayedDetail;
+  }
   const blocking = await hasMaintenanceBlock(env, task.unitId);
   const permissions = taskCapabilitiesForUser(task, user, blocking);
 
