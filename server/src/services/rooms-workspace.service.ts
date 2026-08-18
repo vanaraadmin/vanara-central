@@ -1,6 +1,7 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import { type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
+import { housekeepingWorkKind, housekeepingWorkTitle } from "./housekeeping-task-presentation.service.js";
 import { getBangkokDate } from "./today.service.js";
 import { canCompleteReception, hasModulePermission, type CurrentUser } from "./current-user.service.js";
 import { readableUnitName } from "./room-display-label.service.js";
@@ -314,13 +315,14 @@ function sourceLabel(row: RoomWorkspaceRow): string | null {
   return row.api_source || row.channel || null;
 }
 
-function taskTypeLabel(taskType: HousekeepingTaskType | null): string | null {
-  if (!taskType) return null;
-  if (taskType === "TURNOVER") return "Turnover";
-  if (taskType === "STANDARD_CLEANING" || taskType === "ON_DEMAND_CLEANING") return "Cleaning";
-  if (taskType === "LINEN_CHANGE") return "Full Cleaning";
-  if (taskType === "WATER_REFILL") return "Water refill";
-  return "Housekeeping";
+function taskPresentationPriority(taskType: HousekeepingTaskType | null, priority: HousekeepingTaskPriority | null, hasIncomingToday: boolean): HousekeepingTaskPriority | null {
+  if (taskType === "TURNOVER" && !hasIncomingToday) return "NORMAL";
+  return priority;
+}
+
+function taskTypeLabel(taskType: HousekeepingTaskType | null, priority: HousekeepingTaskPriority | null, hasIncomingToday: boolean): string | null {
+  if (!taskType || !priority) return null;
+  return housekeepingWorkTitle(housekeepingWorkKind(taskType, taskPresentationPriority(taskType, priority, hasIncomingToday) ?? priority));
 }
 
 function housekeepingWorkState(row: RoomWorkspaceRow): RoomHousekeepingWorkState {
@@ -608,12 +610,14 @@ function housekeepingCompletionMode(taskType: HousekeepingTaskType): RoomHouseke
 
 function mapHousekeepingActiveTask(row: RoomWorkspaceRow): RoomHousekeepingActiveTaskSummary | null {
   if (!row.active_task_id || !row.active_task_type || !row.active_task_status || !row.active_task_priority || !row.active_task_version) return null;
+  const hasIncomingToday = (row.reception_arrival_today_count ?? 0) > 0;
+  const priority = taskPresentationPriority(row.active_task_type, row.active_task_priority, hasIncomingToday) ?? row.active_task_priority;
   return {
     id: row.active_task_id,
     version: row.active_task_version,
-    taskType: taskTypeLabel(row.active_task_type) ?? "Housekeeping",
+    taskType: taskTypeLabel(row.active_task_type, priority, hasIncomingToday) ?? "Housekeeping",
     status: row.active_task_status,
-    priority: row.active_task_priority,
+    priority,
     assignee: row.active_task_assignee,
   };
 }
@@ -853,7 +857,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSum
       housekeeping: {
         condition: row.ready_state === "NOT_READY" ? "NOT_READY" : "READY",
         workState: housekeepingWorkState(row),
-        activeTaskType: taskTypeLabel(row.active_task_type),
+        activeTaskType: taskTypeLabel(row.active_task_type, row.active_task_priority, reception.today.checkIn),
         assignedTo: row.active_task_assignee,
       },
       maintenance: {

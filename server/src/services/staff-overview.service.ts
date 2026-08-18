@@ -126,8 +126,7 @@ const TERMINAL_HOUSEKEEPING_STATUSES = new Set(["COMPLETED", "SKIPPED", "CANCELL
 function staffHousekeepingPresentation(overview: HousekeepingV2Overview): { metrics: StaffOverviewMetric[]; summaryLine1: string; summaryLine2: string } {
   const priorityTurnover = overview.tasks.filter((task) => (
     task.currentQueue === "priority-turnover"
-    && task.taskType === "TURNOVER"
-    && !task.isBlocked
+    && task.workKind === "PRIORITY_TURNOVER"
     && !TERMINAL_HOUSEKEEPING_STATUSES.has(task.taskStatus)
   )).length;
 

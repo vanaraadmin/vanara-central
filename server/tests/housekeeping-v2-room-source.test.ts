@@ -178,7 +178,7 @@ test("Housekeeping task execution page contains only execution UI", () => {
 test("Housekeeping room path uses Turnover language instead of Reception workflow copy", () => {
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
   assert.match(roomWorkspace, /<TurnoverPanel room=\{room\.data\} roomId=\{roomId\} \/>[\s\S]*<HousekeepingPanel/);
-  assert.match(turnoverCard, /eyebrow=\{translate\("turnover"\)\}/);
+  assert.match(turnoverCard, /eyebrow=\{translate\(turnover\.workKind === "CHECKOUT_CLEANING" \? "checkOutCleaning" : "turnover"\)\}/);
   assert.match(turnoverCard, /title=\{translate\("currentState"\)\}/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);

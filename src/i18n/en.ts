@@ -357,6 +357,7 @@ const en = {
   finishFullCleaning: "Finish Full Cleaning",
   turnover: "Turnover",
   priorityTurnover: "Priority Turnover",
+  checkOutCleaning: "Check-out Cleaning",
   normalCleaning: "Normal Cleaning",
   waterRefill: "Water refill",
   waterRefillOverdue: "Overdue",

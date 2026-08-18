@@ -674,9 +674,11 @@ test("turnover scenario 3: today's checkout moves from waiting to released turno
   const released = byName((await getRoomsWorkspaceOverview(env([roomsAccess], { rooms: [checkoutCompleted] }), "2026-08-02", housekeepingCapableUser)).rooms, "Bungalow 33");
 
   assert.equal(getRoomsWorkspaceTurnover(waiting, "2026-08-02")?.label, "Waiting for Today's Check-out");
+  assert.equal(getRoomsWorkspaceTurnover(waiting, "2026-08-02")?.workKind, "CHECKOUT_CLEANING");
   assert.equal(waiting.housekeeping.primaryStatus, "Waiting for Check-out");
   assert.equal(waiting.housekeeping.primaryAction, null);
   assert.equal(getRoomsWorkspaceTurnover(released, "2026-08-02")?.label, "Today's Check-out Completed");
+  assert.equal(getRoomsWorkspaceTurnover(released, "2026-08-02")?.workKind, "CHECKOUT_CLEANING");
   assert.equal(released.housekeeping.primaryStatus, "Cleaning Required");
   assert.equal(released.housekeeping.primaryAction?.type, "START_HOUSEKEEPING_TASK");
 });
@@ -716,6 +718,7 @@ test("turnover scenario 4: check-in during turnover cleaning derives Guest Waiti
   const compact = getRoomCompactPresentation(room);
 
   assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02")?.label, "Guest Waiting For Room");
+  assert.equal(getRoomsWorkspaceTurnover(room, "2026-08-02")?.workKind, "PRIORITY_TURNOVER");
   assert.equal(room.housekeeping.primaryStatus, "Cleaning In Progress");
   assert.equal(room.housekeeping.primaryAction?.type, "COMPLETE_HOUSEKEEPING_TASK");
   assert.equal(room.housekeeping.primaryAction?.label, "Finish Cleaning");

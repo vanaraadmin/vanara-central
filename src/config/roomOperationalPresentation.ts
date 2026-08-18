@@ -74,7 +74,7 @@ function mapCompactTurnover(room: RoomsWorkspaceRoom): RoomCompactSignal | null 
 
 function mapCompactGuestWaiting(room: RoomsWorkspaceRoom): RoomCompactSignal | null {
   const task = room.housekeeping.activeTask;
-  if (task?.taskType === "Turnover" && task.status === "IN_PROGRESS" && room.reception.checkIn.state === "COMPLETE") {
+  if (task?.taskType === "Priority Turnover" && task.status === "IN_PROGRESS" && room.reception.checkIn.state === "COMPLETE") {
     return compactSignal("guest-waiting", "GUEST WAITING", "critical");
   }
   return null;

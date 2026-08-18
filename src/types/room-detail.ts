@@ -1,5 +1,6 @@
 import type { MaintenancePriority, MaintenanceTicketDetail } from "./maintenance";
 import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
+import type { HousekeepingWorkKind } from "./housekeeping-v2";
 
 export type RoomHousekeepingStatus = "Dirty" | "Cleaning" | "Clean";
 export type RoomReadyState = "READY" | "NOT_READY";
@@ -43,6 +44,7 @@ export interface RoomHousekeeping {
 export interface RoomHousekeepingTask {
   id: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
   title: string;
   status: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;

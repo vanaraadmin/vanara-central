@@ -523,12 +523,15 @@ test("three checkouts and zero same-day incoming stays produce three normal task
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await request("/api/housekeeping/v2/tasks?date=2026-08-14", db);
-    const body = await response.json() as { data: { sections: Array<{ id: string; cards: Array<{ taskType: string; priority: string }> }> } };
+    const body = await response.json() as { data: { sections: Array<{ id: string; cards: Array<{ taskType: string; priority: string; taskStatus: string; workKind: string }> }>; summary: { toClean: number } } };
     assert.equal(response.status, 200, JSON.stringify(body));
     const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
     const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
     assert.equal(priority.filter((card) => card.taskType === "TURNOVER").length, 0);
     assert.equal(normal.filter((card) => card.taskType === "TURNOVER" && card.priority === "NORMAL").length, 3);
+    assert.equal(normal.every((card) => card.workKind === "CHECKOUT_CLEANING"), true);
+    assert.equal(normal.every((card) => card.taskStatus === "WAITING_FOR_RECEPTION"), true);
+    assert.equal(body.data.summary.toClean, 3);
   }
   assert.equal(db.tasks.filter((task) => task.task_type === "TURNOVER").length, 3);
 });
@@ -707,13 +710,14 @@ test("released turnover becomes Priority only when the next arrival is imminent"
   }));
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-03", db);
-  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string }> }> } };
+  const body = await response.json() as { success: boolean; data: { sections: Array<{ id: string; cards: Array<{ taskId: number; currentQueue: string; workKind: string }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   const priority = body.data.sections.find((section) => section.id === "priority-turnover");
   assert.equal(priority?.cards.length, 1);
   assert.equal(priority?.cards[0]?.taskId, 89);
   assert.equal(priority?.cards[0]?.currentQueue, "priority-turnover");
+  assert.equal(priority?.cards[0]?.workKind, "PRIORITY_TURNOVER");
 });
 
 test("unfinished checkout turnover remains visible the following day as normal cleaning when no arrival is imminent", async () => {
@@ -773,12 +777,14 @@ test("stale waiting-for-checkout turnover becomes actionable normal cleaning whe
   assert.equal(db.events.some((event) => event.task_id === 91 && event.event_type === "release_from_reception"), true);
 
   const detailResponse = await request("/api/housekeeping/v2/rooms/1?date=2026-08-09", db);
-  const detail = await detailResponse.json() as { success: boolean; data: { housekeeping: { tasks: Array<{ id: number; status: string; taskType: string; capabilities: { canStart: boolean } }> } } };
+  const detail = await detailResponse.json() as { success: boolean; data: { housekeeping: { tasks: Array<{ id: number; status: string; taskType: string; workKind: string; title: string; capabilities: { canStart: boolean } }> } } };
   assert.equal(detailResponse.status, 200, JSON.stringify(detail));
   const detailTask = detail.data.housekeeping.tasks.find((task) => task.id === 91);
   assert.ok(detailTask);
   assert.equal(detailTask.status, "AVAILABLE_FOR_CLAIM");
   assert.equal(detailTask.taskType, "TURNOVER");
+  assert.equal(detailTask.workKind, "CHECKOUT_CLEANING");
+  assert.equal(detailTask.title, "Check-out Cleaning");
   assert.equal(detailTask.capabilities.canStart, true);
   assert.equal(detail.data.housekeeping.tasks.filter((task) => task.taskType === "TURNOVER" && !["CANCELLED", "COMPLETED", "SKIPPED"].includes(task.status)).length, 1);
 });

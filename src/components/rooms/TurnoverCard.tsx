@@ -28,7 +28,7 @@ export default function TurnoverCard({
   return (
     <RoomDomainCard
       className="turnover-card"
-      eyebrow={translate("turnover")}
+      eyebrow={translate(turnover.workKind === "CHECKOUT_CLEANING" ? "checkOutCleaning" : "turnover")}
       headingId={`turnover-card-${roomId}`}
       state={<TurnoverState turnover={turnover} />}
       status={<OperationalStatusPill label={translateStaffLabel(turnover.label, translate)} tone={turnover.tone} emphasis />}

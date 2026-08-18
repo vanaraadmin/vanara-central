@@ -139,11 +139,12 @@ function taskStatusLabel(task: RoomHousekeepingTask, translate: Translate): stri
 }
 
 function taskDetailLabel(task: RoomHousekeepingTask, translate: Translate): string {
-  if (task.taskType === "TURNOVER") return translate("turnover");
-  if (task.taskType === "LINEN_CHANGE") return translate("fullCleaning");
-  if (task.taskType === "STANDARD_CLEANING") return translate("cleaning");
-  if (task.taskType === "ON_DEMAND_CLEANING") return translate("onDemandCleaning");
-  if (task.taskType === "WATER_REFILL") return translate("waterRefill");
+  if (task.workKind === "PRIORITY_TURNOVER") return translate("priorityTurnover");
+  if (task.workKind === "CHECKOUT_CLEANING") return translate("checkOutCleaning");
+  if (task.workKind === "FULL_CLEANING") return translate("fullCleaning");
+  if (task.workKind === "NORMAL_CLEANING") return translate("cleaning");
+  if (task.workKind === "ON_DEMAND_CLEANING") return translate("onDemandCleaning");
+  if (task.workKind === "WATER_REFILL") return translate("waterRefill");
   return task.title;
 }
 

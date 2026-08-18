@@ -357,6 +357,7 @@ const th = {
   finishFullCleaning: "เสร็จงานทำความสะอาดใหญ่",
   turnover: "เตรียมห้องรับแขกใหม่",
   priorityTurnover: "ต้องเตรียมห้องด่วน",
+  checkOutCleaning: "ทำความสะอาดหลังเช็กเอาต์",
   normalCleaning: "ทำความสะอาดทั่วไป",
   waterRefill: "เติมน้ำ",
   waterRefillOverdue: "เติมน้ำเลยวันแล้ว",

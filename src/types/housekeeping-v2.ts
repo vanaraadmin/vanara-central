@@ -3,6 +3,7 @@ import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTask
 export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
+export type HousekeepingWorkKind = "PRIORITY_TURNOVER" | "CHECKOUT_CLEANING" | "NORMAL_CLEANING" | "FULL_CLEANING" | "WATER_REFILL" | "ON_DEMAND_CLEANING";
 export type HousekeepingV2ReasonCode = "standard_cleaning_previous_day" | "cleaning_due_today" | "water_refill_overdue" | "linen_required" | "linen_override" | "waiting_reception" | "maintenance_block";
 
 export interface HousekeepingV2Summary {
@@ -18,6 +19,7 @@ export interface HousekeepingV2TaskCard {
   taskId: number;
   taskVersion: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
   taskStatus: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
   operationalDate: string;
@@ -105,6 +107,8 @@ export interface HousekeepingV2TaskCapabilities {
 export interface HousekeepingV2RoomTask {
   id: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
+  title: string;
   status: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
   bookingId: number | null;

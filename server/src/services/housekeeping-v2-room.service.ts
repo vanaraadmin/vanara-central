@@ -1,4 +1,5 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
+import { housekeepingWorkKind, housekeepingWorkTitle, type HousekeepingWorkKind } from "./housekeeping-task-presentation.service.js";
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import {
   createHousekeepingTask,
@@ -41,6 +42,8 @@ export interface HousekeepingV2ChecklistItem {
 export interface HousekeepingV2RoomTask {
   id: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
+  title: string;
   status: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
   bookingId: number | null;
@@ -336,7 +339,7 @@ export function normalizeLinenRequiredInput(payload: unknown): LinenRequiredInpu
 
 export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBindings, user: CurrentUser, unitId: number, dateInput?: string | null): Promise<HousekeepingV2RoomDetail | null> {
   const date = normalizeHousekeepingV2Date(dateInput);
-  await getHousekeepingV2Overview(env, user, date);
+  const overview = await getHousekeepingV2Overview(env, user, date);
   await syncReleasedTurnoverTasks(env, date, user);
 
   const unit = await loadUnit(env, unitId);
@@ -356,7 +359,8 @@ export async function getHousekeepingV2RoomDetail(env: HousekeepingV2RoomBinding
   const next = bookings.filter((booking) => booking.arrival_date >= date).sort((left, right) => checkInAt(left).localeCompare(checkInAt(right)))[0] ?? null;
   const primary = primaryTask(tasks);
   const blockingTicket = maintenance.find((ticket) => ticket.out_of_service === 1) ?? null;
-  const taskDtos = await Promise.all(tasks.map(async (task) => mapRoomTask(env, task, user, Boolean(blockingTicket))));
+  const overviewCards = new Map(overview.tasks.map((task) => [task.taskId, task]));
+  const taskDtos = await Promise.all(tasks.map(async (task) => mapRoomTask(env, task, user, Boolean(blockingTicket), overviewCards.get(task.id)?.priority)));
   const mergedCapabilities = taskDtos.find((task) => task.id === primary?.id)?.capabilities ?? emptyCapabilities(user);
   const releaseBooking = departing ?? current;
 
@@ -714,14 +718,17 @@ function normalizeCompletion(value: unknown): HousekeepingCompletionInput | unde
   return completion;
 }
 
-async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean): Promise<HousekeepingV2RoomTask> {
+async function mapRoomTask(env: HousekeepingV2RoomBindings, task: HousekeepingTask, user: CurrentUser, maintenanceBlocked: boolean, presentationPriority = task.priority): Promise<HousekeepingV2RoomTask> {
   const caps = taskCapabilitiesForUser(task, user, maintenanceBlocked);
   const booking = task.bookingId ? await env.DB.prepare("SELECT beds24_booking_id FROM bookings WHERE booking_id = ?").bind(task.bookingId).first<{ beds24_booking_id: number }>() : null;
+  const workKind = housekeepingWorkKind(task.taskType, presentationPriority);
   return {
     id: task.id,
     taskType: task.taskType,
+    workKind,
+    title: workKind === "ON_DEMAND_CLEANING" ? "Cleaning request" : housekeepingWorkTitle(workKind),
     status: task.status,
-    priority: task.priority,
+    priority: presentationPriority,
     bookingId: task.bookingId,
     beds24BookingId: booking?.beds24_booking_id ?? null,
     version: task.version,

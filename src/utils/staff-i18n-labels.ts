@@ -9,6 +9,7 @@ const roomLabelKeys: Record<string, string> = {
   ARRIVALS: "arrivals",
   "CHECK-IN TODAY": "checkInToday",
   "CHECK-OUT TODAY": "checkOutToday",
+  "CHECK-OUT CLEANING": "checkOutCleaning",
   "CHECKED OUT": "checkedOut",
   CLEAN: "roomClean",
   CLEAR: "maintenanceClear",

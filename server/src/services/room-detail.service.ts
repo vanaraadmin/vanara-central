@@ -2,6 +2,7 @@ import { getHousekeepingOverview, type CheckoutCompletionSource, type Housekeepi
 import { housekeepingOperationalTaskCapabilities } from "./housekeeping-task-capabilities.service.js";
 import { createHousekeepingTask, getHousekeepingTask, ROOM_READY_OVERRIDE_SOURCE, transitionHousekeepingTask, type HousekeepingTask, type HousekeepingTaskPriority, type HousekeepingTaskStatus, type HousekeepingTaskType } from "./housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, type HousekeepingV2Bindings } from "./housekeeping-v2-overview.service.js";
+import { housekeepingWorkKind, housekeepingWorkTitle, type HousekeepingWorkKind } from "./housekeeping-task-presentation.service.js";
 import { createMaintenanceTicket, listOpenMaintenanceTicketDetailsForRoom, normalizeCreateMaintenanceTicketInput, type CreateMaintenanceTicketInput, type MaintenanceBindings, type MaintenanceTicketDetail } from "./maintenance.service.js";
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { getReceptionStay, type ReceptionBindings, type ReceptionStay } from "./reception.service.js";
@@ -101,6 +102,7 @@ export interface RoomHousekeeping {
 export interface RoomHousekeepingTask {
   id: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
   title: string;
   status: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
@@ -280,11 +282,9 @@ function canChangeRoomReadyState(user: CurrentUser): boolean {
 }
 
 function taskTitle(task: HousekeepingTask): string {
-  if (task.taskType === "STANDARD_CLEANING") return "Cleaning";
-  if (task.taskType === "LINEN_CHANGE") return "Full Cleaning";
-  if (task.taskType === "ON_DEMAND_CLEANING") return "Cleaning request";
-  if (task.taskType === "WATER_REFILL") return "Water refill";
-  return "Turnover";
+  const workKind = housekeepingWorkKind(task.taskType, task.priority);
+  if (workKind === "ON_DEMAND_CLEANING") return "Cleaning request";
+  return housekeepingWorkTitle(workKind);
 }
 
 function taskIsCarriedOver(task: HousekeepingTask, today: string): boolean {
@@ -318,7 +318,7 @@ function primaryHousekeepingState(task: RoomHousekeepingTask | null, maintenance
   if (task.isCarriedOver) return { label: "Priority", tone: "priority" };
   if (task.status === "IN_PROGRESS" || task.status === "CLAIMED") return { label: "Cleaning In Progress", tone: "cleaning-in-progress" };
   if (task.status === "READY" || task.status === "READY_FOR_INSPECTION") return { label: "Clean", tone: "clean" };
-  if (task.priority === "URGENT" || task.priority === "HIGH" || task.taskType === "TURNOVER") return { label: "Priority", tone: "priority" };
+  if (task.priority === "URGENT" || task.workKind === "PRIORITY_TURNOVER") return { label: "Priority", tone: "priority" };
   if (task.taskType === "LINEN_CHANGE") return { label: "Full Cleaning", tone: "full-cleaning" };
   if (task.taskType === "WATER_REFILL") return { label: "Water refill", tone: "water-refill" };
   return { label: "Cleaning scheduled", tone: "cleaning-scheduled" };
@@ -604,6 +604,7 @@ function roomTaskCapabilities(task: HousekeepingTask, user: CurrentUser, mainten
 function mapRoomHousekeepingTask(task: HousekeepingTask, user: CurrentUser, today: string, maintenanceBlocked: boolean): RoomHousekeepingTask {
   return {
     id: task.id,
+    workKind: housekeepingWorkKind(task.taskType, task.priority),
     taskType: task.taskType,
     title: taskTitle(task),
     status: task.status,

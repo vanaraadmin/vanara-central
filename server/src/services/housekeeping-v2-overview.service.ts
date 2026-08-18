@@ -5,6 +5,7 @@ import type { CurrentUser } from "./current-user.service.js";
 import { canonicalUnitName, readableUnitName } from "./room-display-label.service.js";
 import type { OperationalAvailabilityStatus } from "./room-operational-state.service.js";
 import { buildTurnoverReconciliationPlan, departureForOperationalDate, hasSupersedingRoomCycle, qualifyingIncomingForOperationalDate } from "./housekeeping-reconciliation-policy.service.js";
+import { housekeepingWorkKind, type HousekeepingWorkKind } from "./housekeeping-task-presentation.service.js";
 
 export interface HousekeepingV2Bindings {
   DB: D1Database;
@@ -27,6 +28,7 @@ export interface HousekeepingV2TaskCard {
   taskId: number;
   taskVersion: number;
   taskType: HousekeepingTaskType;
+  workKind: HousekeepingWorkKind;
   taskStatus: HousekeepingTaskStatus;
   priority: HousekeepingTaskPriority;
   operationalDate: string;
@@ -521,6 +523,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
   const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, maintenanceBlocked);
   const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, maintenanceBlocked);
   const currentQueue = visibleQueueForTask(context, task, reasonCodes, isWaitingRelease, maintenanceBlocked);
+  const priority = taskType === "TURNOVER" ? (hasQualifyingIncomingToday(context) ? "HIGH" : "NORMAL") : task.priority;
 
   return {
     unitId: context.unit.unit_id,
@@ -528,8 +531,9 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
     taskId: task.id,
     taskVersion: task.version,
     taskType,
+    workKind: housekeepingWorkKind(taskType, priority),
     taskStatus: task.status,
-    priority: taskType === "TURNOVER" ? (hasQualifyingIncomingToday(context) ? "HIGH" : "NORMAL") : task.priority,
+    priority,
     operationalDate: task.operationalDate,
     currentQueue,
     displayReason: displayReasonFor(reasonCodes),
@@ -565,7 +569,7 @@ function buildSections(cards: HousekeepingV2TaskCard[]): HousekeepingV2Section[]
 function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2TaskCard[], tasks: HousekeepingTask[], date: string): HousekeepingV2Summary {
   const cleaningCards = cards.filter((card) => CLEANING_TASK_TYPES.has(card.taskType));
   return {
-    toClean: cleaningCards.filter((card) => !IN_PROGRESS_STATUSES.has(card.taskStatus) && !card.isBlocked).length,
+    toClean: cleaningCards.filter((card) => !IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
     cleaningInProgress: tasks.filter((task) => taskCountsAsActiveNow(task)).length,
     completedCleaningToday: tasks.filter((task) => COMPLETED_CLEANING_TASK_TYPES.has(task.taskType) && taskCompletedOn(task, date)).length,
     waterDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,

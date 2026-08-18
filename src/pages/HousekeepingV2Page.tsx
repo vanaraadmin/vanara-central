@@ -53,9 +53,10 @@ function formatDate(value: string | null, language: "en" | "th", translate: Tran
 }
 
 function taskLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
-  if (card.taskType === "TURNOVER") return card.currentQueue === "priority-turnover" ? translate("turnover") : translate("normalCleaning");
-  if (card.taskType === "STANDARD_CLEANING") return translate("cleaning");
-  if (card.taskType === "LINEN_CHANGE") return translate("fullCleaning");
+  if (card.workKind === "PRIORITY_TURNOVER") return translate("priorityTurnover");
+  if (card.workKind === "CHECKOUT_CLEANING") return translate("checkOutCleaning");
+  if (card.workKind === "NORMAL_CLEANING") return translate("cleaning");
+  if (card.workKind === "FULL_CLEANING") return translate("fullCleaning");
   if (card.taskType === "WATER_REFILL") return card.waterQuantity ? `${card.waterQuantity} ${card.waterQuantity === 1 ? translate("bottle") : translate("bottles")}` : translate("waterRefill");
   return translate("operationalTask");
 }

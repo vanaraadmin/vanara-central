@@ -480,6 +480,50 @@
     overflow-wrap: anywhere;
   }
 
+  .housekeeping-v2-section__list {
+    padding: var(--vc-space-2);
+  }
+
+  .housekeeping-v2-task-row {
+    grid-template-columns: 36px minmax(0, 1fr) 18px;
+    gap: var(--vc-space-2);
+    padding: var(--vc-space-4) var(--vc-space-3);
+  }
+
+  .housekeeping-v2-room-link,
+  .housekeeping-v2-task-row__identity > strong {
+    overflow: visible;
+    max-width: 100%;
+    font-size: 1.125rem;
+    line-height: 1.2;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .housekeeping-v2-task-row__identity > span,
+  .housekeeping-v2-intervention,
+  .housekeeping-v2-task-row__state strong,
+  .housekeeping-v2-task-row__state span {
+    overflow: visible;
+    max-width: 100%;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .housekeeping-v2-task-row__state {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .housekeeping-v2-task-row__toggle {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
   .housekeeping-v2-task-row--water {
     grid-template-columns: 36px minmax(0, 1fr);
     gap: var(--vc-space-2);

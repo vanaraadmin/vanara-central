@@ -8,9 +8,12 @@ export type TurnoverState =
   | "GUEST_WAITING_FOR_ROOM"
   | "READY_FOR_TODAYS_CHECKIN";
 
+
+export type TurnoverWorkKind = "PRIORITY_TURNOVER" | "CHECKOUT_CLEANING";
 export interface TurnoverPresentation {
   state: TurnoverState;
   label: string;
+  workKind: TurnoverWorkKind;
   detail: string;
   tone: RoomDomainTone;
 }
@@ -63,56 +66,66 @@ function stateCopy(state: TurnoverState): Pick<TurnoverPresentation, "detail" | 
   };
 }
 
-function buildPresentation(state: TurnoverState): TurnoverPresentation {
+function buildPresentation(state: TurnoverState, workKind: TurnoverWorkKind): TurnoverPresentation {
   return {
     ...stateCopy(state),
     state,
+    workKind,
   };
 }
 
 function roomWorkspaceTurnoverInProgress(room: RoomsWorkspaceRoom): boolean {
-  return room.housekeeping.activeTask?.taskType === "Turnover" && room.housekeeping.activeTask.status === "IN_PROGRESS";
+  return ["Priority Turnover", "Check-out Cleaning"].includes(room.housekeeping.activeTask?.taskType ?? "") && room.housekeeping.activeTask?.status === "IN_PROGRESS";
 }
 
 function roomWorkspaceHasActiveTurnover(room: RoomsWorkspaceRoom): boolean {
-  return room.housekeeping.activeTask?.taskType === "Turnover";
+  return ["Priority Turnover", "Check-out Cleaning"].includes(room.housekeeping.activeTask?.taskType ?? "");
+}
+
+function roomWorkspaceWorkKind(room: RoomsWorkspaceRoom): TurnoverWorkKind {
+  return room.reception.today.checkIn || room.housekeeping.activeTask?.taskType === "Priority Turnover" ? "PRIORITY_TURNOVER" : "CHECKOUT_CLEANING";
 }
 
 export function getRoomsWorkspaceTurnover(room: RoomsWorkspaceRoom, date = todayBangkok()): TurnoverPresentation | null {
-  if (roomWorkspaceTurnoverInProgress(room) && room.reception.checkIn.state === "COMPLETE") return buildPresentation("GUEST_WAITING_FOR_ROOM");
+  if (roomWorkspaceTurnoverInProgress(room) && room.reception.checkIn.state === "COMPLETE") return buildPresentation("GUEST_WAITING_FOR_ROOM", "PRIORITY_TURNOVER");
   if (room.reception.today.checkIn && room.currentStay && !roomWorkspaceTurnoverInProgress(room)) return null;
-  if (room.reception.phase === "DEPARTURE_DUE") return buildPresentation("WAITING_FOR_TODAYS_CHECKOUT");
-  if (room.reception.phase === "CHECKED_OUT" && roomWorkspaceHasActiveTurnover(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");
-  if (roomWorkspaceTurnoverInProgress(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");
+  const workKind = roomWorkspaceWorkKind(room);
+  if (room.reception.phase === "DEPARTURE_DUE") return buildPresentation("WAITING_FOR_TODAYS_CHECKOUT", workKind);
+  if (room.reception.phase === "CHECKED_OUT" && roomWorkspaceHasActiveTurnover(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED", workKind);
+  if (roomWorkspaceTurnoverInProgress(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED", workKind);
   if (room.reception.phase === "ARRIVAL_DUE") {
     if (room.operational.housekeeping.condition === "READY" && room.operational.housekeeping.workState === "NONE") {
-      return buildPresentation("READY_FOR_TODAYS_CHECKIN");
+      return buildPresentation("READY_FOR_TODAYS_CHECKIN", "PRIORITY_TURNOVER");
     }
-    return buildPresentation("WAITING_FOR_TODAYS_CHECKIN");
+    return buildPresentation("WAITING_FOR_TODAYS_CHECKIN", "PRIORITY_TURNOVER");
   }
   if (room.reception.today.checkIn && !room.currentStay && room.operational.housekeeping.condition === "READY" && room.operational.housekeeping.workState === "NONE") {
-    return buildPresentation("READY_FOR_TODAYS_CHECKIN");
+    return buildPresentation("READY_FOR_TODAYS_CHECKIN", "PRIORITY_TURNOVER");
   }
   void date;
   return null;
 }
 
 function roomDetailTurnoverInProgress(room: RoomDetail): boolean {
-  return room.housekeeping.activeTask?.taskType === "TURNOVER" && room.housekeeping.activeTask.status === "IN_PROGRESS";
+  return ["PRIORITY_TURNOVER", "CHECKOUT_CLEANING"].includes(room.housekeeping.activeTask?.workKind ?? "") && room.housekeeping.activeTask?.status === "IN_PROGRESS";
 }
 
 function roomDetailHasActiveTurnover(room: RoomDetail): boolean {
-  return room.housekeeping.activeTask?.taskType === "TURNOVER";
+  return ["PRIORITY_TURNOVER", "CHECKOUT_CLEANING"].includes(room.housekeeping.activeTask?.workKind ?? "");
+}
+
+function roomDetailWorkKind(room: RoomDetail): TurnoverWorkKind {
+  return room.housekeeping.activeTask?.workKind === "PRIORITY_TURNOVER" ? "PRIORITY_TURNOVER" : "CHECKOUT_CLEANING";
 }
 
 export function getRoomDetailTurnover(room: RoomDetail, date = todayBangkok()): TurnoverPresentation | null {
-  if (roomDetailTurnoverInProgress(room) && room.currentStay && sameDate(room.currentStay.arrival, date)) return buildPresentation("GUEST_WAITING_FOR_ROOM");
-  if (sameDate(room.departure, date) && room.checkoutCompleted && roomDetailHasActiveTurnover(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");
-  if (sameDate(room.departure, date)) return buildPresentation("WAITING_FOR_TODAYS_CHECKOUT");
-  if (roomDetailTurnoverInProgress(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED");
+  if (roomDetailTurnoverInProgress(room) && room.currentStay && sameDate(room.currentStay.arrival, date)) return buildPresentation("GUEST_WAITING_FOR_ROOM", "PRIORITY_TURNOVER");
+  if (sameDate(room.departure, date) && room.checkoutCompleted && roomDetailHasActiveTurnover(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED", roomDetailWorkKind(room));
+  if (sameDate(room.departure, date)) return buildPresentation("WAITING_FOR_TODAYS_CHECKOUT", roomDetailWorkKind(room));
+  if (roomDetailTurnoverInProgress(room)) return buildPresentation("TODAYS_CHECKOUT_COMPLETED", roomDetailWorkKind(room));
   if (sameDate(room.arrival, date) && !room.currentStay) {
-    if (room.housekeeping.readyState === "READY" && room.housekeeping.tasks.length === 0) return buildPresentation("READY_FOR_TODAYS_CHECKIN");
-    return buildPresentation("WAITING_FOR_TODAYS_CHECKIN");
+    if (room.housekeeping.readyState === "READY" && room.housekeeping.tasks.length === 0) return buildPresentation("READY_FOR_TODAYS_CHECKIN", "PRIORITY_TURNOVER");
+    return buildPresentation("WAITING_FOR_TODAYS_CHECKIN", "PRIORITY_TURNOVER");
   }
   return null;
 }

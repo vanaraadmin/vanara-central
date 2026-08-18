@@ -326,7 +326,7 @@ test("Expanded Rooms Workspace renders TurnoverCard before Housekeeping instead 
   assert.match(roomExpandedWorkspace, /getRoomsWorkspaceTurnover\(room\)/);
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*roomId=\{room\.unitId\}[\s\S]*turnover=\{turnover\}/);
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder title="Reception"/);
-  assert.match(turnoverCard, /eyebrow=\{translate\("turnover"\)\}/);
+  assert.match(turnoverCard, /eyebrow=\{translate\(turnover\.workKind === "CHECKOUT_CLEANING" \? "checkOutCleaning" : "turnover"\)\}/);
   assert.match(turnoverCard, /title=\{translate\("currentState"\)\}/);
   assert.match(turnoverPresentation, /Waiting for Today's Check-out[\s\S]*Guest has not completed today's check-out/);
   assert.match(turnoverPresentation, /Today's Check-out Completed[\s\S]*Room released\. Waiting for today's check-in/);
