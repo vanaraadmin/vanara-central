@@ -28,6 +28,8 @@ import { normalizeFreeTextTranslationInput, translateFreeText, type FreeTextTran
 import { publicVapidKey, registerPushSubscription, unregisterPushSubscription, type NotificationBindings, type PushSubscriptionInput } from "./services/notifications.service.js";
 import { addMaintenanceNote, addMaintenancePhoto, assignMaintenanceTicket, createMaintenanceTicket, getMaintenancePhotoDownload, getMaintenanceTicket, listAssignableMaintenanceUsers, listMaintenanceRoomTargets, listMaintenanceTickets, maintenanceErrorStatus, normalizeCreateMaintenanceTicketInput, normalizeMaintenanceAssignmentInput, normalizeMaintenanceNoteInput, normalizeMaintenanceOutOfServiceInput, normalizeMaintenancePhotoFormData, normalizeMaintenancePhotoInput, normalizeMaintenanceStatusInput, normalizeUpdateMaintenanceTicketInput, transitionMaintenanceTicket, updateMaintenanceOutOfService, updateMaintenanceTicket, uploadMaintenancePhoto, type MaintenanceBindings, type MaintenanceStatus } from "./services/maintenance.service.js";
 import { createProcurementRequest, getOwnerProcurementRequest, listActiveProcurementItems, listProcurementRequests, normalizeCreateProcurementRequestInput, normalizeUpdateProcurementRequestInput, updateProcurementRequestStatus, type ProcurementBindings, type ProcurementStatus } from "./services/procurement.service.js";
+import { payrollContractDocumentRoutes } from "./routes/payroll-contract-document.routes.js";
+import { payrollStaffProvisioningRoutes } from "./routes/payroll-staff-provisioning.routes.js";
 import { addPayrollEvent, finalizePayroll, generatePayrollStatementPdf, getPayrollOverview, getPayrollWorker, normalizePayrollEventInput, normalizePayrollMonth, normalizePayrollSettingsInput, savePayrollDraft, savePayrollSettings, type PayrollBindings } from "./services/payroll.service.js";
 import { listSocialAutomationOverview, normalizeSocialPhotoUploadFormData, queueSocialPhoto, type SocialAutomationBindings } from "./services/social-automation.service.js";
 import { prepareSocialCaption, prepareNextSocialCaption, SocialCaptionError, SOCIAL_CAPTION_CRON, type SocialCaptionBindings } from "./services/social-caption.service.js";
@@ -111,6 +113,8 @@ export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings,
 type AppContext = Context<{ Bindings: Bindings }>;
 
 const app = new Hono<{ Bindings: Bindings }>();
+app.route("/api/payroll/contracts", payrollContractDocumentRoutes);
+app.route("/api/payroll/staff-accounts", payrollStaffProvisioningRoutes);
 const DEFAULT_BEDS24_BASE_URL = "https://api.beds24.com/v2";
 const TM30_TEMPLATE_ASSET_PATH = "/TM30_template/Template-InformAccom-ImportExcel.xlsx";
 

@@ -1,391 +1,112 @@
-# DEPLOYMENT_RUNBOOK
+# Runbook di release e deploy
 
-## Purpose
+## Scopo
 
-This runbook defines the single supported production deployment path for Vanara Central.
+Procedura canonica per distribuire Vanara Central sul dominio `central.vanararetreat.com`. Il Worker ha `workers_dev: false`: non usare URL `workers.dev` per preflight, smoke test o provenance.
 
-Every new Codex session must use this document and the repository-owned scripts. Do not rediscover Cloudflare authentication, bindings, commands, smoke URLs, or migration order at the end of each sprint.
+Il deploy può mutare schema D1 e produzione. Richiede sempre gate esplicito, repository canonico pulito rispetto allo scope e accesso Cloudflare corretto.
 
-## Production Configuration
+## Prima del gate
 
-Wrangler config:
-
-- File: `wrangler.jsonc`
-- Worker name: `vanara-central`
-- Main entry: `server/src/index.ts`
-- Production URL: `https://vanara-central.administrator-5b7.workers.dev`
-- Compatibility date: `2026-07-28`
-- Compatibility flags: `nodejs_compat`
-- Static assets: `./dist/client`
-- Worker-first routes: `/api/*`, `/health`, `/sync/*`
-
-D1 binding:
-
-- Binding: `DB`
-- Database name: `vanara-central`
-- Database id: `1f0c6fce-8a47-442a-8158-97708aefe6b1`
-- Migrations directory: `server/migrations`
-- Remote: `true`
-
-R2 binding:
-
-- Binding: `R2_STORAGE`
-- Bucket: `vanara-central-documents`
-
-Configured environment variable names:
-
-- `BEDS24_BASE_URL`
-- `PASSPORT_RETENTION_DAYS`
-- `VANARA_DATABASE_ENVIRONMENT`
-- `VANARA_DATABASE_NAME`
-- `VANARA_DATABASE_ID`
-
-Required secret names:
-
-- `BEDS24_LONG_LIFE_TOKEN`
-- `BEDS24_WEBHOOK_SECRET`
-- `OPENAI_API_KEY`
-
-## Authentication
-
-The approved Cloudflare authentication method is the local Wrangler OAuth profile.
-
-Wrangler stores this credential outside the repository in the user profile. On this machine the profile is under:
-
-`C:\Users\stefa\AppData\Roaming\xdg.config\.wrangler\config\default.toml`
-
-Rules:
-
-- Never store Cloudflare API tokens in source.
-- Never add secrets to `wrangler.toml`, `wrangler.json`, or `wrangler.jsonc`.
-- Never print token values.
-- Never commit credentials.
-- Do not override `XDG_CONFIG_HOME` for deployment commands; doing so can hide the approved Wrangler OAuth profile.
-- Never print Vanara smoke session tokens or cookies.
-
-If authentication is missing, run exactly this setup action once:
+Sono consentiti controlli locali e pubblici read-only:
 
 ```powershell
-.\node_modules\.bin\wrangler.cmd login
+git status --short --branch
+git rev-parse HEAD
+npm run release:guard
+npm run test:run
+npm run typecheck
+npm run lint
+npm run build
+Invoke-RestMethod https://central.vanararetreat.com/health
+Invoke-RestMethod https://central.vanararetreat.com/app-version.json
 ```
 
-Approve Cloudflare OAuth in the browser, then rerun:
+Preservare ogni modifica o file non versionato non appartenente alla release. Non copiare worktree storiche, non fare merge/cherry-pick automatici e non distribuire da un branch che omette moduli Owner o migrazioni correnti.
+
+## Preflight autorizzato
+
+Eseguire lo script repository:
 
 ```powershell
 npm run deploy:preflight
 ```
 
-### Vanara Smoke Authentication
+Il preflight verifica guard frozen/canonical lineage, build, autenticazione Cloudflare, binding, segreti richiesti, stato delle migrazioni remote, health e provenance. Deve controllare presenza dei segreti senza stamparne i valori.
 
-Production smoke supports two explicit authentication modes.
+Prima di continuare, annotare:
 
-Recommended autonomous mode:
+- commit completo candidato;
+- build ID generato;
+- migrazioni D1 pendenti e loro contenuto;
+- esito test/typecheck/lint/build;
+- eventuali differenze non appartenenti allo scope.
 
-```powershell
-npm run deploy:production -- --temporary-smoke-session
-```
+Un failure blocca la release; non disabilitare il controllo.
 
-or for standalone smoke:
+## Deploy di produzione
 
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
-
-This mode creates one temporary production session for an existing active Owner account with Housekeeping read access. The script:
-
-- does not modify passwords, roles, permissions, or product data;
-- caps the session TTL at 5 minutes;
-- uses the session only for the approved read-only smoke `GET` requests;
-- never prints the raw token, cookie, or token hash;
-- revokes the session in a cleanup block even when smoke fails;
-- verifies the session row no longer exists after cleanup.
-
-Manual cookie mode remains supported:
+Con gate esplicito:
 
 ```powershell
-$env:VANARA_SMOKE_COOKIE = "vanara_session=<cookie-value>"
-npm run deploy:smoke
-Remove-Item Env:\VANARA_SMOKE_COOKIE
+npm run deploy:production
 ```
 
-Use manual cookie mode only when temporary session creation is not explicitly approved for the deployment.
+`scripts/deploy-production.ps1` esegue nuovamente guard, controlli qualità e build; cattura la provenance; applica le migrazioni D1 remote approvate; distribuisce il Worker; registra il Cloudflare Version ID; verifica health e versione pubblica. Non sostituire questa sequenza con comandi Wrangler manuali.
 
-## Prerequisites
+Se una migrazione prevista non è stata revisionata o il target Cloudflare non è quello atteso, interrompere prima della mutazione.
 
-From repository root:
+## Verifica post-deploy
+
+Controlli pubblici obbligatori:
 
 ```powershell
-npm install
+Invoke-RestMethod https://central.vanararetreat.com/health
+Invoke-RestMethod https://central.vanararetreat.com/app-version.json
 ```
 
-Cloudflare access must allow:
+Devono risultare:
 
-- account read;
-- Worker read/write;
-- D1 write;
-- R2 access through configured bindings;
-- secret list access.
+- HTTP 200;
+- health minima con Worker/API/D1 `ok`;
+- commit live uguale al candidato;
+- build ID e hash entry coerenti con il manifest compilato;
+- un solo aggiornamento PWA senza loop.
 
-For authenticated read-only production smoke, use the explicit temporary smoke session flag:
+Se disponibile una sessione Owner già autorizzata, lo smoke autenticato deve restare read-only e può verificare `/api/current-user`, `/api/staff/home`, `/sync/status` e le letture modulo previste dallo script. Non creare una nuova sessione o usare nuovi segreti per uno smoke documentale.
 
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
+## Smoke funzionale proporzionato
 
-If the temporary-session option is not approved, the current shell must have a temporary Vanara production session cookie:
+Verificare soltanto i moduli interessati e i contratti condivisi a rischio:
 
-```powershell
-$env:VANARA_SMOKE_COOKIE = "vanara_session=<cookie-value>"
-```
+- home Owner/Staff e route canoniche;
+- Reception/Rooms e mapping camere;
+- Housekeeping summary/task se la release li tocca;
+- Accounting/Payroll solo con accesso Owner e senza creare righe;
+- chat/push/PWA soltanto con test non mutanti, salvo gate specifico;
+- Guest Messages, OCR, Social e Waraporn senza chiamate esterne a pagamento.
 
-Do not print this value. Clear it after smoke with `Remove-Item Env:\VANARA_SMOKE_COOKIE`.
+Non forzare Beds24 sync, non pubblicare sui social e non eseguire OCR/OpenAI come smoke ordinario.
 
-Optional smoke overrides:
+## Failure e recovery
 
-```powershell
-$env:VANARA_PRODUCTION_URL = "https://vanara-central.administrator-5b7.workers.dev"
-$env:VANARA_SMOKE_ROOM_ID = "1"
-```
+1. Fermare nuove distribuzioni.
+2. Conservare commit, build ID, Version ID, output preflight e lista migrazioni.
+3. Stabilire se il failure è client, Worker, schema, binding o integrazione esterna.
+4. Non fare rollback del database alla cieca: le migrazioni sono append-only.
+5. Preparare un fix forward minimo dal repository canonico completo.
+6. Ripetere l'intero preflight e ottenere il gate per un nuovo deploy.
 
-## One Supported Path
+Un rollback/cherry-pick da branch vecchio può rimuovere moduli già live e non è una procedura accettabile.
 
-Use these commands only:
+## Evidenze da registrare
 
-```powershell
-npm run deploy:preflight
-npm run deploy:production -- --temporary-smoke-session
-npm run deploy:smoke -- --temporary-smoke-session
-```
+- commit candidato e live;
+- build ID e hash entry;
+- Cloudflare Version ID;
+- migrazioni applicate;
+- esiti preflight, deploy e smoke;
+- data/ora Bangkok e operatore;
+- anomalie e decisione di recovery.
 
-Do not run ad hoc Wrangler deployment commands unless debugging this deployment foundation itself.
-
-## Preflight Sequence
-
-Command:
-
-```powershell
-npm run deploy:preflight
-```
-
-The preflight verifies:
-
-- Wrangler availability and version;
-- local Wrangler OAuth authentication;
-- Cloudflare account access;
-- Worker access;
-- D1 migration state;
-- R2 binding presence;
-- required environment variable names;
-- required secret names;
-- production URL health;
-- current git status;
-- build readiness.
-
-If Cloudflare authentication is missing, preflight stops with one setup action:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd login
-```
-
-## Validation Sequence
-
-The production deployment script runs validation in this fixed order:
-
-1. Preflight.
-2. Server tests.
-3. Housekeeping frontend/source tests.
-4. Typecheck.
-5. Lint.
-6. Build.
-7. Server build.
-8. Approved D1 migrations.
-9. Production deploy.
-10. Read-only production smoke.
-
-If any step fails, the script stops immediately and prints the failed step.
-
-## Migration Sequence
-
-Preflight reads remote migration state:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd d1 migrations list vanara-central --remote --config wrangler.jsonc
-```
-
-Production deployment applies approved repository migrations before deploy:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd d1 migrations apply vanara-central --remote --config wrangler.jsonc
-```
-
-Wrangler captures a remote backup during migration apply. If a migration fails, Wrangler rolls back that migration and leaves previous successful migrations applied.
-
-## Build Sequence
-
-The production deployment script runs:
-
-```powershell
-npm.cmd --prefix server test
-node --import tsx --test tests/housekeeping-v2-source.test.ts tests/housekeeping-v2-room-source.test.ts
-npm.cmd run typecheck
-npm.cmd run lint
-npm.cmd run build
-npm.cmd --prefix server run build:server
-```
-
-The source-test command is run from the `server` directory because `tsx` is a server dev dependency.
-
-## Deploy Sequence
-
-Command:
-
-```powershell
-npm run deploy:production -- --temporary-smoke-session
-```
-
-The script:
-
-- verifies smoke authentication before build;
-- creates and later revokes a temporary Owner smoke session only when the explicit flag is present;
-- runs validation;
-- applies approved D1 migrations;
-- deploys with `wrangler deploy --config wrangler.jsonc`;
-- captures `Current Version ID`;
-- runs read-only smoke;
-- returns `DEPLOYMENT GREEN` or fails with the exact failed step.
-
-The production command does not commit code.
-
-## Smoke Sequence
-
-Command:
-
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
-
-Smoke is read-only.
-
-It verifies:
-
-- `GET /`
-- `GET /api/current-user`
-- `GET /api/housekeeping/v2/summary`
-- `GET /api/housekeeping/v2/tasks`
-- Priority section presence;
-- Normal section presence;
-- Water section presence;
-- task uniqueness across visible queues;
-- Water quantity values when Water tasks are present;
-- carried-over Priority read model when such tasks are present;
-- `GET /api/housekeeping/v2/rooms/1` unless `-RoomId` or `VANARA_SMOKE_ROOM_ID` overrides it;
-- Room Workspace read model.
-
-The smoke does not create, claim, start, complete, skip, cancel, or reopen tasks. Operational write-flow smoke must be explicitly approved for a release and must use a short-lived session.
-
-## Rollback Procedure
-
-List recent Worker versions:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd versions list --config wrangler.jsonc
-```
-
-Rollback to a known good version:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd rollback <VERSION_ID> --config wrangler.jsonc
-```
-
-After rollback:
-
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
-
-Record the rolled-back Version ID and smoke result in the release notes.
-
-## Common Errors And Fixes
-
-Error: `In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN`
-
-Cause: Wrangler is not seeing the approved local OAuth profile, often because `XDG_CONFIG_HOME` was changed or the local session is missing.
-
-Fix:
-
-```powershell
-.\node_modules\.bin\wrangler.cmd login
-npm run deploy:preflight
-```
-
-Error: `Cannot read directory "../.."` or Wrangler log `EPERM`
-
-Cause: the sandbox blocked Wrangler from reading deployment inputs or writing its normal user-profile logs.
-
-Fix: run deployment scripts with approval to access the local Wrangler OAuth profile and Cloudflare network. Do not change `XDG_CONFIG_HOME` to a temporary repository folder.
-
-Error: smoke authentication missing
-
-Fix:
-
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
-
-If temporary session creation is not approved for the deployment, use manual cookie mode:
-
-```powershell
-$env:VANARA_SMOKE_COOKIE = "vanara_session=<cookie-value>"
-npm run deploy:smoke
-Remove-Item Env:\VANARA_SMOKE_COOKIE
-```
-
-Error: temporary smoke session cannot be created
-
-Cause: no existing active Owner account with Housekeeping read access is available, or D1 session insertion failed.
-
-Fix: stop and report the exact failed check. Do not change passwords, roles, or permissions from the deployment scripts.
-
-Error: missing D1 binding, R2 binding, environment variable, or secret name
-
-Fix: correct Cloudflare/Wrangler configuration outside source secrets, then rerun:
-
-```powershell
-npm run deploy:preflight
-```
-
-Error: pending or failed migration
-
-Fix: inspect the migration output, repair the migration if needed, rerun:
-
-```powershell
-npm run deploy:production -- --temporary-smoke-session
-```
-
-## Rules For New Codex Sessions
-
-1. Read this runbook first.
-2. Run:
-
-```powershell
-npm run deploy:preflight
-```
-
-3. If authentication is missing, stop and return the exact setup action. Do not investigate unrelated code.
-4. If bindings or secrets are missing, stop and return the exact failed check.
-5. Do not print tokens or session cookies.
-6. Do not write credentials into source files.
-7. Do not override `XDG_CONFIG_HOME` for deployment.
-8. Run production deployment only with:
-
-```powershell
-npm run deploy:production -- --temporary-smoke-session
-```
-
-9. Run standalone read-only smoke only with:
-
-```powershell
-npm run deploy:smoke -- --temporary-smoke-session
-```
-
-10. Return Version ID and final status from the script output.
+Non inserire token, password, dati personali, ricevute o contenuti ospite nelle evidenze.

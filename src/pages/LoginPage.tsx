@@ -16,7 +16,7 @@ export default function LoginPage() {
     mutationFn: () => login({ username, password }),
     onSuccess: async (user) => {
       queryClient.setQueryData(["current-user"], user);
-      window.location.assign(from);
+      window.location.assign(user.mustChangePassword ? "/change-password" : from);
     },
   });
 
@@ -26,7 +26,7 @@ export default function LoginPage() {
     mutation.mutate();
   }
 
-  if (mutation.isSuccess) return <Navigate replace to={from} />;
+  if (mutation.isSuccess) return <Navigate replace to={mutation.data.mustChangePassword ? "/change-password" : from} />;
 
   return (
     <main className="auth-page">

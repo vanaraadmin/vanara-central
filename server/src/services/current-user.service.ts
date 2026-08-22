@@ -22,7 +22,7 @@ export interface ModulePermission {
   canEdit: boolean;
 }
 
-export type ActionPermissionKey = "can_complete_checkin_checkout";
+export type ActionPermissionKey = "can_complete_checkin_checkout" | "can_receive_booking_notifications";
 
 export interface ActionPermission {
   action: ActionPermissionKey;
@@ -45,6 +45,7 @@ export interface CurrentUser {
   permissions: ModulePermission[];
   actionPermissions: ActionPermission[];
   lastLoginAt: string | null;
+  mustChangePassword?: boolean;
 }
 
 export interface AuthBindings {
@@ -67,6 +68,15 @@ export class ForbiddenError extends Error {
   constructor(message = "You do not have permission to perform this action.") {
     super(message);
     this.name = "ForbiddenError";
+  }
+}
+
+export class PasswordChangeRequiredError extends ForbiddenError {
+  readonly code = "PASSWORD_CHANGE_REQUIRED";
+
+  constructor() {
+    super("Password change is required before using Vanara Central.");
+    this.name = "PasswordChangeRequiredError";
   }
 }
 
@@ -101,7 +111,7 @@ const ROLES: UserRole[] = ["Owner", "Manager", "Reception", "Housekeeping", "Mai
 const STATUSES: UserStatus[] = ["invited", "active", "disabled"];
 const VIEWS: UserView[] = ["owner", "staff"];
 const LANGUAGES = ["en", "th"] as const;
-const ACTION_PERMISSIONS: ActionPermissionKey[] = ["can_complete_checkin_checkout"];
+const ACTION_PERMISSIONS: ActionPermissionKey[] = ["can_complete_checkin_checkout", "can_receive_booking_notifications"];
 
 interface UserRow {
   user_id: string;
@@ -139,6 +149,10 @@ interface ActionPermissionRow {
 interface SessionRow extends UserRow {
   session_id: string;
   expires_at: string;
+}
+
+interface PasswordRequirementRow {
+  must_change_password: number;
 }
 
 export interface LoginInput {
@@ -192,6 +206,7 @@ export interface PublicManagedUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  mustChangePassword: boolean;
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -230,6 +245,10 @@ async function passwordHash(password: string, salt = randomToken(16), iterations
     256,
   );
   return `pbkdf2_sha256$${iterations}$${salt}$${base64Url(new Uint8Array(bits))}`;
+}
+
+export async function hashUserPassword(password: string): Promise<string> {
+  return passwordHash(password);
 }
 
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
@@ -334,7 +353,10 @@ function normalizePermissions(value: unknown): ModulePermission[] {
 }
 
 function defaultActionPermissions(role: UserRole): ActionPermission[] {
-  return ACTION_PERMISSIONS.map((action) => ({ action, allowed: role === "Owner" || role === "Manager" }));
+  return ACTION_PERMISSIONS.map((action) => ({
+    action,
+    allowed: action === "can_complete_checkin_checkout" && (role === "Owner" || role === "Manager"),
+  }));
 }
 
 function normalizeActionPermissions(value: unknown, role: UserRole): ActionPermission[] {
@@ -453,7 +475,13 @@ export function makeExpiredSessionCookie(secure: boolean): string {
   return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax${securePart}; Max-Age=0`;
 }
 
-function mapPublicUser(row: UserRow, views: UserView[], permissions: ModulePermission[], actionPermissions: ActionPermission[]): PublicManagedUser {
+function mapPublicUser(
+  row: UserRow,
+  views: UserView[],
+  permissions: ModulePermission[],
+  actionPermissions: ActionPermission[],
+  mustChangePassword: boolean,
+): PublicManagedUser {
   const fallback = splitLegalName(row.full_name);
   const firstName = row.first_name?.trim() || fallback.firstName;
   const lastName = row.last_name?.trim() || fallback.lastName;
@@ -476,6 +504,7 @@ function mapPublicUser(row: UserRow, views: UserView[], permissions: ModulePermi
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastLoginAt: row.last_login_at,
+    mustChangePassword,
   };
 }
 
@@ -507,9 +536,18 @@ async function loadActionPermissions(env: AuthBindings, userId: string): Promise
   return ACTION_PERMISSIONS.map((action) => mapped.get(action) ?? { action, allowed: false });
 }
 
+async function loadPasswordRequirement(env: AuthBindings, userId: string): Promise<boolean> {
+  const row = await env.DB.prepare(`
+    SELECT must_change_password
+    FROM user_password_requirements
+    WHERE user_id = ?
+  `).bind(userId).first<PasswordRequirementRow>();
+  return row?.must_change_password === 1;
+}
+
 async function loadPublicUser(env: AuthBindings, row: UserRow): Promise<PublicManagedUser> {
-  const [views, permissions, actionPermissions] = await Promise.all([loadViews(env, row.user_id), loadPermissions(env, row.user_id), loadActionPermissions(env, row.user_id)]);
-  return mapPublicUser(row, views, permissions, actionPermissions);
+  const [views, permissions, actionPermissions, mustChangePassword] = await Promise.all([loadViews(env, row.user_id), loadPermissions(env, row.user_id), loadActionPermissions(env, row.user_id), loadPasswordRequirement(env, row.user_id)]);
+  return mapPublicUser(row, views, permissions, actionPermissions, mustChangePassword);
 }
 
 function toCurrentUser(user: PublicManagedUser): CurrentUser {
@@ -529,6 +567,7 @@ function toCurrentUser(user: PublicManagedUser): CurrentUser {
     permissions: user.permissions,
     actionPermissions: user.actionPermissions,
     lastLoginAt: user.lastLoginAt,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 
@@ -549,7 +588,14 @@ export async function resolveCurrentUser(c: AuthContextLike): Promise<CurrentUse
     throw new AuthenticationError("Session has expired.");
   }
   const user = await loadPublicUser(c.env, row);
-  return toCurrentUser(user);
+  const current = toCurrentUser(user);
+  if (current.mustChangePassword) {
+    const path = new URL(c.req.raw.url).pathname;
+    if (path !== "/api/current-user" && path !== "/api/current-user/password") {
+      throw new PasswordChangeRequiredError();
+    }
+  }
+  return current;
 }
 
 export async function login(env: AuthBindings, input: LoginInput): Promise<{ token: string; expiresAt: Date; user: CurrentUser }> {
@@ -644,6 +690,7 @@ export function publicCurrentUser(user: CurrentUser) {
     permissions: user.permissions,
     actionPermissions: user.actionPermissions,
     isOwner: isOwner(user),
+    mustChangePassword: user.mustChangePassword,
   };
 }
 
@@ -807,6 +854,11 @@ export async function changeSelfPassword(env: AuthBindings, userId: string, inpu
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?").bind(await passwordHash(input.newPassword), now, userId),
+    env.DB.prepare(`
+      UPDATE user_password_requirements
+      SET must_change_password = 0, password_changed_at = ?
+      WHERE user_id = ?
+    `).bind(now, userId),
     env.DB.prepare("DELETE FROM user_sessions WHERE user_id = ?").bind(userId),
   ]);
 }

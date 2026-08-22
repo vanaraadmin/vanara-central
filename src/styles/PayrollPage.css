@@ -13,7 +13,8 @@
 }
 
 .payroll-workers,
-.payroll-detail {
+.payroll-detail,
+.payroll-contracts {
   display: grid;
   gap: var(--vc-space-4);
   min-width: 0;
@@ -415,6 +416,75 @@
   border: 1px solid rgba(244, 237, 223, 0.14);
 }
 
+.payroll-contracts {
+  grid-column: 1 / -1;
+}
+
+.payroll-contract-list {
+  display: grid;
+  gap: var(--vc-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.payroll-contract-list li,
+.payroll-self-contract {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--vc-space-3);
+  align-items: center;
+  min-width: 0;
+  padding: 12px;
+  color: var(--workspace-cream);
+  background: rgba(255, 253, 246, 0.08);
+  border: 1px solid rgba(244, 237, 223, 0.14);
+  border-radius: var(--vc-radius-sm);
+}
+
+.payroll-contract-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.payroll-contract-copy strong,
+.payroll-contract-copy small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.payroll-contract-copy small {
+  color: var(--vc-text-cream-muted);
+}
+
+.payroll-contract-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--vc-space-2);
+}
+
+.payroll-contract-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--vc-space-3);
+}
+
+.payroll-contract-error p {
+  margin: 0;
+  color: #fff0ea;
+}
+
+.payroll-page--staff {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
+.payroll-contracts--staff {
+  grid-column: 1;
+}
+
 @media (max-width: 920px) {
   .payroll-page {
     grid-template-columns: 1fr;
@@ -457,5 +527,18 @@
 
   .payroll-actions .payroll-action {
     flex: 1 1 160px;
+  }
+
+  .payroll-contract-list li,
+  .payroll-self-contract {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-contract-actions {
+    justify-content: stretch;
+  }
+
+  .payroll-contract-actions .payroll-action {
+    flex: 1 1 150px;
   }
 }

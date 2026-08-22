@@ -22,7 +22,7 @@ export interface ModulePermission {
   canEdit: boolean;
 }
 
-export type ActionPermissionKey = "can_complete_checkin_checkout";
+export type ActionPermissionKey = "can_complete_checkin_checkout" | "can_receive_booking_notifications";
 
 export interface ActionPermission {
   action: ActionPermissionKey;
@@ -45,6 +45,7 @@ export interface CurrentUserView {
   permissions: ModulePermission[];
   actionPermissions: ActionPermission[];
   isOwner: boolean;
+  mustChangePassword: boolean;
 }
 
 export interface ManagedUser extends CurrentUserView {

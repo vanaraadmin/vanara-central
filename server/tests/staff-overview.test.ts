@@ -463,6 +463,7 @@ const maintenanceAccess: Permission = { module_key: "maintenance", can_access: 1
 const procurementAccess: Permission = { module_key: "procurement", can_access: 1, can_edit: 0 };
 const socialAutomationAccess: Permission = { module_key: "social-automation", can_access: 1, can_edit: 1 };
 const ownerDashboardAccess: Permission = { module_key: "owner-dashboard", can_access: 1, can_edit: 0 };
+const payrollAccess: Permission = { module_key: "payroll", can_access: 1, can_edit: 0 };
 
 test("staff overview returns the complete operational workspace set for the Staff visual experience", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]), STAFF_OVERVIEW_TEST_DATE);
@@ -628,6 +629,53 @@ test("staff overview exposes Social Automation only to owners with the social mo
     STAFF_OVERVIEW_TEST_DATE,
   );
   assert.equal(staffOverview.cards.some((card) => card.id === "social"), false);
+});
+
+test("staff overview exposes a private contract card only to staff with payroll access", async () => {
+  const allowed = await getStaffOverview(
+    env([payrollAccess]),
+    currentUser([{ module: "payroll", canAccess: true, canEdit: false }], "Operations", ["staff"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+  const card = allowed.cards.find((item) => item.id === "payroll");
+
+  assert.deepEqual(card, {
+    id: "payroll",
+    module: "payroll",
+    title: "My employment contract",
+    description: "Private employment record.",
+    href: "/payroll",
+    cta: "Open my contract",
+    metrics: [],
+    summaryLine1: "View PDF",
+    summaryLine2: "Download PDF",
+  });
+  assert.equal(JSON.stringify(card).includes("salary"), false);
+  assert.equal(JSON.stringify(card).includes("Worker payroll"), false);
+  assert.equal(JSON.stringify(card).includes("Owner only"), false);
+
+  const denied = await getStaffOverview(env([]), currentUser([]), STAFF_OVERVIEW_TEST_DATE);
+  assert.equal(denied.cards.some((item) => item.id === "payroll"), false);
+});
+
+test("staff overview preserves the owner Payroll card", async () => {
+  const overview = await getStaffOverview(
+    env([payrollAccess]),
+    currentUser([{ module: "payroll", canAccess: true, canEdit: true }], "Owner", ["staff", "owner"]),
+    STAFF_OVERVIEW_TEST_DATE,
+  );
+
+  assert.deepEqual(overview.cards.find((item) => item.id === "payroll"), {
+    id: "payroll",
+    module: "payroll",
+    title: "Payroll",
+    description: "Monthly staff salary calculations.",
+    href: "/payroll",
+    cta: "Open Payroll",
+    metrics: [],
+    summaryLine1: "Worker payroll",
+    summaryLine2: "Owner only",
+  });
 });
 
 test("staff overview does not return an empty operational home for active Staff users without explicit module grants", async () => {

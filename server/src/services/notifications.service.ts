@@ -373,6 +373,23 @@ export async function notifyBookingEvent(env: NotificationBindings, input: {
   source?: string | null;
   arrivalDate?: string | null;
 }): Promise<void> {
+  const recipientRows = await env.DB.prepare(`
+    SELECT u.user_id
+    FROM users u
+    WHERE u.status = 'active'
+      AND (
+        u.role = 'Owner'
+        OR EXISTS (
+          SELECT 1
+          FROM user_action_permissions ap
+          WHERE ap.user_id = u.user_id
+            AND ap.action_key = 'can_receive_booking_notifications'
+            AND ap.allowed = 1
+        )
+      )
+    ORDER BY u.user_id
+  `).all<{ user_id: string }>();
+  const userIds = [...new Set((recipientRows.results ?? []).map((row) => row.user_id).filter(Boolean))];
   const titles = {
     new: "New booking received",
     updated: "Existing booking updated",
@@ -390,7 +407,8 @@ export async function notifyBookingEvent(env: NotificationBindings, input: {
     entityType: "booking",
     entityId: input.bookingId,
     dedupeKey: `booking:${input.dedupeKey}`,
-    audience: "owners",
+    audience: "user-list",
+    userIds,
     data: { eventType: input.eventType },
     payload: {
       en: notificationPayload(englishTitle, "Open Booking Pulse", `booking-${input.bookingId}`, "/staff#booking-pulse"),

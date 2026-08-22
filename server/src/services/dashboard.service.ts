@@ -44,6 +44,7 @@ interface PayrollFinancialRow {
   bonuses_additions: number;
   authorized_deductions: number;
   employee_social_security: number;
+  employer_social_security: number;
   absence_deduction: number;
   overtime_compensation: number;
   meal_allowance_advance: number;
@@ -426,13 +427,14 @@ function segmentsFromBuckets(
 }
 
 function payrollCost(row: PayrollFinancialRow): number {
-  return amount(row.net_salary_payable) + amount(row.salary_advances_received) + amount(row.employee_social_security);
+  return amount(row.net_salary_payable) + amount(row.salary_advances_received) + amount(row.employee_social_security) + amount(row.employer_social_security);
 }
 
 function addPayrollComponents(buckets: Map<string, number>, row: PayrollFinancialRow): void {
   const baseAfterSso = Math.max(0, amount(row.monthly_gross_salary) - amount(row.employee_social_security));
   addBucket(buckets, "Base wages", baseAfterSso);
   addBucket(buckets, "Social security / SSO", amount(row.employee_social_security));
+  addBucket(buckets, "Employer social security / SSO", amount(row.employer_social_security));
   addBucket(buckets, "Meal allowance", amount(row.meal_allowance_advance));
   addBucket(buckets, "Bonuses / additions", amount(row.bonuses_additions));
   addBucket(buckets, "Overtime", amount(row.overtime_compensation));
@@ -473,9 +475,12 @@ export async function buildFinancialSnapshot(
     env.DB.prepare(`
       SELECT monthly_gross_salary, salary_advances_received, bonuses_additions,
         authorized_deductions, employee_social_security, absence_deduction,
-        overtime_compensation, meal_allowance_advance, net_salary_payable
-      FROM payroll_records
-      WHERE status = 'FINALIZED'
+        overtime_compensation, meal_allowance_advance, net_salary_payable,
+        COALESCE(s.employer_social_security, 0) AS employer_social_security
+      FROM payroll_records pr
+      LEFT JOIN payroll_contract_record_snapshots s
+        ON s.payroll_record_id = pr.payroll_record_id
+      WHERE pr.status = 'FINALIZED'
         ${payrollRange.sql}
     `).bind(...payrollRange.params).all<PayrollFinancialRow>(),
   ]);

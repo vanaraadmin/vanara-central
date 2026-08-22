@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import worker from "../src/index.ts";
-import type { ModuleKey } from "../src/services/current-user.service.ts";
+import {
+  authOptions,
+  normalizeCreateUserInput,
+  type ModuleKey,
+} from "../src/services/current-user.service.ts";
 
 type UserRecord = {
   user_id: string;
@@ -682,4 +686,36 @@ test("owner user management can delete users but cannot delete or freeze current
   assert.equal((await request(`/api/users/${ownerId}`, { method: "DELETE", headers: { cookie: ownerCookie } }, data)).status, 403);
   assert.equal((await request(`/api/users/${createdId}`, { method: "DELETE", headers: { cookie: ownerCookie } }, data)).status, 200);
   assert.equal(data.DB.users.has(createdId), false);
+});
+
+test("booking notification capability is explicit and defaults false", () => {
+  assert.deepEqual(authOptions.actionPermissions, [
+    "can_complete_checkin_checkout",
+    "can_receive_booking_notifications",
+  ]);
+
+  const owner = normalizeCreateUserInput({
+    fullName: "Owner Example",
+    username: "owner-example",
+    password: "owner-password",
+    role: "Owner",
+    preferredLanguage: "en",
+    views: ["owner"],
+    permissions: [],
+  });
+  assert.equal(owner.actionPermissions.find((item) => item.action === "can_complete_checkin_checkout")?.allowed, true);
+  assert.equal(owner.actionPermissions.find((item) => item.action === "can_receive_booking_notifications")?.allowed, false);
+
+  const selectedStaff = normalizeCreateUserInput({
+    fullName: "Selected Staff",
+    username: "selected-staff",
+    password: "staff-password",
+    role: "Operations",
+    preferredLanguage: "en",
+    views: ["staff"],
+    permissions: [],
+    actionPermissions: [{ action: "can_receive_booking_notifications", allowed: true }],
+  });
+  assert.equal(selectedStaff.actionPermissions.find((item) => item.action === "can_complete_checkin_checkout")?.allowed, false);
+  assert.equal(selectedStaff.actionPermissions.find((item) => item.action === "can_receive_booking_notifications")?.allowed, true);
 });

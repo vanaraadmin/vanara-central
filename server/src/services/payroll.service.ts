@@ -1,6 +1,11 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { VANARA_LOGO_PDF_JPEG_BASE64, VANARA_LOGO_PDF_JPEG_HEIGHT, VANARA_LOGO_PDF_JPEG_WIDTH } from "../assets/images/vanara-logo-pdf.js";
 import { NOTO_SANS_THAI_REGULAR_BASE64 } from "../assets/fonts/noto-sans-thai-regular.js";
+import { adaptContractPayrollCalculation } from "./payroll-contract-adapter.service.js";
+import { applyPayrollContractSnapshot, loadPayrollContractSnapshot } from "./payroll-contract-snapshot.service.js";
+import { finalizeContractPayrollRecord } from "./payroll-contract-finalization.service.js";
+import { calculateContractRuntimePayroll, resolveContractRuntimeIdentity, saveContractRuntimeAttendance, type ContractRuntimeEvent } from "./payroll-contract-runtime.service.js";
+import type { ContractPayrollPolicyResult, PayrollAttendanceStatus, SavePayrollAttendanceInput } from "./payroll-contract-policy.service.js";
 
 export type PayrollStatus = "DRAFT" | "FINALIZED";
 export type PayrollEventType =
@@ -11,6 +16,14 @@ export type PayrollEventType =
   | "SALARY_ADVANCE"
   | "BONUS_ADDITION"
   | "AUTHORIZED_DEDUCTION";
+
+const PAYROLL_ATTENDANCE_STATUSES: readonly PayrollAttendanceStatus[] = [
+  "WORKED",
+  "UNPAID_ABSENCE",
+  "PAID_LEAVE",
+  "PROTECTED_PAID_LEAVE",
+  "WEEKLY_REST",
+];
 
 export interface PayrollBindings {
   DB: D1Database;
@@ -37,6 +50,7 @@ export interface PayrollEvent {
   eventType: PayrollEventType;
   quantity: number;
   amount: number;
+  rateMultiplier?: number | null;
   note: string | null;
   createdBy: string;
   createdByName: string;
@@ -57,10 +71,22 @@ export interface PayrollAggregates {
 export interface PayrollLineItem {
   label: string;
   amount: number;
-  tone: "addition" | "deduction" | "total";
+  tone: "addition" | "deduction" | "information" | "total";
+  affectsNet?: boolean;
   explanation: string;
   thaiLabel: string;
   thaiExplanation: string;
+}
+
+export interface PayrollContractSummary {
+  employeeKey: string;
+  profileVersionKey: string;
+  compensationRuleKey: string;
+  contractType: "INDEFINITE" | "SEASONAL";
+  ssoTreatment: "SECTION_33" | "EXEMPT_DECLARED";
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  paidLeave: { eligible: boolean; opening: number; used: number; closing: number };
 }
 
 export interface PayrollCalculation {
@@ -70,6 +96,14 @@ export interface PayrollCalculation {
   dailyPay: number;
   hourlyPay: number;
   employeeSocialSecurity: number;
+  employerSocialSecurity?: number;
+  housingAllowance?: number;
+  accommodationDeduction?: number;
+  priorMonthFoodAdjustment?: number;
+  finalMonthFoodAdjustment?: number;
+  attendanceCorrectionDelta?: number;
+  contractBonusTotal?: number;
+  contract?: PayrollContractSummary | null;
   absenceDeduction: number;
   overtimeCompensation: number;
   mealAllowanceAdvance: number;
@@ -145,6 +179,7 @@ interface EventRow {
   event_type: PayrollEventType;
   quantity: number;
   amount: number;
+  rate_multiplier?: number | null;
   note: string | null;
   created_by: string;
   created_by_name: string;
@@ -355,8 +390,35 @@ export function normalizePayrollSettingsInput(payload: unknown): PayrollSettings
   };
 }
 
-export function normalizePayrollEventInput(payload: unknown): { payrollMonth: string; eventDate: string; eventType: PayrollEventType; quantity: number; amount: number; note: string | null } {
+interface LegacyPayrollEventInput {
+  payrollMonth: string;
+  eventDate: string;
+  eventType: PayrollEventType;
+  quantity: number;
+  amount: number;
+  note: string | null;
+}
+
+interface SaveAttendancePayrollCommand {
+  command: "SAVE_ATTENDANCE";
+  attendance: SavePayrollAttendanceInput;
+}
+
+export type NormalizedPayrollEventInput = LegacyPayrollEventInput | SaveAttendancePayrollCommand;
+
+export function normalizePayrollEventInput(payload: unknown): NormalizedPayrollEventInput {
   const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  if (source.command !== undefined) {
+    if (source.command !== "SAVE_ATTENDANCE") throw new Error("Payroll command is invalid.");
+    const allowedFields = new Set(["command", "workDate", "status", "note", "idempotencyKey"]);
+    if (Object.keys(source).some((field) => !allowedFields.has(field))) {
+      throw new Error("Attendance command contains unsupported or ambiguous fields.");
+    }
+    return { command: "SAVE_ATTENDANCE", attendance: normalizePayrollAttendanceInput(source) };
+  }
+  if (["workDate", "status", "idempotencyKey"].some((field) => field in source)) {
+    throw new Error("Attendance requires the SAVE_ATTENDANCE command.");
+  }
   const eventType = typeof source.eventType === "string" && EVENT_TYPES.includes(source.eventType as PayrollEventType)
     ? source.eventType as PayrollEventType
     : null;
@@ -368,6 +430,32 @@ export function normalizePayrollEventInput(payload: unknown): { payrollMonth: st
   const quantity = quantityEvents.has(eventType) ? positive(source.quantity, "Event quantity") : 0;
   const amount = amountEvents.has(eventType) ? positive(source.amount, "Event amount") : 0;
   return { payrollMonth, eventDate, eventType, quantity, amount, note: cleanText(source.note, 600) };
+}
+
+export function normalizePayrollAttendanceInput(payload: unknown): SavePayrollAttendanceInput {
+  const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const workDate = typeof source.workDate === "string" ? source.workDate.trim() : "";
+  if (!/^\d{4}-(0[1-9]|1[0-2])-[0-3]\d$/.test(workDate)) {
+    throw new Error("Attendance date must use YYYY-MM-DD.");
+  }
+  const parsedDate = new Date(`${workDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== workDate) {
+    throw new Error("Attendance date is invalid.");
+  }
+  const status = typeof source.status === "string"
+    && PAYROLL_ATTENDANCE_STATUSES.includes(source.status as PayrollAttendanceStatus)
+    ? source.status as PayrollAttendanceStatus
+    : null;
+  if (!status) throw new Error("Attendance status is invalid.");
+  const idempotencyKey = typeof source.idempotencyKey === "string" ? source.idempotencyKey.trim() : "";
+  if (!idempotencyKey) throw new Error("Attendance idempotency key is required.");
+  if (idempotencyKey.length > 160) throw new Error("Attendance idempotency key is too long.");
+  return {
+    workDate,
+    status,
+    note: cleanText(source.note, 600),
+    idempotencyKey,
+  };
 }
 
 function settingsFromRow(row: SettingsRow | null | undefined): PayrollSettings {
@@ -395,6 +483,7 @@ function eventFromRow(row: EventRow): PayrollEvent {
     eventType: row.event_type,
     quantity: Number(row.quantity),
     amount: Number(row.amount),
+    rateMultiplier: row.rate_multiplier === undefined || row.rate_multiplier === null ? null : Number(row.rate_multiplier),
     note: row.note,
     createdBy: row.created_by,
     createdByName: row.created_by_name,
@@ -568,10 +657,11 @@ async function getSettings(env: PayrollBindings, employeeUserId: string): Promis
 
 async function listEvents(env: PayrollBindings, employeeUserId: string, payrollMonth: string): Promise<PayrollEvent[]> {
   const rows = await env.DB.prepare(`
-    SELECT *
-    FROM payroll_events
-    WHERE employee_user_id = ? AND payroll_month = ?
-    ORDER BY created_at DESC, payroll_event_id DESC
+    SELECT e.*, o.rate_multiplier
+    FROM payroll_events e
+    LEFT JOIN payroll_event_rate_overrides o ON o.payroll_event_id = e.payroll_event_id
+    WHERE e.employee_user_id = ? AND e.payroll_month = ?
+    ORDER BY e.created_at DESC, e.payroll_event_id DESC
   `).bind(employeeUserId, payrollMonth).all<EventRow>();
   return (rows.results ?? []).map(eventFromRow);
 }
@@ -633,13 +723,43 @@ async function getRecord(env: PayrollBindings, employeeUserId: string, payrollMo
   return recordFromRow(row);
 }
 
+function contractRuntimeEvents(events: PayrollEvent[]): ContractRuntimeEvent[] {
+  return events.map((event) => ({
+    id: event.id,
+    eventType: event.eventType,
+    quantity: event.quantity,
+    amount: event.amount,
+    rateMultiplier: event.rateMultiplier,
+  }));
+}
+
+function contractCalculation(policy: ContractPayrollPolicyResult): PayrollCalculation {
+  return adaptContractPayrollCalculation(policy) as PayrollCalculation;
+}
+
 async function buildWorker(env: PayrollBindings, row: UserRow, payrollMonth: string): Promise<PayrollWorker> {
-  const [settings, events, record] = await Promise.all([
+  const [legacySettings, events, record] = await Promise.all([
     getSettings(env, row.user_id),
     listEvents(env, row.user_id, payrollMonth),
     getRecord(env, row.user_id, payrollMonth),
   ]);
-  const calculation = record?.status === "FINALIZED" ? record.calculation : calculatePayroll(settings, events, payrollMonth);
+  let settings: PayrollSettings;
+  let calculation: PayrollCalculation;
+  if (record?.status === "FINALIZED") {
+    const snapshot = await loadPayrollContractSnapshot(env.DB, record.id);
+    settings = record.calculation.settings;
+    calculation = applyPayrollContractSnapshot(record.calculation, snapshot) as PayrollCalculation;
+  } else {
+    const policy = await calculateContractRuntimePayroll(
+      env.DB,
+      row.user_id,
+      payrollMonth,
+      contractRuntimeEvents(events),
+    );
+    const liveContractCalculation = policy ? contractCalculation(policy) : null;
+    settings = liveContractCalculation?.settings ?? legacySettings;
+    calculation = liveContractCalculation ?? calculatePayroll(settings, events, payrollMonth);
+  }
   return {
     id: row.user_id,
     fullName: legalPayrollName(row),
@@ -661,13 +781,18 @@ export async function getPayrollOverview(env: PayrollBindings, payrollMonth = ba
   return { payrollMonth: month, workers: await Promise.all(workers.map((worker) => buildWorker(env, worker, month))) };
 }
 
-export async function getPayrollWorker(env: PayrollBindings, employeeUserId: string, payrollMonth = bangkokMonth()): Promise<PayrollWorker | null> {
+export async function getPayrollWorker(env: PayrollBindings, employeeIdentifier: string, payrollMonth = bangkokMonth()): Promise<PayrollWorker | null> {
+  const identity = await resolveContractRuntimeIdentity(env.DB, employeeIdentifier);
+  const employeeUserId = identity?.authUserId ?? employeeIdentifier;
   const worker = await getWorker(env, employeeUserId);
   if (!worker) return null;
   return buildWorker(env, worker, normalizePayrollMonth(payrollMonth));
 }
 
-export async function savePayrollSettings(env: PayrollBindings, employeeUserId: string, input: PayrollSettings, user: CurrentUser, now = new Date().toISOString()): Promise<PayrollSettings> {
+export async function savePayrollSettings(env: PayrollBindings, employeeIdentifier: string, input: PayrollSettings, user: CurrentUser, now = new Date().toISOString()): Promise<PayrollSettings> {
+  const contractIdentity = await resolveContractRuntimeIdentity(env.DB, employeeIdentifier);
+  if (contractIdentity) throw new Error("Contract-backed payroll settings are read-only.");
+  const employeeUserId = employeeIdentifier;
   if (!await getWorker(env, employeeUserId)) throw new Error("Payroll worker not found.");
   const settings = normalizePayrollSettingsInput(input);
   await env.DB.prepare(`
@@ -708,7 +833,15 @@ export async function savePayrollSettings(env: PayrollBindings, employeeUserId: 
   return settings;
 }
 
-export async function addPayrollEvent(env: PayrollBindings, employeeUserId: string, input: ReturnType<typeof normalizePayrollEventInput>, user: CurrentUser, now = new Date().toISOString()): Promise<PayrollEvent> {
+export async function addPayrollEvent(env: PayrollBindings, employeeIdentifier: string, input: ReturnType<typeof normalizePayrollEventInput>, user: CurrentUser, now = new Date().toISOString()): Promise<PayrollEvent | { date: string; status: PayrollAttendanceStatus }> {
+  if ("command" in input) {
+    return savePayrollAttendance(env, employeeIdentifier, input.attendance, user, now);
+  }
+  const contractIdentity = await resolveContractRuntimeIdentity(env.DB, employeeIdentifier);
+  const employeeUserId = contractIdentity?.authUserId ?? employeeIdentifier;
+  if (contractIdentity && input.eventType === "UNPAID_ABSENCE_DAY") {
+    throw new Error("Use contract attendance to record a full unpaid workday.");
+  }
   if (!await getWorker(env, employeeUserId)) throw new Error("Payroll worker not found.");
   const existing = await getRecord(env, employeeUserId, input.payrollMonth);
   if (existing?.status === "FINALIZED") throw new Error("Finalized payroll is locked.");
@@ -731,7 +864,14 @@ export async function addPayrollEvent(env: PayrollBindings, employeeUserId: stri
 async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, payrollMonth: string, user: CurrentUser, status: PayrollStatus, now: string, notes: string | null): Promise<PayrollRecord> {
   const existing = worker.record;
   if (existing?.status === "FINALIZED") throw new Error("Finalized payroll is locked.");
-  const calculation = calculatePayroll(worker.settings, worker.events, payrollMonth);
+  const policy = await calculateContractRuntimePayroll(
+    env.DB,
+    worker.id,
+    payrollMonth,
+    contractRuntimeEvents(worker.events),
+  );
+  const calculation = policy ? contractCalculation(policy) : calculatePayroll(worker.settings, worker.events, payrollMonth);
+  const persistedStatus: PayrollStatus = policy && status === "FINALIZED" ? "DRAFT" : status;
   const lineItemsJson = JSON.stringify(calculation.lineItems);
   const explanationsJson = JSON.stringify(calculation.lineItems.map((item) => ({ label: item.label, explanation: item.explanation, thaiLabel: item.thaiLabel, thaiExplanation: item.thaiExplanation })));
   const eventSnapshotJson = JSON.stringify(worker.events);
@@ -751,7 +891,7 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
           updated_at = ?, updated_by = ?, finalized_at = ?, finalized_by = ?, finalized_by_name = ?
       WHERE payroll_record_id = ? AND status = 'DRAFT'
     `).bind(
-      status,
+      persistedStatus,
       calculation.settings.monthlyGrossSalary,
       calculation.settings.monthlyDayDivisor,
       calculation.settings.normalHoursPerDay,
@@ -783,9 +923,9 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       eventSnapshotJson,
       now,
       user.id,
-      status === "FINALIZED" ? now : null,
-      status === "FINALIZED" ? user.id : null,
-      status === "FINALIZED" ? user.displayName : null,
+      persistedStatus === "FINALIZED" ? now : null,
+      persistedStatus === "FINALIZED" ? user.id : null,
+      persistedStatus === "FINALIZED" ? user.displayName : null,
       existing.id,
     ).run();
   } else {
@@ -806,7 +946,7 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       worker.id,
       worker.fullName,
       payrollMonth,
-      status,
+      persistedStatus,
       calculation.settings.monthlyGrossSalary,
       calculation.settings.monthlyDayDivisor,
       calculation.settings.normalHoursPerDay,
@@ -840,19 +980,41 @@ async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, 
       now,
       user.id,
       user.id,
-      status === "FINALIZED" ? now : null,
-      status === "FINALIZED" ? user.id : null,
-      status === "FINALIZED" ? user.displayName : null,
+      persistedStatus === "FINALIZED" ? now : null,
+      persistedStatus === "FINALIZED" ? user.id : null,
+      persistedStatus === "FINALIZED" ? user.displayName : null,
     ).run();
   }
-  const record = await getRecord(env, worker.id, payrollMonth);
+  let record = await getRecord(env, worker.id, payrollMonth);
   if (!record) throw new Error("Payroll record could not be saved.");
   await env.DB.prepare(`
     UPDATE payroll_events
     SET payroll_record_id = ?
     WHERE employee_user_id = ? AND payroll_month = ? AND payroll_record_id IS NULL
   `).bind(record.id, worker.id, payrollMonth).run();
+  if (policy && status === "FINALIZED") {
+    await finalizeContractPayrollRecord(env.DB, {
+      recordId: record.id,
+      employeeUserId: worker.id,
+      payrollMonth,
+      calculation: policy,
+      user,
+      now,
+    });
+    record = await getRecord(env, worker.id, payrollMonth);
+    if (!record || record.status !== "FINALIZED") throw new Error("Contract payroll finalization could not be verified.");
+  }
   return record;
+}
+
+export async function savePayrollAttendance(
+  env: PayrollBindings,
+  employeeIdentifier: string,
+  input: SavePayrollAttendanceInput,
+  user: CurrentUser,
+  now = new Date().toISOString(),
+): Promise<{ date: string; status: PayrollAttendanceStatus }> {
+  return saveContractRuntimeAttendance(env.DB, employeeIdentifier, input, user.id, now);
 }
 
 export async function savePayrollDraft(env: PayrollBindings, employeeUserId: string, payrollMonth: string, user: CurrentUser, notes: string | null, now = new Date().toISOString()): Promise<PayrollRecord> {
@@ -1134,7 +1296,7 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   let y = 650;
   for (const item of calculation.lineItems) {
     pageOne.push(textLine(54, y, item.tone === "total" ? 12 : 10, item.label, item.tone === "total" ? "0.08 0.22 0.16" : "0 0 0"));
-    pageOne.push(textLine(405, y, item.tone === "total" ? 12 : 10, item.tone === "total" ? `= ${money(item.amount)}` : signedMoney(item.amount), item.amount < 0 ? "0.55 0.08 0.07" : "0.08 0.22 0.16"));
+    pageOne.push(textLine(405, y, item.tone === "total" ? 12 : 10, item.tone === "total" ? `= ${money(item.amount)}` : item.tone === "information" ? money(item.amount) : signedMoney(item.amount), item.amount < 0 ? "0.55 0.08 0.07" : "0.08 0.22 0.16"));
     const explanationLines = wrapText(item.explanation, 78);
     pageOne.push(textLine(66, y - 13, 8, explanationLines[0] ?? "", "0.34 0.34 0.34"));
     if (explanationLines[1]) pageOne.push(textLine(66, y - 24, 8, explanationLines[1], "0.34 0.34 0.34"));
@@ -1145,7 +1307,7 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   y -= 20;
   for (const item of calculation.lineItems) {
     pageOne.push(textLine(54, y, item.tone === "total" ? 11 : 9, item.thaiLabel, item.tone === "total" ? "0.08 0.22 0.16" : "0 0 0", "F2"));
-    pageOne.push(textLine(405, y, item.tone === "total" ? 11 : 9, item.tone === "total" ? `= ${money(item.amount)}` : signedMoney(item.amount), item.amount < 0 ? "0.55 0.08 0.07" : "0.08 0.22 0.16"));
+    pageOne.push(textLine(405, y, item.tone === "total" ? 11 : 9, item.tone === "total" ? `= ${money(item.amount)}` : item.tone === "information" ? money(item.amount) : signedMoney(item.amount), item.amount < 0 ? "0.55 0.08 0.07" : "0.08 0.22 0.16"));
     pageOne.push(textLine(66, y - 11, 7, item.thaiExplanation, "0.34 0.34 0.34", "F2"));
     y -= item.tone === "total" ? 23 : 27;
     if (y < 58) break;

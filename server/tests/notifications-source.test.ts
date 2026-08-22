@@ -16,6 +16,7 @@ import {
 const notificationService = readFileSync(new URL("../src/services/notifications.service.ts", import.meta.url), "utf8");
 const notificationMigration = readFileSync(new URL("../migrations/0042_push_notifications.sql", import.meta.url), "utf8");
 const notificationSoundMigration = readFileSync(new URL("../migrations/0044_notification_event_sound_type.sql", import.meta.url), "utf8");
+const bookingNotificationPermissionMigration = readFileSync(new URL("../migrations/0059_booking_notification_permission.sql", import.meta.url), "utf8");
 const chatService = readFileSync(new URL("../src/services/chat.service.ts", import.meta.url), "utf8");
 const bookingEventsService = readFileSync(new URL("../src/services/booking-events.service.ts", import.meta.url), "utf8");
 const receptionService = readFileSync(new URL("../src/services/reception.service.ts", import.meta.url), "utf8");
@@ -27,6 +28,10 @@ const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url
 const wranglerConfig = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
 const teamChatSurface = readFileSync(new URL("../../src/components/chat/TeamChatSurface.tsx", import.meta.url), "utf8");
 const serverPackage = readFileSync(new URL("../package.json", import.meta.url), "utf8");
+const bookingNotificationBlock = notificationService.slice(
+  notificationService.indexOf("export async function notifyBookingEvent"),
+  notificationService.indexOf("export async function notifyGuestMessageInbound"),
+);
 
 function notificationFixture(participantIds: string[], authorId: string) {
   let eventCreatedAt = "";
@@ -283,16 +288,25 @@ test("guest message notifications are owner-only and separated from internal cha
   assert.doesNotMatch(notificationService, /guest-message[\s\S]{0,240}\/chat\?conversation/);
 });
 
-test("booking notifications are owner-only and cover new updated cancelled events", () => {
+test("booking notifications include active Owners and explicitly selected Staff", () => {
   assert.match(bookingEventsService, /notifyBookingEvent/);
-  assert.match(notificationService, /audience: "owners"/);
-  assert.match(notificationService, /type: `booking\.\$\{input\.eventType\}`/);
-  assert.match(notificationService, /New booking received/);
-  assert.match(notificationService, /Existing booking updated/);
-  assert.match(notificationService, /Existing booking cancelled/);
-  assert.match(notificationService, /\/staff#booking-pulse/);
-  assert.match(notificationService, /Open Booking Pulse/);
-  assert.match(notificationService, /มีการจองใหม่/);
+  assert.match(bookingNotificationPermissionMigration, /can_receive_booking_notifications/);
+  assert.doesNotMatch(bookingNotificationPermissionMigration, /SELECT user_id, 'can_receive_booking_notifications'/);
+  assert.match(bookingNotificationBlock, /FROM users u/);
+  assert.match(bookingNotificationBlock, /u\.status = 'active'/);
+  assert.match(bookingNotificationBlock, /u\.role = 'Owner'/);
+  assert.match(bookingNotificationBlock, /ap\.action_key = 'can_receive_booking_notifications'/);
+  assert.match(bookingNotificationBlock, /ap\.allowed = 1/);
+  assert.match(bookingNotificationBlock, /audience: "user-list"/);
+  assert.match(bookingNotificationBlock, /userIds/);
+  assert.doesNotMatch(bookingNotificationBlock, /audience: "owners"/);
+  assert.match(bookingNotificationBlock, /type: `booking\.\$\{input\.eventType\}`/);
+  assert.match(bookingNotificationBlock, /New booking received/);
+  assert.match(bookingNotificationBlock, /Existing booking updated/);
+  assert.match(bookingNotificationBlock, /Existing booking cancelled/);
+  assert.match(bookingNotificationBlock, /\/staff#booking-pulse/);
+  assert.match(bookingNotificationBlock, /Open Booking Pulse/);
+  assert.match(bookingNotificationBlock, /มีการจองใหม่/);
   assert.doesNotMatch(bookingEventsService, /result\.meta\.changes[\s\S]*notifyBookingEvent/);
 });
 

@@ -14,6 +14,7 @@ import MaintenancePage from "../pages/MaintenancePage";
 import MessagesPage from "../pages/MessagesPage";
 import HousekeepingV2Page from "../pages/HousekeepingV2Page";
 import LoginPage from "../pages/LoginPage";
+import PasswordChangeRequiredPage from "../pages/PasswordChangeRequiredPage";
 import MovementsPage from "../pages/MovementsPage";
 import ProcurementPage from "../pages/ProcurementPage";
 import PayrollPage from "../pages/PayrollPage";
@@ -67,6 +68,7 @@ function ProtectedLayout() {
     }
     return <PageError onRetry={() => void user.refetch()} />;
   }
+  if (user.data?.mustChangePassword) return <Navigate replace to="/change-password" />;
   return <AppLayout />;
 }
 
@@ -87,6 +89,10 @@ export default function AppRouter() {
         <Route
           path="/login"
           element={<LoginPage />}
+        />
+        <Route
+          path="/change-password"
+          element={<PasswordChangeRequiredPage />}
         />
 
         <Route element={<ProtectedLayout />}>

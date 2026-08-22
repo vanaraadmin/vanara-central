@@ -1,108 +1,63 @@
 # Vanara Central
 
-Vanara Central is a Cloudflare Workers + Vite application for Vanara Operations.
+PWA operativa di Vanara Retreat per Owner e Staff. Il repository contiene client React/Vite, API Cloudflare Worker, schema D1, storage R2, Durable Objects della chat, test e procedure di produzione.
 
-The runtime application uses one authoritative data source: the production Cloudflare D1 database configured in `wrangler.jsonc`.
+Produzione: [central.vanararetreat.com](https://central.vanararetreat.com)
 
-## Requirements
+## Stato pubblico
 
-- Node.js compatible with the versions in `package-lock.json`
-- npm
-- Wrangler through the project dependencies
-- Cloudflare credentials available to Wrangler for local development, because D1 is configured as a remote production binding
-
-Do not store real secrets in Git. Local secrets belong in a root `.dev.vars` file, which is ignored by Git.
-
-Required Worker secrets are managed outside source code with Wrangler:
-
-```bash
-wrangler secret put BEDS24_WEBHOOK_SECRET
+```text
+GET https://central.vanararetreat.com/health
+{"ok":true,"worker":"ok","api":"ok","d1":"ok"}
 ```
 
-## First install
+La health è intenzionalmente minima. Non espone identità D1, binding o stato dei segreti. La provenance del client è disponibile in `GET /app-version.json` con build ID, commit e hash degli entry asset.
 
-```bash
-npm install
-```
+## Route principali
 
-## Start local development
+- `/staff` — home canonica Owner/Staff;
+- `/reception` — arrivi, partenze, check-in e ospiti;
+- `/rooms` — stato e dettaglio camera;
+- `/housekeeping-v2` — coda housekeeping;
+- `/maintenance` — issue operative;
+- `/dashboard` — Financial Dashboard Owner;
+- `/accounting` e `/payroll` — moduli finanziari Owner.
 
-```bash
+`/chat` è un intent che apre la chat team su `/staff`; `/movements` è legacy.
+
+## Sviluppo locale
+
+Prerequisiti: Node.js e accesso alle dipendenze del progetto.
+
+```powershell
+npm ci
 npm run dev
 ```
 
-Default local URL:
+Controlli prima di proporre una release:
 
-```text
-http://localhost:5173
-```
-
-Local development does not create or seed a local D1 database. If Cloudflare credentials are unavailable, the application must fail with a clear connection/configuration error instead of showing fake operational data.
-
-## Runtime database
-
-The authoritative runtime database is configured in `wrangler.jsonc`:
-
-```text
-binding: DB
-type: Cloudflare D1
-database_name: vanara-central
-database_id: 1f0c6fce-8a47-442a-8158-97708aefe6b1
-environment: production
-```
-
-The D1 binding is marked `remote: true` so the running app does not silently use a local D1 simulator for operational data.
-
-## Useful routes
-
-```text
-/health
-/api/health
-/api/current-user
-/api/reception
-/api/reception?date=YYYY-MM-DD
-/staff
-/reception
-```
-
-## Health check
-
-Use:
-
-```text
-GET /health
-```
-
-The health response confirms:
-
-- Worker/API process is alive;
-- D1 binding can execute a simple query;
-- the configured database identity;
-- Beds24 base URL configuration;
-- whether the Beds24 token is present for sync operations.
-
-## Verification commands
-
-Root application:
-
-```bash
+```powershell
+npm run release:guard
+npm run test:run
 npm run typecheck
 npm run lint
 npm run build
 ```
 
-Server package:
+Non eseguire comandi D1 remoti, chiamate OpenAI/Meta, sync forzati o deploy senza autorizzazione esplicita.
 
-```bash
-cd server
-npm run build
-npm run test
-```
+## Produzione
 
-## Production safety
+La configurazione eseguibile è in `wrangler.jsonc`: `workers_dev` è disabilitato e il dominio personalizzato è l'unico endpoint di produzione. Le release devono partire dal repository canonico completo e usare gli script di preflight/deploy; non copiare vecchie worktree e non distribuire da branch storici incompleti.
 
-Do not run deployment or remote migration commands unless explicitly authorized.
+Vedere:
 
-```bash
-npm run deploy
-```
+- [Indice tecnico](documentation/README.md)
+- [Architettura](documentation/ARCHITECTURE.md)
+- [Stato live e provenance](documentation/PRODUCTION_STATUS.md)
+- [Runbook di deploy](documentation/operations/DEPLOYMENT_RUNBOOK.md)
+- [Aree congelate](documentation/operations/FROZEN_AREAS.md)
+
+## Confini documentali
+
+`docs/staff-contracts/` contiene artefatti legali e regole payroll separate. Il sito pubblico e Beds24 booking page vivono nel repository `Vanara_production_site`. Output temporanei, `.worktrees/` e vecchi handoff non sono fonti di verità.

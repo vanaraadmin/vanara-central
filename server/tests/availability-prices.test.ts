@@ -176,6 +176,7 @@ class FakeAvailabilityDB {
         ...ACTIVE_USER,
       };
     }
+    if (sql.includes("FROM user_password_requirements")) return null;
     throw new Error(`Unhandled first SQL: ${sql}`);
   }
 

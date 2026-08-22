@@ -7,6 +7,12 @@ export type PayrollEventType =
   | "SALARY_ADVANCE"
   | "BONUS_ADDITION"
   | "AUTHORIZED_DEDUCTION";
+export type PayrollAttendanceStatus =
+  | "WORKED"
+  | "UNPAID_ABSENCE"
+  | "PAID_LEAVE"
+  | "PROTECTED_PAID_LEAVE"
+  | "WEEKLY_REST";
 
 export interface PayrollSettings {
   monthlyGrossSalary: number;
@@ -29,6 +35,7 @@ export interface PayrollEvent {
   eventType: PayrollEventType;
   quantity: number;
   amount: number;
+  rateMultiplier?: number | null;
   note: string | null;
   createdBy: string;
   createdByName: string;
@@ -49,10 +56,27 @@ export interface PayrollAggregates {
 export interface PayrollLineItem {
   label: string;
   amount: number;
-  tone: "addition" | "deduction" | "total";
+  tone: "addition" | "deduction" | "information" | "total";
+  affectsNet?: boolean;
   explanation: string;
   thaiLabel: string;
   thaiExplanation: string;
+}
+
+export interface PayrollContractSummary {
+  employeeKey: string;
+  profileVersionKey: string;
+  compensationRuleKey: string;
+  contractType: "INDEFINITE" | "SEASONAL";
+  ssoTreatment: "SECTION_33" | "EXEMPT_DECLARED";
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  paidLeave: {
+    eligible: boolean;
+    opening: number;
+    used: number;
+    closing: number;
+  };
 }
 
 export interface PayrollCalculation {
@@ -62,6 +86,14 @@ export interface PayrollCalculation {
   dailyPay: number;
   hourlyPay: number;
   employeeSocialSecurity: number;
+  employerSocialSecurity?: number;
+  housingAllowance?: number;
+  accommodationDeduction?: number;
+  priorMonthFoodAdjustment?: number;
+  finalMonthFoodAdjustment?: number;
+  attendanceCorrectionDelta?: number;
+  contractBonusTotal?: number;
+  contract?: PayrollContractSummary | null;
   absenceDeduction: number;
   overtimeCompensation: number;
   mealAllowanceAdvance: number;
@@ -103,6 +135,18 @@ export interface PayrollOverview {
   workers: PayrollWorker[];
 }
 
+export interface PayrollAttendanceInput {
+  workDate: string;
+  status: PayrollAttendanceStatus;
+  note: string | null;
+  idempotencyKey: string;
+}
+
+export interface PayrollAttendanceResult {
+  date: string;
+  status: PayrollAttendanceStatus;
+}
+
 export interface PayrollOverviewResponse {
   success: boolean;
   data?: PayrollOverview;
@@ -130,5 +174,29 @@ export interface PayrollEventResponse {
 export interface PayrollRecordResponse {
   success: boolean;
   data?: PayrollRecord;
+  error?: string;
+}
+
+export interface PayrollAttendanceResponse {
+  success: boolean;
+  data?: PayrollAttendanceResult;
+  error?: string;
+}
+
+export interface PayrollContractDocument {
+  documentId: string;
+  employeeKey: string;
+  versionNumber: number;
+  effectiveFromBangkok: string;
+  effectiveToBangkok: string | null;
+  status: "ACTIVE";
+  fileName: string;
+  byteSize: number;
+  createdAt: string;
+}
+
+export interface PayrollContractDocumentsResponse {
+  success: boolean;
+  data?: PayrollContractDocument[];
   error?: string;
 }

@@ -95,6 +95,20 @@
   font-weight: 800;
 }
 
+.auth-secondary-action {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  border: 1px solid rgba(23, 53, 43, 0.16);
+  border-radius: 16px;
+  background: transparent;
+  color: #17352b;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.auth-secondary-action:disabled,
 .auth-form button:disabled,
 .user-form > button:disabled {
   opacity: 0.55;

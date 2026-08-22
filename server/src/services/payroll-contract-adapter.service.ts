@@ -1,0 +1,55 @@
+import type { ContractPayrollPolicyResult } from "./payroll-contract-policy.service.js";
+
+export function adaptContractPayrollCalculation(calculation: ContractPayrollPolicyResult) {
+  const descriptor = calculation.descriptor;
+  return {
+    settings: {
+      monthlyGrossSalary: descriptor.monthlyBaseSalary,
+      monthlyDayDivisor: descriptor.monthlyDayDivisor,
+      normalHoursPerDay: descriptor.normalHoursPerDay,
+      socialSecurityApplicable: descriptor.ssoTreatment === "SECTION_33",
+      mealAllowanceApplicable: descriptor.monthlyFoodAllowance > 0,
+      socialSecurityRate: descriptor.employeeSsoRate,
+      socialSecurityWageCeiling: descriptor.ssoWageCeiling,
+      overtimeMultiplier: descriptor.ordinaryOvertimeMultiplier,
+      dailyMealAllowanceAdvance: 50,
+      notes: `Contract profile ${descriptor.profileVersionKey}`,
+    },
+    aggregates: {
+      unpaidAbsenceDays: calculation.unpaidAbsenceDays,
+      unpaidAbsenceHours: calculation.unpaidAbsenceHours,
+      overtimeHours: calculation.overtimeHours,
+      extraWorkedDays: calculation.extraWorkedDays,
+      totalOvertimeHours: calculation.totalOvertimeHours,
+      salaryAdvancesReceived: calculation.salaryAdvancesReceived,
+      bonusesAdditions: calculation.bonusesAdditions,
+      authorizedDeductions: calculation.authorizedDeductions,
+    },
+    daysInFollowingMonth: 30,
+    dailyPay: calculation.dailyPay,
+    hourlyPay: calculation.hourlyPay,
+    employeeSocialSecurity: calculation.employeeSocialSecurity,
+    employerSocialSecurity: calculation.employerSocialSecurity,
+    absenceDeduction: calculation.absenceDeduction,
+    overtimeCompensation: calculation.overtimeCompensation,
+    mealAllowanceAdvance: calculation.mealAllowanceAdvance,
+    housingAllowance: calculation.housingAllowance,
+    accommodationDeduction: calculation.accommodationDeduction,
+    priorMonthFoodAdjustment: calculation.priorMonthFoodAdjustment,
+    finalMonthFoodAdjustment: calculation.finalMonthFoodAdjustment,
+    attendanceCorrectionDelta: calculation.attendanceCorrectionDelta,
+    contractBonusTotal: calculation.contractBonusTotal,
+    netSalaryPayable: calculation.netSalaryPayable,
+    lineItems: calculation.lineItems,
+    contract: {
+      employeeKey: descriptor.employeeKey,
+      profileVersionKey: descriptor.profileVersionKey,
+      compensationRuleKey: descriptor.compensationRuleKey,
+      contractType: descriptor.contractType,
+      ssoTreatment: descriptor.ssoTreatment,
+      effectiveFrom: descriptor.effectiveFrom,
+      effectiveTo: descriptor.effectiveTo,
+      paidLeave: calculation.paidLeave,
+    },
+  };
+}

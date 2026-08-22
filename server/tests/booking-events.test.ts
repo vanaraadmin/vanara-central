@@ -186,6 +186,8 @@ class FakeBookingEventsDB {
   inserted: unknown[][] = [];
   bookingInsertMetaChanges = 1;
   nextNotificationEventId = 1;
+  bookingRecipientIds = ["owner-user", "selected-staff", "owner-user"];
+  loadedSubscriptionUserIds: string[] = [];
   private insertedSignatures = new Set<string>();
   deleteStatements = 0;
 
@@ -218,7 +220,13 @@ class FakeBookingEventsDB {
       };
     }
 
-    if (sql.includes("FROM push_subscriptions")) return { results: [] as T[] };
+    if (sql.includes("FROM users u") && sql.includes("can_receive_booking_notifications")) {
+      return { results: this.bookingRecipientIds.map((user_id) => ({ user_id })) as T[] };
+    }
+    if (sql.includes("FROM push_subscriptions")) {
+      this.loadedSubscriptionUserIds.push(...params.map(String));
+      return { results: [] as T[] };
+    }
 
     return {
       results: this.rows
@@ -443,10 +451,24 @@ test("booking push notification is not gated by unreliable D1 insert metadata", 
 
   assert.equal(db.notificationEvents.length, 1);
   assert.equal(db.notificationEvents[0]?.notification_type, "booking.new");
-  assert.equal(db.notificationEvents[0]?.audience, "owners");
+  assert.equal(db.notificationEvents[0]?.audience, "user-list");
   assert.equal(db.notificationEvents[0]?.sound_type, "event");
   assert.match(db.notificationEvents[0]?.payload_json ?? "", /New booking received/);
   assert.match(db.notificationEvents[0]?.payload_json ?? "", /\/staff#booking-pulse/);
+});
+
+test("booking push resolves active Owners and explicitly selected Staff without duplicates", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [];
+
+  await recordBookingEvent(
+    { DB: db as unknown as D1Database },
+    null,
+    baseSnapshot,
+    "2026-07-31T10:00:00.000Z",
+  );
+
+  assert.deepEqual(db.loadedSubscriptionUserIds, ["owner-user", "selected-staff"]);
 });
 
 test("booking pulse read model returns NEW UPDATED and CANCELLED events", async () => {

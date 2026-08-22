@@ -11,6 +11,7 @@ import "../styles/AuthPage.css";
 const defaultPermissions = moduleKeys.map((module) => ({ module, canAccess: module === "dashboard", canEdit: false }));
 const actionPermissionLabels: Record<ActionPermissionKey, string> = {
   can_complete_checkin_checkout: "Complete check-in / check-out",
+  can_receive_booking_notifications: "Receive booking notifications",
 };
 const defaultActionPermissions = (Object.keys(actionPermissionLabels) as ActionPermissionKey[]).map((action) => ({ action, allowed: false }));
 const allowedPhotoTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);

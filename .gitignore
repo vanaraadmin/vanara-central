@@ -32,3 +32,6 @@ dist-ssr
 
 # Temporary restore output
 tmp/waraporn-kb-restore/
+
+# Private staff contracts and identity-source documents must never enter Git.
+docs/staff-contracts/

@@ -1,5 +1,22 @@
 import { ApiError, requestJson } from "./api.client";
-import type { PayrollEvent, PayrollEventResponse, PayrollEventType, PayrollOverview, PayrollOverviewResponse, PayrollRecord, PayrollRecordResponse, PayrollSettings, PayrollSettingsResponse, PayrollWorker, PayrollWorkerResponse } from "../types/payroll";
+import type {
+  PayrollAttendanceInput,
+  PayrollAttendanceResponse,
+  PayrollAttendanceResult,
+  PayrollContractDocument,
+  PayrollContractDocumentsResponse,
+  PayrollEvent,
+  PayrollEventResponse,
+  PayrollEventType,
+  PayrollOverview,
+  PayrollOverviewResponse,
+  PayrollRecord,
+  PayrollRecordResponse,
+  PayrollSettings,
+  PayrollSettingsResponse,
+  PayrollWorker,
+  PayrollWorkerResponse,
+} from "../types/payroll";
 
 function apiMonth(month: string): string {
   return encodeURIComponent(month);
@@ -59,6 +76,23 @@ export async function addPayrollEvent(employeeId: string, payload: { payrollMont
   return parsed.data;
 }
 
+export async function savePayrollAttendance(
+  employeeId: string,
+  payload: PayrollAttendanceInput,
+  signal?: AbortSignal,
+): Promise<PayrollAttendanceResult> {
+  const response = await fetch(`/api/payroll/workers/${encodeURIComponent(employeeId)}/events`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ command: "SAVE_ATTENDANCE", ...payload }),
+    signal,
+  });
+  const parsed = await parseResponse<PayrollAttendanceResponse>(response, "Attendance could not be saved");
+  if (!parsed.success || !parsed.data) throw new Error(parsed.error ?? "Attendance could not be saved");
+  return parsed.data;
+}
+
 export async function savePayrollDraft(employeeId: string, payrollMonth: string, notes: string | null, signal?: AbortSignal): Promise<PayrollRecord> {
   const response = await fetch(`/api/payroll/workers/${encodeURIComponent(employeeId)}/draft`, {
     method: "POST",
@@ -87,4 +121,14 @@ export async function finalizePayroll(employeeId: string, payrollMonth: string, 
 
 export function payrollPdfUrl(employeeId: string, payrollMonth: string): string {
   return `/api/payroll/workers/${encodeURIComponent(employeeId)}/statement.pdf?month=${apiMonth(payrollMonth)}`;
+}
+
+export async function loadPayrollContractDocuments(signal?: AbortSignal): Promise<PayrollContractDocument[]> {
+  const response = await requestJson<PayrollContractDocumentsResponse>("/api/payroll/contracts", signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Contract documents are unavailable");
+  return response.data;
+}
+
+export function payrollContractDocumentUrl(documentId: string, mode: "inline" | "download"): string {
+  return `/api/payroll/contracts/${encodeURIComponent(documentId)}/file?mode=${mode}`;
 }
