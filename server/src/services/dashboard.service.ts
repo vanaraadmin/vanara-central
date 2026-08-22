@@ -362,15 +362,15 @@ function dateRangeCondition(column: string, range: Required<DashboardDateRange> 
 }
 
 function payrollRangeCondition(range: Required<DashboardDateRange> | null, bangkokMonth: string): { sql: string; params: string[] } {
-  if (!range) return { sql: "AND payroll_month <= ?", params: [bangkokMonth] };
+  if (!range) return { sql: "AND pr.payroll_month <= ?", params: [bangkokMonth] };
   const clauses: string[] = [];
   const params: string[] = [];
   if (range.fromDate) {
-    clauses.push("payroll_month >= ?");
+    clauses.push("pr.payroll_month >= ?");
     params.push(range.fromDate.slice(0, 7));
   }
   if (range.toDate) {
-    clauses.push("payroll_month <= ?");
+    clauses.push("pr.payroll_month <= ?");
     params.push(range.toDate.slice(0, 7));
   }
   return { sql: clauses.length ? `AND ${clauses.join(" AND ")}` : "", params };
@@ -473,9 +473,9 @@ export async function buildFinancialSnapshot(
         ${manualRange.sql}
     `).bind(...manualRange.params).all<ManualAccountingRow>(),
     env.DB.prepare(`
-      SELECT monthly_gross_salary, salary_advances_received, bonuses_additions,
-        authorized_deductions, employee_social_security, absence_deduction,
-        overtime_compensation, meal_allowance_advance, net_salary_payable,
+      SELECT pr.monthly_gross_salary, pr.salary_advances_received, pr.bonuses_additions,
+        pr.authorized_deductions, pr.employee_social_security, pr.absence_deduction,
+        pr.overtime_compensation, pr.meal_allowance_advance, pr.net_salary_payable,
         COALESCE(s.employer_social_security, 0) AS employer_social_security
       FROM payroll_records pr
       LEFT JOIN payroll_contract_record_snapshots s
