@@ -605,26 +605,110 @@ INSERT OR IGNORE INTO payroll_contract_compensation_rules (
     created_at
 )
 SELECT profile_version_id, 'PROFILE-0001-LOW-V1', '2026-09-01', NULL, '05,06,07,08,09,10', 10620, 0, 0, 1000, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0001-2026-09-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0001-2026-09-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0001-HIGH-V1', '2026-11-01', NULL, '11,12,01,02,03,04', 14000, 1500, 0, 0, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0001-2026-09-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0001-2026-09-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0002-LOW-V1', '2026-09-01', NULL, '05,06,07,08,09,10', 10620, 0, 0, 1000, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0002-2026-09-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0002-2026-09-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0002-HIGH-V1', '2026-11-01', NULL, '11,12,01,02,03,04', 14000, 1500, 0, 0, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0002-2026-09-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0002-2026-09-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0003-OCTOBER-V1', '2026-10-01', '2026-10-31', NULL, 12500, 1500, 0, 0, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0003-2026-10-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0003-2026-10-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0003-NOVEMBER-APRIL-V1', '2026-11-01', '2027-04-30', NULL, 12500, 1500, 2500, 0, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0003-2026-10-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0003-2026-10-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0004-OCTOBER-V1', '2026-10-01', '2026-10-31', NULL, 10620, 0, 0, 0, CURRENT_TIMESTAMP
-FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0004-2026-10-V1'
-UNION ALL
+FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0004-2026-10-V1';
+
+INSERT OR IGNORE INTO payroll_contract_compensation_rules (
+    profile_version_id,
+    rule_key,
+    effective_from_bangkok,
+    effective_to_bangkok,
+    month_mask,
+    monthly_base_salary,
+    monthly_food_allowance,
+    monthly_housing_allowance,
+    monthly_accommodation_deduction,
+    created_at
+)
 SELECT profile_version_id, 'PROFILE-0004-NOVEMBER-APRIL-V1', '2026-11-01', '2027-04-30', NULL, 11000, 1500, 1000, 0, CURRENT_TIMESTAMP
 FROM payroll_contract_profile_versions WHERE version_key = 'PROFILE-0004-2026-10-V1';
 
