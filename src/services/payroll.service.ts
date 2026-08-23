@@ -132,3 +132,41 @@ export async function loadPayrollContractDocuments(signal?: AbortSignal): Promis
 export function payrollContractDocumentUrl(documentId: string, mode: "inline" | "download"): string {
   return `/api/payroll/contracts/${encodeURIComponent(documentId)}/file?mode=${mode}`;
 }
+
+async function payrollContractDocumentError(response: Response): Promise<ApiError> {
+  let message = "Contract document could not be opened";
+  try {
+    const body = await response.json() as { error?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) message = body.error;
+  } catch {
+    // The status code still provides a useful failure when the body is not JSON.
+  }
+  return new ApiError(message, response.status);
+}
+
+export async function loadPayrollContractDocumentFile(
+  document: PayrollContractDocument,
+  mode: "inline" | "download",
+  signal?: AbortSignal,
+): Promise<File> {
+  const response = await fetch(payrollContractDocumentUrl(document.documentId, mode), {
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { Accept: "application/pdf" },
+    signal,
+  });
+  if (!response.ok) throw await payrollContractDocumentError(response);
+
+  const contentType = (response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
+  const contentLengthHeader = response.headers.get("content-length");
+  const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
+  if (contentType !== "application/pdf" || (contentLength !== null && contentLength !== document.byteSize)) {
+    throw new ApiError("Contract document returned invalid file metadata", 409);
+  }
+
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength !== document.byteSize) {
+    throw new ApiError("Contract document returned an incomplete file", 409);
+  }
+  return new File([bytes], document.fileName, { type: "application/pdf" });
+}

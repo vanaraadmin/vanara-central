@@ -465,6 +465,111 @@
   gap: var(--vc-space-2);
 }
 
+.payroll-contract-action-error {
+  flex: 1 0 100%;
+  color: #fff0ea;
+  font: 700 0.82rem/1.45 var(--vc-font-sans);
+  overflow-wrap: anywhere;
+}
+
+.payroll-contract-preview {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  background: rgba(1, 18, 13, 0.94);
+  overscroll-behavior: contain;
+}
+
+.payroll-contract-preview__panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  width: min(100%, 980px);
+  height: min(100%, 900px);
+  min-width: 0;
+  min-height: 0;
+  color: var(--workspace-cream);
+  background: #0d2c23;
+  border: 1px solid rgba(244, 237, 223, 0.24);
+  border-radius: var(--vc-radius-md);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.46);
+  overflow: hidden;
+}
+
+.payroll-contract-preview__header,
+.payroll-contract-preview__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vc-space-3);
+  min-width: 0;
+  padding: var(--vc-space-3);
+}
+
+.payroll-contract-preview__header {
+  border-bottom: 1px solid rgba(244, 237, 223, 0.16);
+}
+
+.payroll-contract-preview__header span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.payroll-contract-preview__header small {
+  color: var(--vc-text-cream-muted);
+  font: 750 0.75rem var(--vc-font-sans);
+  text-transform: uppercase;
+}
+
+.payroll-contract-preview__header strong {
+  min-width: 0;
+  font: 750 0.9rem/1.35 var(--vc-font-sans);
+  overflow-wrap: anywhere;
+}
+
+.payroll-contract-preview__body {
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.payroll-contract-preview__body iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.payroll-contract-preview__footer {
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(244, 237, 223, 0.16);
+}
+
+.payroll-contract-preview__footer p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--vc-text-cream-muted);
+  font: 650 0.78rem/1.45 var(--vc-font-sans);
+}
+
+.payroll-contract-preview__error {
+  margin: 0;
+  padding: 0 var(--vc-space-3) var(--vc-space-3);
+  color: #fff0ea;
+  font: 700 0.82rem/1.45 var(--vc-font-sans);
+}
+
 .payroll-contract-error {
   display: grid;
   justify-items: start;

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 
+import { loadPayrollContractDocumentFile } from "../../src/services/payroll.service.ts";
 import { payrollContractDocumentRoutes } from "../src/routes/payroll-contract-document.routes.ts";
 
 const PDF_BYTES = new TextEncoder().encode("%PDF-1.7 private contract");
@@ -238,6 +239,63 @@ test("authorized PDF responses verify R2 integrity and append exactly one audit 
   assert.equal((await request(db, r2, "/doc-1/file?mode=preview")).status, 400);
 });
 
+test("client fetches one authenticated PDF and preserves a readable server error", async () => {
+  const document = {
+    documentId: "doc-1",
+    employeeKey: "EMPLOYEE-0001",
+    versionNumber: 1,
+    effectiveFromBangkok: "2026-09-01",
+    effectiveToBangkok: null,
+    status: "ACTIVE" as const,
+    fileName: "employee-contract.pdf",
+    byteSize: PDF_BYTES.byteLength,
+    createdAt: "2026-08-22T00:00:00.000Z",
+  };
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ input: string; init?: RequestInit }> = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      requests.push({ input: String(input), init });
+      return new Response(PDF_BYTES, {
+        status: 200,
+        headers: { "content-type": "application/pdf" },
+      });
+    };
+    const file = await loadPayrollContractDocumentFile(document, "inline");
+    assert.equal(file.name, document.fileName);
+    assert.equal(file.type, "application/pdf");
+    assert.equal(file.size, document.byteSize);
+    assert.equal(await file.text(), new TextDecoder().decode(PDF_BYTES));
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]?.input, "/api/payroll/contracts/doc-1/file?mode=inline");
+    assert.equal(requests[0]?.init?.credentials, "same-origin");
+    assert.equal(requests[0]?.init?.cache, "no-store");
+
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: false, error: "Contract access forbidden" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+    await assert.rejects(
+      () => loadPayrollContractDocumentFile(document, "download"),
+      (error: unknown) => error instanceof Error
+        && error.message === "Contract access forbidden"
+        && "status" in error
+        && error.status === 403,
+    );
+
+    globalThis.fetch = async () => new Response(PDF_BYTES.slice(0, -1), {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+    });
+    await assert.rejects(
+      () => loadPayrollContractDocumentFile(document, "inline"),
+      /incomplete file/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("source guard keeps employment contracts Owner-only and contract storage private", () => {
   const page = readFileSync(new URL("../../src/pages/PayrollPage.tsx", import.meta.url), "utf8");
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
@@ -253,6 +311,16 @@ test("source guard keeps employment contracts Owner-only and contract storage pr
   assert.match(page, /queryKey: \["payroll", "contract-documents"\]/);
   assert.match(page, /selected\?\.employeeKey[\s\S]*documents\.data\?\.find/);
   assert.match(page, /aria-label="Employment contract document"/);
+  assert.match(page, /loadPayrollContractDocumentFile\(contractDocument, mode\)/);
+  assert.match(page, /window\.open\("", "_blank"\)/);
+  assert.match(page, /navigator\.canShare\(\{ files: \[file\] \}\)/);
+  assert.match(page, /navigator\.share\(\{ files: \[prepared\.file\]/);
+  assert.match(page, /URL\.createObjectURL\(file\)/);
+  assert.match(page, /URL\.revokeObjectURL/);
+  assert.match(page, /createPortal\(preview, document\.body\)/);
+  assert.doesNotMatch(page, /href=\{payrollContractDocumentUrl/);
+  const shareHandler = page.slice(page.indexOf("async function sharePreparedContract"), page.indexOf("const preview =", page.indexOf("async function sharePreparedContract")));
+  assert.doesNotMatch(shareHandler, /loadPayrollContractDocumentFile|fetch\(/);
   assert.doesNotMatch(page, /StaffPayrollContractWorkspace|payroll-page--staff/);
   assert.doesNotMatch(staffHome, /staffPayroll|myEmploymentContract|viewContractPdf|downloadContractPdf/);
   assert.match(staffOverview, /function canUsePayroll[\s\S]*isOwner\(user\) && canAccess\(user, "payroll"\)/);

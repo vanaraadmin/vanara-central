@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { PageError, PageLoading } from "../components/AsyncState";
@@ -11,8 +12,8 @@ import {
   addPayrollEvent,
   finalizePayroll,
   loadPayrollContractDocuments,
+  loadPayrollContractDocumentFile,
   loadPayrollOverview,
-  payrollContractDocumentUrl,
   payrollPdfUrl,
   savePayrollAttendance,
   savePayrollDraft,
@@ -150,22 +151,169 @@ function contractDate(value: string): string {
   });
 }
 
-function ContractDocumentActions({ document }: { document: PayrollContractDocument }) {
+interface PreparedContractFile {
+  file: File;
+  objectUrl: string;
+}
+
+function isStandaloneDisplayMode(): boolean {
+  const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia("(display-mode: standalone)").matches || standaloneNavigator.standalone === true;
+}
+
+function canShareContractFile(file: File): boolean {
+  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return false;
+  try {
+    return navigator.canShare({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+function downloadPreparedContract(file: File, objectUrl: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = file.name;
+  anchor.rel = "noopener noreferrer";
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function ContractDocumentActions({ document: contractDocument }: { document: PayrollContractDocument }) {
   const { translate } = useLanguage();
+  const [busyMode, setBusyMode] = useState<"inline" | "download" | null>(null);
+  const [prepared, setPrepared] = useState<PreparedContractFile | null>(null);
+  const [sharePending, setSharePending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const previewObjectUrl = useRef<string | null>(null);
+  const standalone = useMemo(() => isStandaloneDisplayMode(), []);
+
+  const closePreview = useCallback(() => {
+    if (previewObjectUrl.current) {
+      URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = null;
+    }
+    setPrepared(null);
+    setSharePending(false);
+    setError(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+  }, []);
+
+  useEffect(() => {
+    if (!prepared) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePreview();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closePreview, prepared]);
+
+  function showControlledPreview(file: File, objectUrl: string): void {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+    previewObjectUrl.current = objectUrl;
+    setPrepared({ file, objectUrl });
+  }
+
+  function releaseLater(objectUrl: string): void {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  }
+
+  async function openContract(mode: "inline" | "download"): Promise<void> {
+    if (busyMode) return;
+    const previewWindow = mode === "inline" && !standalone ? window.open("", "_blank") : null;
+    if (previewWindow) previewWindow.opener = null;
+    setBusyMode(mode);
+    setError(null);
+    try {
+      const file = await loadPayrollContractDocumentFile(contractDocument, mode);
+      const objectUrl = URL.createObjectURL(file);
+      if (standalone) {
+        showControlledPreview(file, objectUrl);
+      } else if (mode === "inline" && previewWindow) {
+        previewWindow.location.replace(objectUrl);
+        releaseLater(objectUrl);
+      } else if (mode === "download") {
+        downloadPreparedContract(file, objectUrl);
+        releaseLater(objectUrl);
+      } else {
+        showControlledPreview(file, objectUrl);
+      }
+    } catch (cause) {
+      previewWindow?.close();
+      setError(cause instanceof Error ? cause.message : translate("contractPdfOpenFailed"));
+    } finally {
+      setBusyMode(null);
+    }
+  }
+
+  async function sharePreparedContract(): Promise<void> {
+    if (!prepared || sharePending) return;
+    if (!canShareContractFile(prepared.file)) {
+      setError(translate("contractPdfShareUnavailable"));
+      return;
+    }
+    setSharePending(true);
+    setError(null);
+    try {
+      await navigator.share({ files: [prepared.file], title: prepared.file.name });
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        setError(translate("contractPdfShareFailed"));
+      }
+    } finally {
+      setSharePending(false);
+    }
+  }
+
+  const preview = prepared ? (
+    <div className="payroll-contract-preview" role="dialog" aria-modal="true" aria-labelledby="payroll-contract-preview-title">
+      <section className="payroll-contract-preview__panel">
+        <header className="payroll-contract-preview__header">
+          <span>
+            <small>{translate("contractPdfPreview")}</small>
+            <strong id="payroll-contract-preview-title">{prepared.file.name}</strong>
+          </span>
+          <button className="payroll-action" onClick={closePreview} type="button">{translate("close")}</button>
+        </header>
+        <div className="payroll-contract-preview__body">
+          <iframe src={prepared.objectUrl} title={prepared.file.name} />
+        </div>
+        <footer className="payroll-contract-preview__footer">
+          {canShareContractFile(prepared.file) ? (
+            <button className="payroll-action payroll-action--primary" disabled={sharePending} onClick={() => void sharePreparedContract()} type="button">
+              {sharePending ? translate("sharingContractPdf") : translate("shareSaveContractPdf")}
+            </button>
+          ) : <p>{translate("contractPdfShareUnavailable")}</p>}
+          <button className="payroll-action" onClick={closePreview} type="button">{translate("back")}</button>
+        </footer>
+        {error ? <p className="payroll-contract-preview__error" role="alert">{error}</p> : null}
+      </section>
+    </div>
+  ) : null;
+
   return (
-    <span className="payroll-contract-actions">
-      <a
-        className="payroll-action"
-        href={payrollContractDocumentUrl(document.documentId, "inline")}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        {translate("viewContractPdf")}
-      </a>
-      <a className="payroll-action" href={payrollContractDocumentUrl(document.documentId, "download")}>
-        {translate("downloadContractPdf")}
-      </a>
-    </span>
+    <>
+      <span className="payroll-contract-actions">
+        <button className="payroll-action" disabled={busyMode !== null} onClick={() => void openContract("inline")} type="button">
+          {busyMode === "inline" ? translate("openingContractPdf") : translate("viewContractPdf")}
+        </button>
+        <button className="payroll-action" disabled={busyMode !== null} onClick={() => void openContract("download")} type="button">
+          {busyMode === "download" ? translate("downloadingContractPdf") : translate("downloadContractPdf")}
+        </button>
+      </span>
+      {!prepared && error ? <span className="payroll-contract-action-error" role="alert">{error}</span> : null}
+      {preview ? createPortal(preview, document.body) : null}
+    </>
   );
 }
 
@@ -433,7 +581,7 @@ function OwnerPayrollWorkspace() {
                     <small>{translate("contractVersion", { version: selectedDocument.versionNumber })}</small>
                     <small>{translate("contractEffectiveFrom", { date: contractDate(selectedDocument.effectiveFromBangkok) })}</small>
                   </span>
-                  <ContractDocumentActions document={selectedDocument} />
+                  <ContractDocumentActions document={selectedDocument} key={selectedDocument.documentId} />
                 </div>
               ) : null}
             </section>
