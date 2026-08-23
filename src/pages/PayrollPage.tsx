@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Navigate } from "react-router-dom";
 import { PageError, PageLoading } from "../components/AsyncState";
 import WorkspaceShell from "../components/WorkspaceShell";
 import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
@@ -119,6 +120,7 @@ function NumberField({ commitEmptyAsZero, disabled, label, onChange, step = "0.0
 
 function WorkerCard({ active, onSelect, worker }: { active: boolean; onSelect(): void; worker: PayrollWorker }) {
   const calculation = worker.calculation;
+  const settings = worker.settings;
   const initials = worker.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || worker.username.slice(0, 2).toUpperCase();
   return (
     <button className={active ? "payroll-worker payroll-worker--active" : "payroll-worker"} onClick={onSelect} type="button">
@@ -126,13 +128,15 @@ function WorkerCard({ active, onSelect, worker }: { active: boolean; onSelect():
       <span className="payroll-worker__main">
         <strong>{worker.fullName}</strong>
         <small>@{worker.username} - {worker.role}</small>
-        <span>{money(worker.settings.monthlyGrossSalary)} base - SS {worker.settings.socialSecurityApplicable ? "Yes" : "No"} - Food {worker.settings.mealAllowanceApplicable ? "On" : "Off"}</span>
+        {settings ? <span>{money(settings.monthlyGrossSalary)} base - SS {settings.socialSecurityApplicable ? "Yes" : "No"} - Food {settings.mealAllowanceApplicable ? "On" : "Off"}</span> : null}
       </span>
-      <span className="payroll-worker__meta">
-        <strong>{money(calculation.netSalaryPayable)}</strong>
-        <small>{calculation.aggregates.extraWorkedDays.toFixed(2)} extra days / {calculation.aggregates.totalOvertimeHours.toFixed(2)} OT hrs</small>
-        <small>{calculation.aggregates.unpaidAbsenceDays.toFixed(2)} absence days / {money(calculation.aggregates.salaryAdvancesReceived)} advances</small>
-      </span>
+      {calculation ? (
+        <span className="payroll-worker__meta">
+          <strong>{money(calculation.netSalaryPayable)}</strong>
+          <small>{calculation.aggregates.extraWorkedDays.toFixed(2)} extra days / {calculation.aggregates.totalOvertimeHours.toFixed(2)} OT hrs</small>
+          <small>{calculation.aggregates.unpaidAbsenceDays.toFixed(2)} absence days / {money(calculation.aggregates.salaryAdvancesReceived)} advances</small>
+        </span>
+      ) : <span className="payroll-worker__meta"><small>{worker.loadError}</small></span>}
     </button>
   );
 }
@@ -165,50 +169,8 @@ function ContractDocumentActions({ document }: { document: PayrollContractDocume
   );
 }
 
-function OwnerContractDocuments() {
-  const { translate } = useLanguage();
-  const documents = useQuery({
-    queryKey: ["payroll", "contract-documents"],
-    queryFn: ({ signal }) => loadPayrollContractDocuments(signal),
-  });
-
-  return (
-    <VanaraGlassRegion className="payroll-contracts" ariaLabelledBy="payroll-contracts-title">
-      <VanaraSectionHeader
-        eyebrow={translate("privateEmploymentRecord")}
-        headingId="payroll-contracts-title"
-        meta={documents.data ? String(documents.data.length) : undefined}
-        title={translate("employmentContracts")}
-      />
-      {documents.isLoading ? <PageLoading /> : null}
-      {documents.isError ? (
-        <div className="payroll-contract-error" role="alert">
-          <p>{translate("contractDocumentsUnavailable")}</p>
-          <button className="payroll-action" onClick={() => void documents.refetch()} type="button">
-            {translate("tryAgain")}
-          </button>
-        </div>
-      ) : null}
-      {documents.data?.length === 0 ? <p className="payroll-lock-note">{translate("noActiveContractDocuments")}</p> : null}
-      {documents.data && documents.data.length > 0 ? (
-        <ul className="payroll-contract-list">
-          {documents.data.map((document) => (
-            <li key={document.documentId}>
-              <span className="payroll-contract-copy">
-                <strong>{document.fileName}</strong>
-                <small>{translate("contractVersion", { version: document.versionNumber })}</small>
-                <small>{translate("contractEffectiveFrom", { date: contractDate(document.effectiveFromBangkok) })}</small>
-              </span>
-              <ContractDocumentActions document={document} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </VanaraGlassRegion>
-  );
-}
-
 function OwnerPayrollWorkspace() {
+  const { translate } = useLanguage();
   const queryClient = useQueryClient();
   const [payrollMonth, setPayrollMonth] = useState(currentMonth());
   const [selectedId, setSelectedId] = useState<string>("");
@@ -227,10 +189,15 @@ function OwnerPayrollWorkspace() {
     queryKey: ["payroll", "overview", payrollMonth],
     queryFn: ({ signal }) => loadPayrollOverview(payrollMonth, signal),
   });
+  const documents = useQuery({
+    queryKey: ["payroll", "contract-documents"],
+    queryFn: ({ signal }) => loadPayrollContractDocuments(signal),
+  });
   const workers = overview.data?.workers ?? [];
   const selected = workers.find((worker) => worker.id === selectedId) ?? null;
+  const selectedDocument = selected?.employeeKey ? documents.data?.find((document) => document.employeeKey === selected.employeeKey) ?? null : null;
   const locked = selected?.record?.status === "FINALIZED";
-  const contract = selected?.calculation.contract ?? null;
+  const contract = selected?.calculation?.contract ?? null;
   const calculation = selected?.calculation ?? null;
   const eventDateBounds = useMemo(() => dateBoundsForMonth(payrollMonth), [payrollMonth]);
   const availableEventOptions = contract ? eventOptions.filter((type) => type !== "UNPAID_ABSENCE_DAY") : eventOptions;
@@ -338,7 +305,7 @@ function OwnerPayrollWorkspace() {
               setSelectedId(worker.id);
               setSettingsDraft(worker.settings);
               setRecordNotes(worker.record?.notes ?? "");
-              setEventType(worker.calculation.contract ? "UNPAID_ABSENCE_HOUR" : "UNPAID_ABSENCE_DAY");
+              setEventType(worker.calculation?.contract ? "UNPAID_ABSENCE_HOUR" : "UNPAID_ABSENCE_DAY");
             }} worker={worker} />
           ))}
         </div>
@@ -346,7 +313,12 @@ function OwnerPayrollWorkspace() {
 
       <VanaraGlassRegion className="payroll-detail" ariaLabelledBy="payroll-detail-title">
         <VanaraSectionHeader eyebrow={selected ? selected.role : "Select"} headingId="payroll-detail-title" meta={locked ? "Finalized" : "Draft"} title={selected ? selected.fullName : "Worker Detail"} />
-        {!selected || !settingsDraft || !calculation ? (
+        {selected?.loadError ? (
+          <section className="payroll-empty" role="alert">
+            <h2>Unable to load this worker</h2>
+            <p>{selected.loadError}</p>
+          </section>
+        ) : !selected || !settingsDraft || !calculation ? (
           <section className="payroll-empty">
             <h2>Select a worker</h2>
             <p>Open one staff profile to record attendance and monthly events, then generate the payroll statement.</p>
@@ -366,8 +338,14 @@ function OwnerPayrollWorkspace() {
                 <div className="payroll-form-grid">
                   <label className="payroll-field"><span>Base salary</span><input disabled value={money(settingsDraft.monthlyGrossSalary)} /></label>
                   <label className="payroll-field"><span>Contract</span><input disabled value={contract.contractType === "INDEFINITE" ? "Indefinite" : "Seasonal"} /></label>
-                  <label className="payroll-field"><span>Profile version</span><input disabled value={contract.profileVersionKey} /></label>
+                  <label className="payroll-field"><span>Social Security</span><input disabled value={settingsDraft.socialSecurityApplicable ? money(calculation.employeeSocialSecurity) : "Not applicable"} /></label>
+                  <label className="payroll-field"><span>Employer Social Security</span><input disabled value={money(calculation.employerSocialSecurity ?? 0)} /></label>
+                  <label className="payroll-field"><span>Food allowance</span><input disabled value={money(calculation.mealAllowanceAdvance)} /></label>
+                  <label className="payroll-field"><span>Housing allowance</span><input disabled value={money(calculation.housingAllowance ?? 0)} /></label>
+                  <label className="payroll-field"><span>Accommodation deduction</span><input disabled value={money(calculation.accommodationDeduction ?? 0)} /></label>
+                  <label className="payroll-field"><span>Contract bonus</span><input disabled value={money(calculation.contractBonusTotal ?? 0)} /></label>
                   <label className="payroll-field"><span>Paid leave balance</span><input disabled value={contract.contractType === "INDEFINITE" ? `${contract.paidLeave.closing.toFixed(2)} days` : "Not applicable"} /></label>
+                  <label className="payroll-field"><span>Profile version</span><input disabled value={contract.profileVersionKey} /></label>
                 </div>
               ) : (
                 <>
@@ -434,61 +412,35 @@ function OwnerPayrollWorkspace() {
                 <a className="payroll-action" href={payrollPdfUrl(selected.id, payrollMonth)}>Generate PDF</a>
               </div>
             </section>
+            <section className="payroll-events" aria-label="Employment contract document">
+              <h3>{translate("employmentContracts")}</h3>
+              {documents.isLoading ? <PageLoading /> : null}
+              {documents.isError ? (
+                <div className="payroll-contract-error" role="alert">
+                  <p>{translate("contractDocumentsUnavailable")}</p>
+                  <button className="payroll-action" onClick={() => void documents.refetch()} type="button">
+                    {translate("tryAgain")}
+                  </button>
+                </div>
+              ) : null}
+              {!documents.isLoading && !documents.isError && !selectedDocument ? (
+                <p className="payroll-lock-note">{translate("contractNotAvailable")}</p>
+              ) : null}
+              {selectedDocument ? (
+                <div className="payroll-self-contract">
+                  <span className="payroll-contract-copy">
+                    <strong>{selectedDocument.fileName}</strong>
+                    <small>{translate("contractVersion", { version: selectedDocument.versionNumber })}</small>
+                    <small>{translate("contractEffectiveFrom", { date: contractDate(selectedDocument.effectiveFromBangkok) })}</small>
+                  </span>
+                  <ContractDocumentActions document={selectedDocument} />
+                </div>
+              ) : null}
+            </section>
             {notice && !mutationError ? <p className="payroll-notice">{notice}</p> : null}
             {mutationError ? <p className="payroll-error">{mutationError instanceof Error ? mutationError.message : "Payroll action could not be completed."}</p> : null}
           </>
         )}
-      </VanaraGlassRegion>
-      <OwnerContractDocuments />
-    </WorkspaceShell>
-  );
-}
-
-function StaffPayrollContractWorkspace({ canAccess }: { canAccess: boolean }) {
-  const { translate } = useLanguage();
-  const documents = useQuery({
-    enabled: canAccess,
-    queryKey: ["payroll", "contract-documents", "self"],
-    queryFn: ({ signal }) => loadPayrollContractDocuments(signal),
-  });
-  const document = documents.data?.[0] ?? null;
-
-  return (
-    <WorkspaceShell
-      title={translate("payroll")}
-      stickyNavigationTitle={translate("payroll")}
-      workspace="payroll"
-      bodyClassName="payroll-page payroll-page--staff"
-    >
-      <VanaraGlassRegion className="payroll-contracts payroll-contracts--staff" ariaLabelledBy="my-employment-contract-title">
-        <VanaraSectionHeader
-          eyebrow={translate("privateEmploymentRecord")}
-          headingId="my-employment-contract-title"
-          title={translate("myEmploymentContract")}
-        />
-        {!canAccess ? <p className="payroll-error" role="alert">{translate("payrollAccessUnavailable")}</p> : null}
-        {canAccess && documents.isLoading ? <PageLoading /> : null}
-        {canAccess && documents.isError ? (
-          <div className="payroll-contract-error" role="alert">
-            <p>{translate("contractDocumentsUnavailable")}</p>
-            <button className="payroll-action" onClick={() => void documents.refetch()} type="button">
-              {translate("tryAgain")}
-            </button>
-          </div>
-        ) : null}
-        {canAccess && !documents.isLoading && !documents.isError && !document ? (
-          <p className="payroll-lock-note">{translate("contractNotAvailable")}</p>
-        ) : null}
-        {document ? (
-          <section className="payroll-self-contract">
-            <span className="payroll-contract-copy">
-              <strong>{document.fileName}</strong>
-              <small>{translate("contractVersion", { version: document.versionNumber })}</small>
-              <small>{translate("contractEffectiveFrom", { date: contractDate(document.effectiveFromBangkok) })}</small>
-            </span>
-            <ContractDocumentActions document={document} />
-          </section>
-        ) : null}
       </VanaraGlassRegion>
     </WorkspaceShell>
   );
@@ -511,7 +463,6 @@ export default function PayrollPage() {
       </WorkspaceShell>
     );
   }
-  if (user.data.isOwner) return <OwnerPayrollWorkspace />;
-  const canAccess = user.data.permissions.some((permission) => permission.module === "payroll" && permission.canAccess);
-  return <StaffPayrollContractWorkspace canAccess={canAccess} />;
+  if (!user.data.isOwner) return <Navigate replace to="/staff" />;
+  return <OwnerPayrollWorkspace />;
 }

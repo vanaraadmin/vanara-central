@@ -58,7 +58,7 @@ function canUseSocialAutomation(user: CurrentUser): boolean {
 }
 
 function canUsePayroll(user: CurrentUser): boolean {
-  return canAccess(user, "payroll");
+  return isOwner(user) && canAccess(user, "payroll");
 }
 
 function canUseAccounting(user: CurrentUser): boolean {
@@ -278,17 +278,16 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canUsePayroll(user)) {
-    const ownerPayroll = isOwner(user);
     cards.push(withSummaryLines({
       id: "payroll",
       module: "payroll",
-      title: ownerPayroll ? "Payroll" : "My employment contract",
-      description: ownerPayroll ? "Monthly staff salary calculations." : "Private employment record.",
+      title: "Payroll",
+      description: "Monthly staff salary calculations.",
       href: "/payroll",
-      cta: ownerPayroll ? "Open Payroll" : "Open my contract",
+      cta: "Open Payroll",
       metrics: [],
-      summaryLine1: ownerPayroll ? "Worker payroll" : "View PDF",
-      summaryLine2: ownerPayroll ? "Owner only" : "Download PDF",
+      summaryLine1: "Worker payroll",
+      summaryLine2: "Owner only",
     }));
   }
 

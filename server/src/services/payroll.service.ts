@@ -4,7 +4,7 @@ import { NOTO_SANS_THAI_REGULAR_BASE64 } from "../assets/fonts/noto-sans-thai-re
 import { adaptContractPayrollCalculation } from "./payroll-contract-adapter.service.js";
 import { applyPayrollContractSnapshot, loadPayrollContractSnapshot } from "./payroll-contract-snapshot.service.js";
 import { finalizeContractPayrollRecord } from "./payroll-contract-finalization.service.js";
-import { calculateContractRuntimePayroll, resolveContractRuntimeIdentity, saveContractRuntimeAttendance, type ContractRuntimeEvent } from "./payroll-contract-runtime.service.js";
+import { calculateContractRuntimePayroll, resolveContractRuntimeActivation, resolveContractRuntimeIdentity, saveContractRuntimeAttendance, type ContractRuntimeEvent } from "./payroll-contract-runtime.service.js";
 import type { ContractPayrollPolicyResult, PayrollAttendanceStatus, SavePayrollAttendanceInput } from "./payroll-contract-policy.service.js";
 
 export type PayrollStatus = "DRAFT" | "FINALIZED";
@@ -111,18 +111,23 @@ export interface PayrollCalculation {
   lineItems: PayrollLineItem[];
 }
 
+export type PayrollWorkerMode = "LEGACY" | "CONTRACT" | "ERROR";
+
 export interface PayrollWorker {
   id: string;
+  employeeKey: string | null;
+  mode: PayrollWorkerMode;
   fullName: string;
   displayName: string;
   profilePhotoUrl: string | null;
   role: string;
   username: string;
   status: string;
-  settings: PayrollSettings;
+  settings: PayrollSettings | null;
   record: PayrollRecord | null;
   events: PayrollEvent[];
-  calculation: PayrollCalculation;
+  calculation: PayrollCalculation | null;
+  loadError: string | null;
 }
 
 export interface PayrollOverview {
@@ -154,6 +159,7 @@ interface UserRow {
   role: string;
   username: string;
   status: string;
+  employee_key: string | null;
 }
 
 interface SettingsRow {
@@ -627,19 +633,26 @@ export function calculatePayroll(settings: PayrollSettings, events: PayrollEvent
 
 async function getActiveWorkers(env: PayrollBindings): Promise<UserRow[]> {
   const rows = await env.DB.prepare(`
-    SELECT user_id, first_name, last_name, full_name, profile_photo_url, role, username, status
-    FROM users
-    WHERE status = 'active' AND role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
-    ORDER BY full_name
+    SELECT u.user_id, u.first_name, u.last_name, u.full_name, u.profile_photo_url,
+      u.role, u.username, u.status, pe.employee_key
+    FROM users u
+    LEFT JOIN payroll_employees pe
+      ON pe.auth_user_id = u.user_id AND pe.employee_status = 'ACTIVE'
+    WHERE u.status = 'active' AND u.role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
+    ORDER BY u.full_name
   `).all<UserRow>();
   return rows.results ?? [];
 }
 
 async function getWorker(env: PayrollBindings, employeeUserId: string): Promise<UserRow | null> {
   return env.DB.prepare(`
-    SELECT user_id, first_name, last_name, full_name, profile_photo_url, role, username, status
-    FROM users
-    WHERE user_id = ? AND status = 'active' AND role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
+    SELECT u.user_id, u.first_name, u.last_name, u.full_name, u.profile_photo_url,
+      u.role, u.username, u.status, pe.employee_key
+    FROM users u
+    LEFT JOIN payroll_employees pe
+      ON pe.auth_user_id = u.user_id AND pe.employee_status = 'ACTIVE'
+    WHERE u.user_id = ? AND u.status = 'active'
+      AND u.role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
   `).bind(employeeUserId).first<UserRow>();
 }
 
@@ -648,11 +661,14 @@ function legalPayrollName(row: UserRow): string {
   return name || row.full_name;
 }
 
-async function getSettings(env: PayrollBindings, employeeUserId: string): Promise<PayrollSettings> {
+async function getSettingsState(env: PayrollBindings, employeeUserId: string): Promise<{ exists: boolean; settings: PayrollSettings }> {
   const row = await env.DB.prepare("SELECT * FROM payroll_worker_settings WHERE employee_user_id = ?")
     .bind(employeeUserId)
     .first<SettingsRow>();
-  return settingsFromRow(row);
+  return {
+    exists: row !== null,
+    settings: settingsFromRow(row),
+  };
 }
 
 async function listEvents(env: PayrollBindings, employeeUserId: string, payrollMonth: string): Promise<PayrollEvent[]> {
@@ -738,30 +754,40 @@ function contractCalculation(policy: ContractPayrollPolicyResult): PayrollCalcul
 }
 
 async function buildWorker(env: PayrollBindings, row: UserRow, payrollMonth: string): Promise<PayrollWorker> {
-  const [legacySettings, events, record] = await Promise.all([
-    getSettings(env, row.user_id),
+  const [legacySettingsState, events, record, contractActivation] = await Promise.all([
+    getSettingsState(env, row.user_id),
     listEvents(env, row.user_id, payrollMonth),
     getRecord(env, row.user_id, payrollMonth),
+    resolveContractRuntimeActivation(env.DB, row.user_id, payrollMonth),
   ]);
-  let settings: PayrollSettings;
-  let calculation: PayrollCalculation;
+  let mode: PayrollWorkerMode;
+  let settings: PayrollSettings | null;
+  let calculation: PayrollCalculation | null;
   if (record?.status === "FINALIZED") {
     const snapshot = await loadPayrollContractSnapshot(env.DB, record.id);
+    mode = snapshot ? "CONTRACT" : "LEGACY";
     settings = record.calculation.settings;
     calculation = applyPayrollContractSnapshot(record.calculation, snapshot) as PayrollCalculation;
-  } else {
+  } else if (contractActivation) {
     const policy = await calculateContractRuntimePayroll(
       env.DB,
       row.user_id,
       payrollMonth,
       contractRuntimeEvents(events),
     );
-    const liveContractCalculation = policy ? contractCalculation(policy) : null;
-    settings = liveContractCalculation?.settings ?? legacySettings;
-    calculation = liveContractCalculation ?? calculatePayroll(settings, events, payrollMonth);
+    if (!policy) throw new Error(`Contract payroll activation could not be loaded for ${row.employee_key ?? row.user_id}.`);
+    mode = "CONTRACT";
+    calculation = contractCalculation(policy);
+    settings = calculation.settings;
+  } else {
+    mode = "LEGACY";
+    settings = legacySettingsState.settings;
+    calculation = calculatePayroll(settings, events, payrollMonth);
   }
   return {
     id: row.user_id,
+    employeeKey: row.employee_key,
+    mode,
     fullName: legalPayrollName(row),
     displayName: legalPayrollName(row),
     profilePhotoUrl: row.profile_photo_url,
@@ -772,13 +798,43 @@ async function buildWorker(env: PayrollBindings, row: UserRow, payrollMonth: str
     record,
     events,
     calculation,
+    loadError: null,
+  };
+}
+
+function failedWorker(row: UserRow, error: unknown): PayrollWorker {
+  console.error("Payroll worker could not be loaded", {
+    employeeUserId: row.user_id,
+    error: error instanceof Error ? error.message : String(error),
+  });
+  return {
+    id: row.user_id,
+    employeeKey: row.employee_key,
+    mode: "ERROR",
+    fullName: legalPayrollName(row),
+    displayName: legalPayrollName(row),
+    profilePhotoUrl: row.profile_photo_url,
+    role: row.role,
+    username: row.username,
+    status: row.status,
+    settings: null,
+    record: null,
+    events: [],
+    calculation: null,
+    loadError: "Payroll details are unavailable for this worker.",
   };
 }
 
 export async function getPayrollOverview(env: PayrollBindings, payrollMonth = bangkokMonth()): Promise<PayrollOverview> {
   const month = normalizePayrollMonth(payrollMonth);
   const workers = await getActiveWorkers(env);
-  return { payrollMonth: month, workers: await Promise.all(workers.map((worker) => buildWorker(env, worker, month))) };
+  const results = await Promise.allSettled(workers.map((worker) => buildWorker(env, worker, month)));
+  return {
+    payrollMonth: month,
+    workers: results.map((result, index) => (
+      result.status === "fulfilled" ? result.value : failedWorker(workers[index], result.reason)
+    )),
+  };
 }
 
 export async function getPayrollWorker(env: PayrollBindings, employeeIdentifier: string, payrollMonth = bangkokMonth()): Promise<PayrollWorker | null> {
@@ -790,9 +846,12 @@ export async function getPayrollWorker(env: PayrollBindings, employeeIdentifier:
 }
 
 export async function savePayrollSettings(env: PayrollBindings, employeeIdentifier: string, input: PayrollSettings, user: CurrentUser, now = new Date().toISOString()): Promise<PayrollSettings> {
-  const contractIdentity = await resolveContractRuntimeIdentity(env.DB, employeeIdentifier);
-  if (contractIdentity) throw new Error("Contract-backed payroll settings are read-only.");
-  const employeeUserId = employeeIdentifier;
+  const [contractIdentity, contractActivation] = await Promise.all([
+    resolveContractRuntimeIdentity(env.DB, employeeIdentifier),
+    resolveContractRuntimeActivation(env.DB, employeeIdentifier, bangkokMonth(new Date(now))),
+  ]);
+  if (contractActivation) throw new Error("Contract-backed payroll settings are read-only.");
+  const employeeUserId = contractIdentity?.authUserId ?? employeeIdentifier;
   if (!await getWorker(env, employeeUserId)) throw new Error("Payroll worker not found.");
   const settings = normalizePayrollSettingsInput(input);
   await env.DB.prepare(`
@@ -837,9 +896,12 @@ export async function addPayrollEvent(env: PayrollBindings, employeeIdentifier: 
   if ("command" in input) {
     return savePayrollAttendance(env, employeeIdentifier, input.attendance, user, now);
   }
-  const contractIdentity = await resolveContractRuntimeIdentity(env.DB, employeeIdentifier);
+  const [contractIdentity, contractActivation] = await Promise.all([
+    resolveContractRuntimeIdentity(env.DB, employeeIdentifier),
+    resolveContractRuntimeActivation(env.DB, employeeIdentifier, input.payrollMonth),
+  ]);
   const employeeUserId = contractIdentity?.authUserId ?? employeeIdentifier;
-  if (contractIdentity && input.eventType === "UNPAID_ABSENCE_DAY") {
+  if (contractActivation && input.eventType === "UNPAID_ABSENCE_DAY") {
     throw new Error("Use contract attendance to record a full unpaid workday.");
   }
   if (!await getWorker(env, employeeUserId)) throw new Error("Payroll worker not found.");
@@ -862,14 +924,17 @@ export async function addPayrollEvent(env: PayrollBindings, employeeIdentifier: 
 }
 
 async function upsertPayrollRecord(env: PayrollBindings, worker: PayrollWorker, payrollMonth: string, user: CurrentUser, status: PayrollStatus, now: string, notes: string | null): Promise<PayrollRecord> {
+  if (worker.mode === "ERROR" || !worker.settings || !worker.calculation) {
+    throw new Error(worker.loadError ?? "Payroll details are unavailable for this worker.");
+  }
   const existing = worker.record;
   if (existing?.status === "FINALIZED") throw new Error("Finalized payroll is locked.");
-  const policy = await calculateContractRuntimePayroll(
+  const policy = worker.mode === "CONTRACT" ? await calculateContractRuntimePayroll(
     env.DB,
     worker.id,
     payrollMonth,
     contractRuntimeEvents(worker.events),
-  );
+  ) : null;
   const calculation = policy ? contractCalculation(policy) : calculatePayroll(worker.settings, worker.events, payrollMonth);
   const persistedStatus: PayrollStatus = policy && status === "FINALIZED" ? "DRAFT" : status;
   const lineItemsJson = JSON.stringify(calculation.lineItems);
@@ -1274,6 +1339,9 @@ function buildPdf(pages: string[][]): Uint8Array {
 export async function generatePayrollStatementPdf(env: PayrollBindings, employeeUserId: string, payrollMonth: string): Promise<Uint8Array> {
   const worker = await getPayrollWorker(env, employeeUserId, payrollMonth);
   if (!worker) throw new Error("Payroll worker not found.");
+  if (worker.mode === "ERROR" || !worker.calculation) {
+    throw new Error(worker.loadError ?? "Payroll details are unavailable for this worker.");
+  }
   const calculation = worker.record?.status === "FINALIZED" ? worker.record.calculation : worker.calculation;
   const generated = new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short", year: "numeric" });
   const statementMonth = worker.record?.payrollMonth ?? payrollMonth;

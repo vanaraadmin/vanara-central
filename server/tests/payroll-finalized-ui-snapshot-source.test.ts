@@ -9,6 +9,6 @@ const page = readFileSync(resolve(here, "../../src/pages/PayrollPage.tsx"), "utf
 
 test("finalized payroll UI uses the server-authoritative calculation view", () => {
   assert.match(page, /const calculation = selected\?\.calculation \?\? null;/);
-  assert.match(page, /const contract = selected\?\.calculation\.contract \?\? null;/);
+  assert.match(page, /const contract = selected\?\.calculation\?\.contract \?\? null;/);
   assert.doesNotMatch(page, /selected\.record\.calculation/);
 });

@@ -116,18 +116,23 @@ export interface PayrollRecord {
   finalizedByName: string | null;
 }
 
+export type PayrollWorkerMode = "LEGACY" | "CONTRACT" | "ERROR";
+
 export interface PayrollWorker {
   id: string;
+  employeeKey: string | null;
+  mode: PayrollWorkerMode;
   fullName: string;
   displayName: string;
   profilePhotoUrl: string | null;
   role: string;
   username: string;
   status: string;
-  settings: PayrollSettings;
+  settings: PayrollSettings | null;
   record: PayrollRecord | null;
   events: PayrollEvent[];
-  calculation: PayrollCalculation;
+  calculation: PayrollCalculation | null;
+  loadError: string | null;
 }
 
 export interface PayrollOverview {

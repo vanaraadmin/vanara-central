@@ -37,7 +37,7 @@ interface PayrollContractDocumentRow {
 export class PayrollContractDocumentError extends Error {
   constructor(
     message: string,
-    readonly code: "ACCOUNT_LINK_REQUIRED" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_INTEGRITY_ERROR",
+    readonly code: "OWNER_ACCESS_REQUIRED" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_INTEGRITY_ERROR",
     readonly status: 403 | 404 | 409,
   ) {
     super(message);
@@ -59,49 +59,30 @@ function publicDocument(row: PayrollContractDocumentRow): PayrollContractDocumen
   };
 }
 
-async function linkedEmployeeKey(env: PayrollContractDocumentBindings, user: CurrentUser): Promise<string> {
-  const row = await env.DB.prepare(`
-    SELECT employee_key
-    FROM payroll_employees
-    WHERE auth_user_id = ?
-      AND employee_status = 'ACTIVE'
-    LIMIT 1
-  `).bind(user.id).first<{ employee_key: string }>();
-  if (!row) {
+function requireOwnerDocumentAccess(user: CurrentUser): void {
+  if (!isOwner(user)) {
     throw new PayrollContractDocumentError(
-      "Account link required for contract access.",
-      "ACCOUNT_LINK_REQUIRED",
+      "Contract documents are available to Owners only.",
+      "OWNER_ACCESS_REQUIRED",
       403,
     );
   }
-  return row.employee_key;
 }
 
 export async function listPayrollContractDocuments(
   env: PayrollContractDocumentBindings,
   user: CurrentUser,
 ): Promise<PayrollContractDocumentSummary[]> {
-  const employeeKey = isOwner(user) ? null : await linkedEmployeeKey(env, user);
-  const query = employeeKey
-    ? env.DB.prepare(`
-        SELECT document_id, employee_key, version_number,
-               effective_from_bangkok, effective_to_bangkok, document_status,
-               object_key, sha256_hex, byte_size, mime_type,
-               download_filename, created_at
-        FROM payroll_contract_documents
-        WHERE document_status = 'ACTIVE'
-          AND employee_key = ?
-        ORDER BY effective_from_bangkok DESC, version_number DESC
-      `).bind(employeeKey)
-    : env.DB.prepare(`
-        SELECT document_id, employee_key, version_number,
-               effective_from_bangkok, effective_to_bangkok, document_status,
-               object_key, sha256_hex, byte_size, mime_type,
-               download_filename, created_at
-        FROM payroll_contract_documents
-        WHERE document_status = 'ACTIVE'
-        ORDER BY employee_key, effective_from_bangkok DESC, version_number DESC
-      `);
+  requireOwnerDocumentAccess(user);
+  const query = env.DB.prepare(`
+    SELECT document_id, employee_key, version_number,
+           effective_from_bangkok, effective_to_bangkok, document_status,
+           object_key, sha256_hex, byte_size, mime_type,
+           download_filename, created_at
+    FROM payroll_contract_documents
+    WHERE document_status = 'ACTIVE'
+    ORDER BY employee_key, effective_from_bangkok DESC, version_number DESC
+  `);
   const result = await query.all<PayrollContractDocumentRow>();
   return (result.results ?? []).map(publicDocument);
 }
@@ -111,29 +92,17 @@ async function authorizedDocumentRow(
   user: CurrentUser,
   documentId: string,
 ): Promise<PayrollContractDocumentRow> {
-  const employeeKey = isOwner(user) ? null : await linkedEmployeeKey(env, user);
-  const query = employeeKey
-    ? env.DB.prepare(`
-        SELECT document_id, employee_key, version_number,
-               effective_from_bangkok, effective_to_bangkok, document_status,
-               object_key, sha256_hex, byte_size, mime_type,
-               download_filename, created_at
-        FROM payroll_contract_documents
-        WHERE document_id = ?
-          AND employee_key = ?
-          AND document_status = 'ACTIVE'
-        LIMIT 1
-      `).bind(documentId, employeeKey)
-    : env.DB.prepare(`
-        SELECT document_id, employee_key, version_number,
-               effective_from_bangkok, effective_to_bangkok, document_status,
-               object_key, sha256_hex, byte_size, mime_type,
-               download_filename, created_at
-        FROM payroll_contract_documents
-        WHERE document_id = ?
-          AND document_status = 'ACTIVE'
-        LIMIT 1
-      `).bind(documentId);
+  requireOwnerDocumentAccess(user);
+  const query = env.DB.prepare(`
+    SELECT document_id, employee_key, version_number,
+           effective_from_bangkok, effective_to_bangkok, document_status,
+           object_key, sha256_hex, byte_size, mime_type,
+           download_filename, created_at
+    FROM payroll_contract_documents
+    WHERE document_id = ?
+      AND document_status = 'ACTIVE'
+    LIMIT 1
+  `).bind(documentId);
   const row = await query.first<PayrollContractDocumentRow>();
   if (!row) {
     throw new PayrollContractDocumentError("Contract document not found.", "DOCUMENT_NOT_FOUND", 404);
@@ -161,7 +130,7 @@ export async function getAuthorizedPayrollContractDocument(
 ): Promise<AuthorizedPayrollContractDocument> {
   const row = await authorizedDocumentRow(env, user, documentId);
   const object = await env.R2_STORAGE.get(row.object_key);
-  const customSize = object?.customMetadata?.byteSize;
+  const customSize = object?.customMetadata?.byteSize ?? object?.customMetadata?.size;
   const contentType = object?.httpMetadata?.contentType?.toLowerCase();
   const metadataMatches = object !== null
     && object.size === row.byte_size

@@ -29,6 +29,16 @@ export interface ContractRuntimeEvent {
   rateMultiplier?: number | null;
 }
 
+function payrollMonthEnd(payrollMonth: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(payrollMonth);
+  if (!match) throw new Error("Payroll month is invalid.");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) throw new Error("Payroll month is invalid.");
+  const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${payrollMonth}-${String(day).padStart(2, "0")}`;
+}
+
 export async function resolveContractRuntimeIdentity(
   db: D1Database,
   employeeIdentifier: string,
@@ -48,13 +58,29 @@ export async function resolveContractRuntimeIdentity(
   };
 }
 
+export async function resolveContractRuntimeActivation(
+  db: D1Database,
+  employeeIdentifier: string,
+  payrollMonth: string,
+): Promise<ContractRuntimeIdentity | null> {
+  const identity = await resolveContractRuntimeIdentity(db, employeeIdentifier);
+  if (!identity) return null;
+  const activation = await db.prepare(`
+    SELECT employee_key
+    FROM payroll_contract_runtime_activations
+    WHERE employee_key = ?
+      AND active_from_bangkok <= ?
+  `).bind(identity.employeeKey, payrollMonthEnd(payrollMonth)).first<{ employee_key: string }>();
+  return activation ? identity : null;
+}
+
 export async function calculateContractRuntimePayroll(
   db: D1Database,
   employeeIdentifier: string,
   payrollMonth: string,
   events: ContractRuntimeEvent[],
 ): Promise<ContractPayrollPolicyResult | null> {
-  const identity = await resolveContractRuntimeIdentity(db, employeeIdentifier);
+  const identity = await resolveContractRuntimeActivation(db, employeeIdentifier, payrollMonth);
   if (!identity) return null;
   const policy = await loadContractPayrollPolicy(db, identity.authUserId, payrollMonth);
   if (!policy) {
@@ -77,8 +103,8 @@ export async function saveContractRuntimeAttendance(
   actorUserId: string,
   now: string,
 ): Promise<{ date: string; status: PayrollAttendanceStatus }> {
-  const identity = await resolveContractRuntimeIdentity(db, employeeIdentifier);
-  if (!identity) throw new Error("Contract payroll profile is not linked.");
+  const identity = await resolveContractRuntimeActivation(db, employeeIdentifier, input.workDate.slice(0, 7));
+  if (!identity) throw new Error("Contract payroll runtime is not active.");
 
   const idempotencyKey = input.idempotencyKey.trim().slice(0, 200);
   const prior = await db.prepare(`

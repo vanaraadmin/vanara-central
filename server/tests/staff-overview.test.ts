@@ -631,31 +631,17 @@ test("staff overview exposes Social Automation only to owners with the social mo
   assert.equal(staffOverview.cards.some((card) => card.id === "social"), false);
 });
 
-test("staff overview exposes a private contract card only to staff with payroll access", async () => {
+test("staff overview never exposes Payroll or employment contracts to Staff", async () => {
   const allowed = await getStaffOverview(
     env([payrollAccess]),
     currentUser([{ module: "payroll", canAccess: true, canEdit: false }], "Operations", ["staff"]),
     STAFF_OVERVIEW_TEST_DATE,
   );
-  const card = allowed.cards.find((item) => item.id === "payroll");
 
-  assert.deepEqual(card, {
-    id: "payroll",
-    module: "payroll",
-    title: "My employment contract",
-    description: "Private employment record.",
-    href: "/payroll",
-    cta: "Open my contract",
-    metrics: [],
-    summaryLine1: "View PDF",
-    summaryLine2: "Download PDF",
-  });
-  assert.equal(JSON.stringify(card).includes("salary"), false);
-  assert.equal(JSON.stringify(card).includes("Worker payroll"), false);
-  assert.equal(JSON.stringify(card).includes("Owner only"), false);
+  assert.equal(allowed.cards.some((item) => item.id === "payroll" || item.href === "/payroll"), false);
 
   const denied = await getStaffOverview(env([]), currentUser([]), STAFF_OVERVIEW_TEST_DATE);
-  assert.equal(denied.cards.some((item) => item.id === "payroll"), false);
+  assert.equal(denied.cards.some((item) => item.id === "payroll" || item.href === "/payroll"), false);
 });
 
 test("staff overview preserves the owner Payroll card", async () => {

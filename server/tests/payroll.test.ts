@@ -82,6 +82,9 @@ class FakeStmt {
 
 class FakePayrollDB {
   users = new Map<string, UserRow>();
+  employeeLinks = new Map<string, { employeeKey: string; profileKey: string }>();
+  activations = new Map<string, string>();
+  failSettingsFor = new Set<string>();
   settings = new Map<string, PayrollSettings>();
   events: Array<PayrollEvent & { payroll_record_id?: number | null }> = [];
   records = new Map<string, PayrollRecord>();
@@ -135,8 +138,10 @@ class FakePayrollDB {
     }
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
-    if (sql.includes("FROM users") && sql.includes("WHERE status = 'active'")) {
-      const rows = [...this.users.values()].filter((user) => !sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role));
+    if (sql.includes("FROM users") && sql.includes("WHERE u.status = 'active'")) {
+      const rows = [...this.users.values()]
+        .filter((user) => !sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role))
+        .map((user) => ({ ...user, employee_key: this.employeeLinks.get(user.user_id)?.employeeKey ?? null }));
       return { results: rows as T[] };
     }
     if (sql.includes("FROM payroll_events")) {
@@ -152,6 +157,17 @@ class FakePayrollDB {
   }
 
   async first<T>(sql: string, params: unknown[]) {
+    if (sql.includes("FROM payroll_employees")) {
+      const employeeIdentifier = String(params[0]);
+      const authIdentifier = String(params[1]);
+      const linked = [...this.employeeLinks.entries()].find(([authUserId, link]) => link.employeeKey === employeeIdentifier || authUserId === authIdentifier);
+      if (!linked) return null;
+      return { employee_key: linked[1].employeeKey, profile_key: linked[1].profileKey, auth_user_id: linked[0] } as T;
+    }
+    if (sql.includes("FROM payroll_contract_runtime_activations")) {
+      const activeFrom = this.activations.get(String(params[0]));
+      return (activeFrom && activeFrom <= String(params[1]) ? { employee_key: String(params[0]) } : null) as T | null;
+    }
     if (sql.includes("SELECT s.session_id")) {
       return {
         session_id: "session-1",
@@ -172,11 +188,16 @@ class FakePayrollDB {
         last_login_at: null,
       } as T;
     }
-    if (sql.includes("FROM users") && sql.includes("WHERE user_id = ?")) {
+    if (sql.includes("FROM users") && (sql.includes("WHERE user_id = ?") || sql.includes("WHERE u.user_id = ?"))) {
       const user = this.users.get(String(params[0]));
-      return (user && (!sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role)) ? user : null) as T | null;
+      return (user && (!sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role))
+        ? { ...user, employee_key: this.employeeLinks.get(user.user_id)?.employeeKey ?? null }
+        : null) as T | null;
     }
-    if (sql.includes("FROM payroll_worker_settings")) return (this.settings.get(String(params[0])) ? this.settingsRow(String(params[0])) : null) as T | null;
+    if (sql.includes("FROM payroll_worker_settings")) {
+      if (this.failSettingsFor.has(String(params[0]))) throw new Error("Injected worker settings failure.");
+      return (this.settings.get(String(params[0])) ? this.settingsRow(String(params[0])) : null) as T | null;
+    }
     if (sql.includes("FROM payroll_records")) {
       const record = this.records.get(this.key(String(params[0]), String(params[1])));
       return (record ? this.recordRow(record) : null) as T | null;
@@ -354,6 +375,34 @@ class FakePayrollDB {
   }
 }
 
+function addLinkedWorker(db: FakePayrollDB, userId: string, employeeKey: string, fullName: string, profilePhotoUrl: string | null = null) {
+  const [firstName, ...lastNameParts] = fullName.split(" ");
+  db.users.set(userId, {
+    user_id: userId,
+    first_name: firstName,
+    last_name: lastNameParts.join(" "),
+    full_name: fullName,
+    profile_photo_url: profilePhotoUrl,
+    role: "Operations",
+    preferred_language: "en",
+    username: userId,
+    email: null,
+    password_hash: "fixture-hash",
+    status: "active",
+    created_at: "2026-07-01T00:00:00.000Z",
+    updated_at: "2026-07-01T00:00:00.000Z",
+    last_login_at: null,
+  });
+  db.employeeLinks.set(userId, { employeeKey, profileKey: `PROFILE-${employeeKey}` });
+}
+
+function seedFourLinkedWorkers(db: FakePayrollDB) {
+  db.employeeLinks.set("staff-1", { employeeKey: "EMPLOYEE-0001", profileKey: "PROFILE-EMPLOYEE-0001" });
+  addLinkedWorker(db, "staff-2", "EMPLOYEE-0002", "Worker Two", "/profiles/worker-two.jpg");
+  addLinkedWorker(db, "staff-3", "EMPLOYEE-0003", "Worker Three");
+  addLinkedWorker(db, "staff-4", "EMPLOYEE-0004", "Worker Four");
+}
+
 function env(db: FakePayrollDB): PayrollBindings {
   return { DB: db as unknown as D1Database };
 }
@@ -415,6 +464,62 @@ test("payroll worker list uses legal first and last names rather than username",
   assert.equal(overview.workers[0]?.fullName, "Nuntana Srisawat Long Legal Operational Name");
   assert.notEqual(overview.workers[0]?.fullName, "nun");
   assert.equal(await getPayrollWorker(env(db), "owner-hidden", "2026-05"), null);
+});
+
+test("four linked employees keep the legacy cards and manual flow until explicit activation", async () => {
+  const db = new FakePayrollDB();
+  seedFourLinkedWorkers(db);
+  db.settings.set("staff-1", DEFAULT_SETTINGS);
+  db.settings.set("staff-2", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 14000 });
+  for (const employeeUserId of ["staff-1", "staff-2"]) {
+    for (const day of [5, 12]) {
+      db.events.push({
+        id: db.nextEventId++,
+        employeeUserId,
+        payrollMonth: "2026-08",
+        eventDate: `2026-08-${String(day).padStart(2, "0")}`,
+        eventType: "SALARY_ADVANCE",
+        quantity: 0,
+        amount: 500,
+        note: "Existing August event",
+        createdBy: OWNER.id,
+        createdByName: OWNER.fullName,
+        createdAt: `2026-08-${String(day).padStart(2, "0")}T02:00:00.000Z`,
+      });
+    }
+  }
+
+  const august = await getPayrollOverview(env(db), "2026-08");
+  assert.equal(august.workers.length, 4);
+  assert.deepEqual(august.workers.map((worker) => worker.mode), ["LEGACY", "LEGACY", "LEGACY", "LEGACY"]);
+  assert.deepEqual(august.workers.map((worker) => worker.events.length), [2, 2, 0, 0]);
+  assert.equal(august.workers[1]?.profilePhotoUrl, "/profiles/worker-two.jpg");
+  assert.ok(august.workers.every((worker) => worker.settings && worker.calculation));
+
+  await savePayrollSettings(env(db), "staff-3", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 11000 }, OWNER);
+  await savePayrollSettings(env(db), "staff-4", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 10620 }, OWNER);
+  assert.equal(db.settings.get("staff-3")?.monthlyGrossSalary, 11000);
+  assert.equal(db.settings.get("staff-4")?.monthlyGrossSalary, 10620);
+
+  const october = await getPayrollOverview(env(db), "2026-10");
+  assert.ok(october.workers.every((worker) => worker.mode === "LEGACY"));
+});
+
+test("one worker load error does not empty the Payroll list", async () => {
+  const db = new FakePayrollDB();
+  seedFourLinkedWorkers(db);
+  db.failSettingsFor.add("staff-3");
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const overview = await getPayrollOverview(env(db), "2026-08");
+    assert.equal(overview.workers.length, 4);
+    assert.equal(overview.workers.filter((worker) => worker.mode === "ERROR").length, 1);
+    assert.equal(overview.workers.find((worker) => worker.id === "staff-3")?.loadError, "Payroll details are unavailable for this worker.");
+    assert.equal(overview.workers.filter((worker) => worker.calculation !== null).length, 3);
+  } finally {
+    console.error = originalError;
+  }
 });
 
 test("payroll can be generated before month end using current month events", async () => {
@@ -505,6 +610,12 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(page, /Event date/);
   assert.match(page, /min=\{eventDateBounds\.min\}/);
   assert.match(page, /max=\{eventDateBounds\.max\}/);
+  assert.match(page, /worker\.profilePhotoUrl \? <img alt="" src=\{worker\.profilePhotoUrl\} \/> : initials/);
+  assert.match(page, /if \(!user\.data\.isOwner\) return <Navigate replace to="\/staff" \/>/);
+  assert.doesNotMatch(page, /StaffPayrollContractWorkspace/);
+  assert.match(page, /aria-label="Employment contract document"/);
+  assert.match(page, /const contract = selected\?\.calculation\?\.contract \?\? null/);
+  assert.match(page, /<input disabled value=\{money\(settingsDraft\.monthlyGrossSalary\)\}/);
   assert.match(page, /worker\.fullName/);
   assert.match(css, /max-width: 100%/);
   assert.match(css, /max-inline-size: 100%/);

@@ -4,7 +4,6 @@ import {
   ForbiddenError,
   isOwner,
   requireModulePermission,
-  requireView,
   resolveCurrentUser,
   type AuthBindings,
 } from "../services/current-user.service.js";
@@ -46,7 +45,7 @@ function publicError(error: unknown): string {
 async function contractReader(c: Parameters<typeof resolveCurrentUser>[0]) {
   const user = await resolveCurrentUser(c);
   requireModulePermission(user, "payroll", "access");
-  if (!isOwner(user)) requireView(user, "staff");
+  if (!isOwner(user)) throw new ForbiddenError("Contract documents are available to Owners only.");
   return user;
 }
 

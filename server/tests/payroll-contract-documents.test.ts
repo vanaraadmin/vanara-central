@@ -114,13 +114,18 @@ class FakeDb {
 
 class FakeR2 {
   integrity = true;
+  sizeMetadataKey: "byteSize" | "size" = "byteSize";
 
   async get(key: string): Promise<R2ObjectBody | null> {
-    if (key !== "contracts/employee-0001/final.pdf" && key !== "contracts/employee-0002/final.pdf") return null;
+    if (!/^contracts\/employee-000[1-4]\/final\.pdf$/u.test(key)) return null;
+    const customMetadata: Record<string, string> = {
+      sha256: this.integrity ? SHA : "b".repeat(64),
+      [this.sizeMetadataKey]: String(PDF_BYTES.byteLength),
+    };
     return {
       body: new Blob([PDF_BYTES]).stream(),
       size: PDF_BYTES.byteLength,
-      customMetadata: { sha256: this.integrity ? SHA : "b".repeat(64), byteSize: String(PDF_BYTES.byteLength) },
+      customMetadata,
       httpMetadata: { contentType: "application/pdf" },
     } as unknown as R2ObjectBody;
   }
@@ -172,31 +177,30 @@ test("migration 0057 is idempotent and keeps document metadata and access audit 
   db.close();
 });
 
-test("owner and linked staff receive only authorized active contract metadata", async () => {
+test("only Owners receive active contract metadata or files", async () => {
   const db = new FakeDb();
   const r2 = new FakeR2();
-  db.documents = [row("doc-own", "EMPLOYEE-0001"), row("doc-other", "EMPLOYEE-0002"), row("doc-old", "EMPLOYEE-0001", "SUPERSEDED")];
+  db.documents = [
+    row("doc-1", "EMPLOYEE-0001"),
+    row("doc-2", "EMPLOYEE-0002"),
+    row("doc-3", "EMPLOYEE-0003"),
+    row("doc-4", "EMPLOYEE-0004"),
+    row("doc-old", "EMPLOYEE-0001", "SUPERSEDED"),
+  ];
 
   const owner = await request(db, r2);
   assert.equal(owner.status, 200);
   assert.match(owner.headers.get("cache-control") ?? "", /no-store/);
   const ownerBody = await owner.json() as { data: Array<Record<string, unknown>> };
-  assert.deepEqual(ownerBody.data.map((document) => document.documentId), ["doc-own", "doc-other"]);
+  assert.deepEqual(ownerBody.data.map((document) => document.documentId), ["doc-1", "doc-2", "doc-3", "doc-4"]);
   assert.doesNotMatch(JSON.stringify(ownerBody), /object_key|sha256|contracts\//);
 
   db.role = "Housekeeping";
-  const staff = await request(db, r2);
-  assert.equal(staff.status, 200);
-  const staffBody = await staff.json() as { data: Array<{ documentId: string }> };
-  assert.deepEqual(staffBody.data.map((document) => document.documentId), ["doc-own"]);
-  assert.equal((await request(db, r2, "/doc-other/file?mode=inline")).status, 404);
+  assert.equal((await request(db, r2)).status, 403);
+  assert.equal((await request(db, r2, "/doc-1/file?mode=inline")).status, 403);
+  assert.equal(db.audit.length, 0);
 
-  db.linkedEmployeeKey = null;
-  const unlinked = await request(db, r2);
-  assert.equal(unlinked.status, 403);
-  assert.match(await unlinked.text(), /Account link required/);
-
-  db.linkedEmployeeKey = "EMPLOYEE-0001";
+  db.role = "Owner";
   db.payrollAccess = false;
   assert.equal((await request(db, r2)).status, 403);
 });
@@ -204,52 +208,61 @@ test("owner and linked staff receive only authorized active contract metadata", 
 test("authorized PDF responses verify R2 integrity and append exactly one audit row", async () => {
   const db = new FakeDb();
   const r2 = new FakeR2();
-  db.documents = [row("doc-own", "EMPLOYEE-0001")];
+  db.documents = [1, 2, 3, 4].map((index) => row(`doc-${index}`, `EMPLOYEE-000${index}`));
 
-  const inline = await request(db, r2, "/doc-own/file?mode=inline");
-  assert.equal(inline.status, 200);
-  assert.equal(inline.headers.get("content-type"), "application/pdf");
-  assert.match(inline.headers.get("content-disposition") ?? "", /^inline;/);
-  assert.equal(await inline.text(), new TextDecoder().decode(PDF_BYTES));
-  assert.deepEqual(db.audit, [{ documentId: "doc-own", action: "VIEW" }]);
+  for (const [index, document] of db.documents.entries()) {
+    r2.sizeMetadataKey = index % 2 === 0 ? "size" : "byteSize";
+    const inline = await request(db, r2, `/${document.document_id}/file?mode=inline`);
+    assert.equal(inline.status, 200);
+    assert.equal(inline.headers.get("content-type"), "application/pdf");
+    assert.match(inline.headers.get("content-disposition") ?? "", /^inline;/);
+    assert.equal(await inline.text(), new TextDecoder().decode(PDF_BYTES));
+  }
+  assert.deepEqual(db.audit, [
+    { documentId: "doc-1", action: "VIEW" },
+    { documentId: "doc-2", action: "VIEW" },
+    { documentId: "doc-3", action: "VIEW" },
+    { documentId: "doc-4", action: "VIEW" },
+  ]);
 
-  const download = await request(db, r2, "/doc-own/file?mode=download");
+  const download = await request(db, r2, "/doc-1/file?mode=download");
   assert.equal(download.status, 200);
   assert.match(download.headers.get("content-disposition") ?? "", /^attachment;/);
   await download.arrayBuffer();
-  assert.deepEqual(db.audit.map((entry) => entry.action), ["VIEW", "DOWNLOAD"]);
+  assert.equal(db.audit.at(-1)?.action, "DOWNLOAD");
 
   r2.integrity = false;
-  const failed = await request(db, r2, "/doc-own/file?mode=inline");
+  const failed = await request(db, r2, "/doc-1/file?mode=inline");
   assert.equal(failed.status, 409);
-  assert.equal(db.audit.length, 2);
-  assert.equal((await request(db, r2, "/doc-own/file?mode=preview")).status, 400);
+  assert.equal(db.audit.length, 5);
+  assert.equal((await request(db, r2, "/doc-1/file?mode=preview")).status, 400);
 });
 
-test("source guard keeps staff payroll document-only and contract storage private", () => {
+test("source guard keeps employment contracts Owner-only and contract storage private", () => {
   const page = readFileSync(new URL("../../src/pages/PayrollPage.tsx", import.meta.url), "utf8");
-  const css = readFileSync(new URL("../../src/styles/PayrollPage.css", import.meta.url), "utf8");
   const index = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
   const route = readFileSync(new URL("../src/routes/payroll-contract-document.routes.ts", import.meta.url), "utf8");
   const service = readFileSync(new URL("../src/services/payroll-contract-document.service.ts", import.meta.url), "utf8");
   const staffHome = readFileSync(new URL("../../src/pages/StaffPage.tsx", import.meta.url), "utf8");
   const staffOverview = readFileSync(new URL("../src/services/staff-overview.service.ts", import.meta.url), "utf8");
   const ignore = readFileSync(new URL("../../.gitignore", import.meta.url), "utf8");
-  const staffBlock = page.match(/function StaffPayrollContractWorkspace[\s\S]*?export default function PayrollPage/)?.[0] ?? "";
 
   assert.match(page, /queryKey: \["current-user"\]/);
-  assert.match(page, /if \(user\.data\.isOwner\) return <OwnerPayrollWorkspace/);
-  assert.doesNotMatch(staffBlock, /loadPayrollOverview/);
-  assert.match(staffBlock, /loadPayrollContractDocuments/);
-  assert.match(staffHome, /workspace\.id === "payroll" && !ownerHome/);
-  assert.match(staffHome, /translate\("myEmploymentContract"\)/);
-  assert.match(staffOverview, /href: "\/payroll"/);
+  assert.match(page, /if \(!user\.data\.isOwner\) return <Navigate replace to="\/staff" \/>/);
+  assert.match(page, /function OwnerPayrollWorkspace/);
+  assert.match(page, /queryKey: \["payroll", "contract-documents"\]/);
+  assert.match(page, /selected\?\.employeeKey[\s\S]*documents\.data\?\.find/);
+  assert.match(page, /aria-label="Employment contract document"/);
+  assert.doesNotMatch(page, /StaffPayrollContractWorkspace|payroll-page--staff/);
+  assert.doesNotMatch(staffHome, /staffPayroll|myEmploymentContract|viewContractPdf|downloadContractPdf/);
+  assert.match(staffOverview, /function canUsePayroll[\s\S]*isOwner\(user\) && canAccess\(user, "payroll"\)/);
   assert.doesNotMatch(staffOverview, /loadPayrollOverview/);
-  assert.match(css, /payroll-page--staff/);
   assert.equal(index.match(/payrollContractDocumentRoutes/g)?.length, 2);
+  assert.match(route, /if \(!isOwner\(user\)\) throw new ForbiddenError/);
   assert.match(route, /mode !== "inline" && mode !== "download"/);
   assert.match(route, /Cache-Control": "private, no-store/);
   assert.match(service, /R2_STORAGE\.get/);
+  assert.match(service, /object\?\.customMetadata\?\.byteSize \?\? object\?\.customMetadata\?\.size/);
   assert.match(service, /customMetadata\?\.sha256 === row\.sha256_hex/);
   assert.doesNotMatch(route + service, /presign|publicUrl|signedUrl/i);
   assert.match(ignore, /^docs\/staff-contracts\/$/m);

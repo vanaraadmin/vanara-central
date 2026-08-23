@@ -187,31 +187,20 @@ function translateStaffSummaryLabel(label: string, translate: (key: string, opti
 
 function WorkspaceCard({
   index,
-  ownerHome,
   workspace,
 }: {
   index: number;
-  ownerHome: boolean;
   workspace: StaffOverviewCard;
 }) {
   const { translate } = useLanguage();
   const iconUrl = workspaceIcons[workspace.id];
-  const staffPayroll = workspace.id === "payroll" && !ownerHome;
-  const title = staffPayroll
-    ? translate("myEmploymentContract")
-    : workspaceTitleKeys[workspace.id] ? translate(workspaceTitleKeys[workspace.id]!) : workspace.title;
-  const description = staffPayroll
-    ? translate("privateEmploymentRecord")
-    : workspaceDescriptionKeys[workspace.id] ? translate(workspaceDescriptionKeys[workspace.id]!) : workspace.description;
+  const title = workspaceTitleKeys[workspace.id] ? translate(workspaceTitleKeys[workspace.id]!) : workspace.title;
+  const description = workspaceDescriptionKeys[workspace.id] ? translate(workspaceDescriptionKeys[workspace.id]!) : workspace.description;
   const metrics = summaryItems(workspace.metrics, translate);
   const dashboardBalance = workspace.id === "owner-dashboard" ? workspace.metrics.find((metric) => metric.label === "Balance") : undefined;
   const visibleMetrics = workspace.id === "owner-dashboard" ? metrics.filter((metric) => metric.label !== "Balance") : metrics;
-  const fallbackSummaryLine1 = staffPayroll
-    ? translate("viewContractPdf")
-    : workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
-  const fallbackSummaryLine2 = staffPayroll
-    ? translate("downloadContractPdf")
-    : workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
+  const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
+  const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
 
   return (
     <Link
@@ -347,7 +336,6 @@ export default function StaffPage() {
                 <WorkspaceCard
                   index={index}
                   key={workspace.id}
-                  ownerHome={isOwnerHome}
                   workspace={workspace}
                 />
               ))}

@@ -77,6 +77,11 @@ test("attendance command dispatches to the unique attendance audit without payro
               auth_user_id: "user-nun-existing",
             } as T;
           }
+          if (/FROM payroll_contract_runtime_activations/u.test(sql)) {
+            return {
+              employee_key: "EMPLOYEE-0001",
+            } as T;
+          }
           if (/FROM payroll_attendance_audit/u.test(sql)) {
             return {
               employee_key: "EMPLOYEE-0001",
@@ -122,6 +127,21 @@ test("attendance command dispatches to the unique attendance audit without payro
 
   assert.deepEqual(result, { date: "2026-11-03", status: "UNPAID_ABSENCE" });
   assert.equal(preparedSql.some((sql) => /payroll_events/u.test(sql)), false);
+});
+
+test("account links and contract effective dates do not activate contract payroll", () => {
+  const source = readFileSync(resolve(repoRoot, "server/src/services/payroll-contract-runtime.service.ts"), "utf8");
+  const activationResolver = source.match(
+    /export async function resolveContractRuntimeActivation[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+  const calculation = source.match(
+    /export async function calculateContractRuntimePayroll[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.match(activationResolver, /FROM payroll_contract_runtime_activations/u);
+  assert.doesNotMatch(activationResolver, /effective_from|effective_to|auth_user_id IS NOT NULL/u);
+  assert.match(calculation, /resolveContractRuntimeActivation/u);
+  assert.doesNotMatch(calculation, /resolveContractRuntimeIdentity/u);
 });
 
 test("attendance command rejects mixed or ambiguous payloads while legacy events remain unchanged", () => {
