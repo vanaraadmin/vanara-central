@@ -635,10 +635,11 @@ async function getActiveWorkers(env: PayrollBindings): Promise<UserRow[]> {
   const rows = await env.DB.prepare(`
     SELECT u.user_id, u.first_name, u.last_name, u.full_name, u.profile_photo_url,
       u.role, u.username, u.status, pe.employee_key
-    FROM users u
-    LEFT JOIN payroll_employees pe
-      ON pe.auth_user_id = u.user_id AND pe.employee_status = 'ACTIVE'
-    WHERE u.status = 'active' AND u.role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
+    FROM payroll_employees pe
+    INNER JOIN users u ON u.user_id = pe.auth_user_id
+    WHERE pe.employee_status = 'ACTIVE'
+      AND u.status = 'active'
+      AND u.role IN ('Reception', 'Housekeeping', 'Maintenance', 'Operations')
     ORDER BY u.full_name
   `).all<UserRow>();
   return rows.results ?? [];

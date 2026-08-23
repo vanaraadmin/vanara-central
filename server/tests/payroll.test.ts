@@ -82,7 +82,7 @@ class FakeStmt {
 
 class FakePayrollDB {
   users = new Map<string, UserRow>();
-  employeeLinks = new Map<string, { employeeKey: string; profileKey: string }>();
+  employeeLinks = new Map<string, { employeeKey: string; profileKey: string; employeeStatus: "ACTIVE" | "INACTIVE" }>();
   activations = new Map<string, string>();
   failSettingsFor = new Set<string>();
   settings = new Map<string, PayrollSettings>();
@@ -126,6 +126,7 @@ class FakePayrollDB {
       updated_at: "2026-07-01T00:00:00.000Z",
       last_login_at: null,
     });
+    this.employeeLinks.set("staff-1", { employeeKey: "EMPLOYEE-0001", profileKey: "PROFILE-EMPLOYEE-0001", employeeStatus: "ACTIVE" });
   }
 
   prepare(sql: string) { return new FakeStmt(this, sql); }
@@ -138,9 +139,12 @@ class FakePayrollDB {
     }
     if (sql.includes("SELECT module_key, can_access, can_edit FROM user_module_permissions")) return { results: this.permissions as T[] };
     if (sql.includes("SELECT action_key, allowed FROM user_action_permissions")) return { results: [] as T[] };
-    if (sql.includes("FROM users") && sql.includes("WHERE u.status = 'active'")) {
+    if ((sql.includes("FROM users") || sql.includes("JOIN users")) && sql.includes("u.status = 'active'")) {
+      const payrollRoster = sql.includes("FROM payroll_employees pe") && sql.includes("INNER JOIN users u");
       const rows = [...this.users.values()]
+        .filter((user) => user.status === "active")
         .filter((user) => !sql.includes("role IN") || ["Reception", "Housekeeping", "Maintenance", "Operations"].includes(user.role))
+        .filter((user) => !payrollRoster || this.employeeLinks.get(user.user_id)?.employeeStatus === "ACTIVE")
         .map((user) => ({ ...user, employee_key: this.employeeLinks.get(user.user_id)?.employeeKey ?? null }));
       return { results: rows as T[] };
     }
@@ -160,7 +164,10 @@ class FakePayrollDB {
     if (sql.includes("FROM payroll_employees")) {
       const employeeIdentifier = String(params[0]);
       const authIdentifier = String(params[1]);
-      const linked = [...this.employeeLinks.entries()].find(([authUserId, link]) => link.employeeKey === employeeIdentifier || authUserId === authIdentifier);
+      const linked = [...this.employeeLinks.entries()].find(([authUserId, link]) => (
+        link.employeeStatus === "ACTIVE"
+        && (link.employeeKey === employeeIdentifier || authUserId === authIdentifier)
+      ));
       if (!linked) return null;
       return { employee_key: linked[1].employeeKey, profile_key: linked[1].profileKey, auth_user_id: linked[0] } as T;
     }
@@ -393,11 +400,11 @@ function addLinkedWorker(db: FakePayrollDB, userId: string, employeeKey: string,
     updated_at: "2026-07-01T00:00:00.000Z",
     last_login_at: null,
   });
-  db.employeeLinks.set(userId, { employeeKey, profileKey: `PROFILE-${employeeKey}` });
+  db.employeeLinks.set(userId, { employeeKey, profileKey: `PROFILE-${employeeKey}`, employeeStatus: "ACTIVE" });
 }
 
 function seedFourLinkedWorkers(db: FakePayrollDB) {
-  db.employeeLinks.set("staff-1", { employeeKey: "EMPLOYEE-0001", profileKey: "PROFILE-EMPLOYEE-0001" });
+  db.employeeLinks.set("staff-1", { employeeKey: "EMPLOYEE-0001", profileKey: "PROFILE-EMPLOYEE-0001", employeeStatus: "ACTIVE" });
   addLinkedWorker(db, "staff-2", "EMPLOYEE-0002", "Worker Two", "/profiles/worker-two.jpg");
   addLinkedWorker(db, "staff-3", "EMPLOYEE-0003", "Worker Three");
   addLinkedWorker(db, "staff-4", "EMPLOYEE-0004", "Worker Four");
@@ -469,6 +476,17 @@ test("payroll worker list uses legal first and last names rather than username",
 test("four linked employees keep the legacy cards and manual flow until explicit activation", async () => {
   const db = new FakePayrollDB();
   seedFourLinkedWorkers(db);
+  db.permissions = [{ module_key: "payroll", can_access: 0, can_edit: 0 }];
+  addLinkedWorker(db, "generic-active", "EMPLOYEE-GENERIC", "Generic Active Worker");
+  db.employeeLinks.delete("generic-active");
+  db.employeeLinks.set("missing-user", { employeeKey: "EMPLOYEE-UNLINKED", profileKey: "PROFILE-UNLINKED", employeeStatus: "ACTIVE" });
+  addLinkedWorker(db, "inactive-profile", "EMPLOYEE-INACTIVE-PROFILE", "Inactive Payroll Profile");
+  db.employeeLinks.set("inactive-profile", {
+    ...db.employeeLinks.get("inactive-profile")!,
+    employeeStatus: "INACTIVE",
+  });
+  addLinkedWorker(db, "inactive-user", "EMPLOYEE-INACTIVE-USER", "Inactive Linked User");
+  db.users.get("inactive-user")!.status = "inactive";
   db.settings.set("staff-1", DEFAULT_SETTINGS);
   db.settings.set("staff-2", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 14000 });
   for (const employeeUserId of ["staff-1", "staff-2"]) {
@@ -491,6 +509,7 @@ test("four linked employees keep the legacy cards and manual flow until explicit
 
   const august = await getPayrollOverview(env(db), "2026-08");
   assert.equal(august.workers.length, 4);
+  assert.deepEqual(august.workers.map((worker) => worker.employeeKey), ["EMPLOYEE-0001", "EMPLOYEE-0002", "EMPLOYEE-0003", "EMPLOYEE-0004"]);
   assert.deepEqual(august.workers.map((worker) => worker.mode), ["LEGACY", "LEGACY", "LEGACY", "LEGACY"]);
   assert.deepEqual(august.workers.map((worker) => worker.events.length), [2, 2, 0, 0]);
   assert.equal(august.workers[1]?.profilePhotoUrl, "/profiles/worker-two.jpg");
