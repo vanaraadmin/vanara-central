@@ -2,11 +2,14 @@ import {
   hashUserPassword,
   type CurrentUser,
   type ModuleKey,
+  type UserRole,
 } from "./current-user.service.js";
 
 export interface PayrollStaffProvisioningBindings {
   DB: D1Database;
 }
+
+type PayrollProvisionedStaffRole = Extract<UserRole, "Housekeeping" | "Maintenance">;
 
 export type PayrollStaffProvisioningOperation =
   | {
@@ -16,6 +19,7 @@ export type PayrollStaffProvisioningOperation =
       firstName: string;
       lastName: string;
       displayName: string;
+      role: PayrollProvisionedStaffRole;
       username: string;
       temporaryPassword: string;
     }
@@ -103,7 +107,6 @@ const STAFF_MODULES = new Set<ModuleKey>([
   "maintenance",
   "procurement",
   "chat",
-  "payroll",
 ]);
 
 function invalid(message: string): never {
@@ -142,6 +145,13 @@ function temporaryPassword(value: unknown): string {
   return value;
 }
 
+function staffRole(value: unknown): PayrollProvisionedStaffRole {
+  if (value !== "Housekeeping" && value !== "Maintenance") {
+    invalid("Staff role must be Housekeeping or Maintenance.");
+  }
+  return value;
+}
+
 export function normalizePayrollStaffProvisioningRequest(payload: unknown): PayrollStaffProvisioningRequest {
   if (!payload || typeof payload !== "object" || !("operations" in payload) || !Array.isArray(payload.operations)) {
     invalid("Provisioning operations are required.");
@@ -160,6 +170,7 @@ export function normalizePayrollStaffProvisioningRequest(payload: unknown): Payr
         firstName,
         lastName,
         displayName: requiredText("displayName" in candidate ? candidate.displayName : firstName, "Display name", 80),
+        role: staffRole("role" in candidate ? candidate.role : undefined),
         username: username("username" in candidate ? candidate.username : undefined),
         temporaryPassword: temporaryPassword("temporaryPassword" in candidate ? candidate.temporaryPassword : undefined),
       };
@@ -198,7 +209,7 @@ async function sha256Hex(value: string): Promise<string> {
 
 async function operationFingerprint(operation: PayrollStaffProvisioningOperation): Promise<string> {
   const canonical = operation.kind === "CREATE_STAFF_ACCOUNT"
-    ? [operation.kind, operation.employeeKey, operation.firstName, operation.lastName, operation.displayName, operation.username]
+    ? [operation.kind, operation.employeeKey, operation.firstName, operation.lastName, operation.displayName, operation.role, operation.username]
     : [operation.kind, operation.employeeKey, operation.authUserId];
   return sha256Hex(JSON.stringify(canonical));
 }
@@ -338,13 +349,14 @@ export async function provisionPayrollStaffAccounts(
           user_id, first_name, last_name, full_name, display_name, profile_photo_url,
           role, preferred_language, username, email, password_hash, status,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, NULL, 'Housekeeping', 'th', ?, NULL, ?, 'active', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, 'th', ?, NULL, ?, 'active', ?, ?)
       `).bind(
         item.authUserId,
         operation.firstName,
         operation.lastName,
         `${operation.firstName} ${operation.lastName}`.trim(),
         operation.displayName,
+        operation.role,
         operation.username,
         item.passwordHash!,
         now,
@@ -370,8 +382,8 @@ export async function provisionPayrollStaffAccounts(
     } else {
       statements.push(env.DB.prepare(`
         INSERT INTO user_module_permissions (user_id, module_key, can_access, can_edit)
-        VALUES (?, 'payroll', 1, 0)
-        ON CONFLICT(user_id, module_key) DO UPDATE SET can_access = 1, can_edit = 0
+        VALUES (?, 'payroll', 0, 0)
+        ON CONFLICT(user_id, module_key) DO UPDATE SET can_access = 0, can_edit = 0
       `).bind(item.authUserId));
     }
 

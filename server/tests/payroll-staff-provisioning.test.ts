@@ -210,7 +210,7 @@ test("migration 0058 is idempotent and provisioning audit is append-only", () =>
     "payroll_staff_provisioning_link_guard",
   ]);
   const migration = readFileSync(new URL("../migrations/0058_payroll_staff_account_provisioning.sql", import.meta.url), "utf8");
-  assert.doesNotMatch(migration, /EMPLOYEE-000[1-4]|Nong|Suwan|Thipnet|Kwanreuan/i);
+  assert.doesNotMatch(migration, /EMPLOYEE-000\d|Nong|Suwan|Thipnet|Kwanreuan/i);
   assert.deepEqual(sqlite.prepare("PRAGMA foreign_key_check").all(), []);
 
   const now = new Date().toISOString();
@@ -248,17 +248,18 @@ test("Owner provisioning creates and links one Staff account atomically with for
   const ownerPassword = credential();
   await insertUser(d1, { id: actor.id, username: actor.username, password: ownerPassword, role: "Owner", staff: true });
   await d1.prepare("INSERT INTO user_views (user_id, view_key) VALUES (?, 'owner')").bind(actor.id).run();
-  await insertEmployee(d1, "EMPLOYEE-0004");
+  await insertEmployee(d1, "EMPLOYEE-0005");
   const temporary = credential();
   const newUsername = randomUsername("staff");
   const input = normalizePayrollStaffProvisioningRequest({
     operations: [{
       kind: "CREATE_STAFF_ACCOUNT",
       requestKey: `provision:${crypto.randomUUID()}`,
-      employeeKey: "EMPLOYEE-0004",
+      employeeKey: "EMPLOYEE-0005",
       firstName: "Synthetic",
       lastName: "Worker",
       displayName: "Worker",
+      role: "Maintenance",
       username: newUsername,
       temporaryPassword: temporary,
     }],
@@ -270,12 +271,18 @@ test("Owner provisioning creates and links one Staff account atomically with for
   assert.equal(created.username, newUsername);
   assert.equal("temporaryPassword" in created, false);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS total FROM users").get()!.total, 2);
-  assert.equal(sqlite.prepare("SELECT auth_user_id FROM payroll_employees WHERE employee_key = 'EMPLOYEE-0004'").get()!.auth_user_id, created.authUserId);
+  assert.equal(sqlite.prepare("SELECT auth_user_id FROM payroll_employees WHERE employee_key = 'EMPLOYEE-0005'").get()!.auth_user_id, created.authUserId);
+  assert.equal(sqlite.prepare("SELECT role FROM users WHERE user_id = ?").get(created.authUserId)!.role, "Maintenance");
   assert.equal(sqlite.prepare("SELECT must_change_password FROM user_password_requirements WHERE user_id = ?").get(created.authUserId)!.must_change_password, 1);
   assert.equal(sqlite.prepare("SELECT allowed FROM user_action_permissions WHERE user_id = ? AND action_key = 'can_complete_checkin_checkout'").get(created.authUserId)!.allowed, 0);
   const payrollPermission = sqlite.prepare("SELECT can_access, can_edit FROM user_module_permissions WHERE user_id = ? AND module_key = 'payroll'").get(created.authUserId)!;
-  assert.equal(payrollPermission.can_access, 1);
+  assert.equal(payrollPermission.can_access, 0);
   assert.equal(payrollPermission.can_edit, 0);
+  for (const module of ["messages", "social-automation", "accounting", "owner-dashboard"] as const) {
+    const forbidden = sqlite.prepare("SELECT can_access, can_edit FROM user_module_permissions WHERE user_id = ? AND module_key = ?").get(created.authUserId, module)!;
+    assert.equal(forbidden.can_access, 0);
+    assert.equal(forbidden.can_edit, 0);
+  }
 
   const passwordHashBefore = sqlite.prepare("SELECT password_hash FROM users WHERE user_id = ?").get(created.authUserId)!.password_hash;
   const [replay] = await provisionPayrollStaffAccounts(d1 as unknown as { DB: D1Database }, actor, input);
@@ -344,6 +351,9 @@ test("exact existing Staff account links without name guessing and collisions fa
   const [linked] = await provisionPayrollStaffAccounts(d1 as unknown as { DB: D1Database }, actor, request);
   assert.equal(linked?.authUserId, exactUserId);
   assert.equal(sqlite.prepare("SELECT auth_user_id FROM payroll_employees WHERE employee_key = 'EMPLOYEE-0001'").get()!.auth_user_id, exactUserId);
+  const linkedPayroll = sqlite.prepare("SELECT can_access, can_edit FROM user_module_permissions WHERE user_id = ? AND module_key = 'payroll'").get(exactUserId)!;
+  assert.equal(linkedPayroll.can_access, 0);
+  assert.equal(linkedPayroll.can_edit, 0);
 
   await assert.rejects(
     provisionPayrollStaffAccounts(d1 as unknown as { DB: D1Database }, actor, normalizePayrollStaffProvisioningRequest({
@@ -382,6 +392,7 @@ test("provisioning batch rolls back every account and link when a final audit gu
         employeeKey: "EMPLOYEE-0003",
         firstName: "One",
         lastName: "Worker",
+        role: "Housekeeping",
         username: randomUsername("batch-one"),
         temporaryPassword: credential(),
       },
@@ -391,6 +402,7 @@ test("provisioning batch rolls back every account and link when a final audit gu
         employeeKey: "EMPLOYEE-0004",
         firstName: "Two",
         lastName: "Worker",
+        role: "Housekeeping",
         username: randomUsername("batch-two"),
         temporaryPassword: credential(),
       },
@@ -420,6 +432,7 @@ test("provisioning route is Owner-only and never echoes a temporary password", a
         employeeKey: "EMPLOYEE-0004",
         firstName: "Route",
         lastName: "Worker",
+        role: "Maintenance",
         username: randomUsername("route"),
         temporaryPassword: temporary,
       }],

@@ -403,11 +403,12 @@ function addLinkedWorker(db: FakePayrollDB, userId: string, employeeKey: string,
   db.employeeLinks.set(userId, { employeeKey, profileKey: `PROFILE-${employeeKey}`, employeeStatus: "ACTIVE" });
 }
 
-function seedFourLinkedWorkers(db: FakePayrollDB) {
+function seedFiveLinkedWorkers(db: FakePayrollDB) {
   db.employeeLinks.set("staff-1", { employeeKey: "EMPLOYEE-0001", profileKey: "PROFILE-EMPLOYEE-0001", employeeStatus: "ACTIVE" });
   addLinkedWorker(db, "staff-2", "EMPLOYEE-0002", "Worker Two", "/profiles/worker-two.jpg");
   addLinkedWorker(db, "staff-3", "EMPLOYEE-0003", "Worker Three");
   addLinkedWorker(db, "staff-4", "EMPLOYEE-0004", "Worker Four");
+  addLinkedWorker(db, "staff-5", "EMPLOYEE-0005", "Worker Five");
 }
 
 function env(db: FakePayrollDB): PayrollBindings {
@@ -473,9 +474,9 @@ test("payroll worker list uses legal first and last names rather than username",
   assert.equal(await getPayrollWorker(env(db), "owner-hidden", "2026-05"), null);
 });
 
-test("four linked employees keep the legacy cards and manual flow until explicit activation", async () => {
+test("five linked employees keep the legacy cards and manual flow until explicit activation", async () => {
   const db = new FakePayrollDB();
-  seedFourLinkedWorkers(db);
+  seedFiveLinkedWorkers(db);
   db.permissions = [{ module_key: "payroll", can_access: 0, can_edit: 0 }];
   addLinkedWorker(db, "generic-active", "EMPLOYEE-GENERIC", "Generic Active Worker");
   db.employeeLinks.delete("generic-active");
@@ -508,17 +509,19 @@ test("four linked employees keep the legacy cards and manual flow until explicit
   }
 
   const august = await getPayrollOverview(env(db), "2026-08");
-  assert.equal(august.workers.length, 4);
-  assert.deepEqual(august.workers.map((worker) => worker.employeeKey), ["EMPLOYEE-0001", "EMPLOYEE-0002", "EMPLOYEE-0003", "EMPLOYEE-0004"]);
-  assert.deepEqual(august.workers.map((worker) => worker.mode), ["LEGACY", "LEGACY", "LEGACY", "LEGACY"]);
-  assert.deepEqual(august.workers.map((worker) => worker.events.length), [2, 2, 0, 0]);
+  assert.equal(august.workers.length, 5);
+  assert.deepEqual(august.workers.map((worker) => worker.employeeKey), ["EMPLOYEE-0001", "EMPLOYEE-0002", "EMPLOYEE-0003", "EMPLOYEE-0004", "EMPLOYEE-0005"]);
+  assert.deepEqual(august.workers.map((worker) => worker.mode), ["LEGACY", "LEGACY", "LEGACY", "LEGACY", "LEGACY"]);
+  assert.deepEqual(august.workers.map((worker) => worker.events.length), [2, 2, 0, 0, 0]);
   assert.equal(august.workers[1]?.profilePhotoUrl, "/profiles/worker-two.jpg");
   assert.ok(august.workers.every((worker) => worker.settings && worker.calculation));
 
   await savePayrollSettings(env(db), "staff-3", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 11000 }, OWNER);
   await savePayrollSettings(env(db), "staff-4", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 10620 }, OWNER);
+  await savePayrollSettings(env(db), "staff-5", { ...DEFAULT_SETTINGS, monthlyGrossSalary: 13500 }, OWNER);
   assert.equal(db.settings.get("staff-3")?.monthlyGrossSalary, 11000);
   assert.equal(db.settings.get("staff-4")?.monthlyGrossSalary, 10620);
+  assert.equal(db.settings.get("staff-5")?.monthlyGrossSalary, 13500);
 
   const october = await getPayrollOverview(env(db), "2026-10");
   assert.ok(october.workers.every((worker) => worker.mode === "LEGACY"));
@@ -526,16 +529,16 @@ test("four linked employees keep the legacy cards and manual flow until explicit
 
 test("one worker load error does not empty the Payroll list", async () => {
   const db = new FakePayrollDB();
-  seedFourLinkedWorkers(db);
+  seedFiveLinkedWorkers(db);
   db.failSettingsFor.add("staff-3");
   const originalError = console.error;
   console.error = () => undefined;
   try {
     const overview = await getPayrollOverview(env(db), "2026-08");
-    assert.equal(overview.workers.length, 4);
+    assert.equal(overview.workers.length, 5);
     assert.equal(overview.workers.filter((worker) => worker.mode === "ERROR").length, 1);
     assert.equal(overview.workers.find((worker) => worker.id === "staff-3")?.loadError, "Payroll details are unavailable for this worker.");
-    assert.equal(overview.workers.filter((worker) => worker.calculation !== null).length, 3);
+    assert.equal(overview.workers.filter((worker) => worker.calculation !== null).length, 4);
   } finally {
     console.error = originalError;
   }

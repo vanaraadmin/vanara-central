@@ -118,7 +118,7 @@ class FakeR2 {
   sizeMetadataKey: "byteSize" | "size" = "byteSize";
 
   async get(key: string): Promise<R2ObjectBody | null> {
-    if (!/^contracts\/employee-000[1-4]\/final\.pdf$/u.test(key)) return null;
+    if (!/^contracts\/employee-000[1-5]\/final\.pdf$/u.test(key)) return null;
     const customMetadata: Record<string, string> = {
       sha256: this.integrity ? SHA : "b".repeat(64),
       [this.sizeMetadataKey]: String(PDF_BYTES.byteLength),
@@ -186,6 +186,7 @@ test("only Owners receive active contract metadata or files", async () => {
     row("doc-2", "EMPLOYEE-0002"),
     row("doc-3", "EMPLOYEE-0003"),
     row("doc-4", "EMPLOYEE-0004"),
+    row("doc-5", "EMPLOYEE-0005"),
     row("doc-old", "EMPLOYEE-0001", "SUPERSEDED"),
   ];
 
@@ -193,7 +194,7 @@ test("only Owners receive active contract metadata or files", async () => {
   assert.equal(owner.status, 200);
   assert.match(owner.headers.get("cache-control") ?? "", /no-store/);
   const ownerBody = await owner.json() as { data: Array<Record<string, unknown>> };
-  assert.deepEqual(ownerBody.data.map((document) => document.documentId), ["doc-1", "doc-2", "doc-3", "doc-4"]);
+  assert.deepEqual(ownerBody.data.map((document) => document.documentId), ["doc-1", "doc-2", "doc-3", "doc-4", "doc-5"]);
   assert.doesNotMatch(JSON.stringify(ownerBody), /object_key|sha256|contracts\//);
 
   db.role = "Housekeeping";
@@ -209,7 +210,7 @@ test("only Owners receive active contract metadata or files", async () => {
 test("authorized PDF responses verify R2 integrity and append exactly one audit row", async () => {
   const db = new FakeDb();
   const r2 = new FakeR2();
-  db.documents = [1, 2, 3, 4].map((index) => row(`doc-${index}`, `EMPLOYEE-000${index}`));
+  db.documents = [1, 2, 3, 4, 5].map((index) => row(`doc-${index}`, `EMPLOYEE-000${index}`));
 
   for (const [index, document] of db.documents.entries()) {
     r2.sizeMetadataKey = index % 2 === 0 ? "size" : "byteSize";
@@ -224,6 +225,7 @@ test("authorized PDF responses verify R2 integrity and append exactly one audit 
     { documentId: "doc-2", action: "VIEW" },
     { documentId: "doc-3", action: "VIEW" },
     { documentId: "doc-4", action: "VIEW" },
+    { documentId: "doc-5", action: "VIEW" },
   ]);
 
   const download = await request(db, r2, "/doc-1/file?mode=download");
@@ -235,7 +237,7 @@ test("authorized PDF responses verify R2 integrity and append exactly one audit 
   r2.integrity = false;
   const failed = await request(db, r2, "/doc-1/file?mode=inline");
   assert.equal(failed.status, 409);
-  assert.equal(db.audit.length, 5);
+  assert.equal(db.audit.length, 6);
   assert.equal((await request(db, r2, "/doc-1/file?mode=preview")).status, 400);
 });
 

@@ -143,3 +143,112 @@ test("migration 0060 is idempotent, immutable and has no activation seed", () =>
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
   db.close();
 });
+
+test("migration 0061 adds one opaque inactive-runtime profile idempotently", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE users (user_id TEXT PRIMARY KEY);
+    CREATE TABLE payroll_contract_profiles (
+      profile_key TEXT PRIMARY KEY,
+      profile_status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE payroll_contract_profile_versions (
+      profile_version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_key TEXT NOT NULL,
+      version_key TEXT NOT NULL UNIQUE,
+      contract_type TEXT NOT NULL,
+      effective_from_bangkok TEXT NOT NULL,
+      effective_to_bangkok TEXT,
+      calendar_timezone TEXT NOT NULL,
+      normal_hours_per_day REAL NOT NULL,
+      monthly_day_divisor REAL NOT NULL,
+      ordinary_overtime_multiplier REAL NOT NULL,
+      rest_day_overtime_multiplier REAL NOT NULL,
+      paid_leave_days REAL NOT NULL,
+      paid_leave_eligible_after_months INTEGER NOT NULL,
+      sso_treatment TEXT NOT NULL,
+      salary_payment_day INTEGER NOT NULL,
+      rule_notes TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (profile_key) REFERENCES payroll_contract_profiles(profile_key)
+    );
+    CREATE TABLE payroll_employees (
+      employee_key TEXT PRIMARY KEY,
+      profile_key TEXT NOT NULL,
+      auth_user_id TEXT UNIQUE,
+      employee_status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      linked_at TEXT,
+      linked_by TEXT,
+      FOREIGN KEY (profile_key) REFERENCES payroll_contract_profiles(profile_key),
+      FOREIGN KEY (auth_user_id) REFERENCES users(user_id),
+      FOREIGN KEY (linked_by) REFERENCES users(user_id)
+    );
+    CREATE TABLE payroll_contract_compensation_rules (
+      compensation_rule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_version_id INTEGER NOT NULL,
+      rule_key TEXT NOT NULL UNIQUE,
+      effective_from_bangkok TEXT NOT NULL,
+      effective_to_bangkok TEXT,
+      month_mask TEXT,
+      monthly_base_salary REAL NOT NULL,
+      monthly_food_allowance REAL NOT NULL,
+      monthly_housing_allowance REAL NOT NULL,
+      monthly_accommodation_deduction REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (profile_version_id) REFERENCES payroll_contract_profile_versions(profile_version_id)
+    );
+  `);
+
+  const runtimeMigration = readFileSync(new URL("../migrations/0060_payroll_contract_runtime_activation.sql", import.meta.url), "utf8");
+  const profileMigration = readFileSync(new URL("../migrations/0061_payroll_employee_profile_0005.sql", import.meta.url), "utf8");
+  db.exec(runtimeMigration);
+  db.exec(profileMigration);
+  db.exec(profileMigration);
+
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM payroll_contract_profiles").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM payroll_employees").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM payroll_contract_profile_versions").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM payroll_contract_compensation_rules").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM payroll_contract_runtime_activations").get().count, 0);
+
+  const employee = db.prepare("SELECT employee_key, profile_key, auth_user_id, linked_at, linked_by FROM payroll_employees").get();
+  assert.deepEqual({ ...employee }, {
+    employee_key: "EMPLOYEE-0005",
+    profile_key: "PROFILE-0005",
+    auth_user_id: null,
+    linked_at: null,
+    linked_by: null,
+  });
+  const version = db.prepare(`
+    SELECT contract_type, effective_from_bangkok, effective_to_bangkok,
+      paid_leave_days, paid_leave_eligible_after_months, sso_treatment,
+      salary_payment_day, rule_notes
+    FROM payroll_contract_profile_versions
+  `).get();
+  assert.deepEqual({ ...version }, {
+    contract_type: "SEASONAL",
+    effective_from_bangkok: "2026-10-01",
+    effective_to_bangkok: "2027-04-30",
+    paid_leave_days: 0,
+    paid_leave_eligible_after_months: 0,
+    sso_treatment: "SECTION_33",
+    salary_payment_day: 2,
+    rule_notes: "Base weekly rest day: Friday. Roster changes require notice.",
+  });
+  const compensation = db.prepare(`
+    SELECT monthly_base_salary, monthly_food_allowance,
+      monthly_housing_allowance, monthly_accommodation_deduction
+    FROM payroll_contract_compensation_rules
+  `).get();
+  assert.deepEqual({ ...compensation }, {
+    monthly_base_salary: 13_500,
+    monthly_food_allowance: 1_500,
+    monthly_housing_allowance: 0,
+    monthly_accommodation_deduction: 0,
+  });
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  db.close();
+});

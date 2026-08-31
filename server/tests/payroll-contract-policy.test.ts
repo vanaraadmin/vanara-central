@@ -174,6 +174,26 @@ test("SSO uses fixed monthly base, effective ceiling and separate employer share
   assert.equal(employerLine?.affectsNet, false);
 });
 
+test("fifth seasonal profile applies SSO to base salary only and has no paid leave", () => {
+  const descriptor = {
+    ...input().descriptor,
+    employeeKey: "EMPLOYEE-0005",
+    monthlyBaseSalary: 13_500,
+    monthlyFoodAllowance: 1_500,
+    monthlyHousingAllowance: 0,
+    paidLeaveDays: 0,
+  };
+  const result = calculateContractPayrollPolicy(input({ descriptor }));
+
+  assert.equal(result.employeeSocialSecurity, 675);
+  assert.equal(result.employerSocialSecurity, 675);
+  assert.equal(result.descriptor.monthlyBaseSalary, 13_500);
+  assert.equal(result.descriptor.monthlyFoodAllowance, 1_500);
+  assert.equal(result.descriptor.monthlyHousingAllowance, 0);
+  assert.equal(result.netSalaryPayable, 14_325);
+  assert.throws(() => assertPaidLeaveSelectionAllowed("SEASONAL", result.paidLeave, null, "PAID_LEAVE"), /only for indefinite contracts/);
+});
+
 test("Ae external coverage keeps employee and employer SSO at zero", () => {
   const result = calculateContractPayrollPolicy(input({
     descriptor: {
