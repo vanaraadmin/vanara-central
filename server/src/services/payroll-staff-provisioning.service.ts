@@ -9,7 +9,7 @@ export interface PayrollStaffProvisioningBindings {
   DB: D1Database;
 }
 
-type PayrollProvisionedStaffRole = Extract<UserRole, "Housekeeping" | "Maintenance">;
+type PayrollProvisionedStaffRole = Extract<UserRole, "Reception" | "Housekeeping" | "Maintenance">;
 
 export type PayrollStaffProvisioningOperation =
   | {
@@ -146,8 +146,8 @@ function temporaryPassword(value: unknown): string {
 }
 
 function staffRole(value: unknown): PayrollProvisionedStaffRole {
-  if (value !== "Housekeeping" && value !== "Maintenance") {
-    invalid("Staff role must be Housekeeping or Maintenance.");
+  if (value !== "Reception" && value !== "Housekeeping" && value !== "Maintenance") {
+    invalid("Staff role must be Reception, Housekeeping, or Maintenance.");
   }
   return value;
 }

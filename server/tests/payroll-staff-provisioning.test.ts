@@ -6,6 +6,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { payrollStaffProvisioningRoutes } from "../src/routes/payroll-staff-provisioning.routes.ts";
 import {
   changeSelfPassword,
+  canCompleteReception,
   hashUserPassword,
   login,
   logout,
@@ -259,7 +260,7 @@ test("Owner provisioning creates and links one Staff account atomically with for
       firstName: "Synthetic",
       lastName: "Worker",
       displayName: "Worker",
-      role: "Maintenance",
+      role: "Reception",
       username: newUsername,
       temporaryPassword: temporary,
     }],
@@ -272,9 +273,14 @@ test("Owner provisioning creates and links one Staff account atomically with for
   assert.equal("temporaryPassword" in created, false);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS total FROM users").get()!.total, 2);
   assert.equal(sqlite.prepare("SELECT auth_user_id FROM payroll_employees WHERE employee_key = 'EMPLOYEE-0005'").get()!.auth_user_id, created.authUserId);
-  assert.equal(sqlite.prepare("SELECT role FROM users WHERE user_id = ?").get(created.authUserId)!.role, "Maintenance");
+  assert.equal(sqlite.prepare("SELECT role FROM users WHERE user_id = ?").get(created.authUserId)!.role, "Reception");
   assert.equal(sqlite.prepare("SELECT must_change_password FROM user_password_requirements WHERE user_id = ?").get(created.authUserId)!.must_change_password, 1);
   assert.equal(sqlite.prepare("SELECT allowed FROM user_action_permissions WHERE user_id = ? AND action_key = 'can_complete_checkin_checkout'").get(created.authUserId)!.allowed, 0);
+  const provisionedUser = await resolveCurrentUser({
+    env: d1 as unknown as { DB: D1Database },
+    req: { raw: new Request("https://local.test/api/current-user", { headers: { cookie: cookie((await login(d1 as unknown as { DB: D1Database }, { username: newUsername, password: temporary })).token) } }) },
+  });
+  assert.equal(canCompleteReception(provisionedUser), true);
   const payrollPermission = sqlite.prepare("SELECT can_access, can_edit FROM user_module_permissions WHERE user_id = ? AND module_key = 'payroll'").get(created.authUserId)!;
   assert.equal(payrollPermission.can_access, 0);
   assert.equal(payrollPermission.can_edit, 0);
