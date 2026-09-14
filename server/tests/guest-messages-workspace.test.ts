@@ -242,9 +242,11 @@ class FakeGuestMessagesDB {
       return { results: [] as T[] };
     }
     if (sql.includes("FROM message_conversations c") && sql.includes("ORDER BY COALESCE")) {
-      const search = params.length > 1 ? String(params[0]).replaceAll("%", "").replaceAll("\\", "").toLowerCase() : "";
+      const search = params.length > 2 ? String(params[0]).replaceAll("%", "").replaceAll("\\", "").toLowerCase() : "";
+      const activityCutoff = String(params.at(-2) ?? "");
       const rows = this.conversations
         .map((conversation) => this.rowFor(conversation))
+        .filter((row) => String(row.latest_received_at ?? row.last_message_at) >= activityCutoff)
         .filter((row) => !search || [
           row.guest_name,
           row.unit_name,
@@ -368,7 +370,7 @@ function env(db: FakeGuestMessagesDB) {
 }
 
 test("guest message conversation list groups and sorts operational inbox rows", async () => {
-  const inbox = await listGuestMessageConversations({ DB: new FakeGuestMessagesDB() } as never);
+  const inbox = await listGuestMessageConversations({ DB: new FakeGuestMessagesDB() } as never, { now: new Date(NOW) });
 
   assert.equal(inbox.groups.needsReply.length, 1);
   assert.equal(inbox.groups.needsReply[0]!.guestName, "Daniel Padurariu");
@@ -381,10 +383,30 @@ test("guest message conversation list groups and sorts operational inbox rows", 
 
 test("guest message conversation list searches guest room booking and provider fields", async () => {
   const db = new FakeGuestMessagesDB();
+  const now = new Date(NOW);
 
-  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "Villa 10" })).conversations.map((item) => item.guestName), ["Daniel Padurariu"]);
-  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "9002" })).conversations.map((item) => item.guestName), ["Paolo Rossi"]);
-  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "Expedia" })).conversations.map((item) => item.guestName), ["Gaetano Scirea"]);
+  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "Villa 10", now })).conversations.map((item) => item.guestName), ["Daniel Padurariu"]);
+  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "9002", now })).conversations.map((item) => item.guestName), ["Paolo Rossi"]);
+  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "Expedia", now })).conversations.map((item) => item.guestName), ["Gaetano Scirea"]);
+});
+
+test("guest message inbox hides conversations inactive for 30 days and restores them when a guest writes again", async () => {
+  const db = new FakeGuestMessagesDB();
+  const now = new Date(NOW);
+  const staleAt = "2026-07-05T09:00:00.000Z";
+  db.conversations[2]!.last_message_at = staleAt;
+  db.conversations[2]!.updated_at = staleAt;
+  db.messages[3]!.received_at = staleAt;
+
+  let inbox = await listGuestMessageConversations({ DB: db } as never, { now });
+  assert.equal(inbox.conversations.some((item) => item.conversationId === "3"), false);
+  assert.deepEqual((await listGuestMessageConversations({ DB: db } as never, { search: "Expedia", now })).conversations, []);
+
+  db.messages.push(messageRow(6, 3, "INBOUND", "GUEST", NOW, "Could you help us again?", "SENT"));
+  db.conversations[2]!.last_message_at = NOW;
+  db.conversations[2]!.updated_at = NOW;
+  inbox = await listGuestMessageConversations({ DB: db } as never, { now });
+  assert.equal(inbox.conversations.some((item) => item.conversationId === "3"), true);
 });
 
 test("guest message conversation detail exposes only guest messages ready drafts and sent replies", async () => {
@@ -400,15 +422,16 @@ test("guest message conversation detail exposes only guest messages ready drafts
 
 test("guest message package stays hidden while AI is processing and appears only after draft persistence", async () => {
   const db = new FakeGuestMessagesDB();
+  const now = new Date(NOW);
   db.messages[0]!.state = "ASSOCIATED";
   db.drafts = db.drafts.filter((draft) => draft.message_id !== 1);
 
-  assert.equal((await listGuestMessageConversations({ DB: db } as never)).conversations.some((item) => item.conversationId === "1"), false);
+  assert.equal((await listGuestMessageConversations({ DB: db } as never, { now })).conversations.some((item) => item.conversationId === "1"), false);
   db.messages[0]!.state = "DRAFT_READY";
-  assert.equal((await listGuestMessageConversations({ DB: db } as never)).conversations.some((item) => item.conversationId === "1"), false);
+  assert.equal((await listGuestMessageConversations({ DB: db } as never, { now })).conversations.some((item) => item.conversationId === "1"), false);
 
   db.drafts.push(draftRow(9, 1, 1, "The complete reply is ready.", "READY", NOW));
-  const inbox = await listGuestMessageConversations({ DB: db } as never);
+  const inbox = await listGuestMessageConversations({ DB: db } as never, { now });
   assert.equal(inbox.conversations.some((item) => item.conversationId === "1"), true);
 });
 

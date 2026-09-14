@@ -139,6 +139,7 @@ export interface GuestMessageInbox {
 }
 
 const DEFAULT_LIMIT = 120;
+const RECENT_CONVERSATION_WINDOW_DAYS = 30;
 const GROUP_ORDER: GuestMessageInboxGroup[] = ["needsReply", "waitingGuest", "closed"];
 
 function clean(value: string | null | undefined): string | null {
@@ -232,12 +233,17 @@ function normalizeSearch(value: string | null | undefined): string | null {
   return `%${cleaned.replace(/[%_]/g, "\\$&")}%`;
 }
 
+function recentConversationCutoff(now: Date): string {
+  return new Date(now.getTime() - RECENT_CONVERSATION_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
 export async function listGuestMessageConversations(
   env: GuestMessagesWorkspaceBindings,
-  input: { search?: string | null; limit?: number } = {},
+  input: { search?: string | null; limit?: number; now?: Date } = {},
 ): Promise<GuestMessageInbox> {
   const search = normalizeSearch(input.search);
   const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_LIMIT), 1), 300);
+  const activityCutoff = recentConversationCutoff(input.now ?? new Date());
   const filters: string[] = [];
   const params: unknown[] = [];
 
@@ -253,7 +259,7 @@ export async function listGuestMessageConversations(
     params.push(search, search, search, search, search, search);
   }
 
-  params.push(limit);
+  params.push(activityCutoff, limit);
 
   const rows = await env.DB.prepare(`
     SELECT
@@ -322,6 +328,7 @@ export async function listGuestMessageConversations(
         LIMIT 1
       )
     WHERE latest.message_id IS NOT NULL
+      AND COALESCE(latest.received_at, c.last_message_at, c.updated_at) >= ?
       ${filters.length > 0 ? `AND ${filters.join(" AND ")}` : ""}
     ORDER BY COALESCE(latest.received_at, c.last_message_at, c.updated_at) DESC, c.message_conversation_id DESC
     LIMIT ?
