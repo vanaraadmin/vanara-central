@@ -2398,7 +2398,7 @@ test("04 IMAGE, 05 CAPTION, and 06 PUBLISH remain three independent daily stages
   assert.equal(r2.objects.has(row.original_object_key), false);
 });
 
-test("social automation endpoints are owner-only and use the dedicated social permission", async () => {
+test("social automation endpoints use the dedicated social workspace permission", async () => {
   const unauthenticated = await request("/api/social/overview", { method: "GET" }, env(new FakeSocialDB({ authenticated: false })));
   assert.equal(unauthenticated.status, 401);
 
@@ -2407,7 +2407,7 @@ test("social automation endpoints are owner-only and use the dedicated social pe
     views: ["staff"],
     permissions: [SOCIAL_PERMISSION],
   })));
-  assert.equal(staff.status, 403);
+  assert.equal(staff.status, 200);
 
   const noPermission = await request("/api/social/overview", { method: "GET", headers: { cookie: "vanara_session=x" } }, env(new FakeSocialDB({
     permissions: [{ module_key: "social-automation", can_access: 0, can_edit: 0 }],
@@ -2440,7 +2440,7 @@ test("social automation endpoints are owner-only and use the dedicated social pe
   assert.equal(r2.objects.size, 1);
 });
 
-test("social image preparation endpoint requires owner edit permission and prepares a queued photo", async () => {
+test("social image preparation endpoint requires social edit permission and prepares a queued photo", async () => {
   const db = new FakeSocialDB();
   const r2 = new FakeR2Storage();
   const row = db.seed({ social_post_id: 1, original_object_key: "social/uploads/2026-08-05/photo.jpg" });
@@ -2552,8 +2552,9 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(aiRecoveryMigration, /caption_poll_lease_token/);
   assert.doesNotMatch(aiRecoveryMigration, /\bDROP\b|\bDELETE\b/i);
 
-  assert.match(server, /function socialOwner/);
-  assert.match(server, /requireOwner\(user\)/);
+  assert.match(server, /function socialWorkspaceUser/);
+  const socialHelper = server.slice(server.indexOf("async function socialWorkspaceUser"), server.indexOf("async function", server.indexOf("async function socialWorkspaceUser") + 1));
+  assert.doesNotMatch(socialHelper, /requireOwner\(user\)/);
   assert.match(server, /requireModulePermission\(user, "social-automation", action\)/);
   assert.match(server, /app\.get\("\/api\/social\/overview"/);
   assert.match(server, /app\.post\("\/api\/social\/posts"/);
@@ -2594,7 +2595,7 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(page, /URL\.createObjectURL\(file\)/);
   assert.match(page, /URL\.revokeObjectURL\(previewUrlRef\.current\)/);
   assert.match(page, /social-dropzone__mark--preview/);
-  assert.match(page, /<SummaryStrip summary=\{summary\} \/>/);
+  assert.match(page, /<SummaryStrip summary=\{summary\} thai=\{thai\} \/>/);
   assert.match(page, /Queued/);
   assert.match(page, /Image ready/);
   assert.match(page, /Ready to post/);
@@ -2611,9 +2612,9 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(page, /Prepare Caption/);
   assert.match(page, /Publish/);
   assert.match(page, /title=\{item\.originalFileName\}/);
-  assert.match(page, /aria-label=\{`Prepare image for \$\{item\.originalFileName\}`\}/);
-  assert.match(page, /aria-label=\{`Prepare caption for \$\{item\.originalFileName\}`\}/);
-  assert.match(page, /aria-label=\{`Publish \$\{item\.originalFileName\}`\}/);
+  assert.match(page, /t\("Prepare image for", "เตรียมรูปสำหรับ"\)/);
+  assert.match(page, /t\("Prepare caption for", "สร้างคำบรรยายสำหรับ"\)/);
+  assert.match(page, /t\("Publish", "โพสต์"\)/);
   assert.match(pageCss, /\.social-automation-page\s*\{[\s\S]*grid-template-columns: minmax\(0, 0\.92fr\) minmax\(0, 1\.08fr\)/);
   assert.match(pageCss, /@media \(max-width: 980px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(pageCss, /\.social-upload,\s*\n\.social-history\s*\{[\s\S]*padding: clamp\(16px, 3vw, var\(--vc-space-5\)\)/);

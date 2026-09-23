@@ -237,7 +237,7 @@ test("receipt normalization rejects invalid, empty, oversized, and excessive att
   assert.throws(() => normalizeReceiptInput({ receipts: Array.from({ length: 11 }, () => ({ dataUrl: dataUrl("image/jpeg", 1), fileName: "x.jpg" })) }), /maximum of 10/);
 });
 
-test("expense requires receipt or explicit unavailable flag while income keeps the current optional contract", async () => {
+test("every manual entry requires a receipt or an explicit unavailable flag", async () => {
   const missing = env();
   await assert.rejects(() => createManualAccountingEntry(missing, input(), [], owner), /Add at least one receipt/);
   assert.equal(missing.db.entries.size, 0);
@@ -247,9 +247,14 @@ test("expense requires receipt or explicit unavailable flag while income keeps t
   assert.equal(savedExpense.receiptUnavailable, true);
   assert.match(savedExpense.note ?? "", /receipt: unavailable/);
 
-  const incomeEnv = env();
-  const savedIncome = await createManualAccountingEntry(incomeEnv, input({ entryType: "income" }), [], owner);
-  assert.equal(savedIncome.attachments.length, 0);
+  const missingIncome = env();
+  await assert.rejects(() => createManualAccountingEntry(missingIncome, input({ entryType: "income" }), [], owner), /Add at least one receipt/);
+  assert.equal(missingIncome.db.entries.size, 0);
+
+  const unavailableIncome = env();
+  const savedIncome = await createManualAccountingEntry(unavailableIncome, input({ entryType: "income", receiptUnavailable: true }), [], owner);
+  assert.equal(savedIncome.receiptUnavailable, true);
+  assert.match(savedIncome.note ?? "", /receipt: unavailable/);
 });
 
 test("two receipt pages save once, preserve order, and keep the first-page legacy contract", async () => {

@@ -54,7 +54,7 @@ function canViewBookingValue(user: CurrentUser): boolean {
 }
 
 function canUseSocialAutomation(user: CurrentUser): boolean {
-  return isOwner(user) && canAccess(user, "social-automation");
+  return canAccess(user, "social-automation");
 }
 
 function canUsePayroll(user: CurrentUser): boolean {
@@ -62,7 +62,7 @@ function canUsePayroll(user: CurrentUser): boolean {
 }
 
 function canUseAccounting(user: CurrentUser): boolean {
-  return isOwner(user) && canAccess(user, "accounting");
+  return canAccess(user, "accounting");
 }
 
 function canUseOwnerDashboard(user: CurrentUser): boolean {
@@ -273,7 +273,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Social",
       metrics: [],
       summaryLine1: "Photo queue",
-      summaryLine2: "Owner only",
+      summaryLine2: "Publishing access",
     }));
   }
 
@@ -316,7 +316,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       cta: "Open Accounting",
       metrics: [],
       summaryLine1: "Expected net payout",
-      summaryLine2: "Owner only",
+      summaryLine2: "Entry and export access",
     }));
   }
 

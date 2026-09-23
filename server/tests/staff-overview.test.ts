@@ -612,7 +612,7 @@ test("staff overview module perimeter is identical for English and Thai staff an
   assert.equal(thOverview.cards.some((card) => card.id === "messages" || card.href === "/messages"), false);
 });
 
-test("staff overview exposes Social Automation only to owners with the social module", async () => {
+test("staff overview exposes Social Automation to users explicitly granted the social module", async () => {
   const ownerOverview = await getStaffOverview(
     env([socialAutomationAccess]),
     currentUser([{ module: "social-automation", canAccess: true, canEdit: true }], "Owner", ["staff", "owner"]),
@@ -628,7 +628,7 @@ test("staff overview exposes Social Automation only to owners with the social mo
     currentUser([{ module: "social-automation", canAccess: true, canEdit: true }], "Operations", ["staff"]),
     STAFF_OVERVIEW_TEST_DATE,
   );
-  assert.equal(staffOverview.cards.some((card) => card.id === "social"), false);
+  assert.equal(staffOverview.cards.some((card) => card.id === "social"), true);
 });
 
 test("staff overview never exposes Payroll or employment contracts to Staff", async () => {

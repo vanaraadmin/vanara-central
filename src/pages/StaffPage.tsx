@@ -31,6 +31,7 @@ const STAFF_WORKSPACE_ORDER: StaffCardId[] = [
   "maintenance",
   "procurement",
   "social",
+  "accounting",
   "payroll",
 ];
 

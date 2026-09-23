@@ -53,7 +53,7 @@ test("Staff Home hierarchy keeps staff order stable and uses the approved owner 
   const recentBookingsIndex = staffPage.indexOf("<RecentBookings");
   const workspacesIndex = staffPage.indexOf('className="staff-workspaces"');
 
-  assert.match(staffPage, /const STAFF_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*"payroll",\s*\]/);
+  assert.match(staffPage, /const STAFF_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"rooms",\s*"availability",\s*"reception",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*"accounting",\s*"payroll",\s*\]/);
   assert.match(staffPage, /const OWNER_WORKSPACE_ORDER: StaffCardId\[\] = \[\s*"owner-dashboard",\s*"rooms",\s*"messages",\s*"reception",\s*"availability",\s*"accounting",\s*"payroll",\s*"housekeeping",\s*"maintenance",\s*"procurement",\s*"social",\s*\]/);
   assert.match(staffPage, /href:\s*"\/availability-prices"/);
   assert.doesNotMatch(staffPage, /const MESSAGES_WORKSPACE_CARD|href:\s*"\/messages"/);

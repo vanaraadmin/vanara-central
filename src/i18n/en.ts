@@ -1,5 +1,6 @@
 const en = {
   appName: "Vanara Central",
+  startOnDemandCleaning: "Start on-demand cleaning",
   vanaraRetreat: "Vanara Retreat",
   today: "Today",
   sawasdee: "Sawasdee",

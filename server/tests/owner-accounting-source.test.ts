@@ -19,11 +19,12 @@ const accountingPage = read("../src/pages/AccountingPage.tsx");
 const accountingCss = read("../src/styles/AccountingPage.css");
 const dashboardCss = read("../src/styles/DashboardPage.css");
 
-test("accounting module is owner-only and staff home card is owner gated", () => {
-  assert.match(index, /async function accountingOwner[\s\S]*requireOwner\(user\)[\s\S]*requireModulePermission\(user, "accounting"/);
+test("accounting module is controlled by its explicit workspace permission", () => {
+  assert.match(index, /async function accountingWorkspaceUser[\s\S]*requireModulePermission\(user, "accounting"/);
+  const accountingHelper = index.slice(index.indexOf("async function accountingWorkspaceUser"), index.indexOf("async function", index.indexOf("async function accountingWorkspaceUser") + 1));
+  assert.doesNotMatch(accountingHelper, /requireOwner\(user\)/);
   assert.match(index, /\/api\/accounting\/overview/);
-  assert.match(staffOverview, /function canUseAccounting[\s\S]*isOwner\(user\)[\s\S]*canAccess\(user, "accounting"\)/);
-  assert.doesNotMatch(staffOverview, /canAccess\(user, "accounting"\)[\s\S]*role !== "Owner"/);
+  assert.match(staffOverview, /function canUseAccounting[\s\S]*return canAccess\(user, "accounting"\)/);
 });
 
 test("financial migration stores normalized OTA records and manual receipt references", () => {
@@ -127,7 +128,7 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardCss, /\.dashboard-finance-stack[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(220px, 320px\)/);
 });
 
-test("manual accounting receipt upload uses R2 and validates expenses", () => {
+test("manual accounting receipt upload uses R2 and validates every manual entry", () => {
   assert.match(accounting, /R2_STORAGE\.put/);
   assert.match(accounting, /Promise\.allSettled/);
   assert.match(accounting, /rollbackNewAccountingEntry/);
@@ -136,6 +137,8 @@ test("manual accounting receipt upload uses R2 and validates expenses", () => {
   assert.match(accounting, /Entry type must be income or expense/);
   assert.match(accounting, /Amount must be greater than zero/);
   assert.match(accounting, /Add at least one receipt, or mark Receipt unavailable/);
+  assert.match(accounting, /const receiptUnavailable = receipts\.length === 0 && input\.receiptUnavailable/);
+  assert.match(accounting, /if \(receipts\.length === 0 && !receiptUnavailable\)/);
   assert.match(index, /\/api\/accounting\/entries\/:entryId\/attachments/);
   assert.match(index, /\/api\/accounting\/entries\/:entryId\/attachments\/:attachmentId/);
   assert.doesNotMatch(`${accounting}\n${index}`, /app\.delete\("\/api\/accounting|cleanupAccountingReceipt|ACCOUNTING_RECEIPT_RETENTION/);
@@ -156,10 +159,10 @@ test("manual expense taxonomy keeps historical rows while presenting canonical c
 });
 
 test("Accounting UI uses business language and keeps date controls contained", () => {
-  assert.match(accountingPage, />Manual entry</);
-  assert.match(accountingPage, />Export for accountant</);
-  assert.match(accountingPage, />Checked-in net</);
-  assert.match(accountingPage, />Future net forecast</);
+  assert.match(accountingPage, /"Manual entry"/);
+  assert.match(accountingPage, /"Export for accountant"/);
+  assert.match(accountingPage, /"Checked-in net"/);
+  assert.match(accountingPage, /"Future net forecast"/);
   assert.match(accountingPage, /const incomeCategories = \[/);
   assert.match(accountingPage, /value: "INCASSI PER STANZE", label: "Room Income"/);
   assert.match(accountingPage, /value: "INCASSI RISTORANTE \/ BAR", label: "Restaurant \/ Bar Income"/);
@@ -169,19 +172,20 @@ test("Accounting UI uses business language and keeps date controls contained", (
   assert.match(accountingPage, /value: "Utilities & Connectivity", label: "Utilities & Connectivity"/);
   assert.match(accountingPage, /value: "IT Costs", label: "IT Costs"/);
   assert.match(accountingPage, /value: "Garden", label: "Garden"/);
-  assert.match(accountingPage, /<span>Category<\/span>/);
+  assert.match(accountingPage, /"Category"/);
   assert.match(accountingPage, /note: accountingNote\(category\)/);
-  assert.match(accountingPage, /<option key=\{item\.value\} value=\{item\.value\}>\{item\.label\}<\/option>/);
-  assert.match(accountingPage, /<span>Description<\/span><textarea/);
-  assert.doesNotMatch(accountingPage, /<span>Note<\/span>/);
+  assert.match(accountingPage, /<option key=\{item\.value\} value=\{item\.value\}>\{categoryLabel\(item\)\}<\/option>/);
+  assert.match(accountingPage, /"Description"/);
+  assert.doesNotMatch(accountingPage, /"Note"/);
   assert.match(accountingPage, /capture="environment"/);
   assert.match(accountingPage, /Take receipt photo/);
   assert.match(accountingPage, /Choose files\/PDFs/);
   assert.match(accountingPage, /multiple onChange=\{onReceipt\}/);
   assert.match(accountingPage, /appendAccountingReceiptSelections/);
   assert.match(accountingPage, /removeAccountingReceiptSelection/);
-  assert.match(accountingPage, />Receipt unavailable</);
+  assert.match(accountingPage, /"Receipt unavailable"/);
   assert.match(accountingPage, /receipts\.length > 0 \|\| receiptUnavailable/);
+  assert.doesNotMatch(accountingPage, /entryType === "income" \|\| receipts\.length/);
   assert.match(accountingPage, /loading="lazy" decoding="async"/);
   const afterExport = accountingPage.slice(accountingPage.indexOf(">Export for accountant<"));
   assert.doesNotMatch(afterExport, /<section className="accounting-panel"[\s\S]*<h2>/);

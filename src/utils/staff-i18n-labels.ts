@@ -71,6 +71,7 @@ const roomLabelKeys: Record<string, string> = {
   BLOCKING: "blocking",
   "REPORT ISSUE": "reportIssue",
   "START CLEANING": "startCleaning",
+  "START ON-DEMAND CLEANING": "startOnDemandCleaning",
   UNASSIGNED: "unassigned",
   "GENERAL RESORT AREA": "generalResortArea",
   "ROOMS TO CLEAN": "roomsToClean",

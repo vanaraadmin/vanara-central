@@ -396,9 +396,8 @@ async function owner(c: AppContext, action: "access" | "edit" = "access"): Promi
   return user;
 }
 
-async function socialOwner(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+async function socialWorkspaceUser(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
   const user = await resolveCurrentUser(c);
-  requireOwner(user);
   requireModulePermission(user, "social-automation", action);
   return user;
 }
@@ -410,9 +409,8 @@ async function payrollOwner(c: AppContext, action: "access" | "edit" = "access")
   return user;
 }
 
-async function accountingOwner(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
+async function accountingWorkspaceUser(c: AppContext, action: "access" | "edit" = "access"): Promise<CurrentUser> {
   const user = await resolveCurrentUser(c);
-  requireOwner(user);
   requireModulePermission(user, "accounting", action);
   return user;
 }
@@ -833,7 +831,7 @@ app.get("/api/owner/tm30/export", async (c) => {
 
 app.get("/api/accounting/overview", async (c) => {
   try {
-    await accountingOwner(c, "access");
+    await accountingWorkspaceUser(c, "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await getAccountingOverview(c.env) });
   } catch (error) {
@@ -843,7 +841,7 @@ app.get("/api/accounting/overview", async (c) => {
 
 app.post("/api/accounting/entries", async (c) => {
   try {
-    const user = await accountingOwner(c, "edit");
+    const user = await accountingWorkspaceUser(c, "edit");
     const payload = await c.req.json().catch(() => null);
     const entry = await createManualAccountingEntry(c.env, normalizeManualAccountingInput(payload), normalizeReceiptInput(payload), user);
     return c.json({ success: true, data: entry }, 201);
@@ -854,7 +852,7 @@ app.post("/api/accounting/entries", async (c) => {
 
 app.get("/api/accounting/entries/:entryId/receipt", async (c) => {
   try {
-    await accountingOwner(c, "access");
+    await accountingWorkspaceUser(c, "access");
     const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
     const receipt = await getAccountingReceipt(c.env, entryId);
     if (!receipt) return c.json({ success: false, error: "Receipt not found." }, 404);
@@ -872,7 +870,7 @@ app.get("/api/accounting/entries/:entryId/receipt", async (c) => {
 
 app.get("/api/accounting/entries/:entryId/attachments", async (c) => {
   try {
-    await accountingOwner(c, "access");
+    await accountingWorkspaceUser(c, "access");
     const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listAccountingAttachments(c.env, entryId) });
@@ -883,7 +881,7 @@ app.get("/api/accounting/entries/:entryId/attachments", async (c) => {
 
 app.get("/api/accounting/entries/:entryId/attachments/:attachmentId", async (c) => {
   try {
-    await accountingOwner(c, "access");
+    await accountingWorkspaceUser(c, "access");
     const entryId = positiveIntegerParam(c.req.param("entryId"), "entryId");
     const attachmentId = positiveIntegerParam(c.req.param("attachmentId"), "attachmentId");
     const receipt = await getAccountingAttachment(c.env, entryId, attachmentId);
@@ -902,7 +900,7 @@ app.get("/api/accounting/entries/:entryId/attachments/:attachmentId", async (c) 
 
 app.get("/api/accounting/export.csv", async (c) => {
   try {
-    await accountingOwner(c, "access");
+    await accountingWorkspaceUser(c, "access");
     const from = c.req.query("from") ?? new Date().toISOString().slice(0, 10);
     const to = c.req.query("to") ?? from;
     const csv = await exportAccountingCsv(c.env, from, to);
@@ -1847,7 +1845,7 @@ app.patch("/api/procurement/requests/:id", async (c) => {
 
 app.get("/api/social/overview", async (c) => {
   try {
-    await socialOwner(c, "access");
+    await socialWorkspaceUser(c, "access");
     c.header("Cache-Control", "no-store");
     return c.json({ success: true, data: await listSocialAutomationOverview(c.env) });
   } catch (error) {
@@ -1947,7 +1945,7 @@ app.get("/api/payroll/workers/:employeeId/statement.pdf", async (c) => {
 
 app.post("/api/social/posts", async (c) => {
   try {
-    const user = await socialOwner(c, "edit");
+    const user = await socialWorkspaceUser(c, "edit");
     const input = normalizeSocialPhotoUploadFormData(await c.req.formData());
     return c.json({ success: true, data: await queueSocialPhoto(c.env, input, user) }, 201);
   } catch (error) {
@@ -1957,7 +1955,7 @@ app.post("/api/social/posts", async (c) => {
 
 app.post("/api/social/posts/:id/prepare-image", async (c) => {
   try {
-    await socialOwner(c, "edit");
+    await socialWorkspaceUser(c, "edit");
     const postId = positiveIntegerParam(c.req.param("id"), "social post id");
     return c.json({ success: true, data: await prepareSocialImage(c.env, postId) });
   } catch (error) {
@@ -1968,7 +1966,7 @@ app.post("/api/social/posts/:id/prepare-image", async (c) => {
 
 app.post("/api/social/posts/:id/prepare-caption", async (c) => {
   try {
-    await socialOwner(c, "edit");
+    await socialWorkspaceUser(c, "edit");
     const postId = positiveIntegerParam(c.req.param("id"), "social post id");
     return c.json({ success: true, data: await prepareSocialCaption(c.env, postId) });
   } catch (error) {
@@ -1979,7 +1977,7 @@ app.post("/api/social/posts/:id/prepare-caption", async (c) => {
 
 app.post("/api/social/posts/:id/publish", async (c) => {
   try {
-    await socialOwner(c, "edit");
+    await socialWorkspaceUser(c, "edit");
     const postId = positiveIntegerParam(c.req.param("id"), "social post id");
     const origin = new URL(c.req.url).origin;
     return c.json({ success: true, data: await publishSocialPost(c.env, postId, { baseUrl: origin }) });

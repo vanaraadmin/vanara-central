@@ -6,22 +6,23 @@ import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import { loadSocialAutomationOverview, prepareSocialCaption, prepareSocialImage, publishSocialPost, uploadSocialPhoto } from "../services/social.service";
 import type { SocialPostQueueItem, SocialPostStatus } from "../types/social";
+import { useLanguage } from "../providers/language.context";
 import "../styles/SocialAutomationPage.css";
 
-const statusLabels: Record<SocialPostStatus, string> = {
-  QUEUED: "Queued",
-  PREPARING_IMAGE: "Preparing image",
-  IMAGE_READY: "Image ready",
-  CAPTIONING: "Captioning",
-  READY_TO_POST: "Ready to post",
-  POSTING: "Posting",
-  POSTED: "Posted",
-  FAILED: "Failed",
-  CANCELLED: "Cancelled",
+const statusLabels: Record<SocialPostStatus, [string, string]> = {
+  QUEUED: ["Queued", "อยู่ในคิว"],
+  PREPARING_IMAGE: ["Preparing image", "กำลังเตรียมรูป"],
+  IMAGE_READY: ["Image ready", "รูปพร้อมแล้ว"],
+  CAPTIONING: ["Captioning", "กำลังสร้างคำบรรยาย"],
+  READY_TO_POST: ["Ready to post", "พร้อมโพสต์"],
+  POSTING: ["Posting", "กำลังโพสต์"],
+  POSTED: ["Posted", "โพสต์แล้ว"],
+  FAILED: ["Failed", "ไม่สำเร็จ"],
+  CANCELLED: ["Cancelled", "ยกเลิกแล้ว"],
 };
 
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDateTime(value: string, thai: boolean): string {
+  return new Intl.DateTimeFormat(thai ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -43,16 +44,16 @@ function formatContentType(value: string): string {
   return "Image";
 }
 
-function SummaryStrip({ summary }: { summary?: Partial<Record<SocialPostStatus, number>> }) {
+function SummaryStrip({ summary, thai }: { summary?: Partial<Record<SocialPostStatus, number>>; thai: boolean }) {
   const stats = [
-    { label: "Queued", value: summary?.QUEUED ?? 0, tone: "queued" },
-    { label: "Image ready", value: summary?.IMAGE_READY ?? 0, tone: "ready" },
-    { label: "Ready to post", value: summary?.READY_TO_POST ?? 0, tone: "posted" },
-    { label: "Failed", value: summary?.FAILED ?? 0, tone: "failed" },
+    { label: thai ? "อยู่ในคิว" : "Queued", value: summary?.QUEUED ?? 0, tone: "queued" },
+    { label: thai ? "รูปพร้อมแล้ว" : "Image ready", value: summary?.IMAGE_READY ?? 0, tone: "ready" },
+    { label: thai ? "พร้อมโพสต์" : "Ready to post", value: summary?.READY_TO_POST ?? 0, tone: "posted" },
+    { label: thai ? "ไม่สำเร็จ" : "Failed", value: summary?.FAILED ?? 0, tone: "failed" },
   ];
 
   return (
-    <dl className="social-summary-strip" aria-label="Social queue summary">
+    <dl className="social-summary-strip" aria-label={thai ? "สรุปคิวโซเชียล" : "Social queue summary"}>
       {stats.map((stat) => (
         <div className={`social-summary-strip__item social-summary-strip__item--${stat.tone}`} key={stat.label}>
           <dt>{stat.label}</dt>
@@ -73,6 +74,7 @@ function QueueItem({
   captioning,
   publishing,
   retrying,
+  thai,
 }: {
   item: SocialPostQueueItem;
   onPrepare(item: SocialPostQueueItem): void;
@@ -83,7 +85,9 @@ function QueueItem({
   captioning: boolean;
   publishing: boolean;
   retrying: boolean;
+  thai: boolean;
 }) {
+  const t = (english: string, thaiText: string) => thai ? thaiText : english;
   const canPrepare = item.status === "QUEUED";
   const canPrepareCaption = item.status === "IMAGE_READY";
   const canPublish = item.status === "READY_TO_POST";
@@ -96,56 +100,56 @@ function QueueItem({
           {item.originalFileName}
         </strong>
         <small className="social-queue-item__meta">
-          {formatDateTime(item.queuedAt)} - {formatSize(item.byteSize)} - {formatContentType(item.contentType)}
+          {formatDateTime(item.queuedAt, thai)} - {formatSize(item.byteSize)} - {formatContentType(item.contentType)}
         </small>
         {item.status === "FAILED" && item.failureMessage ? (
           <span className="social-queue-item__failure">{item.failureMessage}</span>
         ) : null}
       </span>
       <span className="social-queue-item__actions">
-        <span className="social-status">{statusLabels[item.status]}</span>
+        <span className="social-status">{statusLabels[item.status][thai ? 1 : 0]}</span>
         {canPrepare ? (
           <button
-            aria-label={`Prepare image for ${item.originalFileName}`}
+            aria-label={`${t("Prepare image for", "เตรียมรูปสำหรับ")} ${item.originalFileName}`}
             className="social-queue-item__prepare"
             disabled={preparing}
             onClick={() => onPrepare(item)}
             type="button"
           >
-            {preparing ? "Preparing" : "Prepare Image"}
+            {preparing ? t("Preparing", "กำลังเตรียม") : t("Prepare Image", "เตรียมรูป")}
           </button>
         ) : null}
         {canPrepareCaption ? (
           <button
-            aria-label={`Prepare caption for ${item.originalFileName}`}
+            aria-label={`${t("Prepare caption for", "สร้างคำบรรยายสำหรับ")} ${item.originalFileName}`}
             className="social-queue-item__prepare"
             disabled={captioning}
             onClick={() => onPrepareCaption(item)}
             type="button"
           >
-            {captioning ? "Captioning" : "Prepare Caption"}
+            {captioning ? t("Captioning", "กำลังสร้างคำบรรยาย") : t("Prepare Caption", "สร้างคำบรรยาย")}
           </button>
         ) : null}
         {canPublish ? (
           <button
-            aria-label={`Publish ${item.originalFileName}`}
+            aria-label={`${t("Publish", "โพสต์")} ${item.originalFileName}`}
             className="social-queue-item__prepare"
             disabled={publishing}
             onClick={() => onPublish(item)}
             type="button"
           >
-            {publishing ? "Publishing" : "Publish"}
+            {publishing ? t("Publishing", "กำลังโพสต์") : t("Publish", "โพสต์")}
           </button>
         ) : null}
         {canRetry ? (
           <button
-            aria-label={`Retry image preparation for ${item.originalFileName}`}
+            aria-label={`${t("Retry image preparation for", "ลองเตรียมรูปอีกครั้งสำหรับ")} ${item.originalFileName}`}
             className="social-queue-item__prepare"
             disabled={retrying}
             onClick={() => onRetry(item)}
             type="button"
           >
-            {retrying ? "Queueing retry" : "Retry Image"}
+            {retrying ? t("Queueing retry", "กำลังเข้าคิวใหม่") : t("Retry Image", "ลองเตรียมรูปอีกครั้ง")}
           </button>
         ) : null}
       </span>
@@ -154,6 +158,9 @@ function QueueItem({
 }
 
 export default function SocialAutomationPage() {
+  const { language } = useLanguage();
+  const thai = language === "th";
+  const t = (english: string, thaiText: string) => thai ? thaiText : english;
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const previewUrlRef = useRef<string | null>(null);
@@ -183,7 +190,7 @@ export default function SocialAutomationPage() {
     mutationFn: (file: File) => uploadSocialPhoto(file),
     onSuccess: async () => {
       replaceSelectedFile(null);
-      setNotice("Queued");
+      setNotice(t("Queued", "อยู่ในคิว"));
       if (inputRef.current) inputRef.current.value = "";
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
@@ -192,7 +199,7 @@ export default function SocialAutomationPage() {
   const prepare = useMutation({
     mutationFn: (item: SocialPostQueueItem) => prepareSocialImage(item.id),
     onSuccess: async () => {
-      setNotice("Image ready");
+      setNotice(t("Image ready", "รูปพร้อมแล้ว"));
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -200,7 +207,7 @@ export default function SocialAutomationPage() {
   const caption = useMutation({
     mutationFn: (item: SocialPostQueueItem) => prepareSocialCaption(item.id),
     onSuccess: async () => {
-      setNotice("Ready to post");
+      setNotice(t("Ready to post", "พร้อมโพสต์"));
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -208,7 +215,7 @@ export default function SocialAutomationPage() {
   const retry = useMutation({
     mutationFn: (item: SocialPostQueueItem) => prepareSocialImage(item.id),
     onSuccess: async () => {
-      setNotice("Image ready");
+      setNotice(t("Image ready", "รูปพร้อมแล้ว"));
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -216,7 +223,7 @@ export default function SocialAutomationPage() {
   const publish = useMutation({
     mutationFn: (item: SocialPostQueueItem) => publishSocialPost(item.id),
     onSuccess: async () => {
-      setNotice("Published and cleaned");
+      setNotice(t("Published and cleaned", "โพสต์แล้วและล้างคิวเรียบร้อย"));
       await queryClient.invalidateQueries({ queryKey: ["social-automation", "overview"] });
     },
   });
@@ -226,13 +233,13 @@ export default function SocialAutomationPage() {
   const summary = overview.data?.summary;
 
   return (
-    <WorkspaceShell title="Social Automation" stickyNavigationTitle="Social Automation" workspace="social" bodyClassName="social-automation-page" wide>
+    <WorkspaceShell title={t("Social Automation", "โซเชียลมีเดีย")} stickyNavigationTitle={t("Social Automation", "โซเชียลมีเดีย")} workspace="social" bodyClassName="social-automation-page" wide>
       <VanaraGlassRegion className="social-upload" ariaLabelledBy="social-upload-title">
         <VanaraSectionHeader
-          eyebrow="Owner"
+          eyebrow={t("Social", "โซเชียล")}
           headingId="social-upload-title"
-          meta={summary ? `${summary.QUEUED} queued` : "Queue"}
-          title="Next Social Photo"
+          meta={summary ? t(`${summary.QUEUED} queued`, `${summary.QUEUED} รายการในคิว`) : t("Queue", "คิว")}
+          title={t("Next Social Photo", "รูปถัดไปสำหรับโซเชียล")}
         />
 
         <form
@@ -257,13 +264,13 @@ export default function SocialAutomationPage() {
               {selectedPreviewUrl ? <img alt="" src={selectedPreviewUrl} /> : null}
             </span>
             <span className="social-dropzone__copy">
-              <strong title={selectedFile?.name}>{selectedFile ? selectedFile.name : "Choose photo"}</strong>
-              <small>{selectedFile ? `${formatSize(selectedFile.size)} - ${formatContentType(selectedFile.type)}` : "JPG, PNG or WebP. HEIC is not supported."}</small>
+              <strong title={selectedFile?.name}>{selectedFile ? selectedFile.name : t("Choose photo", "เลือกรูป")}</strong>
+              <small>{selectedFile ? `${formatSize(selectedFile.size)} - ${formatContentType(selectedFile.type)}` : t("JPG, PNG or WebP. HEIC is not supported.", "JPG, PNG หรือ WebP ไม่รองรับ HEIC")}</small>
             </span>
           </label>
 
           <button className="vc-primary-action social-upload__button" disabled={!canUpload} type="submit">
-            {upload.isPending ? "Queueing" : "Queue Photo"}
+            {upload.isPending ? t("Queueing", "กำลังเข้าคิว") : t("Queue Photo", "เพิ่มรูปเข้าคิว")}
           </button>
         </form>
 
@@ -273,24 +280,24 @@ export default function SocialAutomationPage() {
 
       <VanaraGlassRegion className="social-history" ariaLabelledBy="social-history-title">
         <VanaraSectionHeader
-          eyebrow="Status"
+          eyebrow={t("Status", "สถานะ")}
           headingId="social-history-title"
-          meta={summary ? `${summary.READY_TO_POST} ready` : "Latest"}
-          title="Publishing Queue"
+          meta={summary ? t(`${summary.READY_TO_POST} ready`, `${summary.READY_TO_POST} รายการพร้อมโพสต์`) : t("Latest", "ล่าสุด")}
+          title={t("Publishing Queue", "คิวเผยแพร่")}
         />
-        <SummaryStrip summary={summary} />
+        <SummaryStrip summary={summary} thai={thai} />
 
         {overview.isLoading ? <PageLoading /> : null}
         {overview.isError && !overview.data ? <PageError onRetry={() => void overview.refetch()} /> : null}
         {overview.data && latest.length === 0 ? (
-          <section className="social-empty" aria-label="No queued photos">
+          <section className="social-empty" aria-label={t("No queued photos", "ไม่มีรูปในคิว")}>
             <span aria-hidden="true" />
-            <h2>No photos waiting</h2>
-            <p>Add one resort photo for the next post.</p>
+            <h2>{t("No photos waiting", "ไม่มีรูปที่รอโพสต์")}</h2>
+            <p>{t("Add one resort photo for the next post.", "เพิ่มรูปรีสอร์ตสำหรับโพสต์ถัดไป")}</p>
           </section>
         ) : null}
         {latest.length > 0 ? (
-          <ul className="social-queue-list" aria-label="Latest queued photos">
+          <ul className="social-queue-list" aria-label={t("Latest queued photos", "รูปที่เข้าคิวล่าสุด")}>
             {latest.map((item) => (
               <QueueItem
                 item={item}
@@ -303,6 +310,7 @@ export default function SocialAutomationPage() {
                 captioning={caption.isPending && caption.variables?.id === item.id}
                 publishing={publish.isPending && publish.variables?.id === item.id}
                 retrying={retry.isPending && retry.variables?.id === item.id}
+                thai={thai}
               />
             ))}
           </ul>

@@ -396,8 +396,8 @@ export async function listAccountingAttachments(env: AccountingBindings, entryId
 }
 
 export async function createManualAccountingEntry(env: AccountingBindings, input: ManualAccountingInput, receipts: ReceiptInput[], user: CurrentUser): Promise<AccountingEntry> {
-  const receiptUnavailable = input.entryType === "expense" && receipts.length === 0 && input.receiptUnavailable;
-  if (input.entryType === "expense" && receipts.length === 0 && !receiptUnavailable) {
+  const receiptUnavailable = receipts.length === 0 && input.receiptUnavailable;
+  if (receipts.length === 0 && !receiptUnavailable) {
     throw new ValidationError("Add at least one receipt, or mark Receipt unavailable.");
   }
   const now = new Date().toISOString();

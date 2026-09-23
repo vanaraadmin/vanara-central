@@ -1,5 +1,6 @@
 const th = {
   appName: "Vanara Central",
+  startOnDemandCleaning: "เริ่มทำความสะอาดตามคำขอ",
   vanaraRetreat: "Vanara Retreat",
   today: "วันนี้",
   sawasdee: "สวัสดี",
