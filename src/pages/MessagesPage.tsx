@@ -29,11 +29,11 @@ const GROUPS: Array<{ id: GuestMessageInboxGroup; labelKey: string; tone: string
   { id: "closed", labelKey: "closed", tone: "green" },
 ];
 
-function formatTime(value: string | null): string {
+function formatTime(value: string | null, language: "en" | "th"): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "short",
@@ -42,11 +42,11 @@ function formatTime(value: string | null): string {
   }).format(date);
 }
 
-function formatDay(value: string | null): string {
-  if (!value) return "Conversation";
+function formatDay(value: string | null, language: "en" | "th", fallback: string): string {
+  if (!value) return fallback;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Conversation";
-  return new Intl.DateTimeFormat("en-GB", {
+  if (Number.isNaN(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
     timeZone: "Asia/Bangkok",
     day: "2-digit",
     month: "long",
@@ -82,7 +82,7 @@ function ConversationRow({
   conversation: GuestMessageInboxItem;
   onSelect: (conversationId: string) => void;
 }) {
-  const { translate } = useLanguage();
+  const { language, translate } = useLanguage();
   return (
     <button
       type="button"
@@ -97,7 +97,7 @@ function ConversationRow({
       <span className="messages-inbox-row__body">
         <span className="messages-inbox-row__topline">
           <strong>{conversation.guestName}</strong>
-          <time>{formatTime(conversation.lastActivityAt)}</time>
+          <time>{formatTime(conversation.lastActivityAt, language)}</time>
         </span>
         <span className="messages-inbox-row__room">{conversation.room}</span>
         <span className="messages-inbox-row__preview">{conversation.lastMessagePreview}</span>
@@ -198,7 +198,7 @@ function MessagesSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item: GuestMessageTimelineItem }) {
-  const { translate } = useLanguage();
+  const { language, translate } = useLanguage();
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const label = item.kind === "draft" ? translate("guestMessagesDraft") : item.sender;
@@ -212,16 +212,16 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
     setError("");
     try {
       await actions.onGenerate(failedMessageId);
-      setNotice("Wara draft generated.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Wara draft could not be generated.");
+      setNotice(translate("guestMessagesWaraDraftGenerated"));
+    } catch {
+      setError(translate("guestMessagesWaraDraftFailed"));
     }
   };
   return (
     <article className={`messages-bubble messages-bubble--${item.kind}`}>
       <div className="messages-bubble__meta">
         <span>{label}</span>
-        <time>{formatTime(item.timestamp)}</time>
+        <time>{formatTime(item.timestamp, language)}</time>
       </div>
       {item.kind === "draft" ? (
         <div className="messages-bubble__draft-header">
@@ -235,9 +235,9 @@ function TimelineBubble({ actions, item }: { actions: DraftActionHandlers; item:
       ) : null}
       <p>{item.message}</p>
       {failedMessageId ? (
-        <div className="messages-draft-actions" aria-label="Wara draft recovery actions">
+        <div className="messages-draft-actions" aria-label={translate("guestMessagesDraftRecoveryActions")}>
           <button className="vc-secondary-action" type="button" disabled={actions.busy} onClick={generateDraft}>
-            Generate Wara draft
+            {translate("guestMessagesGenerateWaraDraft")}
           </button>
           {notice ? <p role="status">{notice}</p> : null}
           {error ? <p role="alert">{error}</p> : null}
@@ -361,7 +361,7 @@ function ConversationColumn({
   onClose: () => void;
   onRetry: () => void;
 }) {
-  const { translate } = useLanguage();
+  const { language, translate } = useLanguage();
   const hasReadyDraft = conversation.some((item) => item.kind === "draft" && item.status === "READY");
 
   if (loading) {
@@ -404,10 +404,12 @@ function ConversationColumn({
       <div className="messages-timeline">
         {conversation.map((item, index) => {
           const previous = conversation[index - 1];
-          const showDay = index === 0 || formatDay(previous?.timestamp ?? null) !== formatDay(item.timestamp);
+          const previousDay = formatDay(previous?.timestamp ?? null, language, translate("guestMessagesConversationFallback"));
+          const currentDay = formatDay(item.timestamp, language, translate("guestMessagesConversationFallback"));
+          const showDay = index === 0 || previousDay !== currentDay;
           return (
             <div className="messages-timeline__entry" key={item.id}>
-              {showDay ? <time className="messages-day-separator">{formatDay(item.timestamp)}</time> : null}
+              {showDay ? <time className="messages-day-separator">{currentDay}</time> : null}
               <TimelineBubble actions={actions} item={item} />
             </div>
           );

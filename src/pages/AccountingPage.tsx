@@ -16,8 +16,8 @@ function startOfMonth(): string {
   return today().slice(0, 8) + "01";
 }
 
-function money(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "Unknown";
+function money(value: number | null | undefined, unavailableLabel: string): string {
+  if (value === null || value === undefined) return unavailableLabel;
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "THB", maximumFractionDigits: 0 }).format(value);
 }
 
@@ -160,10 +160,10 @@ export default function AccountingPage() {
         {accounting.data ? (
           <>
             <section className="accounting-kpis" aria-label={t("Accounting totals", "ยอดรวมบัญชี")}>
-              <article><span>{t("Checked-in net", "รายได้สุทธิที่เช็กอินแล้ว")}</span><strong>{money(totals?.expectedNetIncomeToDate)}</strong></article>
-              <article><span>{t("Future net forecast", "คาดการณ์รายได้สุทธิ")}</span><strong>{money(totals?.expectedFutureNetIncome)}</strong></article>
-              <article><span>{t("Manual income", "รายได้ที่บันทึก")}</span><strong>{money(totals?.manualIncome)}</strong></article>
-              <article><span>{t("Manual expenses", "ค่าใช้จ่ายที่บันทึก")}</span><strong>{money(totals?.manualExpenses)}</strong></article>
+              <article><span>{t("Checked-in net", "รายได้สุทธิที่เช็กอินแล้ว")}</span><strong>{money(totals?.expectedNetIncomeToDate, t("Unknown", "ไม่ทราบ"))}</strong></article>
+              <article><span>{t("Future net forecast", "คาดการณ์รายได้สุทธิ")}</span><strong>{money(totals?.expectedFutureNetIncome, t("Unknown", "ไม่ทราบ"))}</strong></article>
+              <article><span>{t("Manual income", "รายได้ที่บันทึก")}</span><strong>{money(totals?.manualIncome, t("Unknown", "ไม่ทราบ"))}</strong></article>
+              <article><span>{t("Manual expenses", "ค่าใช้จ่ายที่บันทึก")}</span><strong>{money(totals?.manualExpenses, t("Unknown", "ไม่ทราบ"))}</strong></article>
             </section>
 
             <section className="accounting-panel">

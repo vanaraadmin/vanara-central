@@ -250,7 +250,7 @@ function NewChatPicker({
             ) : (
               <div className="chat-picker__group-details">
                 <div className="chat-picker__group-avatar" aria-hidden="true">
-                  {avatarLabel(groupTitle || "Group")}
+                  {avatarLabel(groupTitle || translate("chatGroupFallback"))}
                 </div>
                 <label className="chat-picker__group-name">
                   <span>{translate("groupName")}</span>
@@ -258,7 +258,7 @@ function NewChatPicker({
                     value={groupTitle}
                     onChange={(event) => setGroupTitle(event.target.value)}
                     maxLength={80}
-                    placeholder="Chat Ristorante"
+                    placeholder={translate("chatGroupNamePlaceholder")}
                     autoFocus
                   />
                 </label>
@@ -458,7 +458,7 @@ function ChatMessageContextMenu({
       >
         <div className="chat-context-menu__reactions" aria-label={translate("reactions")}>
           {QUICK_REACTIONS.map((emoji) => (
-            <button key={emoji} type="button" onClick={() => onReact(state.message, emoji)} aria-label={`React ${emoji}`}>
+            <button key={emoji} type="button" onClick={() => onReact(state.message, emoji)} aria-label={translate("reactToMessage", { emoji })}>
               {emoji}
             </button>
           ))}
@@ -582,7 +582,7 @@ function ChatMessageBubble({
             </button>
           )}
           {message.messageKind === "STICKER" ? (
-            <ChatMessageSticker stickerId={message.stickerId} fallbackLabel={message.body.replace(/^Sticker:\s*/i, "") || "Sticker"} />
+            <ChatMessageSticker stickerId={message.stickerId} fallbackLabel={message.body.replace(/^Sticker:\s*/i, "") || translate("sticker")} />
           ) : message.messageKind === "ATTACHMENT" && message.attachment ? (
             attachmentUnavailable || attachmentFailed ? (
               <div className="chat-thread-message__attachment chat-thread-message__attachment--missing">

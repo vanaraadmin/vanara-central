@@ -97,6 +97,7 @@ const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   procurement: "procurementDescription",
   reception: "movementsDescription",
   rooms: "roomsDescription",
+  social: "socialAutomationDescription",
 };
 
 const metricLabelKeys: Record<string, string> = {
@@ -180,8 +181,14 @@ function translateStaffSummaryLabel(label: string, translate: (key: string, opti
   const staffLabel = translateStaffLabel(label, translate);
   if (staffLabel !== label) return staffLabel;
   const knownLabels: Record<string, string> = {
+    "Entry and export access": "entryAndExportAccess",
     "Free-text request": "freeTextRequest",
+    "Income vs expenses": "incomeVsExpenses",
     "Owner decision": "ownerDecision",
+    "Publishing access": "publishingAccess",
+    "Photo queue": "queue",
+    "Queue resort photos for daily publishing.": "socialAutomationDescription",
+    "Expected net payout": "expectedNetPayout",
   };
   return knownLabels[label] ? translate(knownLabels[label]) : label;
 }

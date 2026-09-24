@@ -319,7 +319,10 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(page, /<PageLoading \/>/);
   assert.match(page, /<PageError onRetry/);
   assert.match(page, /onClick=\{\(\) => void housekeeping\.refetch\(\)\}/);
-  assert.match(page, /section\.emptyLabel/);
+  assert.match(page, /translate\(copy\.emptyKey\)/);
+  assert.match(page, /noPriorityTurnoverTasks/);
+  assert.match(page, /noNormalCleaningTasks/);
+  assert.match(page, /noWaterRefillTasks/);
   assert.match(service, /No priority work\./);
   assert.match(service, /No normal cleaning work\./);
   assert.match(service, /No water refills\./);

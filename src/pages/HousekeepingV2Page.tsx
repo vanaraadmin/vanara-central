@@ -30,6 +30,12 @@ const homeSections: Array<{ id: HousekeepingV2SectionId; labelKey: string }> = [
   { id: "water-refill", labelKey: "waterRefill" },
 ];
 
+const sectionCopy: Record<HousekeepingV2SectionId, { titleKey: string; emptyKey: string }> = {
+  "priority-turnover": { titleKey: "priorityTurnover", emptyKey: "noPriorityTurnoverTasks" },
+  "normal-cleaning": { titleKey: "normalCleaning", emptyKey: "noNormalCleaningTasks" },
+  "water-refill": { titleKey: "waterRefill", emptyKey: "noWaterRefillTasks" },
+};
+
 type InterventionType = "cleaning" | "full-cleaning";
 type TaskTone = "clean" | "progress" | "warning" | "critical" | "maintenance" | "neutral";
 
@@ -81,7 +87,7 @@ function taskTone(card: HousekeepingV2TaskCard): TaskTone {
 }
 
 function taskStateDescription(card: HousekeepingV2TaskCard, translate: Translate): string {
-  if (card.isBlocked) return card.blockReason ?? translate("taskCannotContinue");
+  if (card.isBlocked) return localizedReason(card, translate) ?? translate("taskCannotContinue");
   if (card.taskStatus === "WAITING_FOR_RECEPTION") return translate("receptionNotReleased");
   if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return translate("readyForClaim");
   if (card.taskStatus === "CLAIMED") return card.assignee ? `${translate("assigned")} ${card.assignee}.` : translate("assignedWaitingStart");
@@ -112,10 +118,10 @@ function taskDetails(card: HousekeepingV2TaskCard, language: "en" | "th", transl
   return [
     { label: translate("task"), value: taskLabel(card, translate) },
     { label: translate("status"), value: statusLabel(card, translate) },
-    { label: translate("priority"), value: card.priority },
+    { label: translate("priority"), value: priorityLabel(card.priority, translate) },
     { label: translate("due"), value: formatDate(card.operationalDate, language, translate) },
     { label: translate("assignee"), value: card.assignee ?? translate("unassigned") },
-    { label: translate("reason"), value: card.displayReason ?? card.blockReason ?? translate("operationalWork") },
+    { label: translate("reason"), value: localizedReason(card, translate) ?? translate("operationalWork") },
     ...(card.taskType === "WATER_REFILL" ? [{ label: translate("quantity"), value: card.waterQuantity ? `${card.waterQuantity} ${card.waterQuantity === 1 ? translate("bottle") : translate("bottles")}` : translate("waterRefill") }] : []),
   ];
 }
@@ -131,9 +137,21 @@ function reasonLabel(code: string, translate: Translate): string {
   return code;
 }
 
+function localizedReason(card: HousekeepingV2TaskCard, translate: Translate): string | null {
+  const reasonCode = card.reasonCodes[0];
+  return reasonCode ? reasonLabel(reasonCode, translate) : card.displayReason ?? card.blockReason;
+}
+
+function priorityLabel(priority: HousekeepingV2TaskCard["priority"], translate: Translate): string {
+  if (priority === "URGENT") return translate("highPriority");
+  if (priority === "HIGH") return translate("highPriority");
+  if (priority === "LOW") return translate("lowPriority");
+  return translate("normalPriority");
+}
+
 function statusLabel(card: HousekeepingV2TaskCard, translate: Translate): string {
   if (card.taskType === "WATER_REFILL") return waterDeliveryStateLabel(card, translate);
-  if (card.isBlocked && card.blockReason) return card.blockReason;
+  if (card.isBlocked) return localizedReason(card, translate) ?? translate("blocked");
   if (card.taskStatus === "AVAILABLE_FOR_CLAIM") return translate("available");
   if (card.taskStatus === "CLAIMED") return card.assignee ? `${translate("assigned")} ${card.assignee}` : translate("assigned");
   if (card.taskStatus === "IN_PROGRESS") return translate("cleaningInProgress");
@@ -202,8 +220,7 @@ function CardMeta({ card, translate }: { card: HousekeepingV2TaskCard; translate
   if (card.taskType === "WATER_REFILL") return null;
   const reasonLabels = card.reasonCodes.map((code) => reasonLabel(code, translate)).filter((label) => label !== card.displayReason);
   const details = [
-    card.displayReason,
-    card.blockReason,
+    localizedReason(card, translate),
     card.assignee ? `${translate("assigned")} ${card.assignee}` : null,
     ...reasonLabels,
   ].filter((item): item is string => Boolean(item));
@@ -483,13 +500,14 @@ function Section({
   section: HousekeepingV2Section;
 }) {
   const { translate } = useLanguage();
+  const copy = sectionCopy[section.id];
   return (
     <section className="housekeeping-v2-section" aria-labelledby={`housekeeping-v2-${section.id}`}>
       <VanaraSectionHeader
         eyebrow={translate("housekeeping")}
         headingId={`housekeeping-v2-${section.id}`}
         meta={formatRoomCount(section.cards.length, translate)}
-        title={section.title}
+        title={translate(copy.titleKey)}
       />
 
       <div className="housekeeping-v2-section__list vc-glass-surface">
@@ -507,7 +525,7 @@ function Section({
         ) : (
           <div className="housekeeping-v2-empty">
             <CheckIcon />
-            <p>{section.emptyLabel}</p>
+            <p>{translate(copy.emptyKey)}</p>
           </div>
         )}
       </div>
