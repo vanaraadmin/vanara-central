@@ -135,7 +135,7 @@ function WorkerCard({ active, onSelect, worker }: { active: boolean; onSelect():
         <span className="payroll-worker__meta">
           <strong>{money(calculation.salaryBalancePayable ?? calculation.netSalaryPayable)}</strong>
           {calculation.contract ? <small>Current salary payable on {calculation.salaryPaymentDate ? new Date(`${calculation.salaryPaymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB") : "payday"}</small> : null}
-          {calculation.contract ? <small>Allowances due — food / housing: {money(calculation.openingAllowanceAdvanceTotal ?? 0)}</small> : null}
+          {calculation.contract ? <small>Contractual food / housing allowance: {money(calculation.openingAllowanceAdvanceTotal ?? 0)}</small> : null}
           <small>{calculation.aggregates.extraWorkedDays.toFixed(2)} extra days / {calculation.aggregates.totalOvertimeHours.toFixed(2)} OT hrs</small>
           <small>{calculation.aggregates.unpaidAbsenceDays.toFixed(2)} absence days / {money(calculation.aggregates.salaryAdvancesReceived)} advances</small>
         </span>
@@ -148,6 +148,10 @@ function payrollPaymentDate(payrollMonth: string): string {
   const [yearRaw, monthRaw] = payrollMonth.split("-");
   const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), 2));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function openingAllowancePaymentDate(payrollMonth: string): string {
+  return `${payrollMonth}-01`;
 }
 
 function nextPayrollMonth(payrollMonth: string): string {
@@ -186,13 +190,23 @@ function PayrollMonthPlan({
   const upcomingOpeningRows = upcomingWorkers.filter((worker) => (worker.calculation?.openingAllowanceAdvanceTotal ?? 0) > 0);
   if (contractWorkers.length === 0 && upcomingOpeningRows.length === 0) return null;
   const openingRows = contractWorkers.filter((worker) => (worker.calculation?.openingAllowanceAdvanceTotal ?? 0) > 0);
+  const openingDate = openingAllowancePaymentDate(payrollMonth);
   const paymentDate = payrollPaymentDate(payrollMonth);
+  const isOpeningAllowanceTransition = payrollMonth < "2026-11";
+  const nextAllowanceByWorkerId = new Map(upcomingOpeningRows.map((worker) => [
+    worker.id,
+    worker.calculation!.openingAllowanceAdvanceTotal ?? 0,
+  ]));
+  const salaryPaymentTotal = totals.balance + upcomingOpeningRows.reduce(
+    (sum, worker) => sum + (worker.calculation?.openingAllowanceAdvanceTotal ?? 0),
+    0,
+  );
   return (
     <section className="payroll-month-plan" aria-label="Upcoming contract payroll payments">
       <header><span>Upcoming payments</span><small>Contract-driven · owner only</small></header>
       {contractWorkers.length > 0 ? <>
-        <article>
-          <div className="payroll-month-plan__heading"><span>1 {new Date(`${payrollMonth}-01T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(totals.opening)}</strong></div>
+        {isOpeningAllowanceTransition ? <article>
+          <div className="payroll-month-plan__heading"><span>{new Date(`${openingDate}T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(totals.opening)}</strong></div>
           <small>Allowances due — food and housing</small>
           {openingRows.length === 0 ? <p>No contractual opening advance this month.</p> : (
             <ul>{openingRows.map((worker) => {
@@ -200,18 +214,20 @@ function PayrollMonthPlan({
               return <li key={worker.id}><span>{worker.fullName}</span><b>{money(calculation.openingAllowanceAdvanceTotal ?? 0)}</b><small>Food {money(calculation.openingFoodAdvance ?? 0)} · Housing {money(calculation.openingHousingAdvance ?? 0)}</small></li>;
             })}</ul>
           )}
-        </article>
+        </article> : null}
         <article>
-          <div className="payroll-month-plan__heading"><span>{new Date(`${paymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(totals.balance)}</strong></div>
-          <small>Current salary payable after allowances due</small>
+          <div className="payroll-month-plan__heading"><span>{new Date(`${paymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(salaryPaymentTotal)}</strong></div>
+          <small>Salary balance plus next month’s food and housing allowances</small>
           <ul>{contractWorkers.map((worker) => {
             const calculation = worker.calculation!;
-            return <li key={worker.id}><span>{worker.fullName}</span><b>{money(calculation.salaryBalancePayable ?? calculation.netSalaryPayable)}</b><small>Total payroll {money(calculation.netSalaryPayable)}</small></li>;
+            const salaryBalance = calculation.salaryBalancePayable ?? calculation.netSalaryPayable;
+            const nextAllowance = nextAllowanceByWorkerId.get(worker.id) ?? 0;
+            return <li key={worker.id}><span>{worker.fullName}</span><b>{money(salaryBalance + nextAllowance)}</b><small>Salary {money(salaryBalance)} · {upcomingMonth} food / housing {money(nextAllowance)}</small></li>;
           })}</ul>
         </article>
       </> : null}
-      {upcomingOpeningRows.length > 0 ? <article>
-        <div className="payroll-month-plan__heading"><span>Next: 1 {new Date(`${upcomingMonth}-01T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(upcomingOpeningRows.reduce((sum, worker) => sum + (worker.calculation?.openingAllowanceAdvanceTotal ?? 0), 0))}</strong></div>
+      {isOpeningAllowanceTransition && upcomingOpeningRows.length > 0 ? <article>
+        <div className="payroll-month-plan__heading"><span>Next: {new Date(`${openingAllowancePaymentDate(upcomingMonth)}T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(upcomingOpeningRows.reduce((sum, worker) => sum + (worker.calculation?.openingAllowanceAdvanceTotal ?? 0), 0))}</strong></div>
         <small>Next month’s allowances due — food and housing</small>
         <ul>{upcomingOpeningRows.map((worker) => {
           const calculation = worker.calculation!;

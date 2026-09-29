@@ -4,9 +4,9 @@
 
 ## Payment rhythm in Central
 
-- **Day 1 of the competence month:** pay the contractual food and cash-housing advances shown below.
-- **Day 2 of the following month:** pay the salary balance after employee SSO, accommodation contribution, attendance adjustments, authorised additions/deductions, and any contractual bonus due on that payroll date.
-- Food/housing advances are part of the month’s total contractual payroll; they are shown separately so they are not paid twice.
+- **1 October 2026 only:** pay the contractual October food and cash-housing advances shown below.
+- **From 2 November 2026:** one payment per employee on the 2nd combines the prior month’s salary balance after employee SSO, accommodation contribution, attendance adjustments, authorised additions/deductions and contractual bonus, **plus the food and cash-housing allowance for the new month**.
+- Food/housing allowances are part of the month’s total contractual payroll; Central keeps them visible as a separate component so they are not paid twice.
 - A payslip for a competence month is downloadable from the 2nd of the following month.
 - At the end of seasonal employment on **30 April 2027**, Central must not create a May food or housing advance. Any final food reconciliation requires explicit final-settlement authorisation.
 
@@ -37,7 +37,7 @@
 
 ## November 2026 to April 2027 — standard payment pattern
 
-| Employee | 1st food + housing advance | Salary balance on the 2nd, before attendance changes/bonuses |
+| Employee | Food + housing included with the 2nd-of-month payment | Prior-month salary balance, before attendance changes/bonuses |
 | --- | ---: | ---: |
 | Nun | 1,500 | 13,300 |
 | Tae | 1,500 | 13,300 |
