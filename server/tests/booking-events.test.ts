@@ -65,6 +65,7 @@ type FakeBookingEventRow = {
   departure_date: string | null;
   booking_status: string | null;
   booking_sub_status: string | null;
+  cancel_time: string | null;
   adults: number | null;
   children: number | null;
   price: number | null;
@@ -121,6 +122,7 @@ function eventRow(overrides: Partial<FakeBookingEventRow>): FakeBookingEventRow 
     departure_date: "2026-08-06",
     booking_status: "Confirmed",
     booking_sub_status: null,
+    cancel_time: null,
     adults: 2,
     children: 0,
     price: 12000,
@@ -304,6 +306,10 @@ class FakeBookingEventsDB {
 
 test("new booking generates a NEW business event", () => {
   assert.equal(bookingEventType(null, baseSnapshot), "new");
+});
+
+test("a booking first discovered already cancelled does not generate a pulse event", () => {
+  assert.equal(bookingEventType(null, { ...baseSnapshot, status: "Cancelled" }), null);
 });
 
 test("repeated synchronization keeps NEW and never creates UPDATED", async () => {
@@ -722,6 +728,23 @@ test("booking pulse shows cancelled when the live booking status is cancelled ev
   assert.equal(events[0]?.bookingId, "9041");
   assert.equal(events[0]?.eventType, "CANCELLED");
   assert.match(events[0]?.eventId ?? "", /:CANCELLED:/);
+});
+
+test("booking pulse hides a historical cancellation discovered as a new sync row", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 42,
+      event_type: "new",
+      beds24_booking_id: 9042,
+      booking_status: "cancelled",
+      cancel_time: "2026-07-17T05:10:28.000Z",
+      occurred_at: "2026-09-29T00:15:10.000Z",
+    }),
+  ];
+
+  const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 10, new Date("2026-09-29T01:00:00.000Z"));
+  assert.deepEqual(events, []);
 });
 
 test("booking pulse treats placeholder guest names as missing and falls back to first and last name", async () => {

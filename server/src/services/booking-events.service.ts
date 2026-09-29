@@ -79,6 +79,7 @@ interface BookingEventRow {
   departure_date: string | null;
   booking_status: string | null;
   booking_sub_status: string | null;
+  cancel_time: string | null;
   adults: number | null;
   children: number | null;
   price: number | null;
@@ -172,6 +173,14 @@ function guestNameFor(row: BookingEventRow): string {
 function effectivePulseTypeFor(row: BookingEventRow): BookingPulseEventType {
   if (row.event_type === "cancelled" || isCancelled(row.booking_status)) return "CANCELLED";
   return pulseTypeFor(row.event_type);
+}
+
+function isHistoricalCancelledDiscoveryRow(row: BookingEventRow): boolean {
+  if (row.event_type !== "new" || !isCancelled(row.booking_status)) return false;
+
+  const cancellationTime = Date.parse(row.cancel_time ?? "");
+  const eventTime = Date.parse(row.occurred_at);
+  return Number.isFinite(cancellationTime) && Number.isFinite(eventTime) && cancellationTime < eventTime;
 }
 
 function sourceFor(row: BookingEventRow): string | null {
@@ -339,7 +348,7 @@ export function isBookingPulseEventVisible(eventTimestamp: string, now: Date): b
 }
 
 export function bookingEventType(previous: BookingEventSnapshot | null, current: BookingEventSnapshot): BookingEventType | null {
-  if (!previous) return "new";
+  if (!previous) return isCancelled(current.status) ? null : "new";
   if (!isCancelled(previous.status) && isCancelled(current.status)) return "cancelled";
   if (isCancelled(previous.status) && !isCancelled(current.status)) return "updated";
   if (isCancelled(current.status)) return null;
@@ -502,6 +511,7 @@ export async function listRecentBookingEvents(
       b.departure_date,
       b.status AS booking_status,
       b.sub_status AS booking_sub_status,
+      b.cancel_time,
       b.adults,
       b.children,
       b.price,
@@ -530,6 +540,7 @@ export async function listRecentBookingEvents(
   for (const row of rows.results ?? []) {
     if (!isBookingPulseEventVisible(row.occurred_at, now)) continue;
     if (isProviderDeletedBookingPulseRow(row)) continue;
+    if (isHistoricalCancelledDiscoveryRow(row)) continue;
     const bookingKey = String(pulseGroupKeyFor(row));
     rowsByGroup.set(bookingKey, [...(rowsByGroup.get(bookingKey) ?? []), row]);
   }
