@@ -98,6 +98,11 @@ export interface PayrollCalculation {
   employeeSocialSecurity: number;
   employerSocialSecurity?: number;
   housingAllowance?: number;
+  openingFoodAdvance?: number;
+  openingHousingAdvance?: number;
+  openingAllowanceAdvanceTotal?: number;
+  salaryBalancePayable?: number;
+  salaryPaymentDate?: string;
   accommodationDeduction?: number;
   priorMonthFoodAdjustment?: number;
   finalMonthFoodAdjustment?: number;
