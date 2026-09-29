@@ -11,6 +11,7 @@ interface ContractSnapshotRow {
   compensation_rule_key: string;
   contract_type: "INDEFINITE" | "SEASONAL";
   employer_social_security: number;
+  monthly_food_allowance: number;
   monthly_housing_allowance: number;
   monthly_accommodation_deduction: number;
   prior_month_food_adjustment: number;
@@ -22,6 +23,10 @@ interface ContractSnapshotRow {
 
 export interface PayrollContractSnapshotView {
   employerSocialSecurity: number;
+  openingFoodAdvance: number;
+  openingHousingAdvance: number;
+  openingAllowanceAdvanceTotal: number;
+  salaryBalancePayable: number;
   housingAllowance: number;
   accommodationDeduction: number;
   priorMonthFoodAdjustment: number;
@@ -46,7 +51,14 @@ export function applyPayrollContractSnapshot<T extends object>(
   finalizedCalculation: T,
   snapshot: PayrollContractSnapshotView | null,
 ): T | (T & PayrollContractSnapshotView) {
-  return snapshot ? { ...finalizedCalculation, ...snapshot } : finalizedCalculation;
+  if (!snapshot) return finalizedCalculation;
+  const calculation = finalizedCalculation as T & { netSalaryPayable?: number };
+  const netSalaryPayable = Number(calculation.netSalaryPayable ?? 0);
+  return {
+    ...calculation,
+    ...snapshot,
+    salaryBalancePayable: Math.round((netSalaryPayable - snapshot.openingAllowanceAdvanceTotal + Number.EPSILON) * 100) / 100,
+  };
 }
 
 function parseRuleSnapshot(value: string): ContractRuleSnapshot {
@@ -64,7 +76,7 @@ export async function loadPayrollContractSnapshot(
 ): Promise<PayrollContractSnapshotView | null> {
   const row = await db.prepare(`
     SELECT employee_key, profile_version_key, compensation_rule_key,
-           contract_type, employer_social_security,
+           contract_type, employer_social_security, monthly_food_allowance,
            monthly_housing_allowance, monthly_accommodation_deduction,
            prior_month_food_adjustment, paid_leave_opening,
            paid_leave_used, paid_leave_closing, rule_snapshot_json
@@ -78,8 +90,14 @@ export async function loadPayrollContractSnapshot(
   const opening = Number(row.paid_leave_opening);
   const used = Number(row.paid_leave_used);
   const closing = Number(row.paid_leave_closing);
+  const openingFoodAdvance = Number(row.monthly_food_allowance);
+  const openingHousingAdvance = Number(row.monthly_housing_allowance);
   return {
     employerSocialSecurity: Number(row.employer_social_security),
+    openingFoodAdvance,
+    openingHousingAdvance,
+    openingAllowanceAdvanceTotal: openingFoodAdvance + openingHousingAdvance,
+    salaryBalancePayable: 0,
     housingAllowance: Number(row.monthly_housing_allowance),
     accommodationDeduction: Number(row.monthly_accommodation_deduction),
     priorMonthFoodAdjustment: Number(row.prior_month_food_adjustment),

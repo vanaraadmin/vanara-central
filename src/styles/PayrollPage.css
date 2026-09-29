@@ -176,6 +176,87 @@
   font: 900 0.92rem var(--vc-font-sans);
 }
 
+.payroll-month-plan {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  color: var(--workspace-cream);
+  background: rgba(7, 31, 24, 0.46);
+  border: 1px solid rgba(244, 237, 223, 0.17);
+  border-radius: var(--vc-radius-md);
+}
+
+.payroll-month-plan header,
+.payroll-month-plan__heading,
+.payroll-month-plan li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.payroll-month-plan header {
+  border-bottom: 1px solid rgba(244, 237, 223, 0.14);
+  padding-bottom: 8px;
+}
+
+.payroll-month-plan article {
+  display: grid;
+  gap: 5px;
+}
+
+.payroll-month-plan article > small,
+.payroll-month-plan p {
+  margin: 0;
+  color: var(--vc-text-cream-muted);
+  font: 700 0.76rem var(--vc-font-sans);
+}
+
+.payroll-month-plan ul {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.payroll-month-plan li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 7px 0;
+  border-top: 1px solid rgba(244, 237, 223, 0.09);
+}
+
+.payroll-month-plan li span,
+.payroll-month-plan li b {
+  font: 800 0.82rem var(--vc-font-sans);
+}
+
+.payroll-month-plan li small {
+  grid-column: 1 / -1;
+}
+
+.payroll-month-plan > span,
+.payroll-month-plan small,
+.payroll-net__schedule span,
+.payroll-net__schedule small {
+  color: var(--vc-text-cream-muted);
+  font: 800 0.72rem var(--vc-font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.payroll-month-plan > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.payroll-month-plan strong {
+  color: #fff6da;
+  font: 900 1.04rem var(--vc-font-sans);
+}
+
 .payroll-empty {
   display: grid;
   min-height: 280px;
@@ -213,6 +294,27 @@
 .payroll-net strong {
   font: 900 clamp(1.8rem, 5vw, 3.2rem) var(--vc-font-sans);
   letter-spacing: 0;
+}
+
+.payroll-net__schedule {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.payroll-net__schedule > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  background: rgba(3, 24, 18, 0.25);
+  border: 1px solid rgba(244, 237, 223, 0.12);
+  border-radius: var(--vc-radius-sm);
+}
+
+.payroll-net__schedule b {
+  color: #fff8e8;
+  font: 900 1.08rem var(--vc-font-sans);
 }
 
 .payroll-settings,

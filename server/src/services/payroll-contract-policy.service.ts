@@ -59,6 +59,7 @@ export interface ContractPolicyDescriptor {
   monthlyDayDivisor: 30;
   ordinaryOvertimeMultiplier: number;
   restDayOvertimeMultiplier: number;
+  salaryPaymentDay: number;
   paidLeaveDays: number;
   paidLeaveEligibleAfterMonths: number;
   ssoTreatment: PayrollSsoTreatment;
@@ -114,6 +115,11 @@ export interface ContractPayrollPolicyResult {
   overtimeCompensation: number;
   mealAllowanceAdvance: number;
   housingAllowance: number;
+  openingFoodAdvance: number;
+  openingHousingAdvance: number;
+  openingAllowanceAdvanceTotal: number;
+  salaryBalancePayable: number;
+  salaryPaymentDate: string;
   accommodationDeduction: number;
   priorMonthFoodAdjustment: number;
   finalMonthFoodAdjustment: number;
@@ -152,6 +158,7 @@ interface ProfileVersionRow {
   paid_leave_days: number;
   paid_leave_eligible_after_months: number;
   sso_treatment: PayrollSsoTreatment;
+  salary_payment_day: number;
 }
 
 interface CompensationRow {
@@ -198,6 +205,7 @@ const CONTRACT_EMPLOYEE_KEYS = new Set([
   "EMPLOYEE-0003",
   "EMPLOYEE-0004",
   "EMPLOYEE-0005",
+  "EMPLOYEE-0007",
 ]);
 
 const FOOD_RATE_PER_UNPAID_DAY = 50;
@@ -270,6 +278,12 @@ export function previousPayrollMonth(month: string): string {
 function addMonths(dateText: string, months: number): string {
   const [year, month, day] = dateText.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1 + months, day));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function salaryPaymentDate(payrollMonth: string, salaryPaymentDay: number): string {
+  const [yearRaw, monthRaw] = payrollMonth.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), salaryPaymentDay));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
@@ -508,6 +522,10 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
   const netSalaryPayable = roundPayrollMoney(
     lineItems.filter((item) => item.affectsNet).reduce((sum, item) => sum + item.amount, 0),
   );
+  const openingFoodAdvance = roundPayrollMoney(descriptor.monthlyFoodAllowance);
+  const openingHousingAdvance = roundPayrollMoney(descriptor.monthlyHousingAllowance);
+  const openingAllowanceAdvanceTotal = roundPayrollMoney(openingFoodAdvance + openingHousingAdvance);
+  const salaryBalancePayable = roundPayrollMoney(netSalaryPayable - openingAllowanceAdvanceTotal);
   lineItems.push(line(
     "Net salary payable",
     netSalaryPayable,
@@ -530,6 +548,11 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
     overtimeCompensation,
     mealAllowanceAdvance: roundPayrollMoney(descriptor.monthlyFoodAllowance),
     housingAllowance: roundPayrollMoney(descriptor.monthlyHousingAllowance),
+    openingFoodAdvance,
+    openingHousingAdvance,
+    openingAllowanceAdvanceTotal,
+    salaryBalancePayable,
+    salaryPaymentDate: salaryPaymentDate(input.payrollMonth, descriptor.salaryPaymentDay),
     accommodationDeduction: roundPayrollMoney(descriptor.monthlyAccommodationDeduction),
     priorMonthFoodAdjustment,
     finalMonthFoodAdjustment: authorizedFinalFoodAdjustment,
@@ -611,7 +634,8 @@ export async function loadContractPayrollPolicy(
         effective_from_bangkok, effective_to_bangkok, calendar_timezone,
         normal_hours_per_day, monthly_day_divisor,
         ordinary_overtime_multiplier, rest_day_overtime_multiplier,
-        paid_leave_days, paid_leave_eligible_after_months, sso_treatment
+        paid_leave_days, paid_leave_eligible_after_months, sso_treatment,
+        salary_payment_day
       FROM payroll_contract_profile_versions
       WHERE profile_key = ?
         AND effective_from_bangkok <= ?
@@ -730,6 +754,7 @@ export async function loadContractPayrollPolicy(
     monthlyDayDivisor: 30,
     ordinaryOvertimeMultiplier: Number(version.ordinary_overtime_multiplier),
     restDayOvertimeMultiplier: Number(version.rest_day_overtime_multiplier),
+    salaryPaymentDay: Number(version.salary_payment_day),
     paidLeaveDays: Number(version.paid_leave_days),
     paidLeaveEligibleAfterMonths: Number(version.paid_leave_eligible_after_months),
     ssoTreatment: version.sso_treatment,

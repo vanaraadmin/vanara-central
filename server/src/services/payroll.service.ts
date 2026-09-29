@@ -380,6 +380,12 @@ export function daysInFollowingMonth(payrollMonth: string): number {
   return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }
 
+function payrollStatementAvailableDate(payrollMonth: string): string {
+  const [yearRaw, monthRaw] = payrollMonth.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), 2));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
 export function normalizePayrollSettingsInput(payload: unknown): PayrollSettings {
   const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   return {
@@ -1337,7 +1343,11 @@ function buildPdf(pages: string[][]): Uint8Array {
   return new TextEncoder().encode(pdf);
 }
 
-export async function generatePayrollStatementPdf(env: PayrollBindings, employeeUserId: string, payrollMonth: string): Promise<Uint8Array> {
+export async function generatePayrollStatementPdf(env: PayrollBindings, employeeUserId: string, payrollMonth: string, now = new Date()): Promise<Uint8Array> {
+  const availableOn = payrollStatementAvailableDate(payrollMonth);
+  if (bangkokDate(now) < availableOn) {
+    throw new Error(`Payslip PDF is available on ${availableOn}.`);
+  }
   const worker = await getPayrollWorker(env, employeeUserId, payrollMonth);
   if (!worker) throw new Error("Payroll worker not found.");
   if (worker.mode === "ERROR" || !worker.calculation) {
@@ -1346,6 +1356,9 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   const calculation = worker.record?.status === "FINALIZED" ? worker.record.calculation : worker.calculation;
   const generated = new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short", year: "numeric" });
   const statementMonth = worker.record?.payrollMonth ?? payrollMonth;
+  const openingAdvance = calculation.openingAllowanceAdvanceTotal ?? 0;
+  const salaryBalance = calculation.salaryBalancePayable ?? calculation.netSalaryPayable;
+  const salaryPaymentDate = calculation.salaryPaymentDate ?? "the 2nd day of the following month";
   const titleLines = wrapText(worker.fullName, 42);
   const pageOne: string[] = [
     "q 0.08 0.22 0.16 rg 0 760 595 82 re f Q",
@@ -1359,10 +1372,12 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
     textLine(44, 706, 10, `Generated: ${generated}`),
     textLine(320, 728, 12, "Net Salary Payable", "0.08 0.22 0.16"),
     textLine(320, 704, 24, money(calculation.netSalaryPayable), "0.08 0.22 0.16"),
-    textLine(44, 674, 14, "English Summary", "0.08 0.22 0.16"),
+    textLine(320, 684, 9, `Opening food / housing advance: ${money(openingAdvance)}`, "0.08 0.22 0.16"),
+    textLine(320, 670, 9, `Salary balance due ${salaryPaymentDate}: ${money(salaryBalance)}`, "0.08 0.22 0.16"),
+    textLine(44, 644, 14, "English Summary", "0.08 0.22 0.16"),
   ];
   if (titleLines[1]) pageOne.push(textLine(91, 710, 10, titleLines.slice(1).join(" ")));
-  let y = 650;
+  let y = 620;
   for (const item of calculation.lineItems) {
     pageOne.push(textLine(54, y, item.tone === "total" ? 12 : 10, item.label, item.tone === "total" ? "0.08 0.22 0.16" : "0 0 0"));
     pageOne.push(textLine(405, y, item.tone === "total" ? 12 : 10, item.tone === "total" ? `= ${money(item.amount)}` : item.tone === "information" ? money(item.amount) : signedMoney(item.amount), item.amount < 0 ? "0.55 0.08 0.07" : "0.08 0.22 0.16"));

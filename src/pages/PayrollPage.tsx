@@ -133,12 +133,92 @@ function WorkerCard({ active, onSelect, worker }: { active: boolean; onSelect():
       </span>
       {calculation ? (
         <span className="payroll-worker__meta">
-          <strong>{money(calculation.netSalaryPayable)}</strong>
+          <strong>{money(calculation.salaryBalancePayable ?? calculation.netSalaryPayable)}</strong>
+          {calculation.contract ? <small>Current salary payable on {calculation.salaryPaymentDate ? new Date(`${calculation.salaryPaymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB") : "payday"}</small> : null}
+          {calculation.contract ? <small>Allowances due — food / housing: {money(calculation.openingAllowanceAdvanceTotal ?? 0)}</small> : null}
           <small>{calculation.aggregates.extraWorkedDays.toFixed(2)} extra days / {calculation.aggregates.totalOvertimeHours.toFixed(2)} OT hrs</small>
           <small>{calculation.aggregates.unpaidAbsenceDays.toFixed(2)} absence days / {money(calculation.aggregates.salaryAdvancesReceived)} advances</small>
         </span>
       ) : <span className="payroll-worker__meta"><small>{worker.loadError}</small></span>}
     </button>
+  );
+}
+
+function payrollPaymentDate(payrollMonth: string): string {
+  const [yearRaw, monthRaw] = payrollMonth.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), 2));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function nextPayrollMonth(payrollMonth: string): string {
+  const [yearRaw, monthRaw] = payrollMonth.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function bangkokToday(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+  return `${year}-${month}-${day}`;
+}
+
+function PayrollMonthPlan({
+  payrollMonth,
+  workers,
+  upcomingMonth,
+  upcomingWorkers,
+}: {
+  payrollMonth: string;
+  workers: PayrollWorker[];
+  upcomingMonth: string;
+  upcomingWorkers: PayrollWorker[];
+}) {
+  const contractWorkers = workers.filter((worker) => worker.calculation?.contract);
+  const totals = contractWorkers.reduce((sum, worker) => {
+    const calculation = worker.calculation!;
+    sum.total += calculation.netSalaryPayable;
+    sum.opening += calculation.openingAllowanceAdvanceTotal ?? 0;
+    sum.balance += calculation.salaryBalancePayable ?? calculation.netSalaryPayable;
+    return sum;
+  }, { total: 0, opening: 0, balance: 0 });
+  const upcomingOpeningRows = upcomingWorkers.filter((worker) => (worker.calculation?.openingAllowanceAdvanceTotal ?? 0) > 0);
+  if (contractWorkers.length === 0 && upcomingOpeningRows.length === 0) return null;
+  const openingRows = contractWorkers.filter((worker) => (worker.calculation?.openingAllowanceAdvanceTotal ?? 0) > 0);
+  const paymentDate = payrollPaymentDate(payrollMonth);
+  return (
+    <section className="payroll-month-plan" aria-label="Upcoming contract payroll payments">
+      <header><span>Upcoming payments</span><small>Contract-driven · owner only</small></header>
+      {contractWorkers.length > 0 ? <>
+        <article>
+          <div className="payroll-month-plan__heading"><span>1 {new Date(`${payrollMonth}-01T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(totals.opening)}</strong></div>
+          <small>Allowances due — food and housing</small>
+          {openingRows.length === 0 ? <p>No contractual opening advance this month.</p> : (
+            <ul>{openingRows.map((worker) => {
+              const calculation = worker.calculation!;
+              return <li key={worker.id}><span>{worker.fullName}</span><b>{money(calculation.openingAllowanceAdvanceTotal ?? 0)}</b><small>Food {money(calculation.openingFoodAdvance ?? 0)} · Housing {money(calculation.openingHousingAdvance ?? 0)}</small></li>;
+            })}</ul>
+          )}
+        </article>
+        <article>
+          <div className="payroll-month-plan__heading"><span>{new Date(`${paymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(totals.balance)}</strong></div>
+          <small>Current salary payable after allowances due</small>
+          <ul>{contractWorkers.map((worker) => {
+            const calculation = worker.calculation!;
+            return <li key={worker.id}><span>{worker.fullName}</span><b>{money(calculation.salaryBalancePayable ?? calculation.netSalaryPayable)}</b><small>Total payroll {money(calculation.netSalaryPayable)}</small></li>;
+          })}</ul>
+        </article>
+      </> : null}
+      {upcomingOpeningRows.length > 0 ? <article>
+        <div className="payroll-month-plan__heading"><span>Next: 1 {new Date(`${upcomingMonth}-01T12:00:00+07:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span><strong>{money(upcomingOpeningRows.reduce((sum, worker) => sum + (worker.calculation?.openingAllowanceAdvanceTotal ?? 0), 0))}</strong></div>
+        <small>Next month’s allowances due — food and housing</small>
+        <ul>{upcomingOpeningRows.map((worker) => {
+          const calculation = worker.calculation!;
+          return <li key={worker.id}><span>{worker.fullName}</span><b>{money(calculation.openingAllowanceAdvanceTotal ?? 0)}</b><small>Food {money(calculation.openingFoodAdvance ?? 0)} · Housing {money(calculation.openingHousingAdvance ?? 0)}</small></li>;
+        })}</ul>
+      </article> : null}
+    </section>
   );
 }
 
@@ -341,7 +421,13 @@ function OwnerPayrollWorkspace() {
     queryKey: ["payroll", "contract-documents"],
     queryFn: ({ signal }) => loadPayrollContractDocuments(signal),
   });
+  const upcomingMonth = nextPayrollMonth(payrollMonth);
+  const upcomingOverview = useQuery({
+    queryKey: ["payroll", "overview", upcomingMonth],
+    queryFn: ({ signal }) => loadPayrollOverview(upcomingMonth, signal),
+  });
   const workers = overview.data?.workers ?? [];
+  const upcomingWorkers = upcomingOverview.data?.workers ?? [];
   const selected = workers.find((worker) => worker.id === selectedId) ?? null;
   const selectedDocument = selected?.employeeKey ? documents.data?.find((document) => document.employeeKey === selected.employeeKey) ?? null : null;
   const locked = selected?.record?.status === "FINALIZED";
@@ -444,6 +530,7 @@ function OwnerPayrollWorkspace() {
             setNotice(null);
           }} />
         </label>
+        {!overview.isLoading && !overview.isError && !upcomingOverview.isLoading && !upcomingOverview.isError ? <PayrollMonthPlan payrollMonth={payrollMonth} workers={workers} upcomingMonth={upcomingMonth} upcomingWorkers={upcomingWorkers} /> : null}
         {overview.isLoading ? <PageLoading /> : null}
         {overview.isError ? <PageError onRetry={() => void overview.refetch()} /> : null}
         <div className="payroll-worker-list">
@@ -473,9 +560,15 @@ function OwnerPayrollWorkspace() {
           </section>
         ) : (
           <>
-            <section className="payroll-net" aria-label="Payroll net payable">
-              <span>Net Salary Payable</span>
+            <section className="payroll-net" aria-label="Payroll payment plan">
+              <span>{contract ? "Total contractual payroll" : "Net Salary Payable"}</span>
               <strong>{money(calculation.netSalaryPayable)}</strong>
+              {contract ? (
+                <div className="payroll-net__schedule">
+                  <div><span>Allowances due</span><b>{money(calculation.openingAllowanceAdvanceTotal ?? 0)}</b><small>Food {money(calculation.openingFoodAdvance ?? 0)} · Housing {money(calculation.openingHousingAdvance ?? 0)}</small></div>
+                  <div><span>Current salary payable</span><b>{money(calculation.salaryBalancePayable ?? calculation.netSalaryPayable)}</b><small>{calculation.salaryPaymentDate ? `Pay on ${new Date(`${calculation.salaryPaymentDate}T12:00:00+07:00`).toLocaleDateString("en-GB")}` : "Pay on the 2nd of the following month"}</small></div>
+                </div>
+              ) : null}
               <small>{locked ? `Finalized ${selected.record?.finalizedAt ? new Date(selected.record.finalizedAt).toLocaleDateString("en-GB") : ""}` : "Server-calculated estimate"}</small>
               {calculation.employerSocialSecurity !== undefined ? <small>Employer Social Security: {money(calculation.employerSocialSecurity)}</small> : null}
             </section>
@@ -557,7 +650,9 @@ function OwnerPayrollWorkspace() {
               <div className="payroll-actions">
                 <button className="payroll-action" disabled={locked || draftMutation.isPending} onClick={() => draftMutation.mutate()} type="button">{draftMutation.isPending ? "Saving" : "Save draft"}</button>
                 <button className="payroll-action payroll-action--primary" disabled={locked || finalizeMutation.isPending} onClick={() => finalizeMutation.mutate()} type="button">{finalizeMutation.isPending ? "Finalizing" : "Finalize"}</button>
-                <a className="payroll-action" href={payrollPdfUrl(selected.id, payrollMonth)}>Generate PDF</a>
+                {bangkokToday() >= payrollPaymentDate(payrollMonth)
+                  ? <a className="payroll-action" href={payrollPdfUrl(selected.id, payrollMonth)}>Download payslip PDF</a>
+                  : <span className="payroll-lock-note">Payslip PDF available on {new Date(`${payrollPaymentDate(payrollMonth)}T12:00:00+07:00`).toLocaleDateString("en-GB")}</span>}
               </div>
             </section>
             <section className="payroll-events" aria-label="Employment contract document">

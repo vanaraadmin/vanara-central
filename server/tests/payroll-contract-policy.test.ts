@@ -26,6 +26,7 @@ function input(overrides: Partial<ContractPayrollPolicyInput> = {}): ContractPay
       monthlyDayDivisor: 30,
       ordinaryOvertimeMultiplier: 1.5,
       restDayOvertimeMultiplier: 3,
+      salaryPaymentDay: 2,
       paidLeaveDays: 0,
       paidLeaveEligibleAfterMonths: 0,
       ssoTreatment: "SECTION_33",
@@ -192,6 +193,29 @@ test("fifth seasonal profile applies SSO to base salary only and has no paid lea
   assert.equal(result.descriptor.monthlyHousingAllowance, 0);
   assert.equal(result.netSalaryPayable, 14_325);
   assert.throws(() => assertPaidLeaveSelectionAllowed("SEASONAL", result.paidLeave, null, "PAID_LEAVE"), /only for indefinite contracts/);
+});
+
+test("opening food and housing advances are separated from the following-month salary balance", () => {
+  const result = calculateContractPayrollPolicy(input({
+    payrollMonth: "2026-10",
+    descriptor: {
+      ...input().descriptor,
+      monthlyBaseSalary: 12_500,
+      monthlyFoodAllowance: 1_500,
+      monthlyHousingAllowance: 2_500,
+      ssoTreatment: "EXEMPT_DECLARED",
+      employeeSsoRate: 0,
+      employerSsoRate: 0,
+      ssoWageCeiling: 0,
+    },
+  }));
+
+  assert.equal(result.openingFoodAdvance, 1_500);
+  assert.equal(result.openingHousingAdvance, 2_500);
+  assert.equal(result.openingAllowanceAdvanceTotal, 4_000);
+  assert.equal(result.netSalaryPayable, 16_500);
+  assert.equal(result.salaryBalancePayable, 12_500);
+  assert.equal(result.salaryPaymentDate, "2026-11-02");
 });
 
 test("Ae external coverage keeps employee and employer SSO at zero", () => {
