@@ -623,7 +623,9 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(index, /requireModulePermission\(user, "payroll", action\)/);
   assert.match(router, /path="payroll"/);
   assert.match(page, /Net Salary Payable/);
-  assert.match(page, /Generate PDF/);
+  assert.match(page, /Download payslip PDF/);
+  assert.match(page, /Payslip PDF available on/);
+  assert.match(service, /Payslip PDF is available on/);
   assert.match(page, /Base salary/);
   assert.match(page, /Meal allowance/);
   assert.match(page, /mealAllowanceApplicable/);
