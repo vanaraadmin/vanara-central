@@ -1358,7 +1358,10 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   if (worker.mode === "ERROR" || !worker.calculation) {
     throw new Error(worker.loadError ?? "Payroll details are unavailable for this worker.");
   }
-  const calculation = worker.record?.status === "FINALIZED" ? worker.record.calculation : worker.calculation;
+  if (worker.record?.status !== "FINALIZED") {
+    throw new Error("Finalize payroll before generating its payslip PDF.");
+  }
+  const calculation = worker.record.calculation;
   const generated = new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short", year: "numeric" });
   const statementMonth = worker.record?.payrollMonth ?? payrollMonth;
   const openingAdvance = calculation.openingAllowanceAdvanceTotal ?? 0;

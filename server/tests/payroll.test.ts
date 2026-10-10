@@ -581,6 +581,7 @@ test("payroll statement PDF includes core statement and dated event details", as
   const db = new FakePayrollDB();
   await savePayrollSettings(env(db), "staff-1", DEFAULT_SETTINGS, OWNER);
   await addPayrollEvent(env(db), "staff-1", normalizePayrollEventInput({ payrollMonth: "2026-05", eventDate: "2026-05-22", eventType: "SALARY_ADVANCE", amount: 2000, note: "Advance paid" }), OWNER, "2026-05-24T03:00:00.000Z");
+  await finalizePayroll(env(db), "staff-1", "2026-05", OWNER, null, "2026-06-02T03:00:00.000Z");
   const pdf = await generatePayrollStatementPdf(env(db), "staff-1", "2026-05");
   const text = new TextDecoder().decode(pdf);
   assert.match(text, /^%PDF-1\.7/);
@@ -597,6 +598,7 @@ test("payroll statement PDF includes core statement and dated event details", as
 test("payroll statement PDF explains disabled meal allowance", async () => {
   const db = new FakePayrollDB();
   await savePayrollSettings(env(db), "staff-1", { ...DEFAULT_SETTINGS, mealAllowanceApplicable: false }, OWNER);
+  await finalizePayroll(env(db), "staff-1", "2026-05", OWNER, null, "2026-06-02T03:00:00.000Z");
   const pdf = await generatePayrollStatementPdf(env(db), "staff-1", "2026-05");
   const text = new TextDecoder().decode(pdf);
   assert.match(text, /Following-month meal allowance advance/);
@@ -624,8 +626,10 @@ test("payroll source guardrails protect route, UI, owner permission, event dates
   assert.match(router, /path="payroll"/);
   assert.match(page, /Net Salary Payable/);
   assert.match(page, /Download payslip PDF/);
-  assert.match(page, /Payslip PDF available on/);
+  assert.match(page, /Approve & lock payroll/);
+  assert.match(page, /download and forward on/);
   assert.match(service, /Payslip PDF is available on/);
+  assert.match(service, /Finalize payroll before generating its payslip PDF/);
   assert.match(page, /Base salary/);
   assert.match(page, /Meal allowance/);
   assert.match(page, /mealAllowanceApplicable/);

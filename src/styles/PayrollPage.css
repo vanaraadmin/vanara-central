@@ -493,6 +493,47 @@
   gap: var(--vc-space-2);
 }
 
+.payroll-release {
+  display: grid;
+  gap: 12px;
+  margin-top: var(--vc-space-3);
+  padding: 16px;
+  border: 1px solid rgba(207, 176, 87, 0.42);
+  border-radius: var(--vc-radius-md);
+  background: linear-gradient(135deg, rgba(207, 176, 87, 0.14), rgba(255, 253, 246, 0.05));
+}
+
+.payroll-release__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--vc-space-2);
+}
+
+.payroll-release__heading span,
+.payroll-release__heading small,
+.payroll-release__note {
+  color: var(--vc-text-cream-muted);
+  font: 800 0.76rem var(--vc-font-sans);
+  letter-spacing: 0.05em;
+}
+
+.payroll-release__heading h4 {
+  margin: 3px 0 0;
+  color: #fff8dc;
+  font: 800 1.05rem var(--vc-font-sans);
+}
+
+.payroll-release > p {
+  margin: 0;
+  color: var(--vc-text-cream);
+  font: 650 0.9rem/1.5 var(--vc-font-sans);
+}
+
+.payroll-release__note {
+  line-height: 1.45;
+}
+
 .payroll-notice,
 .payroll-error,
 .payroll-lock-note {

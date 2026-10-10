@@ -447,6 +447,9 @@ function OwnerPayrollWorkspace() {
   const selected = workers.find((worker) => worker.id === selectedId) ?? null;
   const selectedDocument = selected?.employeeKey ? documents.data?.find((document) => document.employeeKey === selected.employeeKey) ?? null : null;
   const locked = selected?.record?.status === "FINALIZED";
+  const payslipAvailableOn = payrollPaymentDate(payrollMonth);
+  const payslipAvailable = locked && bangkokToday() >= payslipAvailableOn;
+  const formattedPayslipDate = new Date(`${payslipAvailableOn}T12:00:00+07:00`).toLocaleDateString("en-GB");
   const contract = selected?.calculation?.contract ?? null;
   const calculation = selected?.calculation ?? null;
   const eventDateBounds = useMemo(() => dateBoundsForMonth(payrollMonth), [payrollMonth]);
@@ -663,13 +666,31 @@ function OwnerPayrollWorkspace() {
                 ))}
               </dl>
               <label className="payroll-field payroll-field--wide"><span>Payroll notes</span><textarea disabled={locked} value={recordNotes} onChange={(event) => setRecordNotes(event.target.value)} /></label>
-              <div className="payroll-actions">
-                <button className="payroll-action" disabled={locked || draftMutation.isPending} onClick={() => draftMutation.mutate()} type="button">{draftMutation.isPending ? "Saving" : "Save draft"}</button>
-                <button className="payroll-action payroll-action--primary" disabled={locked || finalizeMutation.isPending} onClick={() => finalizeMutation.mutate()} type="button">{finalizeMutation.isPending ? "Finalizing" : "Finalize"}</button>
-                {bangkokToday() >= payrollPaymentDate(payrollMonth)
-                  ? <a className="payroll-action" href={payrollPdfUrl(selected.id, payrollMonth)}>Download payslip PDF</a>
-                  : <span className="payroll-lock-note">Payslip PDF available on {new Date(`${payrollPaymentDate(payrollMonth)}T12:00:00+07:00`).toLocaleDateString("en-GB")}</span>}
-              </div>
+              <section className="payroll-release" aria-label="Payroll release">
+                <div className="payroll-release__heading">
+                  <div><span>Payroll release</span><h4>{locked ? "Payroll finalised" : "Review in progress"}</h4></div>
+                  <small>{locked ? "Locked statement" : "Editable draft"}</small>
+                </div>
+                {!locked ? (
+                  <>
+                    <p>Save a review draft while the month is still being worked. When every attendance and payroll event is complete, approve and lock the statement. A final payslip cannot be changed.</p>
+                    <div className="payroll-actions">
+                      <button className="payroll-action" disabled={draftMutation.isPending} onClick={() => draftMutation.mutate()} type="button">{draftMutation.isPending ? "Saving" : "Save review draft"}</button>
+                      <button className="payroll-action payroll-action--primary" disabled={finalizeMutation.isPending} onClick={() => finalizeMutation.mutate()} type="button">{finalizeMutation.isPending ? "Approving" : "Approve & lock payroll"}</button>
+                    </div>
+                    <small className="payroll-release__note">Once finalised, the bilingual payslip becomes available to download and forward on {formattedPayslipDate}.</small>
+                  </>
+                ) : payslipAvailable ? (
+                  <>
+                    <p>This payroll is finalised and the bilingual payslip is ready to send.</p>
+                    <div className="payroll-actions">
+                      <a className="payroll-action payroll-action--primary" href={payrollPdfUrl(selected.id, payrollMonth)}>Download payslip PDF</a>
+                    </div>
+                  </>
+                ) : (
+                  <p className="payroll-lock-note">Payroll is finalised. The bilingual payslip will be ready to download and forward on {formattedPayslipDate}.</p>
+                )}
+              </section>
             </section>
             <section className="payroll-events" aria-label="Employment contract document">
               <h3>{translate("employmentContracts")}</h3>
