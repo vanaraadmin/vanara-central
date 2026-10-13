@@ -96,6 +96,7 @@ const th = {
   noScheduledCheckIns: "ไม่มีเช็กอิน",
   noScheduledCheckOuts: "ไม่มีเช็กเอาต์",
   internalNotes: "โน้ตในทีม",
+  internalNotePresent: "มีโน้ตภายใน",
   addInternalOperationalNotes: "เพิ่มโน้ตงาน",
   saved: "บันทึกแล้ว",
   noteCouldNotBeSaved: "บันทึกโน้ตไม่ได้",

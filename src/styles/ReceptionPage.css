@@ -205,6 +205,7 @@
 }
 
 .reception-card__top,
+.reception-card__top-actions,
 .reception-room-chip,
 .reception-card__quick-actions,
 .reception-guest,
@@ -217,6 +218,7 @@
 }
 
 .reception-card__top,
+.reception-card__top-actions,
 .reception-room-chip,
 .reception-card__quick-actions,
 .reception-guest {
@@ -228,6 +230,13 @@
   max-width: 100%;
   justify-content: space-between;
   gap: var(--vc-space-3);
+}
+
+.reception-card__top-actions {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: var(--vc-space-2);
+  flex-wrap: wrap;
 }
 
 .reception-room-chip {
@@ -276,6 +285,44 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   white-space: nowrap;
+}
+
+.reception-note-badge {
+  min-height: var(--vc-touch-min);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 var(--vc-space-3) 0 8px;
+  border: 1px solid rgba(225, 178, 93, 0.74);
+  border-radius: var(--vc-radius-pill);
+  color: #fff5d7;
+  background: rgba(168, 103, 22, 0.42);
+  box-shadow: 0 0 0 3px rgba(225, 178, 93, 0.08);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.reception-note-badge:hover,
+.reception-note-badge:focus-visible {
+  border-color: rgba(255, 222, 151, 0.98);
+  background: rgba(184, 112, 19, 0.64);
+}
+
+.reception-note-badge__icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--vc-radius-pill);
+  color: #56350b;
+  background: #ffd982;
+  font-size: 0.85rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .reception-guest {

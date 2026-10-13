@@ -165,6 +165,27 @@ function MaintenanceBadge({ stay }: { stay: ReceptionStay }) {
   );
 }
 
+function InternalNoteBadge({ onOpen, stay }: { onOpen(): void; stay: ReceptionStay }) {
+  const { translate } = useLanguage();
+  const hasNote = Boolean(stay.specialNotes?.trim()) || stay.notes.length > 0;
+  if (!hasNote) return null;
+
+  return (
+    <button
+      aria-label={translate("internalNotePresent")}
+      className="reception-note-badge"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      type="button"
+    >
+      <span aria-hidden="true" className="reception-note-badge__icon">!</span>
+      <span>{translate("internalNotePresent")}</span>
+    </button>
+  );
+}
+
 function SheetIcon({ alt = "", src }: { alt?: string; src: string }) {
   return <img alt={alt} className="reception-sheet-icon" src={src} />;
 }
@@ -382,33 +403,36 @@ function StayCard({
           <RoomIcon />
           <span>{stay.roomName}</span>
         </div>
-        <div className="reception-card__quick-actions">
-          <button
-            className="vc-secondary-action"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDetailsRequest(stay);
-            }}
-            type="button"
-          >
-            {translate("details")}
-          </button>
-          {stay.roomId && (isToday || type !== "arrival") && (
-            <Link
-              className="reception-report-issue vc-secondary-action"
-              onClick={(event) => event.stopPropagation()}
-              to={`${stay.links.maintenance}&source=reception`}
+        <div className="reception-card__top-actions">
+          <InternalNoteBadge onOpen={() => onDetailsRequest(stay)} stay={stay} />
+          <div className="reception-card__quick-actions">
+            <button
+              className="vc-secondary-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDetailsRequest(stay);
+              }}
+              type="button"
             >
-              {translate("reportIssue")}
-            </Link>
-          )}
-          <VanaraGuestContactTrigger
-            contact={contact}
-            onClick={(event) => {
-              event.stopPropagation();
-              onContactRequest(contact);
-            }}
-          />
+              {translate("details")}
+            </button>
+            {stay.roomId && (isToday || type !== "arrival") && (
+              <Link
+                className="reception-report-issue vc-secondary-action"
+                onClick={(event) => event.stopPropagation()}
+                to={`${stay.links.maintenance}&source=reception`}
+              >
+                {translate("reportIssue")}
+              </Link>
+            )}
+            <VanaraGuestContactTrigger
+              contact={contact}
+              onClick={(event) => {
+                event.stopPropagation();
+                onContactRequest(contact);
+              }}
+            />
+          </div>
         </div>
       </div>
 

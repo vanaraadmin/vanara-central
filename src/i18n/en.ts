@@ -96,6 +96,7 @@ const en = {
   noScheduledCheckIns: "No scheduled check-ins",
   noScheduledCheckOuts: "No scheduled check-outs",
   internalNotes: "Internal Notes",
+  internalNotePresent: "Internal note",
   addInternalOperationalNotes: "Add internal operational notes",
   saved: "Saved",
   noteCouldNotBeSaved: "Note could not be saved.",
