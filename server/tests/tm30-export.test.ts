@@ -123,6 +123,9 @@ test("TM30 nationality conversion uses the official template mapping and reusabl
   assert.equal(tm30NationalityCodeFrom("United States of America", map), "USA");
   assert.equal(tm30NationalityCodeFrom("D", map), "DEU");
   assert.equal(tm30NationalityCodeFrom("DEUTSCH", map), "DEU");
+  assert.equal(tm30NationalityCodeFrom("CANADIAN/CANADIENNE", map), "CAN");
+  assert.equal(tm30NationalityCodeFrom("FRANÇAISE", map), "FRA");
+  assert.equal(tm30NationalityCodeFrom("SCHWEIZSUISSESVIZZERASVIZRASWITZERLAND", map), "CHE");
   assert.equal(tm30NationalityCodeFrom("not a nationality", map), null);
 });
 
