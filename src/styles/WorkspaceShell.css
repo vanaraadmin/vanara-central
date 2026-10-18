@@ -664,6 +664,13 @@ input.profile-panel__file-input {
   font-size: 0.8rem;
   font-weight: 900;
   text-decoration: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.profile-panel__download:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .profile-panel__download span {

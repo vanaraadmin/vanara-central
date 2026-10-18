@@ -6,7 +6,7 @@ import { generateTm30Workbook, listTm30PassportRows, type Tm30PassportRow } from
 import { buildTm30NationalityMap, tm30NationalityCodeFrom } from "../src/services/tm30-nationality.service.ts";
 import { readZipEntries, textEntry } from "../src/services/tm30-zip.service.ts";
 
-test("TM30 Owner export keeps the official asset binding and existing Profile download", async () => {
+test("TM30 Owner export keeps the official asset binding and downloads from the Profile panel", async () => {
   const [wrangler, profile, server] = await Promise.all([
     readFile(new URL("../../wrangler.jsonc", import.meta.url), "utf8"),
     readFile(new URL("../../src/components/ProfilePanel.tsx", import.meta.url), "utf8"),
@@ -14,7 +14,8 @@ test("TM30 Owner export keeps the official asset binding and existing Profile do
   ]);
 
   assert.match(wrangler, /"assets"\s*:\s*\{\s*"binding"\s*:\s*"ASSETS"/);
-  assert.match(profile, /tab === "owner"[\s\S]*href="\/api\/owner\/tm30\/export"/);
+  assert.match(profile, /fetch\("\/api\/owner\/tm30\/export", \{ credentials: "include" \}\)/);
+  assert.match(profile, /link\.download = fileName/);
   assert.match(server, /authenticated\(c, "owner-dashboard", "access"\)[\s\S]*loadTm30Template\(c\)/);
   assert.match(server, /c\.env\.ASSETS\.fetch/);
 });
@@ -120,6 +121,8 @@ test("TM30 nationality conversion uses the official template mapping and reusabl
   assert.equal(tm30NationalityCodeFrom("THAI", map), "THA");
   assert.equal(tm30NationalityCodeFrom("THE KINGDOM OF THAILAND", map), "THA");
   assert.equal(tm30NationalityCodeFrom("United States of America", map), "USA");
+  assert.equal(tm30NationalityCodeFrom("D", map), "DEU");
+  assert.equal(tm30NationalityCodeFrom("DEUTSCH", map), "DEU");
   assert.equal(tm30NationalityCodeFrom("not a nationality", map), null);
 });
 

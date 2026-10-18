@@ -103,6 +103,8 @@ export default function ProfilePanel() {
   const [userPhotoName, setUserPhotoName] = useState("");
   const [showUserForm, setShowUserForm] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tm30Exporting, setTm30Exporting] = useState(false);
+  const [tm30ExportError, setTm30ExportError] = useState<string | null>(null);
   const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
   const [pwaBuildInfo, setPwaBuildInfo] = useState<PwaBuildInfo | null>(null);
   const [pushStatus, setPushStatus] = useState<PushNotificationStatus>("idle");
@@ -297,6 +299,36 @@ export default function ProfilePanel() {
     }
   }
 
+  async function downloadTm30() {
+    setTm30Exporting(true);
+    setTm30ExportError(null);
+    try {
+      const response = await fetch("/api/owner/tm30/export", { credentials: "include" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string; missingFields?: unknown[] } | null;
+        const count = payload?.missingFields?.length ?? 0;
+        throw new Error(count > 0
+          ? `TM30 export needs ${count} passport field${count === 1 ? "" : "s"} to be completed in Reception.`
+          : payload?.error ?? "TM30 export could not be created.");
+      }
+      const blob = await response.blob();
+      const fileName = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "TM30.xlsx";
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setNotice("TM30 file downloaded");
+    } catch (error) {
+      setTm30ExportError(error instanceof Error ? error.message : "TM30 export could not be created.");
+    } finally {
+      setTm30Exporting(false);
+    }
+  }
+
   function pushStatusLabel() {
     if (pushStatus === "enabled") return translate("notificationsEnabledCompact");
     if (pushStatus === "blocked") return translate("notificationsBlockedCompact");
@@ -427,8 +459,9 @@ export default function ProfilePanel() {
                       <strong>TM30 export</strong>
                       <span>Download the current ready passport registrations.</span>
                     </div>
-                    <a aria-label="Download TM30" className="profile-panel__download" href="/api/owner/tm30/export"><DownloadIcon /><span>{translate("downloadTm30")}</span></a>
+                    <button aria-label="Download TM30" className="profile-panel__download" disabled={tm30Exporting} onClick={() => void downloadTm30()} type="button"><DownloadIcon /><span>{tm30Exporting ? "Preparing TM30..." : translate("downloadTm30")}</span></button>
                   </div>
+                  {tm30ExportError ? <p className="profile-panel__error" role="alert">{tm30ExportError}</p> : null}
                   <header className="profile-panel__subheader profile-panel__subheader--users"><h3>Manage Users</h3><div><button type="button" onClick={() => startCreate(false)}>New staff</button><button type="button" onClick={() => startCreate(true)}>New owner</button></div></header>
                   <div className="profile-panel__user-list">
                     {(usersQuery.data ?? []).map((item) => (

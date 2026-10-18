@@ -17,6 +17,8 @@ const NATIONALITY_ALIASES: Record<string, string> = {
   FINNISH: "FIN",
   FRENCH: "FRA",
   GERMAN: "DEU",
+  D: "DEU",
+  DEUTSCH: "DEU",
   INDIAN: "IND",
   INDONESIAN: "IDN",
   ITALIAN: "ITA",
