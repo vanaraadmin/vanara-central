@@ -104,6 +104,7 @@ export default function ProfilePanel() {
   const [showUserForm, setShowUserForm] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [tm30Exporting, setTm30Exporting] = useState(false);
+  const [tm30ExportRange, setTm30ExportRange] = useState({ from: "", to: "" });
   const [tm30ExportError, setTm30ExportError] = useState<string | null>(null);
   const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
   const [pwaBuildInfo, setPwaBuildInfo] = useState<PwaBuildInfo | null>(null);
@@ -300,10 +301,20 @@ export default function ProfilePanel() {
   }
 
   async function downloadTm30() {
+    const { from, to } = tm30ExportRange;
+    if (!from || !to) {
+      setTm30ExportError("Choose the passport registration start and end dates first.");
+      return;
+    }
+    if (from > to) {
+      setTm30ExportError("The registration start date must be before the end date.");
+      return;
+    }
     setTm30Exporting(true);
     setTm30ExportError(null);
     try {
-      const response = await fetch("/api/owner/tm30/export", { credentials: "include" });
+      const params = new URLSearchParams({ from, to });
+      const response = await fetch(`/api/owner/tm30/export?${params.toString()}`, { credentials: "include" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string; missingFields?: unknown[] } | null;
         const count = payload?.missingFields?.length ?? 0;
@@ -457,7 +468,11 @@ export default function ProfilePanel() {
                   <div className="profile-panel__owner-utility">
                     <div>
                       <strong>TM30 export</strong>
-                      <span>Download the current ready passport registrations.</span>
+                      <span>Choose when each passport was registered, then download only that TM30 filing period.</span>
+                    </div>
+                    <div className="profile-panel__tm30-range">
+                      <label><span>Registered from</span><input aria-label="TM30 registered from" max={tm30ExportRange.to || undefined} onChange={(event) => setTm30ExportRange((range) => ({ ...range, from: event.target.value }))} type="date" value={tm30ExportRange.from} /></label>
+                      <label><span>Registered to</span><input aria-label="TM30 registered to" min={tm30ExportRange.from || undefined} onChange={(event) => setTm30ExportRange((range) => ({ ...range, to: event.target.value }))} type="date" value={tm30ExportRange.to} /></label>
                     </div>
                     <button aria-label="Download TM30" className="profile-panel__download" disabled={tm30Exporting} onClick={() => void downloadTm30()} type="button"><DownloadIcon /><span>{tm30Exporting ? "Preparing TM30..." : translate("downloadTm30")}</span></button>
                   </div>

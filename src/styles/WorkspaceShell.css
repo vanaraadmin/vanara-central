@@ -631,6 +631,39 @@ input.profile-panel__file-input {
   gap: 3px;
 }
 
+.profile-panel__tm30-range {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-panel__tm30-range label {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-panel__tm30-range label span {
+  font-size: 0.68rem;
+}
+
+.profile-panel__tm30-range input {
+  min-width: 0;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid rgba(244, 237, 223, 0.24);
+  border-radius: 10px;
+  padding: 0 8px;
+  background: rgba(244, 237, 223, 0.1);
+  color: #f4eddf;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.profile-panel__tm30-range input:focus-visible {
+  outline: 2px solid rgba(244, 237, 223, 0.7);
+  outline-offset: 2px;
+}
+
 .profile-panel__owner-utility strong,
 .profile-panel__owner-utility span {
   min-width: 0;
@@ -842,6 +875,10 @@ input.profile-panel__file-input {
   }
 
   .profile-panel__owner-utility {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-panel__tm30-range {
     grid-template-columns: 1fr;
   }
 

@@ -1,6 +1,5 @@
 import { operationalBookingStatusSql } from "./booking-status.service.js";
 import { buildTm30NationalityMap, tm30NationalityCodeFrom } from "./tm30-nationality.service.js";
-import { getBangkokDate } from "./today.service.js";
 import { readZipEntries, textEntry, updateTextEntry, writeStoredZip } from "./tm30-zip.service.js";
 
 export interface Tm30Bindings {
@@ -136,14 +135,26 @@ function mapTm30PassportRow(row: Tm30PassportSqlRow): Tm30PassportRow {
   };
 }
 
-export function normalizeTm30Date(value: string | null | undefined): string {
+function normalizeTm30Date(value: string | null | undefined, label: string): string {
   const text = value?.trim();
-  if (!text) return getBangkokDate();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("TM30 export date must use YYYY-MM-DD.");
+  if (!text) throw new Error(`TM30 export ${label} date is required.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error(`TM30 export ${label} date must use YYYY-MM-DD.`);
   return text;
 }
 
-export async function listTm30PassportRows(env: Tm30Bindings): Promise<Tm30PassportRow[]> {
+export interface Tm30ExportRange {
+  from: string;
+  to: string;
+}
+
+export function normalizeTm30ExportRange(from: string | null | undefined, to: string | null | undefined): Tm30ExportRange {
+  const normalizedFrom = normalizeTm30Date(from, "start");
+  const normalizedTo = normalizeTm30Date(to, "end");
+  if (normalizedFrom > normalizedTo) throw new Error("TM30 export start date must be before the end date.");
+  return { from: normalizedFrom, to: normalizedTo };
+}
+
+export async function listTm30PassportRows(env: Tm30Bindings, range: Tm30ExportRange): Promise<Tm30PassportRow[]> {
   const rows = await env.DB.prepare(`
     SELECT
       bp.id,
@@ -162,8 +173,10 @@ export async function listTm30PassportRows(env: Tm30Bindings): Promise<Tm30Passp
     INNER JOIN bookings b ON b.beds24_booking_id = bp.booking_id
     WHERE bp.tm30_status = 'READY'
       AND ${operationalBookingStatusSql("b.status")}
-    ORDER BY b.arrival_date, b.unit_id, b.beds24_booking_id, bp.created_at, bp.id
-  `).all<Tm30PassportSqlRow>();
+      AND date(bp.created_at, '+7 hours') >= ?
+      AND date(bp.created_at, '+7 hours') <= ?
+    ORDER BY bp.created_at, b.unit_id, b.beds24_booking_id, bp.id
+  `).bind(range.from, range.to).all<Tm30PassportSqlRow>();
 
   return (rows.results ?? []).map(mapTm30PassportRow);
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { generateTm30Workbook, listTm30PassportRows, type Tm30PassportRow } from "../src/services/tm30-export.service.ts";
+import { generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, type Tm30PassportRow } from "../src/services/tm30-export.service.ts";
 import { buildTm30NationalityMap, tm30NationalityCodeFrom } from "../src/services/tm30-nationality.service.ts";
 import { readZipEntries, textEntry } from "../src/services/tm30-zip.service.ts";
 
@@ -14,7 +14,8 @@ test("TM30 Owner export keeps the official asset binding and downloads from the 
   ]);
 
   assert.match(wrangler, /"assets"\s*:\s*\{\s*"binding"\s*:\s*"ASSETS"/);
-  assert.match(profile, /fetch\("\/api\/owner\/tm30\/export", \{ credentials: "include" \}\)/);
+  assert.match(profile, /new URLSearchParams\(\{ from, to \}\)/);
+  assert.match(profile, /\/api\/owner\/tm30\/export\?\$\{params\.toString\(\)\}/);
   assert.match(profile, /link\.download = fileName/);
   assert.match(server, /authenticated\(c, "owner-dashboard", "access"\)[\s\S]*loadTm30Template\(c\)/);
   assert.match(server, /c\.env\.ASSETS\.fetch/);
@@ -155,7 +156,7 @@ test("TM30 generated workbook remains a valid xlsx package", async () => {
   assert.ok(textEntry(generatedEntries, "xl/worksheets/sheet1.xml").includes("AB1234567"));
 });
 
-test("TM30 booking query returns every ready passport regardless of arrival date", async () => {
+test("TM30 booking query filters ready passports by Bangkok registration date", async () => {
   const db = new FakeTm30DB([
     {
       id: 1,
@@ -207,7 +208,7 @@ test("TM30 booking query returns every ready passport regardless of arrival date
     },
   ]);
 
-  const rows = await listTm30PassportRows({ DB: db as unknown as D1Database });
+  const rows = await listTm30PassportRows({ DB: db as unknown as D1Database }, { from: "2026-07-31", to: "2026-08-01" });
 
   assert.equal(rows.length, 3);
   assert.deepEqual(rows.map((row) => [row.bookingId, row.firstName, row.phone]), [
@@ -215,4 +216,10 @@ test("TM30 booking query returns every ready passport regardless of arrival date
     [9001, "NOK", "+66111111111"],
     [9002, "FUTURE", null],
   ]);
+});
+
+test("TM30 export range requires a complete chronological registration period", () => {
+  assert.deepEqual(normalizeTm30ExportRange("2026-10-20", "2026-10-21"), { from: "2026-10-20", to: "2026-10-21" });
+  assert.throws(() => normalizeTm30ExportRange(null, "2026-10-21"), /start date is required/);
+  assert.throws(() => normalizeTm30ExportRange("2026-10-22", "2026-10-21"), /start date must be before/);
 });

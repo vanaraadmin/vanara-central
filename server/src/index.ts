@@ -52,7 +52,7 @@ import {
   sha256Hex as passportImageSha256,
   type PassportOcrAttemptHandle,
 } from "./services/passport-ocr-attempt.service.js";
-import { generateTm30Workbook, listTm30PassportRows, normalizeTm30Date, type Tm30Bindings } from "./services/tm30-export.service.js";
+import { generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
 import { assertLoginAllowed, loginClientIp, LoginRateLimitError, recordLoginFailure, recordLoginSuccess, type LoginRateLimitBindings } from "./services/login-rate-limit.service.js";
@@ -812,15 +812,16 @@ app.get("/api/dashboard/overview", async (c) => {
 app.get("/api/owner/tm30/export", async (c) => {
   try {
     await authenticated(c, "owner-dashboard", "access");
+    const range = normalizeTm30ExportRange(c.req.query("from"), c.req.query("to"));
     const template = await loadTm30Template(c);
-    const rows = await listTm30PassportRows(c.env);
+    const rows = await listTm30PassportRows(c.env, range);
     const exportResult = await generateTm30Workbook(template, rows);
     if (exportResult.missingFields.length > 0) {
       return c.json({ success: false, error: "TM30 export has missing required fields.", missingFields: exportResult.missingFields }, 422);
     }
     c.header("Cache-Control", "no-store");
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    c.header("Content-Disposition", `attachment; filename="TM30-ready-passports.xlsx"`);
+    c.header("Content-Disposition", `attachment; filename="TM30-registered-${range.from}-to-${range.to}.xlsx"`);
     const body = exportResult.workbook.buffer.slice(exportResult.workbook.byteOffset, exportResult.workbook.byteOffset + exportResult.workbook.byteLength) as ArrayBuffer;
     return c.body(body);
   } catch (error) {
