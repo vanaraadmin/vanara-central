@@ -143,7 +143,7 @@ export function normalizeTm30Date(value: string | null | undefined): string {
   return text;
 }
 
-export async function listTm30PassportRows(env: Tm30Bindings, date: string): Promise<Tm30PassportRow[]> {
+export async function listTm30PassportRows(env: Tm30Bindings): Promise<Tm30PassportRow[]> {
   const rows = await env.DB.prepare(`
     SELECT
       bp.id,
@@ -160,11 +160,10 @@ export async function listTm30PassportRows(env: Tm30Bindings, date: string): Pro
       b.mobile
     FROM booking_passports bp
     INNER JOIN bookings b ON b.beds24_booking_id = bp.booking_id
-    WHERE b.arrival_date = ?
-      AND bp.tm30_status = 'READY'
+    WHERE bp.tm30_status = 'READY'
       AND ${operationalBookingStatusSql("b.status")}
-    ORDER BY b.unit_id, b.beds24_booking_id, bp.created_at, bp.id
-  `).bind(date).all<Tm30PassportSqlRow>();
+    ORDER BY b.arrival_date, b.unit_id, b.beds24_booking_id, bp.created_at, bp.id
+  `).all<Tm30PassportSqlRow>();
 
   return (rows.results ?? []).map(mapTm30PassportRow);
 }

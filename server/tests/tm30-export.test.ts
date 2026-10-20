@@ -28,8 +28,7 @@ class FakeStmt {
     return this;
   }
   async all<T>() {
-    const date = String(this.params[0]);
-    return { results: this.rows.filter((row) => row.arrival_date === date && String(row.status).toLowerCase() === "confirmed") as T[] };
+    return { results: this.rows.filter((row) => String(row.status).toLowerCase() === "confirmed") as T[] };
   }
 }
 
@@ -126,6 +125,7 @@ test("TM30 nationality conversion uses the official template mapping and reusabl
   assert.equal(tm30NationalityCodeFrom("CANADIAN/CANADIENNE", map), "CAN");
   assert.equal(tm30NationalityCodeFrom("FRANÇAISE", map), "FRA");
   assert.equal(tm30NationalityCodeFrom("SCHWEIZSUISSESVIZZERASVIZRASWITZERLAND", map), "CHE");
+  assert.equal(tm30NationalityCodeFrom("RUSSIANFEDERATION", map), "RUS");
   assert.equal(tm30NationalityCodeFrom("not a nationality", map), null);
 });
 
@@ -155,7 +155,7 @@ test("TM30 generated workbook remains a valid xlsx package", async () => {
   assert.ok(textEntry(generatedEntries, "xl/worksheets/sheet1.xml").includes("AB1234567"));
 });
 
-test("TM30 booking query returns one row per persisted passport", async () => {
+test("TM30 booking query returns every ready passport regardless of arrival date", async () => {
   const db = new FakeTm30DB([
     {
       id: 1,
@@ -207,11 +207,12 @@ test("TM30 booking query returns one row per persisted passport", async () => {
     },
   ]);
 
-  const rows = await listTm30PassportRows({ DB: db as unknown as D1Database }, "2026-07-31");
+  const rows = await listTm30PassportRows({ DB: db as unknown as D1Database });
 
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 3);
   assert.deepEqual(rows.map((row) => [row.bookingId, row.firstName, row.phone]), [
     [9001, "MALI", "+66812345678"],
     [9001, "NOK", "+66111111111"],
+    [9002, "FUTURE", null],
   ]);
 });

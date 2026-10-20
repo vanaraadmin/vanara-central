@@ -812,16 +812,15 @@ app.get("/api/dashboard/overview", async (c) => {
 app.get("/api/owner/tm30/export", async (c) => {
   try {
     await authenticated(c, "owner-dashboard", "access");
-    const date = normalizeTm30Date(c.req.query("date"));
     const template = await loadTm30Template(c);
-    const rows = await listTm30PassportRows(c.env, date);
+    const rows = await listTm30PassportRows(c.env);
     const exportResult = await generateTm30Workbook(template, rows);
     if (exportResult.missingFields.length > 0) {
       return c.json({ success: false, error: "TM30 export has missing required fields.", missingFields: exportResult.missingFields }, 422);
     }
     c.header("Cache-Control", "no-store");
     c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    c.header("Content-Disposition", `attachment; filename="TM30-${date}.xlsx"`);
+    c.header("Content-Disposition", `attachment; filename="TM30-ready-passports.xlsx"`);
     const body = exportResult.workbook.buffer.slice(exportResult.workbook.byteOffset, exportResult.workbook.byteOffset + exportResult.workbook.byteLength) as ArrayBuffer;
     return c.body(body);
   } catch (error) {
