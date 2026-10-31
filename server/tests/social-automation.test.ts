@@ -17,6 +17,7 @@ import {
   DEFAULT_SOCIAL_CAPTION_MODEL,
   DEFAULT_SOCIAL_IMAGE_PREP_MODEL,
   prepareNextQueuedSocialImage,
+  parseSocialImageAnalysisText,
   prepareSocialImage,
   reconcileStaleSocialImagePreparations,
   SOCIAL_IMAGE_PREPARE_CRON,
@@ -1369,6 +1370,12 @@ test("social automation overview summarizes the queue without processing jobs", 
   assert.equal(overview.summary.PROCESSING, undefined);
   assert.equal(overview.summary.POSTED, 0);
   assert.equal(overview.latest[0]?.status, "QUEUED");
+});
+
+test("social image analysis parser accepts a JSON object wrapped in a markdown fence or short provider preface", () => {
+  assert.deepEqual(parseSocialImageAnalysisText("```json\n{\"visual_subject\":\"garden\"}\n```"), { visual_subject: "garden" });
+  assert.deepEqual(parseSocialImageAnalysisText("Analysis follows: {\"visual_subject\":\"garden\"}"), { visual_subject: "garden" });
+  assert.throws(() => parseSocialImageAnalysisText("not structured data"), /not a JSON object/);
 });
 
 test("social image preparation processes one queued photo FIFO with one OpenAI request", async () => {

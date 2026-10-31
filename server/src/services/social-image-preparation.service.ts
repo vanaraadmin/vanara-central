@@ -539,14 +539,32 @@ function outputTextFrom(response: unknown): string {
   return parts.join("").trim();
 }
 
+export function parseSocialImageAnalysisText(text: string): JsonRecord {
+  const trimmed = text.trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(trimmed)?.[1];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  const candidates = [trimmed, fenced, firstBrace >= 0 && lastBrace > firstBrace ? trimmed.slice(firstBrace, lastBrace + 1) : null]
+    .filter((value): value is string => Boolean(value?.trim()));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (isRecord(parsed)) return parsed;
+    } catch {
+      // Try the next format the provider may have wrapped around the JSON object.
+    }
+  }
+  throw new Error("Social image analysis was not a JSON object.");
+}
+
 function analysisJsonFrom(response: unknown, context: SocialImagePrepareContext): string {
   const text = outputTextFrom(response);
   if (!text) {
     throw new SocialImagePreparationError("OpenAI response did not include social image analysis.", "openai_invalid_response", 502);
   }
   try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!isRecord(parsed)) throw new Error("not an object");
+    const parsed = parseSocialImageAnalysisText(text);
     return JSON.stringify({
       visual_subject: typeof parsed.visual_subject === "string" ? parsed.visual_subject : "unknown",
       visible_details: Array.isArray(parsed.visible_details)

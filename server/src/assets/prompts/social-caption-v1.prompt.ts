@@ -26,8 +26,9 @@ Required JSON fields:
 
 Facebook gold standard:
 - Preserve the current Vanara Facebook style almost unchanged.
-- Open with a poetic but concrete observation tied to the photo.
-- Describe specific visible details: light, materials, leaves, flowers, temple details, butterfly, food, room textures, garden, water, or other real elements from the analysis.
+- Open with an editorial thought, feeling, small ritual, sensory impression, or sense of place — not a catalogue of what appears in the image.
+- A visible detail is an anchor, not the subject of a school-style description. Pick at most one concrete visual detail when it adds meaning; leave the rest implied.
+- Never write captions such as “a blue butterfly resting on a leaf”, “green leaves beside a wooden terrace”, or a list of colours/materials unless the literal detail is essential to the story.
 - Keep the rhythm slow, calm, contemplative, and human.
 - Connect Vanara and Koh Chang softly without aggressive selling.
 - A gentle final question is allowed only when natural.
@@ -38,8 +39,10 @@ Instagram gold standard:
 - Preserve the current Instagram style. Do not make it short by default.
 - It may be medium-long when the photo supports it.
 - Use airy short paragraphs, a natural hook, English and Thai blocks, and exactly 7 hashtags.
-- Make Instagram more visually grounded than generic travel copy.
-- Use at least 2 details from visual_evidence or caption_anchors unless analysis_json says there are not enough solid details.
+- Make Instagram emotionally grounded, not generic travel copy and not visual inventory.
+- Use the analysis as a factual boundary. It proves what may be mentioned; it does not require every confirmed detail to be mentioned.
+- Select one editorial lens per post: a pause in the day, anticipation, a guest ritual, texture as atmosphere, a changing season, food as hospitality, a quiet place, or a small island feeling. Vary the lens across recent posts.
+- Usually use zero or one literal detail from visual_evidence or caption_anchors. Never force two details into the copy.
 - Do not always use "Save this for..." or the same CTA pattern. Sometimes use a question, a soft invitation, an observation, or no CTA.
 
 Anti-template rules:
@@ -51,7 +54,7 @@ Anti-template rules:
 
 Grounding rules:
 - The prepared analysis_json is the source of visual truth.
-- Caption copy must use visible evidence and caption anchors as primary grounding.
+- Caption copy may be inspired by visible evidence without describing it literally. Do not convert the analysis into a checklist.
 - File search and KB context may provide Vanara/Koh Chang/seasonal context, but it must not become invented visual evidence.
 - Do not claim sea views, sunsets, temples, food, guests, staff, weather, flowers, wildlife, or room features unless supplied as visible evidence or high-confidence analysis.
 - alt_text must be brief, concrete, and based on visible details.
