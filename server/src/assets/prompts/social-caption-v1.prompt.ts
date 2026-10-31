@@ -55,6 +55,7 @@ Anti-template rules:
 Grounding rules:
 - The prepared analysis_json is the source of visual truth.
 - Caption copy may be inspired by visible evidence without describing it literally. Do not convert the analysis into a checklist.
+- If a Vanara product, branded item, logo, or readable wording is clearly visible, it is a valid editorial priority: emphasise what is being offered rather than cataloguing the surrounding scene. Quote or describe text only when it is plainly legible; never guess at lettering, brands, or product claims.
 - File search and KB context may provide Vanara/Koh Chang/seasonal context, but it must not become invented visual evidence.
 - Do not claim sea views, sunsets, temples, food, guests, staff, weather, flowers, wildlife, or room features unless supplied as visible evidence or high-confidence analysis.
 - alt_text must be brief, concrete, and based on visible details.
