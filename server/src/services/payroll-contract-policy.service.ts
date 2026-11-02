@@ -71,6 +71,9 @@ export interface ContractPolicyDescriptor {
   monthlyFoodAllowance: number;
   monthlyHousingAllowance: number;
   monthlyAccommodationDeduction: number;
+  allowanceAdvanceMonth: string;
+  allowanceAdvanceFood: number;
+  allowanceAdvanceHousing: number;
   originMonthFoodAllowance: number;
   finalFoodAuthorizedCap: number;
 }
@@ -204,7 +207,6 @@ const CONTRACT_EMPLOYEE_KEYS = new Set([
   "EMPLOYEE-0002",
   "EMPLOYEE-0003",
   "EMPLOYEE-0004",
-  "EMPLOYEE-0005",
   "EMPLOYEE-0007",
 ]);
 
@@ -273,6 +275,24 @@ export function previousPayrollMonth(month: string): string {
   const [yearRaw, monthRaw] = month.split("-");
   const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 2, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function nextPayrollMonth(month: string): string {
+  const [yearRaw, monthRaw] = month.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw), 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function payrollMonthLabel(month: string): string {
+  const [yearRaw, monthRaw] = month.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 1, 1));
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function thaiPayrollMonthLabel(month: string): string {
+  const [yearRaw, monthRaw] = month.split("-");
+  const date = new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 1, 1));
+  return new Intl.DateTimeFormat("th-TH", { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function addMonths(dateText: string, months: number): string {
@@ -391,6 +411,8 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
   const totalOvertimeHours = roundPayrollMoney(
     overtimeHours + extraWorkedDays * descriptor.normalHoursPerDay,
   );
+  const allowanceAdvanceMonthLabel = payrollMonthLabel(descriptor.allowanceAdvanceMonth);
+  const thaiAllowanceAdvanceMonthLabel = thaiPayrollMonthLabel(descriptor.allowanceAdvanceMonth);
 
   const lineItems: ContractPayrollLineItem[] = [
     line(
@@ -439,20 +461,20 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
       "คำนวณจากชั่วโมงล่วงเวลาและกะเต็มเพิ่มเติมตามอัตราในสัญญาและกฎหมาย",
     ),
     line(
-      "Food allowance",
-      descriptor.monthlyFoodAllowance,
+      `${allowanceAdvanceMonthLabel} food allowance advance`,
+      descriptor.allowanceAdvanceFood,
       "addition",
-      `Fixed contractual amount for ${input.payrollMonth}.`,
-      "ค่าอาหาร",
-      "จำนวนคงที่ตามสัญญาสำหรับเดือนนี้",
+      `Advance for ${allowanceAdvanceMonthLabel}, paid together with the salary for ${input.payrollMonth}.`,
+      `ค่าอาหารล่วงหน้าเดือน${thaiAllowanceAdvanceMonthLabel}`,
+      `จ่ายล่วงหน้าสำหรับเดือน${thaiAllowanceAdvanceMonthLabel} พร้อมเงินเดือนของเดือน${input.payrollMonth}`,
     ),
     line(
-      "Housing allowance",
-      descriptor.monthlyHousingAllowance,
+      `${allowanceAdvanceMonthLabel} housing allowance advance`,
+      descriptor.allowanceAdvanceHousing,
       "addition",
-      `Fixed contractual amount for ${input.payrollMonth}.`,
-      "ค่าเช่าที่พัก",
-      "จำนวนคงที่ตามสัญญาสำหรับเดือนนี้",
+      `Advance for ${allowanceAdvanceMonthLabel}, paid together with the salary for ${input.payrollMonth}.`,
+      `ค่าเช่าที่พักล่วงหน้าเดือน${thaiAllowanceAdvanceMonthLabel}`,
+      `จ่ายล่วงหน้าสำหรับเดือน${thaiAllowanceAdvanceMonthLabel} พร้อมเงินเดือนของเดือน${input.payrollMonth}`,
     ),
     line(
       "Prior-month unpaid-absence food adjustment",
@@ -522,8 +544,8 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
   const netSalaryPayable = roundPayrollMoney(
     lineItems.filter((item) => item.affectsNet).reduce((sum, item) => sum + item.amount, 0),
   );
-  const openingFoodAdvance = roundPayrollMoney(descriptor.monthlyFoodAllowance);
-  const openingHousingAdvance = roundPayrollMoney(descriptor.monthlyHousingAllowance);
+  const openingFoodAdvance = roundPayrollMoney(descriptor.allowanceAdvanceFood);
+  const openingHousingAdvance = roundPayrollMoney(descriptor.allowanceAdvanceHousing);
   const openingAllowanceAdvanceTotal = roundPayrollMoney(openingFoodAdvance + openingHousingAdvance);
   const salaryBalancePayable = roundPayrollMoney(netSalaryPayable - openingAllowanceAdvanceTotal);
   lineItems.push(line(
@@ -546,8 +568,8 @@ export function calculateContractPayrollPolicy(input: ContractPayrollPolicyInput
     employerSocialSecurity,
     absenceDeduction,
     overtimeCompensation,
-    mealAllowanceAdvance: roundPayrollMoney(descriptor.monthlyFoodAllowance),
-    housingAllowance: roundPayrollMoney(descriptor.monthlyHousingAllowance),
+    mealAllowanceAdvance: openingFoodAdvance,
+    housingAllowance: openingHousingAdvance,
     openingFoodAdvance,
     openingHousingAdvance,
     openingAllowanceAdvanceTotal,
@@ -660,11 +682,18 @@ export async function loadContractPayrollPolicy(
   }
 
   const originMonth = previousPayrollMonth(payrollMonth);
+  const allowanceAdvanceMonth = nextPayrollMonth(payrollMonth);
   const originCompensation = await loadCompensation(
     db,
     employee.employee_key,
     Number(version.profile_version_id),
     originMonth,
+  );
+  const allowanceAdvanceCompensation = await loadCompensation(
+    db,
+    employee.employee_key,
+    Number(version.profile_version_id),
+    allowanceAdvanceMonth,
   );
   let sso: SsoRow | null = null;
   if (version.sso_treatment === "SECTION_33") {
@@ -766,6 +795,9 @@ export async function loadContractPayrollPolicy(
     monthlyFoodAllowance: Number(compensation.monthly_food_allowance),
     monthlyHousingAllowance: Number(compensation.monthly_housing_allowance),
     monthlyAccommodationDeduction: Number(compensation.monthly_accommodation_deduction),
+    allowanceAdvanceMonth,
+    allowanceAdvanceFood: Number(allowanceAdvanceCompensation?.monthly_food_allowance ?? 0),
+    allowanceAdvanceHousing: Number(allowanceAdvanceCompensation?.monthly_housing_allowance ?? 0),
     originMonthFoodAllowance: Number(originCompensation?.monthly_food_allowance ?? 0),
     finalFoodAuthorizedCap: Number(finalAuthorization?.authorized_cap ?? 0),
   };

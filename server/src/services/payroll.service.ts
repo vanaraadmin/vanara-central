@@ -86,6 +86,7 @@ export interface PayrollContractSummary {
   ssoTreatment: "SECTION_33" | "EXEMPT_DECLARED";
   effectiveFrom: string;
   effectiveTo: string | null;
+  allowanceAdvanceMonth?: string;
   paidLeave: { eligible: boolean; opening: number; used: number; closing: number };
 }
 
@@ -320,6 +321,13 @@ function formatEventDate(value: string, locale = "en-GB"): string {
   const date = new Date(`${value}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", timeZone: "UTC" }).format(date);
+}
+
+function payrollMonthDisplay(value: string): string {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return value;
+  const [year, month] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 const THAI_MONTH_NAMES = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -1367,6 +1375,9 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
   const openingAdvance = calculation.openingAllowanceAdvanceTotal ?? 0;
   const salaryBalance = calculation.salaryBalancePayable ?? calculation.netSalaryPayable;
   const salaryPaymentDate = calculation.salaryPaymentDate ?? "the 2nd day of the following month";
+  const allowanceAdvanceMonth = calculation.contract?.allowanceAdvanceMonth
+    ? payrollMonthDisplay(calculation.contract.allowanceAdvanceMonth)
+    : "following month";
   const titleLines = wrapText(worker.fullName, 42);
   const pageOne: string[] = [
     "q 0.08 0.22 0.16 rg 0 760 595 82 re f Q",
@@ -1380,7 +1391,7 @@ export async function generatePayrollStatementPdf(env: PayrollBindings, employee
     textLine(44, 706, 10, `Generated: ${generated}`),
     textLine(320, 728, 12, "Net Salary Payable", "0.08 0.22 0.16"),
     textLine(320, 704, 24, money(calculation.netSalaryPayable), "0.08 0.22 0.16"),
-    textLine(320, 684, 9, `Opening food / housing advance: ${money(openingAdvance)}`, "0.08 0.22 0.16"),
+    textLine(320, 684, 9, `${allowanceAdvanceMonth} food / housing advance: ${money(openingAdvance)}`, "0.08 0.22 0.16"),
     textLine(320, 670, 9, `Salary balance due ${salaryPaymentDate}: ${money(salaryBalance)}`, "0.08 0.22 0.16"),
     textLine(44, 644, 14, "English Summary", "0.08 0.22 0.16"),
   ];

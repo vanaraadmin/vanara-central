@@ -54,6 +54,7 @@ export function adaptContractPayrollCalculation(calculation: ContractPayrollPoli
       ssoTreatment: descriptor.ssoTreatment,
       effectiveFrom: descriptor.effectiveFrom,
       effectiveTo: descriptor.effectiveTo,
+      allowanceAdvanceMonth: descriptor.allowanceAdvanceMonth,
       paidLeave: calculation.paidLeave,
     },
   };

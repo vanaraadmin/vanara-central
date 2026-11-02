@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assertPaidLeaveSelectionAllowed,
   calculateContractPayrollPolicy,
+  nextPayrollMonth,
   previousPayrollMonth,
   roundPayrollMoney,
   type ContractPayrollPolicyInput,
@@ -38,6 +39,9 @@ function input(overrides: Partial<ContractPayrollPolicyInput> = {}): ContractPay
       monthlyFoodAllowance: 1_500,
       monthlyHousingAllowance: 1_000,
       monthlyAccommodationDeduction: 0,
+      allowanceAdvanceMonth: "2026-12",
+      allowanceAdvanceFood: 1_500,
+      allowanceAdvanceHousing: 1_000,
       originMonthFoodAllowance: 0,
       finalFoodAuthorizedCap: 0,
     },
@@ -182,6 +186,8 @@ test("fifth seasonal profile applies SSO to base salary only and has no paid lea
     monthlyBaseSalary: 13_500,
     monthlyFoodAllowance: 1_500,
     monthlyHousingAllowance: 0,
+      allowanceAdvanceFood: 1_500,
+      allowanceAdvanceHousing: 0,
     paidLeaveDays: 0,
   };
   const result = calculateContractPayrollPolicy(input({ descriptor }));
@@ -203,6 +209,9 @@ test("opening food and housing advances are separated from the following-month s
       monthlyBaseSalary: 12_500,
       monthlyFoodAllowance: 1_500,
       monthlyHousingAllowance: 2_500,
+      allowanceAdvanceMonth: "2026-11",
+      allowanceAdvanceFood: 1_500,
+      allowanceAdvanceHousing: 2_500,
       ssoTreatment: "EXEMPT_DECLARED",
       employeeSsoRate: 0,
       employerSsoRate: 0,
@@ -216,6 +225,31 @@ test("opening food and housing advances are separated from the following-month s
   assert.equal(result.netSalaryPayable, 16_500);
   assert.equal(result.salaryBalancePayable, 12_500);
   assert.equal(result.salaryPaymentDate, "2026-11-02");
+});
+
+test("the second-of-month payment uses the prior worked month with the next month's allowances", () => {
+  const result = calculateContractPayrollPolicy(input({
+    payrollMonth: "2026-10",
+    descriptor: {
+      ...input().descriptor,
+      monthlyBaseSalary: 10_620,
+      monthlyFoodAllowance: 0,
+      monthlyHousingAllowance: 0,
+      allowanceAdvanceMonth: "2026-11",
+      allowanceAdvanceFood: 1_500,
+      allowanceAdvanceHousing: 1_000,
+      ssoTreatment: "SECTION_33",
+    },
+  }));
+
+  assert.equal(nextPayrollMonth("2026-10"), "2026-11");
+  assert.equal(result.employeeSocialSecurity, 531);
+  assert.equal(result.openingFoodAdvance, 1_500);
+  assert.equal(result.openingHousingAdvance, 1_000);
+  assert.equal(result.salaryBalancePayable, 10_089);
+  assert.equal(result.netSalaryPayable, 12_589);
+  assert.match(result.lineItems.find((item) => item.label.includes("food allowance"))?.label ?? "", /November 2026/);
+  assert.match(result.lineItems.find((item) => item.label.includes("housing allowance"))?.explanation ?? "", /November 2026/);
 });
 
 test("Ae external coverage keeps employee and employer SSO at zero", () => {

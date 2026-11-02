@@ -3,6 +3,7 @@ interface ContractRuleSnapshot {
   ssoTreatment?: "SECTION_33" | "EXEMPT_DECLARED";
   effectiveFrom?: string;
   effectiveTo?: string | null;
+  allowanceAdvanceMonth?: string;
 }
 
 interface ContractSnapshotRow {
@@ -38,6 +39,7 @@ export interface PayrollContractSnapshotView {
     ssoTreatment: "SECTION_33" | "EXEMPT_DECLARED";
     effectiveFrom: string;
     effectiveTo: string | null;
+    allowanceAdvanceMonth?: string;
     paidLeave: {
       eligible: boolean;
       opening: number;
@@ -109,6 +111,7 @@ export async function loadPayrollContractSnapshot(
       ssoTreatment: rule.ssoTreatment ?? "SECTION_33",
       effectiveFrom: rule.effectiveFrom ?? "",
       effectiveTo: rule.effectiveTo ?? null,
+      allowanceAdvanceMonth: rule.allowanceAdvanceMonth,
       paidLeave: {
         eligible: contractType === "INDEFINITE" && opening + used + closing > 0,
         opening,
