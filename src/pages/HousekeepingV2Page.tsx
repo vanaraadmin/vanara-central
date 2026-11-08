@@ -19,10 +19,11 @@ import {
   releaseHousekeepingClaim,
   startHousekeepingTask,
 } from "../services/housekeeping-v2.service";
-import type { HousekeepingV2Section, HousekeepingV2SectionId, HousekeepingV2TaskCard } from "../types/housekeeping-v2";
+import type { HousekeepingV2CompletedTask, HousekeepingV2Section, HousekeepingV2SectionId, HousekeepingV2TaskCard } from "../types/housekeeping-v2";
 import "../styles/HousekeepingV2Page.css";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+type HousekeepingViewId = HousekeepingV2SectionId | "completed-today";
 
 const homeSections: Array<{ id: HousekeepingV2SectionId; labelKey: string }> = [
   { id: "priority-turnover", labelKey: "priorityTurnover" },
@@ -101,8 +102,9 @@ function taskStateDescription(card: HousekeepingV2TaskCard, translate: Translate
   return translate("taskActive");
 }
 
-function sectionSummaryItems(sections: HousekeepingV2Section[], translate: Translate): VanaraSummaryItem[] {
-  return homeSections.map((item) => {
+function sectionSummaryItems(sections: HousekeepingV2Section[], completedCount: number, translate: Translate): VanaraSummaryItem[] {
+  return [
+    ...homeSections.map((item) => {
     const count = sections.find((section) => section.id === item.id)?.cards.length ?? 0;
     return {
       id: item.id,
@@ -111,7 +113,38 @@ function sectionSummaryItems(sections: HousekeepingV2Section[], translate: Trans
       value: count,
       unitLabel: count === 1 ? translate("room") : translate("roomPlural"),
     };
-  });
+    }),
+    {
+      id: "completed-today",
+      label: translate("closedHousekeepingTasksToday"),
+      tone: "clean",
+      value: completedCount,
+      unitLabel: completedCount === 1 ? translate("task") : translate("tasks"),
+    },
+  ];
+}
+
+function formatCompletionTime(value: string | null, language: "en" | "th", translate: Translate): string {
+  if (!value) return translate("notScheduled");
+  const completedAt = new Date(value);
+  if (Number.isNaN(completedAt.getTime())) return translate("notScheduled");
+  return new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(completedAt);
+}
+
+function completedTaskLabel(task: HousekeepingV2CompletedTask, translate: Translate): string {
+  if (task.taskType === "ON_DEMAND_CLEANING") return translate("onDemandCleaning");
+  if (task.taskType === "LINEN_CHANGE") return translate("fullCleaning");
+  if (task.taskType === "STANDARD_CLEANING") return translate("normalCleaning");
+  return task.priority === "HIGH" || task.priority === "URGENT" ? translate("priorityCleaning") : translate("checkOutCleaning");
+}
+
+function avatarInitials(name: string | null): string {
+  return name?.trim().split(/\s+/).map((part) => part.slice(0, 1)).join("").slice(0, 2).toUpperCase() || "?";
 }
 
 function taskDetails(card: HousekeepingV2TaskCard, language: "en" | "th", translate: Translate): VanaraDataGridItem[] {
@@ -533,9 +566,38 @@ function Section({
   );
 }
 
+function CompletedTasksSection({ tasks }: { tasks: HousekeepingV2CompletedTask[] }) {
+  const { language, translate } = useLanguage();
+  return (
+    <section className="housekeeping-v2-section housekeeping-v2-completed" aria-labelledby="housekeeping-v2-completed-today">
+      <VanaraSectionHeader
+        eyebrow={translate("housekeeping")}
+        headingId="housekeeping-v2-completed-today"
+        meta={`${tasks.length} ${tasks.length === 1 ? translate("task") : translate("tasks")}`}
+        title={translate("closedHousekeepingTasksToday")}
+      />
+      <div className="housekeeping-v2-completed__list vc-glass-surface">
+        {tasks.length ? tasks.map((task) => (
+          <article className="housekeeping-v2-completed__row" key={task.taskId}>
+            <div className="housekeeping-v2-completed__copy">
+              <strong>{completedTaskLabel(task, translate)} · {task.unitName}</strong>
+              <span>{translate("closedAtTime", { time: formatCompletionTime(task.completedAt, language, translate) })}</span>
+            </div>
+            <span className="housekeeping-v2-completed__avatar" title={task.completedBy.name ?? undefined} aria-label={task.completedBy.name ?? translate("unassigned")}>
+              {task.completedBy.profilePhotoUrl ? <img src={task.completedBy.profilePhotoUrl} alt="" /> : avatarInitials(task.completedBy.name)}
+            </span>
+          </article>
+        )) : (
+          <div className="housekeeping-v2-empty"><CheckIcon /><p>{translate("noClosedHousekeepingTasks")}</p></div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function HousekeepingV2Page() {
   const { language, translate } = useLanguage();
-  const [activeSection, setActiveSection] = useState<HousekeepingV2SectionId | null>(null);
+  const [activeSection, setActiveSection] = useState<HousekeepingViewId | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [infoSheet, setInfoSheet] = useState<InterventionType | null>(null);
   const sectionsRef = useRef<HTMLDivElement | null>(null);
@@ -546,7 +608,7 @@ export default function HousekeepingV2Page() {
     refetchInterval: 60_000,
   });
   const expandedSection = housekeeping.data?.sections.find((section) => section.id === activeSection) ?? null;
-  const summaryItems = housekeeping.data ? sectionSummaryItems(housekeeping.data.sections, translate) : [];
+  const summaryItems = housekeeping.data ? sectionSummaryItems(housekeeping.data.sections, housekeeping.data.completedTasksToday.length, translate) : [];
 
   return (
     <WorkspaceShell title={translate("housekeeping")} workspace="housekeeping" bodyClassName="housekeeping-v2-page">
@@ -575,7 +637,7 @@ export default function HousekeepingV2Page() {
             className="housekeeping-v2-summary"
             items={summaryItems}
             onItemSelect={(item) => {
-              const nextSection = item.id as HousekeepingV2SectionId;
+              const nextSection = item.id as HousekeepingViewId;
               setExpandedTaskId(null);
               setActiveSection(nextSection);
               window.requestAnimationFrame(() => {
@@ -593,6 +655,12 @@ export default function HousekeepingV2Page() {
                 onTaskToggle={(taskId) => setExpandedTaskId((current) => current === taskId ? null : taskId)}
                 section={expandedSection}
               />
+            </div>
+          )}
+
+          {activeSection === "completed-today" && (
+            <div ref={sectionsRef} className="housekeeping-v2-sections" aria-label={translate("closedHousekeepingTasksToday")}>
+              <CompletedTasksSection tasks={housekeeping.data.completedTasksToday} />
             </div>
           )}
 

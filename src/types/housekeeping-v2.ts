@@ -51,12 +51,26 @@ export interface HousekeepingV2Section {
   cards: HousekeepingV2TaskCard[];
 }
 
+export interface HousekeepingV2CompletedTask {
+  taskId: number;
+  unitName: string;
+  taskType: HousekeepingTaskType;
+  priority: HousekeepingTaskPriority;
+  completedAt: string | null;
+  completedBy: {
+    userId: string | null;
+    name: string | null;
+    profilePhotoUrl: string | null;
+  };
+}
+
 export interface HousekeepingV2Overview {
   operationalDate: string;
   generatedAt: string;
   summary: HousekeepingV2Summary;
   sections: HousekeepingV2Section[];
   tasks: HousekeepingV2TaskCard[];
+  completedTasksToday: HousekeepingV2CompletedTask[];
   procurement: {
     attentionCount: number;
     latestRequest: string | null;

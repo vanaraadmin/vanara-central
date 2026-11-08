@@ -62,12 +62,26 @@ export interface HousekeepingV2Section {
   cards: HousekeepingV2TaskCard[];
 }
 
+export interface HousekeepingV2CompletedTask {
+  taskId: number;
+  unitName: string;
+  taskType: HousekeepingTaskType;
+  priority: HousekeepingTaskPriority;
+  completedAt: string | null;
+  completedBy: {
+    userId: string | null;
+    name: string | null;
+    profilePhotoUrl: string | null;
+  };
+}
+
 export interface HousekeepingV2Overview {
   operationalDate: string;
   generatedAt: string;
   summary: HousekeepingV2Summary;
   sections: HousekeepingV2Section[];
   tasks: HousekeepingV2TaskCard[];
+  completedTasksToday: HousekeepingV2CompletedTask[];
   procurement: {
     attentionCount: number;
     latestRequest: string | null;
@@ -152,6 +166,13 @@ interface AlertRow {
   label: string | null;
 }
 
+interface CompletionActorRow {
+  task_id: number;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  profile_photo_url: string | null;
+}
+
 interface MaintenanceRow {
   room_id: number;
   count: number;
@@ -187,7 +208,7 @@ const ACTIVE_TASK_STATUSES = new Set<HousekeepingTaskStatus>(["WAITING_FOR_RECEP
 const IN_PROGRESS_STATUSES = new Set<HousekeepingTaskStatus>(["IN_PROGRESS", "CHECKLIST_COMPLETE", "READY_FOR_INSPECTION"]);
 const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
 const ACTIVE_NOW_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "WATER_REFILL", "ON_DEMAND_CLEANING"]);
-const COMPLETED_CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING"]);
+const CLOSED_HOUSEKEEPING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "ON_DEMAND_CLEANING"]);
 const ROOM_CYCLE_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
 const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -227,6 +248,12 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
   const allCards = contexts.flatMap((context) => cardsForContext(context, user));
   const sections = buildSections(allCards);
   const summary = buildSummary(sections, allCards, tasks, date);
+  const completedTasksToday = buildCompletedTasksToday(
+    tasks,
+    new Map(units.map((unit) => [unit.unit_id, unit])),
+    await loadCompletionActors(env, tasks.filter((task) => closedHousekeepingTaskToday(task, date)).map((task) => task.id)),
+    date,
+  );
 
   return {
     operationalDate: date,
@@ -234,6 +261,7 @@ export async function getHousekeepingV2Overview(env: HousekeepingV2Bindings, use
     summary,
     sections,
     tasks: allCards,
+    completedTasksToday,
     procurement,
     meta: {
       generation: generated,
@@ -571,9 +599,42 @@ function buildSummary(sections: HousekeepingV2Section[], cards: HousekeepingV2Ta
   return {
     toClean: cleaningCards.filter((card) => !IN_PROGRESS_STATUSES.has(card.taskStatus)).length,
     cleaningInProgress: tasks.filter((task) => taskCountsAsActiveNow(task)).length,
-    completedCleaningToday: tasks.filter((task) => COMPLETED_CLEANING_TASK_TYPES.has(task.taskType) && taskCompletedOn(task, date)).length,
+    completedCleaningToday: tasks.filter((task) => closedHousekeepingTaskToday(task, date)).length,
     waterDue: sections.find((section) => section.id === "water-refill")?.cards.length ?? 0,
   };
+}
+
+function closedHousekeepingTaskToday(task: HousekeepingTask, date: string): boolean {
+  return !taskBelongsToRoomReadyOverride(task)
+    && CLOSED_HOUSEKEEPING_TASK_TYPES.has(task.taskType)
+    && taskCompletedOn(task, date);
+}
+
+function buildCompletedTasksToday(
+  tasks: HousekeepingTask[],
+  unitsById: Map<number, UnitRow>,
+  completionActors: Map<number, CompletionActorRow>,
+  date: string,
+): HousekeepingV2CompletedTask[] {
+  return tasks
+    .filter((task) => closedHousekeepingTaskToday(task, date))
+    .sort((left, right) => (right.completedAt ?? "").localeCompare(left.completedAt ?? "") || right.id - left.id)
+    .map((task) => {
+      const actor = completionActors.get(task.id);
+      const unit = unitsById.get(task.unitId);
+      return {
+        taskId: task.id,
+        unitName: unit ? readableUnitName(unit) : `Room ${task.unitId}`,
+        taskType: task.taskType,
+        priority: task.priority,
+        completedAt: task.completedAt,
+        completedBy: {
+          userId: actor?.actor_user_id ?? task.assignedUserId ?? null,
+          name: actor?.actor_name ?? task.assignedUserName ?? null,
+          profilePhotoUrl: actor?.profile_photo_url ?? null,
+        },
+      };
+    });
 }
 
 function buildContexts(
@@ -960,6 +1021,23 @@ async function loadTasks(env: HousekeepingV2Bindings, date: string): Promise<Hou
     ORDER BY operational_date, task_id
   `).bind(date, date, date).all<TaskRow>();
   return (rows.results ?? []).map(mapTaskRow);
+}
+
+async function loadCompletionActors(env: HousekeepingV2Bindings, taskIds: number[]): Promise<Map<number, CompletionActorRow>> {
+  if (taskIds.length === 0) return new Map();
+  const placeholders = taskIds.map(() => "?").join(", ");
+  const rows = await env.DB.prepare(`
+    SELECT latest.task_id, latest.actor_user_id, latest.actor_name, u.profile_photo_url
+    FROM housekeeping_task_events latest
+    INNER JOIN (
+      SELECT task_id, MAX(event_id) AS event_id
+      FROM housekeeping_task_events
+      WHERE event_type = 'complete' AND task_id IN (${placeholders})
+      GROUP BY task_id
+    ) completion ON completion.event_id = latest.event_id
+    LEFT JOIN users u ON u.user_id = latest.actor_user_id
+  `).bind(...taskIds).all<CompletionActorRow>();
+  return new Map((rows.results ?? []).map((row) => [row.task_id, row]));
 }
 
 function waterTaskCompletedOnBangkokDate(task: HousekeepingTask, date: string): boolean {

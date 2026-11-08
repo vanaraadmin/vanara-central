@@ -87,7 +87,7 @@ test("water refill quantity is room-type based and never guest-count based", () 
   assert.doesNotMatch(service, /\badults\b|\bchildren\b|guest_count|guestCount/);
 });
 
-test("summary exposes only the approved actionable Housekeeping counters and fixed section order", () => {
+test("summary keeps actionable queues and adds a closed-today operational history counter", () => {
   for (const key of [
     "toClean",
     "cleaningInProgress",
@@ -96,7 +96,10 @@ test("summary exposes only the approved actionable Housekeeping counters and fix
   ]) {
     assert.match(service, new RegExp(key));
   }
-  assert.doesNotMatch(service, /completedToday:/);
+  assert.match(service, /completedTasksToday/);
+  assert.match(service, /CLOSED_HOUSEKEEPING_TASK_TYPES/);
+  assert.match(service, /function closedHousekeepingTaskToday/);
+  assert.match(service, /function loadCompletionActors/);
   assert.doesNotMatch(service, /blockedRooms:/);
   assert.doesNotMatch(service, /tasksClaimed:/);
   assert.doesNotMatch(service, /procurementAttention,/);
@@ -148,12 +151,13 @@ test("room-only operational context moved out of the Housekeeping queue", () => 
   assert.doesNotMatch(page, /card\.guestName|card\.arrivalDate|card\.departureDate|card\.roomType|card\.alertSummary|card\.maintenanceSummary/);
 });
 
-test("v2 page starts as summary cards and expands only Priority, Normal or Water lists", () => {
+test("v2 page starts as summary cards and expands priority, normal, water or closed-today lists", () => {
   assert.match(page, /function TaskCard/);
   assert.match(page, /function Section/);
+  assert.match(page, /function CompletedTasksSection/);
   assert.match(page, /ariaLabel=\{translate\("roomsSummary"\)\}/);
   assert.match(page, /const homeSections/);
-  assert.match(page, /useState<HousekeepingV2SectionId \| null>\(null\)/);
+  assert.match(page, /useState<HousekeepingViewId \| null>\(null\)/);
   assert.match(page, /activeItemId=\{activeSection\}/);
   assert.match(page, /onItemSelect=\{\(item\) =>/);
   assert.match(page, /expandedSection &&/);
@@ -211,13 +215,16 @@ test("v2 page uses intervention wording and informational help instead of checkl
   assert.doesNotMatch(page, /card\.taskType === "STANDARD_CLEANING"[\s\S]*finish-full-cleaning/);
 });
 
-test("summary counters render centered count and subordinate room unit", () => {
+test("summary counters render centered count and add a subordinate task unit for completed work", () => {
   assert.match(page, /function formatRoomCount\(value: number, translate: Translate\): string/);
   assert.match(page, /return `\$\{value}/);
   assert.match(page, /value === 1 \? translate\("room"\) : translate\("roomPlural"\)/);
-  assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\], translate: Translate\): VanaraSummaryItem\[\]/);
+  assert.match(page, /function sectionSummaryItems\(sections: HousekeepingV2Section\[\], completedCount: number, translate: Translate\): VanaraSummaryItem\[\]/);
   assert.match(page, /value: count/);
   assert.match(page, /unitLabel: count === 1 \? translate\("room"\) : translate\("roomPlural"\)/);
+  assert.match(page, /id: "completed-today"/);
+  assert.match(page, /label: translate\("closedHousekeepingTasksToday"\)/);
+  assert.match(page, /unitLabel: completedCount === 1 \? translate\("task"\) : translate\("tasks"\)/);
   assert.match(page, /meta=\{formatRoomCount\(section\.cards\.length, translate\)\}/);
   assert.doesNotMatch(page, /<strong>\{housekeeping\.data\.summary\[item\.summaryKey\]\}<\/strong>/);
   assert.doesNotMatch(page, /<span>\{section\.cards\.length\}<\/span>/);
@@ -269,16 +276,32 @@ test("water refill compact rows expose inline delivery without requiring room ex
   assert.doesNotMatch(page, /quantityDelivered|waterQuantityDelivered|prompt\(|window\.confirm/);
 });
 
-test("water refill summary tap opens the water list directly instead of acting like a dead counter", () => {
+test("summary taps open the selected queue or closed-today history directly", () => {
   const overview = page.match(/export default function HousekeepingV2Page[\s\S]*?<\/WorkspaceShell>/)?.[0] ?? "";
 
   assert.match(overview, /const sectionsRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.match(overview, /onItemSelect=\{\(item\) =>/);
-  assert.match(overview, /const nextSection = item\.id as HousekeepingV2SectionId/);
+  assert.match(overview, /const nextSection = item\.id as HousekeepingViewId/);
   assert.match(overview, /setActiveSection\(nextSection\)/);
   assert.match(overview, /sectionsRef\.current\?\.scrollIntoView\(\{ block: "start", behavior: "smooth" \}\)/);
   assert.match(overview, /ref=\{sectionsRef\}/);
   assert.match(page, /id: "water-refill", labelKey: "waterRefill"/);
+  assert.match(overview, /activeSection === "completed-today"/);
+  assert.match(overview, /<CompletedTasksSection tasks=\{housekeeping\.data\.completedTasksToday\}/);
+});
+
+test("closed housekeeping history includes on-demand work and the actual completion actor", () => {
+  assert.match(service, /"ON_DEMAND_CLEANING"/);
+  assert.match(service, /WHERE event_type = 'complete'/);
+  assert.match(service, /u\.profile_photo_url/);
+  assert.match(service, /completedBy:/);
+  assert.match(page, /function CompletedTasksSection/);
+  assert.match(page, /completedTaskLabel\(task, translate\)/);
+  assert.match(page, /task\.unitName/);
+  assert.match(page, /translate\("closedAtTime"/);
+  assert.match(page, /housekeeping-v2-completed__avatar/);
+  assert.match(css, /\.housekeeping-v2-completed__row/);
+  assert.match(css, /\.housekeeping-v2-completed__avatar/);
 });
 
 test("installed PWA Housekeeping keeps the shared footer compact without changing the task page", () => {
@@ -329,7 +352,6 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(css, /\.housekeeping-v2-summary/);
   assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.match(css, /\.housekeeping-v2-summary \.vc-summary-item:nth-child\(3\):last-child\s*\{[\s\S]*grid-column:\s*1 \/ -1;/);
   assert.match(css, /\.housekeeping-v2-summary \.vc-summary-item__label\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
   assert.match(css, /@media \(max-width: 340px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
   assert.match(page, /VanaraSummaryGrid/);
