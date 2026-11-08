@@ -29,6 +29,12 @@ export interface StaffOverviewCard {
   metrics: StaffOverviewMetric[];
   summaryLine1?: string;
   summaryLine2?: string;
+  procurementAttentionItems?: Array<{
+    id: number;
+    requestedByName: string;
+    requestText: string;
+    acknowledgedByName: string | null;
+  }>;
 }
 
 export interface StaffOverview {
@@ -118,6 +124,36 @@ async function ownerDashboardBalanceMetric(env: StaffOverviewBindings, bangkokTo
     label: "Balance",
     value: snapshot.netPosition,
     tone: snapshot.netPosition >= 0 ? "good" : "attention",
+  };
+}
+
+async function procurementOwnerAttention(env: StaffOverviewBindings): Promise<{ newRequests: number; takenInCharge: number; items: StaffOverviewCard["procurementAttentionItems"] }> {
+  const row = await env.DB.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'PENDING' AND acknowledged_at IS NULL THEN 1 ELSE 0 END) AS new_requests,
+      SUM(CASE WHEN status = 'PENDING' AND acknowledged_at IS NOT NULL THEN 1 ELSE 0 END) AS taken_in_charge
+    FROM procurement_requests
+  `).first<{ new_requests: number | null; taken_in_charge: number | null }>();
+  const items = await env.DB.prepare(`
+    SELECT
+      request_id,
+      requested_by_name,
+      COALESCE(request_text_original, custom_item_text, note, '') AS request_text,
+      acknowledged_by_name
+    FROM procurement_requests
+    WHERE status = 'PENDING'
+    ORDER BY CASE WHEN acknowledged_at IS NULL THEN 0 ELSE 1 END, created_at DESC
+    LIMIT 1
+  `).all<{ request_id: number; requested_by_name: string; request_text: string; acknowledged_by_name: string | null }>();
+  return {
+    newRequests: Number(row?.new_requests ?? 0),
+    takenInCharge: Number(row?.taken_in_charge ?? 0),
+    items: (items.results ?? []).map((item) => ({
+      id: item.request_id,
+      requestedByName: item.requested_by_name,
+      requestText: item.request_text,
+      acknowledgedByName: item.acknowledged_by_name,
+    })),
   };
 }
 
@@ -236,6 +272,7 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
   }
 
   if (canAccess(user, "procurement")) {
+    const ownerAttention = isOwner(user) ? await procurementOwnerAttention(env) : null;
     cards.push(withSummaryLines({
       id: "procurement",
       module: "procurement",
@@ -243,9 +280,13 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       description: "procurementDescription",
       href: "/procurement",
       cta: "Open Procurement",
-      metrics: [],
-      summaryLine1: "Free-text request",
-      summaryLine2: "Owner decision",
+      metrics: ownerAttention ? [
+        { label: "New Requests", value: ownerAttention.newRequests, tone: ownerAttention.newRequests > 0 ? "urgent" : "good" },
+        { label: "Taken In Charge", value: ownerAttention.takenInCharge, tone: ownerAttention.takenInCharge > 0 ? "attention" : "neutral" },
+      ] : [],
+      summaryLine1: ownerAttention ? `${ownerAttention.newRequests} New Requests` : "Free-text request",
+      summaryLine2: ownerAttention ? `${ownerAttention.takenInCharge} Taken In Charge` : "Owner decision",
+      procurementAttentionItems: ownerAttention?.items,
     }));
   }
 

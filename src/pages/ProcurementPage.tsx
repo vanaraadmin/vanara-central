@@ -22,9 +22,10 @@ function formatDate(value: string, language: "en" | "th") {
   }).format(new Date(value));
 }
 
-function statusLabel(status: ProcurementRequest["status"], translate: (key: string) => string) {
-  if (status === "DONE") return translate("bought");
-  if (status === "REJECTED") return translate("rejected");
+function statusLabel(request: ProcurementRequest, translate: (key: string) => string) {
+  if (request.status === "PENDING" && request.acknowledgedByName) return translate("takenInCharge");
+  if (request.status === "DONE") return translate("bought");
+  if (request.status === "REJECTED") return translate("rejected");
   return translate("pending");
 }
 
@@ -32,7 +33,7 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
   const { language, translate } = useLanguage();
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: (status: "DONE" | "REJECTED") => updateProcurementRequest(request.id, { status }),
+    mutationFn: (action: "ACKNOWLEDGE" | "DONE" | "REJECTED") => updateProcurementRequest(request.id, { action }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["procurement", "requests"] });
     },
@@ -45,7 +46,7 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
           <strong>{request.requestedByName}</strong>
           <time dateTime={request.createdAt}>{formatDate(request.createdAt, language)}</time>
         </div>
-        <span className="procurement-status">{statusLabel(request.status, translate)}</span>
+        <span className="procurement-status">{statusLabel(request, translate)}</span>
       </div>
 
       <TranslatableText
@@ -69,8 +70,22 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
         </p>
       ) : null}
 
+      {!request.closedAt && request.acknowledgedByName ? (
+        <p className="procurement-card__meta">{translate("takenInChargeBy", { name: request.acknowledgedByName })}</p>
+      ) : null}
+
       {isOwner && request.status === "PENDING" ? (
         <div className="procurement-card__actions" aria-label={`Actions for request ${request.id}`}>
+          {!request.acknowledgedAt ? (
+            <button
+              className="procurement-action procurement-action--acknowledge"
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate("ACKNOWLEDGE")}
+              type="button"
+            >
+              <CheckIcon /> {translate("takeOwnership")}
+            </button>
+          ) : null}
           <button
             className="procurement-action procurement-action--done"
             disabled={mutation.isPending}

@@ -138,6 +138,39 @@
   white-space: nowrap;
 }
 
+.staff-workspace__procurement-attention {
+  display: grid;
+  gap: var(--vc-space-2);
+  margin-top: var(--vc-space-3);
+}
+
+.staff-workspace__procurement-request {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: var(--vc-space-3);
+  border: 1px solid rgba(235, 241, 233, 0.16);
+  border-radius: var(--vc-radius-md);
+  background: rgba(247, 244, 238, 0.06);
+}
+
+.staff-workspace__procurement-request-meta {
+  color: var(--vc-color-gold-300);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-utility-xs);
+  font-weight: var(--vc-weight-bold);
+  line-height: 1.25;
+}
+
+.staff-workspace__procurement-request-text {
+  overflow: hidden;
+  color: rgba(247, 244, 238, 0.86);
+  font-family: var(--vc-font-ui, var(--vc-font-sans));
+  font-size: var(--vc-type-body-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .staff-workspace__summary-lines {
   display: grid;
   min-width: 0;

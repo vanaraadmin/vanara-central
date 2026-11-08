@@ -18,6 +18,12 @@ export interface StaffOverviewCard {
   metrics: StaffOverviewMetric[];
   summaryLine1?: string;
   summaryLine2?: string;
+  procurementAttentionItems?: Array<{
+    id: number;
+    requestedByName: string;
+    requestText: string;
+    acknowledgedByName: string | null;
+  }>;
 }
 
 export type BookingPulseEventType = "NEW" | "UPDATED" | "CANCELLED";

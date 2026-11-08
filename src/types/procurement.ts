@@ -22,6 +22,9 @@ export interface ProcurementRequest {
   closedBy: string | null;
   closedByName: string | null;
   closedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  acknowledgedByName: string | null;
 }
 
 export interface CreateProcurementRequestPayload {
@@ -29,7 +32,7 @@ export interface CreateProcurementRequestPayload {
 }
 
 export interface UpdateProcurementRequestPayload {
-  status: "DONE" | "REJECTED";
+  action: "ACKNOWLEDGE" | "DONE" | "REJECTED";
 }
 
 export interface ApiResponse<T> {

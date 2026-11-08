@@ -109,6 +109,8 @@ const metricLabelKeys: Record<string, string> = {
   "Season Closed": "seasonClosed",
   "To Clean": "toClean",
   "Water Due": "waterDue",
+  "New Requests": "newProcurementRequests",
+  "Taken In Charge": "procurementTakenInCharge",
 };
 
 const metricTone: Record<StaffOverviewMetric["tone"], VanaraSummaryItem["tone"]> = {
@@ -265,6 +267,20 @@ function WorkspaceCard({
             </span>
           </span>
         )}
+        {workspace.id === "procurement" && workspace.procurementAttentionItems?.length ? (
+          <span className="staff-workspace__procurement-attention" aria-label={translate("pendingRequests")}>
+            {workspace.procurementAttentionItems.map((request) => (
+              <span className="staff-workspace__procurement-request" key={request.id}>
+                <span className="staff-workspace__procurement-request-meta">
+                  {request.requestedByName} · {request.acknowledgedByName
+                    ? translate("takenInChargeBy", { name: request.acknowledgedByName })
+                    : translate("awaitingOwner")}
+                </span>
+                <span className="staff-workspace__procurement-request-text">{request.requestText}</span>
+              </span>
+            ))}
+          </span>
+        ) : null}
       </span>
 
       <span className="staff-workspace__arrow" aria-hidden="true">

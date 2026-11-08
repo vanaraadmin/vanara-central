@@ -66,6 +66,9 @@ type RequestRecord = {
   closed_by: string | null;
   closed_by_name: string | null;
   closed_at: string | null;
+  acknowledged_at?: string | null;
+  acknowledged_by?: string | null;
+  acknowledged_by_name?: string | null;
   updated_by: string | null;
   updated_by_name: string | null;
 };
@@ -138,6 +141,13 @@ class FakeDB {
     if (sql.includes("UPDATE procurement_requests")) {
       const request = this.requests.find((row) => row.request_id === params.at(-1));
       if (request) {
+        if (sql.includes("acknowledged_at = COALESCE")) {
+          request.acknowledged_at ??= String(params[0]);
+          request.acknowledged_by ??= String(params[1]);
+          request.acknowledged_by_name ??= String(params[2]);
+          request.updated_at = String(params[3]);
+          return { meta: { changes: 1, last_row_id: request.request_id } };
+        }
         request.status = String(params[0]);
         request.updated_at = String(params[1]);
         if (request.status === "DONE") request.received_at = String(params[2]);
@@ -205,9 +215,20 @@ test("owner can mark a procurement request bought or rejected without editing re
   assert.ok(done?.closedAt);
 
   const rejectedCreated = await createProcurementRequest(data, normalizeCreateProcurementRequestInput({ requestText: "Extra towels" }), employee);
-  const rejected = await updateProcurementRequestStatus(data, rejectedCreated.id, { status: "REJECTED" }, owner);
+  const rejected = await updateProcurementRequestStatus(data, rejectedCreated.id, { action: "REJECTED" }, owner);
   assert.equal(rejected?.status, "REJECTED");
   assert.equal(rejected?.requestTextOriginal, "Extra towels");
+});
+
+test("an owner can take ownership of a pending request and the requester can see who is handling it", async () => {
+  const data = env();
+  const created = await createProcurementRequest(data, { requestText: "Laundry detergent" }, employee);
+  const acknowledged = await updateProcurementRequestStatus(data, created.id, { action: "ACKNOWLEDGE" }, owner);
+  assert.equal(acknowledged?.status, "PENDING");
+  assert.equal(acknowledged?.acknowledgedByName, "Stefano");
+  assert.ok(acknowledged?.acknowledgedAt);
+  const visibleToRequester = await listProcurementRequests(data, employee);
+  assert.equal(visibleToRequester[0]?.acknowledgedByName, "Stefano");
 });
 
 test("staff sees own pending and recent closed requests but not other staff or closed older than seven days", async () => {

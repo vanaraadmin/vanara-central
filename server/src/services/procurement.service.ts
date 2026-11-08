@@ -29,6 +29,9 @@ interface RequestRow {
   closed_by?: string | null;
   closed_by_name?: string | null;
   closed_at?: string | null;
+  acknowledged_at?: string | null;
+  acknowledged_by?: string | null;
+  acknowledged_by_name?: string | null;
   updated_by: string | null;
   updated_by_name: string | null;
 }
@@ -64,6 +67,9 @@ export interface ProcurementRequestSummary {
   closedBy: string | null;
   closedByName: string | null;
   closedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  acknowledgedByName: string | null;
   items: ProcurementItem[];
 }
 
@@ -74,7 +80,7 @@ export interface CreateProcurementRequestInput {
 }
 
 export interface UpdateProcurementRequestInput {
-  status: "DONE" | "REJECTED";
+  action: "ACKNOWLEDGE" | "DONE" | "REJECTED";
 }
 
 const STATUSES = new Set<ProcurementStatus>(["PENDING", "DONE", "REJECTED"]);
@@ -122,10 +128,12 @@ export function normalizeCreateProcurementRequestInput(payload: unknown): Create
 
 export function normalizeUpdateProcurementRequestInput(payload: unknown): UpdateProcurementRequestInput {
   if (!payload || typeof payload !== "object") throw new Error("Status payload is required.");
+  const action = "action" in payload ? payload.action : undefined;
+  if (action === "ACKNOWLEDGE") return { action };
   const status = "status" in payload ? payload.status : undefined;
-  if (status === "DONE" || status === "REJECTED") return { status };
-  if (status === "received") return { status: "DONE" };
-  if (status === "rejected") return { status: "REJECTED" };
+  if (status === "DONE" || status === "REJECTED") return { action: status };
+  if (status === "received") return { action: "DONE" };
+  if (status === "rejected") return { action: "REJECTED" };
   throw new Error("Status is invalid.");
 }
 
@@ -153,6 +161,9 @@ function mapRequest(row: RequestRow, user: CurrentUser): ProcurementRequestSumma
     closedBy: row.closed_by ?? row.updated_by ?? null,
     closedByName: row.closed_by_name ?? row.updated_by_name ?? null,
     closedAt: closedAtFromRow(row, status),
+    acknowledgedAt: row.acknowledged_at ?? null,
+    acknowledgedBy: row.acknowledged_by ?? null,
+    acknowledgedByName: row.acknowledged_by_name ?? null,
     items: [],
   };
 }
@@ -215,7 +226,11 @@ export async function listProcurementRequests(env: ProcurementBindings, user: Cu
     FROM procurement_requests
     ${where}
     ORDER BY
-      CASE status WHEN 'PENDING' THEN 0 ELSE 1 END,
+      CASE
+        WHEN status = 'PENDING' AND acknowledged_at IS NULL THEN 0
+        WHEN status = 'PENDING' THEN 1
+        ELSE 2
+      END,
       COALESCE(closed_at, received_at, rejected_at, created_at) DESC,
       created_at DESC
     LIMIT 200
@@ -257,7 +272,20 @@ export async function updateProcurementRequestStatus(env: ProcurementBindings, r
   if (!current) return null;
   if (!STATUSES.has(current.status)) throw new Error("Status is invalid.");
   const now = new Date().toISOString();
-  const legacyColumn = input.status === "DONE" ? "received_at" : "rejected_at";
+  if (input.action === "ACKNOWLEDGE") {
+    if (current.status !== "PENDING") return current;
+    await env.DB.prepare(`
+      UPDATE procurement_requests
+      SET
+        acknowledged_at = COALESCE(acknowledged_at, ?),
+        acknowledged_by = COALESCE(acknowledged_by, ?),
+        acknowledged_by_name = COALESCE(acknowledged_by_name, ?),
+        updated_at = ?
+      WHERE request_id = ?
+    `).bind(now, user.id, user.displayName, now, requestId).run();
+    return getProcurementRequest(env, requestId, user);
+  }
+  const legacyColumn = input.action === "DONE" ? "received_at" : "rejected_at";
   await env.DB.prepare(`
     UPDATE procurement_requests
     SET
@@ -270,7 +298,7 @@ export async function updateProcurementRequestStatus(env: ProcurementBindings, r
       updated_by = ?,
       updated_by_name = ?
     WHERE request_id = ?
-  `).bind(input.status, now, now, now, user.id, user.displayName, user.id, user.displayName, requestId).run();
+  `).bind(input.action, now, now, now, user.id, user.displayName, user.id, user.displayName, requestId).run();
   return getProcurementRequest(env, requestId, user);
 }
 

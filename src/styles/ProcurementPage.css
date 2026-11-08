@@ -264,6 +264,11 @@
   background: var(--vc-color-jungle-800);
 }
 
+.procurement-action--acknowledge {
+  color: var(--vc-color-jungle-900);
+  background: var(--vc-color-gold-300);
+}
+
 .procurement-action--reject {
   color: var(--vc-color-danger);
   background: rgba(255, 255, 255, 0.78);
