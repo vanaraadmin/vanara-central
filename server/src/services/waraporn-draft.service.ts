@@ -364,12 +364,30 @@ function openAiResultFromError(error: unknown): OpenAiResponsesResult | null {
     : null;
 }
 
+function verifiedBookingContext(context: VerifiedMessageContext): string | null {
+  // Keep this deliberately small. These are the booking facts Waraporn needs to
+  // recognise an existing reservation without adding a second, heavy context
+  // pipeline to every draft request.
+  if (context.bookingId === null && context.beds24BookingId === null) return null;
+
+  const facts = [
+    ["Guest full name", context.guestName],
+    ["Accommodation type", context.accommodationType],
+    ["Check-in date", context.arrivalDate],
+    ["Check-out date", context.departureDate],
+  ].filter((fact): fact is [string, string] => Boolean(fact[1]));
+
+  if (facts.length === 0) return null;
+  return facts.map(([label, value]) => `${label}: ${value}`).join("\n");
+}
+
 export function buildWarapornResponsesRequest(
   promptText: string,
   context: VerifiedMessageContext,
   storeId: string,
 ): JsonRecord {
   const content = [
+    ...inputPair("VERIFIED BOOKING CONTEXT", verifiedBookingContext(context)),
     ...inputPair("GUEST FIRST NAME", context.guestFirstName),
     ...inputPair("CHECK-IN DATE", context.arrivalDate),
     ...inputPair("CHECK-OUT DATE", context.departureDate),

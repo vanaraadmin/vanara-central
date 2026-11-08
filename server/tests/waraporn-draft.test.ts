@@ -608,6 +608,7 @@ test("one OTA message creates exactly one Make-compatible OpenAI Responses reque
   assert.equal(body.background, true);
   assert.equal(OPENAI_WARAPORN_DRAFT_TIMEOUT_MS, 180_000);
   const input = requestText(body);
+  assert.match(input, /VERIFIED BOOKING CONTEXT\s+Guest full name: Daniel Padurariu\s+Accommodation type: Bungalow\s+Check-in date: 2026-12-28\s+Check-out date: 2027-01-01/);
   assert.match(input, /GUEST FIRST NAME\s+Daniel/);
   assert.match(input, /CURRENT GUEST MESSAGE\s+Can we have a late check-in\?/);
   assert.deepEqual(body.tools, [{
@@ -735,7 +736,7 @@ test("Waraporn draft request attaches the Make vector store at Responses API lev
   assert.equal("previous_response_id" in body, false);
 });
 
-test("Waraporn draft request keeps the Make runtime input structure", async () => {
+test("Waraporn draft request includes the minimal verified booking context for linked bookings", async () => {
   const db = new FakeWarapornDB();
   db.messages[0]!.guest_message = "Can we extend one more night and what is the price?";
   const { fetcher, bodies } = openAiFetcher();
@@ -746,6 +747,7 @@ test("Waraporn draft request keeps the Make runtime input structure", async () =
   assert.match(text, /GUEST FIRST NAME\s+Daniel/);
   assert.match(text, /CHECK-IN DATE\s+2026-12-28/);
   assert.match(text, /CHECK-OUT DATE\s+2027-01-01/);
+  assert.match(text, /VERIFIED BOOKING CONTEXT\s+Guest full name: Daniel Padurariu\s+Accommodation type: Bungalow\s+Check-in date: 2026-12-28\s+Check-out date: 2027-01-01/);
   assert.match(text, /CONVERSATION CONTEXT\s+No previous conversation history stored in Vanara\./);
   assert.match(text, /CURRENT GUEST MESSAGE\s+Can we extend one more night and what is the price\?/);
   assert.doesNotMatch(text, /VANARA VERIFIED RUNTIME CONTEXT/);
