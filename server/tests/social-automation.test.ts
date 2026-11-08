@@ -2702,7 +2702,7 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(captionPrompt, /Facebook gold standard/);
   assert.match(captionPrompt, /Instagram gold standard/);
   assert.match(captionPrompt, /Do not make it short by default/);
-  assert.match(captionPrompt, /Use at least 2 details from visual_evidence or caption_anchors/);
+  assert.match(captionPrompt, /Usually use zero or one literal detail from visual_evidence or caption_anchors/);
   assert.match(captionPrompt, /exactly 7/);
   assert.match(captionPrompt, /Do not reuse the same opening syntax/);
   assert.match(captionPrompt, /The prepared analysis_json is the source of visual truth/);
