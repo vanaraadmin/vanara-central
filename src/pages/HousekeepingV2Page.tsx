@@ -138,9 +138,8 @@ function formatCompletionTime(value: string | null, language: "en" | "th", trans
 
 function completedTaskLabel(task: HousekeepingV2CompletedTask, translate: Translate): string {
   if (task.taskType === "ON_DEMAND_CLEANING") return translate("onDemandCleaning");
-  if (task.taskType === "LINEN_CHANGE") return translate("fullCleaning");
-  if (task.taskType === "STANDARD_CLEANING") return translate("normalCleaning");
-  return task.priority === "HIGH" || task.priority === "URGENT" ? translate("priorityCleaning") : translate("checkOutCleaning");
+  if (task.taskType === "TURNOVER" && (task.priority === "HIGH" || task.priority === "URGENT")) return translate("priorityCleaning");
+  return translate("normalCleaning");
 }
 
 function avatarInitials(name: string | null): string {

@@ -480,14 +480,14 @@ test("staff overview housekeeping summary derives from the Housekeeping V2 task 
   assert.deepEqual(card.metrics, [
     { label: "To Clean", value: 0, tone: "good" },
     { label: "Active Now", value: 1, tone: "attention" },
-    { label: "Completed Cleaning Today", value: 0, tone: "good" },
+    { label: "Completed Cleaning Today", value: 1, tone: "good" },
     { label: "Water Due", value: 1, tone: "attention" },
   ]);
   assert.equal(card.metrics.length, 4);
   assert.equal(card.metrics.some((metric) => metric.label === "Blocked"), false);
   assert.equal(card.metrics.some((metric) => metric.label === "Completed Today"), false);
   assert.equal(card.summaryLine1, "0 To Clean / 1 Active Now");
-  assert.equal(card.summaryLine2, "0 Completed Cleaning Today / 1 Water Due");
+  assert.equal(card.summaryLine2, "1 Completed Cleaning Today / 1 Water Due");
 });
 
 test("staff overview Active Now includes in-progress on-demand cleaning without adding it to To Clean", async () => {

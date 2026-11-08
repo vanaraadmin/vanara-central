@@ -350,7 +350,7 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(service, /No normal cleaning work\./);
   assert.match(service, /No water refills\./);
   assert.match(css, /\.housekeeping-v2-summary/);
-  assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(css, /\.housekeeping-v2-summary \.vc-summary-item__label\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
   assert.match(css, /@media \(max-width: 340px\)[\s\S]*\.housekeeping-v2-summary\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
