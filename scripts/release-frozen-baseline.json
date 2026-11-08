@@ -25,7 +25,7 @@
     "server/src/services/notifications.service.ts": "64878ee89e87cd7ea05914caf917b32839b13a5974b8390357526608092a5bf2",
     "server/tests/chat.test.ts": "d8c214a04a542c1634081f9020303bd32476ef1c46daa32c66f45b4913ad1ae9",
     "server/tests/notifications-source.test.ts": "3bb5e150dff8f4ded20bdbabc22d60600eeb91a85ff939277a41ec40a9bd826b",
-    "server/tests/user-area-source.test.ts": "e5c763ce92bac5c11c5d17c2b8c03b9678f2a6df064f09edd9e50eef97d0531f",
+    "server/tests/user-area-source.test.ts": "c1c14d32a1235ce725cc094f07137fae4a4c44e88a5cba497b6b971e9d90a1a5",
     "src/assets/sounds/event_alert_notification.mp3": "b40bf18982d6c529d3b6b95c64624386115d8515721c1e202a77aa69e5c69fd3",
     "src/assets/sounds/notification_chat_message.mp3": "c13da61f3e5bcd79ce3e8785715970ef8d09b2edcd5f956febc6d83e6a759827",
     "src/components/FloatingTeamChat.tsx": "92cf342453689cfb9e517a20068a5f0d550975b1855de581ead72de526630d52",
