@@ -12,6 +12,17 @@ interface LoadRow { laundry_load_id: number; load_code: string; status: LaundryS
 interface LoadItemRow { laundry_load_id: number; sku: string; sent_quantity: number; received_quantity: number | null; }
 
 const MAX_NOTE_LENGTH = 600;
+const WEIGHT_TOLERANCE_RATIO = 0.15;
+const MIN_WEIGHT_TOLERANCE_KG = 0.5;
+
+function allowedWeightVariance(sentKg: number): number {
+  return Math.max(MIN_WEIGHT_TOLERANCE_KG, Math.round(sentKg * WEIGHT_TOLERANCE_RATIO * 100) / 100);
+}
+
+function weightHasDiscrepancy(sentKg: number, receivedKg: number): boolean {
+  return Math.abs(receivedKg - sentKg) > allowedWeightVariance(sentKg);
+}
+
 function cleanNote(value: unknown): string | null { return typeof value === "string" ? (value.trim().slice(0, MAX_NOTE_LENGTH) || null) : null; }
 function numberValue(value: unknown, label: string, allowZero = false): number { const n = typeof value === "number" ? value : Number(value); if (!Number.isFinite(n) || n < 0 || (!allowZero && n === 0)) throw new Error(`${label} must be greater than zero.`); return Math.round(n * 100) / 100; }
 function quantitiesFrom(value: unknown): LaundryQuantityInput[] { if (!Array.isArray(value)) throw new Error("Laundry item quantities are required."); const seen = new Set<string>(); return value.map((entry) => { if (!entry || typeof entry !== "object") throw new Error("Laundry item is invalid."); const sku = typeof (entry as { sku?: unknown }).sku === "string" ? (entry as { sku: string }).sku.trim().slice(0, 64) : ""; const raw = (entry as { quantity?: unknown }).quantity; const quantity = Number(raw); if (!sku || !Number.isInteger(quantity) || quantity < 0 || seen.has(sku)) throw new Error("Laundry quantity is invalid."); seen.add(sku); return { sku, quantity }; }).filter((entry) => entry.quantity > 0); }
@@ -104,7 +115,8 @@ export async function receiveLaundryLoad(env: LaundryBindings, user: CurrentUser
   const current = await env.DB.prepare("SELECT laundry_load_id, load_code, status FROM laundry_loads WHERE laundry_load_id = ?").bind(loadId).first<{ laundry_load_id: number; load_code: string; status: LaundryStatus }>(); if (!current) throw new Error("Laundry load was not found."); if (current.status !== "SENT") throw new Error("This laundry load has already been closed.");
   const sentRows = await env.DB.prepare("SELECT sku, sent_quantity FROM laundry_load_items WHERE laundry_load_id = ?").bind(loadId).all<{ sku: string; sent_quantity: number }>(); const sent = sentRows.results ?? []; const received = new Map(input.quantities.map((item) => [item.sku, item.quantity]));
   for (const item of input.quantities) if (!sent.some((row) => row.sku === item.sku)) throw new Error("A returned item does not belong to this load.");
-  const discrepancy = Math.abs(input.totalKg - (await env.DB.prepare("SELECT sent_kg FROM laundry_loads WHERE laundry_load_id = ?").bind(loadId).first<{ sent_kg: number }>())!.sent_kg) > 0.01 || sent.some((item) => (received.get(item.sku) ?? 0) !== item.sent_quantity);
+  const sentKg = (await env.DB.prepare("SELECT sent_kg FROM laundry_loads WHERE laundry_load_id = ?").bind(loadId).first<{ sent_kg: number }>())!.sent_kg;
+  const discrepancy = weightHasDiscrepancy(sentKg, input.totalKg) || sent.some((item) => (received.get(item.sku) ?? 0) !== item.sent_quantity);
   const now = new Date().toISOString(); const status: LaundryStatus = discrepancy ? "DISCREPANCY" : "RECEIVED";
   await env.DB.batch([env.DB.prepare("UPDATE laundry_loads SET status = ?, received_kg = ?, received_note = ?, received_by_user_id = ?, received_by_name = ?, received_at = ?, updated_at = ? WHERE laundry_load_id = ?").bind(status, input.totalKg, input.note, user.id, user.displayName, now, now, loadId), ...sent.map((item) => env.DB.prepare("UPDATE laundry_load_items SET received_quantity = ? WHERE laundry_load_id = ? AND sku = ?").bind(received.get(item.sku) ?? 0, loadId, item.sku)), env.DB.prepare("INSERT INTO laundry_load_events (laundry_load_id, event_type, actor_user_id, actor_name, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(loadId, discrepancy ? "DISCREPANCY" : "RECEIVED", user.id, user.displayName, JSON.stringify({ totalKg: input.totalKg }), now)]);
   await notifyLaundry(env, { type: discrepancy ? "discrepancy" : "received", id: loadId, code: current.load_code, actor: user.displayName }).catch((error) => console.warn("Laundry notification failed", error)); return getLaundryWorkspace(env);

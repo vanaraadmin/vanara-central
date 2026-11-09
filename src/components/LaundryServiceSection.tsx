@@ -8,6 +8,8 @@ import type { LaundryLoad, LaundryLoadInput, LaundryWorkspace } from "../types/l
 type Mode = "summary" | "send" | { receive: LaundryLoad };
 type QuantityValue = number | "";
 const phone = "+66970494830";
+const WEIGHT_TOLERANCE_RATIO = 0.15;
+const MIN_WEIGHT_TOLERANCE_KG = 0.5;
 
 function copy(language: "en" | "th") {
   const th = language === "th";
@@ -29,13 +31,15 @@ function quantityState(items: LaundryWorkspace["inventory"], fallback?: LaundryL
 function Actor({ name, photoUrl }: { name: string; photoUrl: string | null }) { return <span className="laundry-actor" title={name}>{photoUrl ? <img src={photoUrl} alt="" /> : initials(name)}</span>; }
 
 function signedDifference(value: number) { return `${value > 0 ? "+" : ""}${value}`; }
+function allowedWeightVariance(sentKg: number) { return Math.max(MIN_WEIGHT_TOLERANCE_KG, Math.round(sentKg * WEIGHT_TOLERANCE_RATIO * 100) / 100); }
+function weightHasDiscrepancy(sentKg: number, receivedKg: number) { return Math.abs(receivedKg - sentKg) > allowedWeightVariance(sentKg); }
 
 function DiscrepancyDetails({ load }: { load: LaundryLoad }) {
   const { language } = useLanguage(); const text = copy(language);
-  const kgDifference = load.receivedKg === null ? 0 : Math.round((load.receivedKg - load.sentKg) * 100) / 100;
+  const kgDifference = load.receivedKg === null || !weightHasDiscrepancy(load.sentKg, load.receivedKg) ? 0 : Math.round((load.receivedKg - load.sentKg) * 100) / 100;
   const itemDifferences = load.items.filter((item) => item.difference !== null && item.difference !== 0);
   if (kgDifference === 0 && itemDifferences.length === 0) return null;
-  return <div className="laundry-load-card__discrepancy" role="alert"><strong>{text.discrepancyDetails}</strong>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {load.receivedKg} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg)</span>}{itemDifferences.map((item) => {
+  return <div className="laundry-load-card__discrepancy" role="alert"><strong>{text.discrepancyDetails}</strong>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {load.receivedKg} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg · ±{allowedWeightVariance(load.sentKg)} kg)</span>}{itemDifferences.map((item) => {
     const difference = item.difference!;
     const itemName = language === "th" ? item.nameTh : item.nameEn;
     return <span key={item.sku}>{itemName}: {item.sentQuantity} {text.sentQty.toLowerCase()} · {item.receivedQuantity} {text.returnedQty.toLowerCase()} · {difference < 0 ? `${Math.abs(difference)} ${text.missing}` : `${difference} ${text.extra}`}</span>;
@@ -45,10 +49,10 @@ function DiscrepancyDetails({ load }: { load: LaundryLoad }) {
 function ReturnDifferencePreview({ load, totalKg, quantities }: { load: LaundryLoad; totalKg: string; quantities: Record<string, QuantityValue> }) {
   const { language } = useLanguage(); const text = copy(language);
   const returnedKg = Number(totalKg);
-  const kgDifference = Number.isFinite(returnedKg) ? Math.round((returnedKg - load.sentKg) * 100) / 100 : 0;
+  const kgDifference = Number.isFinite(returnedKg) && weightHasDiscrepancy(load.sentKg, returnedKg) ? Math.round((returnedKg - load.sentKg) * 100) / 100 : 0;
   const itemDifferences = load.items.map((item) => ({ item, received: typeof quantities[item.sku] === "number" ? quantities[item.sku] as number : 0 })).filter(({ item, received }) => received !== item.sentQuantity);
   if (kgDifference === 0 && itemDifferences.length === 0) return null;
-  return <div className="laundry-service__warning" role="status"><strong>{text.returnCheckWarning}</strong>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {Number.isFinite(returnedKg) ? returnedKg : 0} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg)</span>}{itemDifferences.map(({ item, received }) => {
+  return <div className="laundry-service__warning" role="status"><strong>{text.returnCheckWarning}</strong>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {Number.isFinite(returnedKg) ? returnedKg : 0} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg · ±{allowedWeightVariance(load.sentKg)} kg)</span>}{itemDifferences.map(({ item, received }) => {
     const difference = received - item.sentQuantity;
     const itemName = language === "th" ? item.nameTh : item.nameEn;
     return <span key={item.sku}>{itemName}: {item.sentQuantity} {text.sentQty.toLowerCase()} · {received} {text.returnedQty.toLowerCase()} · {difference < 0 ? `${Math.abs(difference)} ${text.missing}` : `${difference} ${text.extra}`}</span>;
