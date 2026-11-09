@@ -672,6 +672,10 @@ export function buildSocialImagePrepareRequest(
       },
       {
         type: "image_generation",
+        // Keep image-generation complexity independent from the low reasoning
+        // setting used by the coordinating model. Some supported models reject
+        // an inherited `low` complexity for this tool.
+        complexity: "medium",
         output_format: "jpeg",
         quality: "high",
         background: "auto",

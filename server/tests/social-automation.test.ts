@@ -1419,6 +1419,7 @@ test("social image preparation processes one queued photo FIFO with one OpenAI r
   assert.equal((requestBody.reasoning as { effort?: string } | undefined)?.effort, "low");
   assert.match(JSON.stringify(requestBody.tools), /file_search/);
   assert.match(JSON.stringify(requestBody.tools), /image_generation/);
+  assert.match(JSON.stringify(requestBody.tools), /complexity":"medium/);
   assert.match(JSON.stringify(requestBody.tools), /max_num_results":6/);
   assert.match(JSON.stringify(requestBody), /data:image\/jpeg;base64/);
   assert.match(JSON.stringify(requestBody), /Vanara/);
@@ -2658,6 +2659,7 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(imageService, /reasoning: \{ effort: "low" \}/);
   assert.match(imageService, /type: "file_search"/);
   assert.match(imageService, /type: "image_generation"/);
+  assert.match(imageService, /complexity: "medium"/);
   assert.match(imageService, /openai_request_count = 1/);
   assert.match(imageService, /unsupported_image_type/);
   assert.match(imagePrompt, /Preserve the source photo as the same recognisable scene/);
