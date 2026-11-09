@@ -14,6 +14,8 @@ type RecentBookingsProps = {
   onRetry?: () => void;
 };
 
+type BookingPulseFilter = "ALL" | BookingPulseEventType;
+
 function eventLabel(type: BookingPulseEventType, translate: (key: string) => string): string {
   if (type === "NEW") return translate("eventNew");
   if (type === "UPDATED") return translate("eventModified");
@@ -283,9 +285,13 @@ export default function RecentBookings({
   onRetry,
 }: RecentBookingsProps) {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<BookingPulseFilter>("ALL");
   const { translate } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
-  const visibleEvents = useMemo(() => events.slice(0, 3), [events]);
+  const visibleEvents = useMemo(
+    () => events.filter((event) => filter === "ALL" || event.eventType === filter).slice(0, 5),
+    [events, filter],
+  );
   const expandedEventStillVisible = expandedEventId !== null && visibleEvents.some((item) => item.eventId === expandedEventId);
   const activeExpandedEventId = expandedEventStillVisible ? expandedEventId : null;
 
@@ -348,6 +354,13 @@ export default function RecentBookings({
       <div className="recent-bookings__surface booking-pulse__surface">
         <span className="recent-bookings__ambient" aria-hidden="true" />
         <span className="recent-bookings__grain" aria-hidden="true" />
+
+        <div className="booking-pulse__filters" aria-label={translate("bookingPulseFilter")}>
+          {(["ALL", "NEW", "UPDATED", "CANCELLED"] as BookingPulseFilter[]).map((option) => {
+            const label = option === "ALL" ? translate("bookingPulseAll") : eventLabel(option, translate);
+            return <button aria-pressed={filter === option} className={filter === option ? "is-active" : ""} key={option} onClick={() => setFilter(option)} type="button">{label}</button>;
+          })}
+        </div>
 
         {loading && visibleEvents.length === 0 ? (
           <RecentBookingsLoading />

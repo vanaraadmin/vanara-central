@@ -131,6 +131,40 @@
   pointer-events: none;
 }
 
+.booking-pulse__filters {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 0.42rem;
+  padding: 0.82rem 0.9rem 0.2rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.booking-pulse__filters::-webkit-scrollbar { display: none; }
+
+.booking-pulse__filters button {
+  flex: 0 0 auto;
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgba(244, 237, 216, 0.16);
+  border-radius: 999px;
+  color: rgba(238, 233, 216, 0.65);
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
+  font-size: 0.61rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.booking-pulse__filters button.is-active {
+  border-color: rgba(205, 185, 125, 0.64);
+  color: rgba(255, 246, 217, 0.98);
+  background: rgba(205, 185, 125, 0.15);
+  box-shadow: 0 0 14px rgba(205, 185, 125, 0.11);
+}
+
 .recent-bookings__list {
   display: grid;
 }

@@ -56,6 +56,7 @@ export interface BookingPulseItem {
 
 export interface ListRecentBookingEventsOptions {
   includeBookingValue?: boolean;
+  eventType?: BookingPulseEventType;
 }
 
 interface BookingEventRow {
@@ -547,6 +548,7 @@ export async function listRecentBookingEvents(
 
   const pulseRows = [...rowsByGroup.values()]
     .map(bookingPulseRowFor)
+    .filter((row) => !options.eventType || effectivePulseTypeFor(row) === options.eventType)
     .sort(eventSortDescending)
     .slice(0, limit);
 

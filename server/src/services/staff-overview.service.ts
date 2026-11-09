@@ -369,9 +369,10 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       role: user.role,
     },
     bookingPulseCapabilities,
-    bookingEvents: await listRecentBookingEvents(env, 3, new Date(), {
+    bookingEvents: (await Promise.all(["NEW", "UPDATED", "CANCELLED"].map((eventType) => listRecentBookingEvents(env, 5, new Date(), {
       includeBookingValue: bookingPulseCapabilities.canViewBookingValue,
-    }),
+      eventType: eventType as "NEW" | "UPDATED" | "CANCELLED",
+    })))).flat().sort((a, b) => b.eventTimestamp.localeCompare(a.eventTimestamp)),
     cards,
   };
 }

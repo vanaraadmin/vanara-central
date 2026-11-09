@@ -600,6 +600,8 @@ const en = {
   freeTextRequest: "Free-text request",
   ownerDecision: "Owner decision",
   bookingPulse: "Booking pulse",
+  bookingPulseFilter: "Filter booking activity",
+  bookingPulseAll: "All",
   recentBookings: "Recent Bookings",
   noRecentBookingActivity: "No recent booking activity",
   bookingActivityLoadFailed: "Booking activity could not be loaded.",

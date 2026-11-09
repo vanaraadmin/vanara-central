@@ -600,6 +600,8 @@ const th = {
   freeTextRequest: "คำขอซื้อที่พิมพ์เอง",
   ownerDecision: "รอเจ้าของตัดสินใจ",
   bookingPulse: "การจองล่าสุด",
+  bookingPulseFilter: "กรองรายการจอง",
+  bookingPulseAll: "ทั้งหมด",
   recentBookings: "การจองล่าสุด",
   noRecentBookingActivity: "ยังไม่มีการจองใหม่",
   bookingActivityLoadFailed: "โหลดการจองไม่ได้",
