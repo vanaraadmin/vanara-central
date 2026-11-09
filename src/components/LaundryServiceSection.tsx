@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import VanaraSectionHeader from "./vanara/VanaraSectionHeader";
+import { PhoneIcon } from "./OperationsIcons";
 import { useLanguage } from "../providers/language.context";
 import { loadLaundryWorkspace, receiveLaundryLoad, sendLaundryLoad } from "../services/laundry.service";
 import type { LaundryLoad, LaundryLoadInput, LaundryWorkspace } from "../types/laundry";
@@ -39,7 +40,7 @@ function DiscrepancyDetails({ load }: { load: LaundryLoad }) {
   const kgDifference = load.receivedKg === null || !weightHasDiscrepancy(load.sentKg, load.receivedKg) ? 0 : Math.round((load.receivedKg - load.sentKg) * 100) / 100;
   const itemDifferences = load.items.filter((item) => item.difference !== null && item.difference !== 0);
   if (kgDifference === 0 && itemDifferences.length === 0) return null;
-  return <div className="laundry-load-card__discrepancy" role="alert"><strong>{text.discrepancyDetails}</strong>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {load.receivedKg} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg · ±{allowedWeightVariance(load.sentKg)} kg)</span>}{itemDifferences.map((item) => {
+  return <div className="laundry-load-card__discrepancy" role="alert"><div className="laundry-load-card__discrepancy-head"><strong>{text.discrepancyDetails}</strong><a aria-label={text.call} className="laundry-load-card__call" href={`tel:${phone}`} title={text.call}><PhoneIcon /></a></div>{kgDifference !== 0 && <span>{text.weightDifference}: {load.sentKg} kg {text.sentQty.toLowerCase()} · {load.receivedKg} kg {text.returnedQty.toLowerCase()} ({signedDifference(kgDifference)} kg · ±{allowedWeightVariance(load.sentKg)} kg)</span>}{itemDifferences.map((item) => {
     const difference = item.difference!;
     const itemName = language === "th" ? item.nameTh : item.nameEn;
     return <span key={item.sku}>{itemName}: {item.sentQuantity} {text.sentQty.toLowerCase()} · {item.receivedQuantity} {text.returnedQty.toLowerCase()} · {difference < 0 ? `${Math.abs(difference)} ${text.missing}` : `${difference} ${text.extra}`}</span>;
