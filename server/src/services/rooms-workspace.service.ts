@@ -510,7 +510,7 @@ function mapReceptionSummary(row: RoomWorkspaceRow, alerts: RoomReceptionAlertSu
 
 function alertLabel(type: ReceptionAlertRow["alert_type"], title: string): string {
   if (type === "passport_missing") return "Passport Missing";
-  if (type === "deposit_pending") return "Deposit Pending";
+  if (type === "deposit_pending") return "Deposit Missing";
   return title;
 }
 

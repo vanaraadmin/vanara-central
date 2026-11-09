@@ -24,6 +24,7 @@ const roomLabelKeys: Record<string, string> = {
   DEPARTURE: "checkOut",
   DEPARTURES: "departures",
   "DEPOSIT PENDING": "depositPending",
+  "DEPOSIT MISSING": "depositPending",
   DIRTY: "roomDirty",
   "GUEST WAITING": "guestWaiting",
   "IN HOUSE": "inHouse",
