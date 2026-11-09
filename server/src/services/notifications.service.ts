@@ -24,7 +24,10 @@ export type NotificationType =
   | "reception.check_in.completed"
   | "reception.check_out.completed"
   | "maintenance.blocking.created"
-  | "maintenance.blocking.enabled";
+  | "maintenance.blocking.enabled"
+  | "laundry.load.sent"
+  | "laundry.load.received"
+  | "laundry.load.discrepancy";
 
 export interface PushSubscriptionRow {
   push_subscription_id: number;

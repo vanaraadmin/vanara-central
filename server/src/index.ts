@@ -20,6 +20,7 @@ import { completeReceptionEvent, getReceptionOverview, getReceptionStay, normali
 import { getHousekeepingOverview, housekeepingWorkflowErrorStatus, listAssignableHousekeepingUsers, normalizeHousekeepingAssignmentInput, normalizeHousekeepingChecklistInput, normalizeHousekeepingWorkflowInput, updateHousekeepingAssignment, updateHousekeepingChecklist, updateHousekeepingWorkflow, type HousekeepingBindings } from "./services/housekeeping-overview.service.js";
 import { HousekeepingTaskDomainError } from "./services/housekeeping-task-domain.service.js";
 import { getHousekeepingV2Overview, HousekeepingV2DateError, normalizeHousekeepingV2Date, type HousekeepingV2Bindings } from "./services/housekeeping-v2-overview.service.js";
+import { createLaundryLoad, getLaundryWorkspace, normalizeLaundryLoadInput, normalizeLaundryReceiveInput, receiveLaundryLoad, type LaundryBindings } from "./services/laundry.service.js";
 import { assignHousekeepingV2Task, createHousekeepingV2OnDemandCleaning, forceHousekeepingV2RoomRelease, getHousekeepingV2RoomDetail, HousekeepingV2RoomError, markHousekeepingV2LinenRequired, normalizeForceReleaseInput, normalizeLinenRequiredInput, normalizeOnDemandCleaningInput, normalizeTaskActionInput, normalizeTaskAssignmentInput, performHousekeepingV2TaskAction, type HousekeepingV2RoomBindings } from "./services/housekeeping-v2-room.service.js";
 import { normalizeRoomOperationalAvailabilityInput, updateRoomOperationalAvailability } from "./services/room-operational-state.service.js";
 import { cleanupExpiredChatAttachments, clearChatAnnouncement, createChatAttachmentMessage, createChatMessage, createGroupChat, getChatAttachmentDownload, getChatConversation, getChatUnreadSummary, listChatConversations, listChatMessagePage, listChatUsers, markChatConversationRead, normalizeAnnouncementInput, normalizeChatAttachmentInput, normalizeChatUserId, normalizeGroupChatInput, normalizeMessageInput, normalizeReactionInput, openPrivateChat, setChatAnnouncement, toggleChatMessageReaction, translateChatMessage, type ChatBindings } from "./services/chat.service.js";
@@ -93,7 +94,7 @@ import {
 export { ChatConversationRoom } from "./services/chat-conversation-room.do.js";
 export { ChatUserInboxRoom } from "./services/chat-user-inbox-room.do.js";
 
-export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, NotificationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, AccountingBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, LoginRateLimitBindings {
+export interface Bindings extends PropertySyncBindings, OfferPricesSyncBindings, BookingsSyncBindings, MessagesSyncBindings, GuestMessagesWorkspaceBindings, MessageReviewBindings, WarapornDraftBindings, AvailabilitySyncBindings, HousekeepingBindings, HousekeepingV2Bindings, HousekeepingV2RoomBindings, LaundryBindings, MovementsBindings, ReceptionBindings, RoomDetailBindings, RoomsWorkspaceBindings, StaffOverviewBindings, ChatBindings, FreeTextTranslationBindings, NotificationBindings, MaintenanceBindings, ProcurementBindings, PayrollBindings, AccountingBindings, SocialAutomationBindings, SocialImagePreparationBindings, SocialCaptionBindings, SocialPublishBindings, SocialCommentBindings, AuthBindings, PassportStorageBindings, PassportOcrBindings, PassportClassificationBindings, PassportLivePreflightBindings, BookingPassportBindings, PassportRetentionBindings, Tm30Bindings, Beds24WebhookBindings, WarapornKbBackupBindings, LoginRateLimitBindings {
   BEDS24_BASE_URL: string;
   BEDS24_LONG_LIFE_TOKEN: string;
   GOOGLE_TRANSLATE_API_KEY?: string;
@@ -1587,6 +1588,38 @@ app.get("/api/housekeeping/v2/tasks", async (c) => {
       success: false,
       error: error instanceof AuthenticationError || error instanceof ForbiddenError || error instanceof HousekeepingV2DateError ? errorMessage(error) : "Housekeeping tasks are temporarily unavailable",
     }, error instanceof HousekeepingV2DateError ? 400 : protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/housekeeping/laundry", async (c) => {
+  try {
+    await authenticated(c, "housekeeping", "access");
+    c.header("Cache-Control", "no-store");
+    return c.json({ success: true, data: await getLaundryWorkspace(c.env) });
+  } catch (error) {
+    console.error(JSON.stringify({ message: "Laundry workspace request failed", error: errorMessage(error) }));
+    return c.json({ success: false, error: error instanceof AuthenticationError || error instanceof ForbiddenError ? errorMessage(error) : "Laundry service is temporarily unavailable" }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/laundry/loads", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "access");
+    const payload = normalizeLaundryLoadInput(await c.req.json().catch(() => null));
+    return c.json({ success: true, data: await createLaundryLoad(c.env, user, payload) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/housekeeping/laundry/loads/:loadId/receive", async (c) => {
+  try {
+    const user = await authenticated(c, "housekeeping", "access");
+    const loadId = positiveIntegerParam(c.req.param("loadId"), "laundry load id");
+    const payload = normalizeLaundryReceiveInput(await c.req.json().catch(() => null));
+    return c.json({ success: true, data: await receiveLaundryLoad(c.env, user, loadId, payload) });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
   }
 });
 
