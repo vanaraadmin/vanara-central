@@ -35,7 +35,10 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
   const mutation = useMutation({
     mutationFn: (action: "ACKNOWLEDGE" | "DONE" | "REJECTED") => updateProcurementRequest(request.id, { action }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["procurement", "requests"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["procurement", "requests"] }),
+        queryClient.invalidateQueries({ queryKey: ["staff", "overview"] }),
+      ]);
     },
   });
 
@@ -104,6 +107,7 @@ function RequestCard({ isOwner, request }: { isOwner: boolean; request: Procurem
           </button>
         </div>
       ) : null}
+      {mutation.isError ? <p className="procurement-error">{translate("requestNotSaved")}</p> : null}
     </article>
   );
 }

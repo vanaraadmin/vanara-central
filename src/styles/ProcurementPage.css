@@ -265,8 +265,12 @@
 }
 
 .procurement-action--acknowledge {
+  grid-column: 1 / -1;
+  min-height: 3.15rem;
+  border: 1px solid rgba(124, 88, 20, 0.35);
   color: var(--vc-color-jungle-900);
   background: var(--vc-color-gold-300);
+  box-shadow: 0 7px 15px rgba(124, 88, 20, 0.14);
 }
 
 .procurement-action--reject {

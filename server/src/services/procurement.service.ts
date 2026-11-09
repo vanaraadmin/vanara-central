@@ -130,6 +130,7 @@ export function normalizeUpdateProcurementRequestInput(payload: unknown): Update
   if (!payload || typeof payload !== "object") throw new Error("Status payload is required.");
   const action = "action" in payload ? payload.action : undefined;
   if (action === "ACKNOWLEDGE") return { action };
+  if (action === "DONE" || action === "REJECTED") return { action };
   const status = "status" in payload ? payload.status : undefined;
   if (status === "DONE" || status === "REJECTED") return { action: status };
   if (status === "received") return { action: "DONE" };

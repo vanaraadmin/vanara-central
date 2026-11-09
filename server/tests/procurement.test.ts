@@ -220,6 +220,14 @@ test("owner can mark a procurement request bought or rejected without editing re
   assert.equal(rejected?.requestTextOriginal, "Extra towels");
 });
 
+test("owner action payloads close procurement requests from the owner controls", async () => {
+  const data = env();
+  const created = await createProcurementRequest(data, { requestText: "Light bulbs" }, employee);
+  const done = await updateProcurementRequestStatus(data, created.id, normalizeUpdateProcurementRequestInput({ action: "DONE" }), owner);
+  assert.equal(done?.status, "DONE");
+  assert.ok(done?.closedAt);
+});
+
 test("an owner can take ownership of a pending request and the requester can see who is handling it", async () => {
   const data = env();
   const created = await createProcurementRequest(data, { requestText: "Laundry detergent" }, employee);
