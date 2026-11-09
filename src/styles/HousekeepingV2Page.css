@@ -100,7 +100,10 @@
 
 .laundry-service { margin-top: var(--vc-space-2); }
 .laundry-service__entry { display: grid; gap: var(--vc-space-4); padding: var(--vc-space-4); }
-.laundry-service__actions { display: flex; flex-wrap: wrap; gap: var(--vc-space-3); }
+.laundry-service__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--vc-space-3); }
+.laundry-service__actions .vc-primary-action,
+.laundry-service__actions .vc-secondary-action { min-width: 0; padding-inline: var(--vc-space-3); white-space: nowrap; font-size: var(--vc-type-body-sm); }
+@media (max-width: 390px) { .laundry-service__actions { grid-template-columns: 1fr; } }
 .laundry-service__actions > div { display: grid; gap: 5px; }.laundry-service__disabled-note { color: rgba(244,237,223,.52); font-size: .72rem; }
 .laundry-service__open { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: var(--vc-space-4); border: 1px solid rgba(235,241,233,.15); border-radius: 18px; color: rgba(250,247,238,.94); background: rgba(235,241,233,.06); font: inherit; text-align: left; }
 .laundry-service__open span:last-child { color: var(--vc-color-gold, #e5bd62); font-size: 1.6rem; }
