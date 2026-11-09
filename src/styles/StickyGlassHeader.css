@@ -173,6 +173,11 @@
   outline-offset: 3px;
 }
 
+/* Quantity-heavy laundry forms need unobstructed vertical scrolling. */
+:root.vc-laundry-entry-form-active .sticky-glass-nav-positioner {
+  display: none;
+}
+
 @media (max-height: 699px) {
   .sticky-glass-nav-positioner {
     bottom: calc(82px + env(safe-area-inset-bottom));
@@ -213,6 +218,7 @@
     width: 46px;
     height: 46px;
   }
+
 }
 
 @media (min-width: 760px) {

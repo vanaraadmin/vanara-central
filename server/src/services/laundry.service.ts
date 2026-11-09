@@ -52,6 +52,8 @@ async function requestLaundryPickup(env: LaundryBindings, input: { code: string;
     `น้ำหนักรวม ${input.totalKg} กก.`,
     "",
     "กรุณานัดรับผ้าที่ Vanara Bungalows, Bailan Bay",
+    "",
+    "หากมีข้อสงสัยหรือปัญหา ติดต่อ Vanara: 080 695 0139",
   ].join("\n");
   let response: Response;
   try {
@@ -63,6 +65,7 @@ async function requestLaundryPickup(env: LaundryBindings, input: { code: string;
         shipment_code: input.code,
         property: "Vanara Bungalows",
         location: "Bailan Bay, Koh Chang",
+        contact_phone: "0806950139",
         total_kg: input.totalKg,
         items: input.items.map((item) => ({ key: item.sku, label_th: item.nameTh, quantity: item.quantity })),
         message_th: messageTh,
