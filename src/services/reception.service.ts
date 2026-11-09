@@ -111,6 +111,12 @@ export async function loadReceptionOverview(date?: string, signal?: AbortSignal)
   return response.data;
 }
 
+export async function loadReceptionStay(bookingId: number, signal?: AbortSignal): Promise<ReceptionStay> {
+  const response = await requestJson<ReceptionStayResponse>(`/api/reception/stays/${bookingId}`, signal);
+  if (!response.success || !response.data) throw new Error(response.error ?? "Reception stay is unavailable");
+  return response.data;
+}
+
 export async function updateReceptionCheckIn(bookingId: number, field: ReceptionCheckInField, completed: boolean, signal?: AbortSignal): Promise<ReceptionStay> {
   return sendJson(`/api/reception/stays/${bookingId}/check-in`, "PATCH", { field, completed }, signal);
 }

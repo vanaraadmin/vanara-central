@@ -58,6 +58,7 @@ export interface RoomReceptionStepSummary {
 
 export interface RoomReceptionAlertSummary {
   id: number;
+  bookingId: number;
   type: string;
   label: string;
   tone: "warning" | "danger" | "info";

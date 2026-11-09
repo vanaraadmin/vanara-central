@@ -792,6 +792,22 @@ button.room-domain-card__primary-action {
   gap: 6px;
 }
 
+.reception-card__alert-action {
+  display: inline-flex;
+  min-width: 0;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.reception-card__alert-action:focus-visible {
+  outline: 2px solid var(--vc-focus-glass);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reception-card__alert-action:hover .operational-status-pill { filter: brightness(1.14); }
+}
+
 .reception-card__steps {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

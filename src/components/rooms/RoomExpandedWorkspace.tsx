@@ -4,6 +4,7 @@ import HousekeepingCard from "./HousekeepingCard";
 import MaintenanceCard from "./MaintenanceCard";
 import RoomHero from "./RoomHero";
 import RoomOperationalSummaryCard from "./RoomOperationalSummaryCard";
+import ReceptionCard from "./ReceptionCard";
 import TurnoverCard from "./TurnoverCard";
 import VanaraGlassSheet from "../vanara/VanaraGlassSheet";
 import { getRoomsWorkspaceTurnover } from "../../config/turnoverPresentation";
@@ -61,6 +62,7 @@ export default function RoomExpandedWorkspace({
             stay={room.currentStay}
           />
         ) : null}
+        <ReceptionCard roomId={room.unitId} roomName={room.roomName} reception={room.reception} />
         <RoomOperationalSummaryCard summary={room.operational} />
         {turnover ? (
           <TurnoverCard

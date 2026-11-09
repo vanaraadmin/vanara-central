@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import depositIcon from "../assets/img/hand-coins-light.svg";
@@ -21,7 +21,7 @@ import VanaraSummaryGrid from "../components/vanara/VanaraSummaryGrid";
 import type { StatusTone } from "../config/roomOperationalPresentation";
 import { useLanguage } from "../providers/language.context";
 import { loadCurrentUser } from "../services/auth.service";
-import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
+import { completeReceptionCheckIn, completeReceptionCheckOut, loadBookingPassports, loadReceptionOverview, loadReceptionStay, saveReceptionNotes, updateReceptionCheckIn } from "../services/reception.service";
 import type { BookingPassport, PassportData, ReceptionOverview, ReceptionStay } from "../types/reception";
 import { formatNationalityText } from "../utils/country-nationality";
 import { translateStaffLabel } from "../utils/staff-i18n-labels";
@@ -1147,8 +1147,9 @@ function BookingDetailsSheet({
   });
   if (!stay) return null;
 
-  const showCheckInChecklist = stay.arrival === today;
+  const bookingId = stay.bookingId;
   const passportCount = passports.data?.length ?? 0;
+  const showCheckInChecklist = stay.arrival === today || (stay.checkIn.guestArrived && (!stay.checkIn.depositCollected || passportCount === 0));
   const nationality = formatNationalityText(stay.nationality);
 
   function openPassportFlow() {
@@ -1172,6 +1173,9 @@ function BookingDetailsSheet({
   async function handlePassportSaved(saved: BookingPassport) {
     queryClient.setQueryData<BookingPassport[]>(passportsQueryKey, (current) => [...(current ?? []), saved]);
     await queryClient.invalidateQueries({ queryKey: passportsQueryKey });
+    const updated = await updateReceptionCheckIn(bookingId, "passportCollected", true);
+    onStayUpdated(updated);
+    queryClient.setQueryData<ReceptionOverview>(queryKey, (current) => (current ? upsertStay(current, updated) : current));
     setPassportWorkflowOpen(false);
     setPassportManagerOpen(true);
   }
@@ -1331,6 +1335,8 @@ function BookingDetailsSheet({
 export default function ReceptionPage() {
   const { translate } = useLanguage();
   const today = bangkokToday();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedBookingId = Number(searchParams.get("bookingId"));
   const [selectedDate, setSelectedDate] = useState(today);
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
   const [completionDraft, setCompletionDraft] = useState<CompletionDraft>(emptyCompletionDraft);
@@ -1347,6 +1353,16 @@ export default function ReceptionPage() {
     refetchInterval: 60_000,
   });
   const queryClient = useQueryClient();
+  const requestedStay = useQuery({
+    enabled: Number.isInteger(requestedBookingId) && requestedBookingId > 0,
+    queryKey: ["reception-stay", requestedBookingId],
+    queryFn: ({ signal }) => loadReceptionStay(requestedBookingId, signal),
+  });
+  const activeDetailsRequest = detailsRequest ?? (requestedBookingId > 0 ? requestedStay.data ?? null : null);
+  const closeDetails = () => {
+    setDetailsRequest(null);
+    if (searchParams.has("bookingId")) setSearchParams({}, { replace: true });
+  };
   const completion = useMutation({
     mutationFn: async ({ stay, type }: { stay: ReceptionStay; type: ReceptionCardType }) => (
       type === "arrival"
@@ -1441,10 +1457,10 @@ export default function ReceptionPage() {
         onFeedback={setContactFeedback}
       />
       <BookingDetailsSheet
-        onCancel={() => setDetailsRequest(null)}
+        onCancel={closeDetails}
         onStayUpdated={setDetailsRequest}
         queryKey={queryKey}
-        stay={detailsRequest}
+        stay={activeDetailsRequest}
         today={today}
       />
     </WorkspaceShell>

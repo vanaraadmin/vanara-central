@@ -1,4 +1,5 @@
 import type { StatusTone } from "../../config/roomOperationalPresentation";
+import { Link } from "react-router-dom";
 import type { ReceptionStayPhase, ReceptionStepState, RoomReceptionAlertSummary, RoomReceptionSummary } from "../../types/rooms-workspace";
 import { useLanguage } from "../../providers/language.context";
 import { translateStaffLabel } from "../../utils/staff-i18n-labels";
@@ -66,9 +67,11 @@ function ReceptionAlerts({ alerts }: { alerts: RoomReceptionAlertSummary[] }) {
   const { translate } = useLanguage();
   if (alerts.length === 0) return null;
   return (
-    <div className="reception-card__alerts" role="status">
+    <div className="reception-card__alerts" aria-label={translate("receptionAttentionRequired")}>
       {alerts.map((alert) => (
-        <OperationalStatusPill key={alert.id} label={translateStaffLabel(alert.label, translate)} tone={alert.tone} emphasis />
+        <Link className="reception-card__alert-action" key={alert.id} to={`/reception?bookingId=${alert.bookingId}`}>
+          <OperationalStatusPill label={translateStaffLabel(alert.label, translate)} tone={alert.tone} emphasis />
+        </Link>
       ))}
     </div>
   );

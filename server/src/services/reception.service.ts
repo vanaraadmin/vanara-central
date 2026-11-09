@@ -648,6 +648,20 @@ export async function updateReceptionAction(env: ReceptionBindings, bookingId: n
   const now = new Date().toISOString();
   await env.DB.prepare(`UPDATE reception_stays SET ${String(column)} = ?, updated_at = ? WHERE beds24_booking_id = ?`).bind(input.completed ? 1 : 0, now, bookingId).run();
   await recordEvent(env, bookingId, input.field, previous ? "true" : "false", input.completed ? "true" : "false", user, now);
+
+  const alertType = input.field === "passportCollected"
+    ? "passport_missing"
+    : input.field === "depositCollected"
+      ? "deposit_pending"
+      : null;
+  if (alertType) {
+    if (input.completed) {
+      await resolveReceptionAlert(env, bookingId, alertType, user, now);
+    } else {
+      const context = await loadBookingAlertContext(env, bookingId);
+      if (context) await upsertReceptionAlert(env, bookingId, context.unit_id, alertType, user, now);
+    }
+  }
   return getReceptionStay(env, bookingId);
 }
 

@@ -159,12 +159,13 @@ export interface RoomReceptionStepSummary {
 
 export interface RoomReceptionAlertSummary {
   id: number;
+  bookingId: number;
   type: string;
   label: string;
   tone: "warning" | "danger" | "info";
 }
 
-type MappedReceptionAlertSummary = RoomReceptionAlertSummary & { bookingId: number | null };
+type MappedReceptionAlertSummary = RoomReceptionAlertSummary;
 
 export interface RoomReceptionPrimaryAction {
   type: ReceptionPrimaryActionType;
