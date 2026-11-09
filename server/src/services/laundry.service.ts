@@ -1,7 +1,7 @@
 import type { CurrentUser } from "./current-user.service.js";
 import { emitNotification, notificationPayload, type NotificationBindings } from "./notifications.service.js";
 
-export interface LaundryBindings extends NotificationBindings { DB: D1Database; }
+export interface LaundryBindings extends NotificationBindings { DB: D1Database; LAUNDRY_MAKE_WEBHOOK_URL?: string; }
 export type LaundryStatus = "SENT" | "RECEIVED" | "DISCREPANCY";
 export interface LaundryQuantityInput { sku: string; quantity: number; }
 export interface LaundryLoadInput { totalKg: number; quantities: LaundryQuantityInput[]; note?: string | null; }
@@ -35,6 +35,49 @@ async function loadList(env: LaundryBindings, inventory: Awaited<ReturnType<type
 }
 export async function getLaundryWorkspace(env: LaundryBindings) { const inventory = await calculatedInventory(env); const loads = await loadList(env, inventory); return { inventory, openLoads: loads.filter((load) => load.status === "SENT"), recentLoads: loads.filter((load) => load.status !== "SENT") }; }
 async function notifyLaundry(env: LaundryBindings, input: { type: "sent" | "received" | "discrepancy"; id: number; code: string; actor: string }) { const isSent = input.type === "sent"; const mismatch = input.type === "discrepancy"; await emitNotification(env, { type: isSent ? "laundry.load.sent" : mismatch ? "laundry.load.discrepancy" : "laundry.load.received", entityType: "laundry_load", entityId: input.id, dedupeKey: `laundry:${input.type}:${input.id}`, audience: "all-active", data: { laundryLoadId: input.id, code: input.code }, payload: { en: notificationPayload(mismatch ? `Laundry discrepancy - ${input.code}` : isSent ? `Laundry sent - ${input.code}` : `Laundry returned - ${input.code}`, mismatch ? "Returned quantities differ. Review the load now." : isSent ? `${input.actor} recorded a load for external laundry.` : `${input.actor} completed the return check.`, `laundry-${input.id}`, "/housekeeping"), th: notificationPayload(mismatch ? `ผ้าซักมีจำนวนไม่ตรง - ${input.code}` : isSent ? `ส่งผ้าซักแล้ว - ${input.code}` : `รับผ้าซักแล้ว - ${input.code}`, mismatch ? "จำนวนที่รับกลับไม่ตรง กรุณาตรวจสอบทันที" : isSent ? `${input.actor} บันทึกการส่งผ้าไปซักแล้ว` : `${input.actor} ตรวจรับผ้าซักเรียบร้อยแล้ว`, `laundry-${input.id}`, "/housekeeping") } }); }
+
+async function requestLaundryPickup(env: LaundryBindings, input: { code: string; totalKg: number; items: Array<{ sku: string; nameTh: string; quantity: number }> }) {
+  const endpoint = env.LAUNDRY_MAKE_WEBHOOK_URL?.trim();
+  if (!endpoint) throw new Error("Laundry pickup messaging is not configured.");
+  const lines = input.items.map((item) => `${item.nameTh} ${item.quantity} ชิ้น`);
+  const messageTh = [
+    "VANARA BUNGALOWS · BAILAN BAY",
+    "",
+    "ขอให้เข้ารับผ้าสำหรับซักและรีด",
+    "",
+    `เลขที่รายการ: ${input.code}`,
+    "",
+    ...lines,
+    "",
+    `น้ำหนักรวม ${input.totalKg} กก.`,
+    "",
+    "กรุณานัดรับผ้าที่ Vanara Bungalows, Bailan Bay",
+  ].join("\n");
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "laundry_pickup_requested",
+        shipment_code: input.code,
+        property: "Vanara Bungalows",
+        location: "Bailan Bay, Koh Chang",
+        total_kg: input.totalKg,
+        items: input.items.map((item) => ({ key: item.sku, label_th: item.nameTh, quantity: item.quantity })),
+        message_th: messageTh,
+      }),
+    });
+  } catch (error) {
+    console.error("Laundry Make webhook network failure", { code: input.code, error });
+    throw new Error("Laundry pickup request could not be sent. Please try again.", { cause: error });
+  }
+  if (!response.ok) {
+    console.error("Laundry Make webhook rejected request", { code: input.code, status: response.status });
+    throw new Error("Laundry pickup request could not be sent. Please try again.");
+  }
+}
+
 export async function createLaundryLoad(env: LaundryBindings, user: CurrentUser, input: LaundryLoadInput) {
   const inventory = await calculatedInventory(env); const known = new Map(inventory.map((item) => [item.sku, item]));
   for (const item of input.quantities) { const current = known.get(item.sku); if (!current) throw new Error("Laundry item is not recognised."); if (item.quantity > current.inStorage) throw new Error(`${current.nameEn}: only ${current.inStorage} available in storage.`); }
@@ -42,6 +85,16 @@ export async function createLaundryLoad(env: LaundryBindings, user: CurrentUser,
   const inserted = await env.DB.prepare(`INSERT INTO laundry_loads (load_code, status, sent_kg, sent_note, sent_by_user_id, sent_by_name, sent_at, created_at, updated_at) VALUES (?, 'SENT', ?, ?, ?, ?, ?, ?, ?)`).bind(temporaryCode, input.totalKg, input.note, user.id, user.displayName, now, now, now).run();
   const id = Number(inserted.meta.last_row_id); const code = `L-${now.slice(0, 10).replaceAll("-", "")}-${String(id).padStart(4, "0")}`;
   await env.DB.batch([env.DB.prepare("UPDATE laundry_loads SET load_code = ?, updated_at = ? WHERE laundry_load_id = ?").bind(code, now, id), ...input.quantities.map((item) => env.DB.prepare("INSERT INTO laundry_load_items (laundry_load_id, sku, sent_quantity) VALUES (?, ?, ?)").bind(id, item.sku, item.quantity)), env.DB.prepare("INSERT INTO laundry_load_events (laundry_load_id, event_type, actor_user_id, actor_name, details_json, created_at) VALUES (?, 'SENT', ?, ?, ?, ?)").bind(id, user.id, user.displayName, JSON.stringify({ totalKg: input.totalKg }), now)]);
+  try {
+    await requestLaundryPickup(env, { code, totalKg: input.totalKg, items: input.quantities.map((item) => ({ sku: item.sku, nameTh: known.get(item.sku)!.nameTh, quantity: item.quantity })) });
+  } catch (error) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM laundry_load_events WHERE laundry_load_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM laundry_load_items WHERE laundry_load_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM laundry_loads WHERE laundry_load_id = ?").bind(id),
+    ]);
+    throw error;
+  }
   await notifyLaundry(env, { type: "sent", id, code, actor: user.displayName }).catch((error) => console.warn("Laundry notification failed", error)); return getLaundryWorkspace(env);
 }
 export async function receiveLaundryLoad(env: LaundryBindings, user: CurrentUser, loadId: number, input: LaundryReceiveInput) {
