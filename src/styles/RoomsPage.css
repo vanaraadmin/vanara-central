@@ -804,8 +804,30 @@ button.room-domain-card__primary-action {
   outline-offset: 3px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .reception-card__alert-action:hover .operational-status-pill { filter: brightness(1.14); }
+.reception-card__requirement-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vc-space-2);
+}
+
+.reception-card__requirement-actions .vc-primary-action,
+.reception-card__requirement-actions .vc-secondary-action {
+  min-width: 0;
+  justify-content: center;
+  padding-inline: var(--vc-space-3);
+  font-size: var(--vc-type-body-sm);
+  text-align: center;
+}
+
+.reception-card__requirement-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #ffc5ba;
+  font-size: var(--vc-type-body-sm);
+}
+
+@media (max-width: 420px) {
+  .reception-card__requirement-actions { grid-template-columns: 1fr; }
 }
 
 .reception-card__steps {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { DayPicker } from "react-day-picker";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1104,12 +1104,14 @@ function PassportStatusRow({
 function BookingDetailsSheet({
   onCancel,
   onStayUpdated,
+  openPassportCapture = false,
   queryKey,
   stay,
   today,
 }: {
   onCancel: () => void;
   onStayUpdated: (stay: ReceptionStay) => void;
+  openPassportCapture?: boolean;
   queryKey: readonly ["reception", string];
   stay: ReceptionStay | null;
   today: string;
@@ -1121,7 +1123,9 @@ function BookingDetailsSheet({
   const [passportReview, setPassportReview] = useState<PassportReviewState | null>(null);
   const [passportManagerOpen, setPassportManagerOpen] = useState(false);
   const [passportWorkflowOpen, setPassportWorkflowOpen] = useState(false);
+  const requestedPassportCaptureFor = useRef<number | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
+  const requestedBookingId = stay?.bookingId ?? null;
   const passportsQueryKey = ["reception-passports", stay?.bookingId] as const;
   const passports = useQuery({
     enabled: Boolean(stay),
@@ -1145,6 +1149,15 @@ function BookingDetailsSheet({
       setDepositError(translate("noteCouldNotBeSaved"));
     },
   });
+
+  useEffect(() => {
+    if (!openPassportCapture || !requestedBookingId || requestedPassportCaptureFor.current === requestedBookingId) return;
+    requestedPassportCaptureFor.current = requestedBookingId;
+    setPassportManagerOpen(false);
+    setPassportReview(null);
+    setPassportWorkflowOpen(true);
+  }, [openPassportCapture, requestedBookingId]);
+
   if (!stay) return null;
 
   const bookingId = stay.bookingId;
@@ -1337,6 +1350,7 @@ export default function ReceptionPage() {
   const today = bangkokToday();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedBookingId = Number(searchParams.get("bookingId"));
+  const requestedPassportCapture = searchParams.get("intent") === "passport";
   const [selectedDate, setSelectedDate] = useState(today);
   const [completionRequest, setCompletionRequest] = useState<{ stay: ReceptionStay; type: ReceptionCardType } | null>(null);
   const [completionDraft, setCompletionDraft] = useState<CompletionDraft>(emptyCompletionDraft);
@@ -1459,6 +1473,7 @@ export default function ReceptionPage() {
       <BookingDetailsSheet
         onCancel={closeDetails}
         onStayUpdated={setDetailsRequest}
+        openPassportCapture={requestedPassportCapture}
         queryKey={queryKey}
         stay={activeDetailsRequest}
         today={today}

@@ -1,8 +1,10 @@
 import type { StatusTone } from "../../config/roomOperationalPresentation";
 import { Link } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReceptionStayPhase, ReceptionStepState, RoomReceptionAlertSummary, RoomReceptionSummary } from "../../types/rooms-workspace";
 import { useLanguage } from "../../providers/language.context";
 import { translateStaffLabel } from "../../utils/staff-i18n-labels";
+import { updateReceptionCheckIn } from "../../services/reception.service";
 import OperationalStatusPill from "./OperationalStatusPill";
 import RoomDomainCard, { OperationalStateBlock, PrimaryActionRow } from "./RoomDomainCard";
 
@@ -69,10 +71,37 @@ function ReceptionAlerts({ alerts }: { alerts: RoomReceptionAlertSummary[] }) {
   return (
     <div className="reception-card__alerts" aria-label={translate("receptionAttentionRequired")}>
       {alerts.map((alert) => (
-        <Link className="reception-card__alert-action" key={alert.id} to={`/reception?bookingId=${alert.bookingId}`}>
+        <span className="reception-card__alert-action" key={alert.id}>
           <OperationalStatusPill label={translateStaffLabel(alert.label, translate)} tone={alert.tone} emphasis />
-        </Link>
+        </span>
       ))}
+    </div>
+  );
+}
+
+function ReceptionRequirementActions({ alerts }: { alerts: RoomReceptionAlertSummary[] }) {
+  const { language } = useLanguage();
+  const queryClient = useQueryClient();
+  const deposit = useMutation({
+    mutationFn: (bookingId: number) => updateReceptionCheckIn(bookingId, "depositCollected", true),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["rooms", "workspace"] });
+      await queryClient.invalidateQueries({ queryKey: ["reception"] });
+    },
+  });
+  const passportAlert = alerts.find((alert) => alert.type === "passport_missing");
+  const depositAlert = alerts.find((alert) => alert.type === "deposit_pending");
+  if (!passportAlert && !depositAlert) return null;
+  const thai = language === "th";
+  return (
+    <div className="reception-card__requirement-actions">
+      {passportAlert ? <Link className="vc-secondary-action" to={`/reception?bookingId=${passportAlert.bookingId}&intent=passport`}>
+        {thai ? "เพิ่มหนังสือเดินทางที่ขาด" : "Add missing passport"}
+      </Link> : null}
+      {depositAlert ? <button className="vc-primary-action" disabled={deposit.isPending} onClick={() => deposit.mutate(depositAlert.bookingId)} type="button">
+        {deposit.isPending ? "…" : thai ? "ได้รับเงินมัดจำแล้ว" : "Deposit delivered"}
+      </button> : null}
+      {deposit.isError ? <p className="reception-card__requirement-error" role="alert">{thai ? "ไม่สามารถบันทึกเงินมัดจำได้" : "Deposit could not be recorded. Try again."}</p> : null}
     </div>
   );
 }
@@ -87,8 +116,6 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
   const { translate } = useLanguage();
   if (!shouldRenderReceptionCard(reception)) return null;
 
-  const alertTarget = reception.alerts[0] ? `/reception?bookingId=${reception.alerts[0].bookingId}` : null;
-  const receptionTarget = reception.primaryAction?.target ?? alertTarget;
   const phaseLabel = getReceptionPhaseLabel(reception.phase, translate);
   const phaseStatus = reception.phase !== "NONE"
     ? <OperationalStatusPill label={phaseLabel} tone={getReceptionPhaseTone(reception.phase)} emphasis />
@@ -96,11 +123,11 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
 
   return (
     <RoomDomainCard
-      action={receptionTarget ? (
+      action={reception.primaryAction ? (
         <PrimaryActionRow
           ariaLabel={`${translate("openReception")} ${roomName}`}
           label={translate("openReception")}
-          to={receptionTarget}
+          to={reception.primaryAction.target}
         />
       ) : null}
       className="reception-card"
@@ -109,6 +136,7 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
       secondary={(
         <>
           <ReceptionAlerts alerts={reception.alerts} />
+          <ReceptionRequirementActions alerts={reception.alerts} />
           <dl className="reception-card__steps">
             <ReceptionStatusItem label="Passport" state={reception.passport.state} />
             <ReceptionStatusItem label="Deposit" state={reception.deposit.state} />
