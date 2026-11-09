@@ -87,6 +87,8 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
   const { translate } = useLanguage();
   if (!shouldRenderReceptionCard(reception)) return null;
 
+  const alertTarget = reception.alerts[0] ? `/reception?bookingId=${reception.alerts[0].bookingId}` : null;
+  const receptionTarget = reception.primaryAction?.target ?? alertTarget;
   const phaseLabel = getReceptionPhaseLabel(reception.phase, translate);
   const phaseStatus = reception.phase !== "NONE"
     ? <OperationalStatusPill label={phaseLabel} tone={getReceptionPhaseTone(reception.phase)} emphasis />
@@ -94,11 +96,11 @@ export default function ReceptionCard({ roomId, roomName, reception }: Reception
 
   return (
     <RoomDomainCard
-      action={reception.primaryAction ? (
+      action={receptionTarget ? (
         <PrimaryActionRow
           ariaLabel={`${translate("openReception")} ${roomName}`}
           label={translate("openReception")}
-          to={reception.primaryAction.target}
+          to={receptionTarget}
         />
       ) : null}
       className="reception-card"
