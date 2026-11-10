@@ -103,7 +103,10 @@ function ReceptionRequirementActions({ alerts }: { alerts: RoomReceptionAlertSum
       {depositAlert ? <button className="vc-primary-action" disabled={deposit.isPending} onClick={() => deposit.mutate(depositAlert.bookingId)} type="button">
         {deposit.isPending ? "…" : thai ? "ได้รับเงินมัดจำแล้ว" : "Deposit delivered"}
       </button> : null}
-      {deposit.isError ? <p className="reception-card__requirement-error" role="alert">{thai ? "ไม่สามารถบันทึกเงินมัดจำได้" : "Deposit could not be recorded. Try again."}</p> : null}
+      {deposit.isError ? <p className="reception-card__requirement-error" role="alert">
+        {thai ? "ไม่สามารถบันทึกเงินมัดจำได้" : "Deposit could not be recorded."}
+        {deposit.error instanceof Error && deposit.error.message ? ` ${deposit.error.message}` : null}
+      </p> : null}
     </div>
   );
 }
