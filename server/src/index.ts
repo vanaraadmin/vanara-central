@@ -1503,8 +1503,10 @@ app.post("/api/reception/stays/:bookingId/check-out-completed", async (c) => {
 
 app.post("/api/reception/stays/:bookingId/alerts/:type/resolve", async (c) => {
   try {
-    const user = await authenticated(c, "movements", "access");
-    if (!canCompleteReception(user)) throw new ForbiddenError();
+    // These two actions originate in the Rooms workspace. Staff who can work
+    // with an occupied room must be able to clear a passport/deposit supplied
+    // later, without being granted the separate Movements workspace.
+    const user = await authenticated(c, "rooms", "access");
     const bookingId = positiveIntegerParam(c.req.param("bookingId"), "booking id");
     const type = c.req.param("type") as ReceptionAlertType;
     if (type !== "passport_missing" && type !== "deposit_pending") throw new Error("Reception alert type is invalid.");
