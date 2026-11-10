@@ -7,7 +7,9 @@ export interface Tm30Bindings {
 }
 
 export interface Tm30PassportRow {
+  passportId: number;
   bookingId: number;
+  guestName: string;
   firstName: string | null;
   middleName: string | null;
   lastName: string | null;
@@ -21,7 +23,8 @@ export interface Tm30PassportRow {
 
 export interface Tm30MissingField {
   bookingId: number;
-  passportId?: number;
+  passportId: number;
+  guestName: string;
   field: "firstName" | "gender" | "passportNumber" | "nationality";
 }
 
@@ -34,6 +37,7 @@ export interface Tm30WorkbookResult {
 interface Tm30PassportSqlRow {
   id: number;
   booking_id: number;
+  guest_name: string;
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
@@ -103,10 +107,11 @@ function tm30Row(rowNumber: number, row: Tm30PassportRow, nationalityMap: Map<st
 
 function requiredMissingFields(row: Tm30PassportRow, nationalityMap: Map<string, string>): Tm30MissingField[] {
   const missing: Tm30MissingField[] = [];
-  if (!cleanText(row.firstName)) missing.push({ bookingId: row.bookingId, field: "firstName" });
-  if (!normalizeGender(row.gender)) missing.push({ bookingId: row.bookingId, field: "gender" });
-  if (!cleanText(row.passportNumber)) missing.push({ bookingId: row.bookingId, field: "passportNumber" });
-  if (!tm30NationalityCodeFrom(row.nationality, nationalityMap)) missing.push({ bookingId: row.bookingId, field: "nationality" });
+  const details = { bookingId: row.bookingId, passportId: row.passportId, guestName: row.guestName };
+  if (!cleanText(row.firstName)) missing.push({ ...details, field: "firstName" });
+  if (!normalizeGender(row.gender)) missing.push({ ...details, field: "gender" });
+  if (!cleanText(row.passportNumber)) missing.push({ ...details, field: "passportNumber" });
+  if (!tm30NationalityCodeFrom(row.nationality, nationalityMap)) missing.push({ ...details, field: "nationality" });
   return missing;
 }
 
@@ -122,7 +127,9 @@ function updateWorksheet(templateSheet: string, rows: Tm30PassportRow[], nationa
 
 function mapTm30PassportRow(row: Tm30PassportSqlRow): Tm30PassportRow {
   return {
+    passportId: row.id,
     bookingId: row.booking_id,
+    guestName: row.guest_name,
     firstName: row.first_name,
     middleName: row.middle_name,
     lastName: row.last_name,
@@ -159,6 +166,7 @@ export async function listTm30PassportRows(env: Tm30Bindings, range: Tm30ExportR
     SELECT
       bp.id,
       bp.booking_id,
+      b.guest_name,
       bp.first_name,
       bp.middle_name,
       bp.last_name,

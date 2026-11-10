@@ -316,10 +316,11 @@ export default function ProfilePanel() {
       const params = new URLSearchParams({ from, to });
       const response = await fetch(`/api/owner/tm30/export?${params.toString()}`, { credentials: "include" });
       if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: string; missingFields?: unknown[] } | null;
+        const payload = await response.json().catch(() => null) as { error?: string; missingFields?: Array<{ guestName?: string; field?: string }> } | null;
         const count = payload?.missingFields?.length ?? 0;
+        const details = payload?.missingFields?.slice(0, 3).map((item) => `${item.guestName || "Guest"}: ${item.field || "required field"}`).join("; ");
         throw new Error(count > 0
-          ? `TM30 export needs ${count} passport field${count === 1 ? "" : "s"} to be completed in Reception.`
+          ? `TM30 export needs ${count} passport field${count === 1 ? "" : "s"} corrected in Reception.${details ? ` ${details}.` : ""}`
           : payload?.error ?? "TM30 export could not be created.");
       }
       const blob = await response.blob();
