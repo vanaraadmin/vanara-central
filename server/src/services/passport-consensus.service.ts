@@ -123,6 +123,10 @@ function simpleField(value: string | null, source: PassportFieldSource, required
   return { value, state: "AUTO_VERIFIED", source, issues: [] };
 }
 
+function validMrzCountryCode(value: string | null): value is string {
+  return Boolean(value && /^[A-Z]{3}$/.test(value));
+}
+
 export function buildPassportConsensus(first: PassportExtraction, second: PassportExtraction): PassportConsensus {
   const mrz = parseTd3Mrz(first.mrzLine1 || second.mrzLine1, first.mrzLine2 || second.mrzLine2);
   const visualPass1 = cleanPassportNumber(first.passportNumberVisual);
@@ -170,10 +174,14 @@ export function buildPassportConsensus(first: PassportExtraction, second: Passpo
     cleanName(mrz.mrzValid ? mrz.surname : first.surname ?? second.surname ?? mrz.surname),
     mrz.mrzValid || Boolean(mrz.surname) ? "MRZ" : "visual",
   );
-  const nationality = simpleField(
-    clean(mrz.mrzValid ? mrz.nationality : first.nationality ?? second.nationality ?? mrz.nationality),
-    mrz.mrzValid || Boolean(mrz.nationality) ? "MRZ" : "visual",
-  );
+  const parsedNationality = clean(mrz.nationality);
+  const mrzNationalityIsValid = mrz.mrzValid && validMrzCountryCode(parsedNationality);
+  const nationalityCandidate = clean(mrzNationalityIsValid ? parsedNationality : first.nationality ?? second.nationality ?? parsedNationality);
+  const nationality = mrzNationalityIsValid
+    ? simpleField(nationalityCandidate, "MRZ")
+    : nationalityCandidate
+      ? { value: nationalityCandidate, state: "NEEDS_CONFIRMATION" as const, source: parsedNationality ? "MRZ" as const : "visual" as const, issues: ["MRZ_NATIONALITY_INVALID"] }
+      : simpleField(null, "none");
   const gender = simpleField(
     clean(mrz.mrzValid ? mrz.sex : first.sex ?? second.sex ?? mrz.sex),
     mrz.mrzValid || Boolean(mrz.sex) ? "MRZ" : "visual",
