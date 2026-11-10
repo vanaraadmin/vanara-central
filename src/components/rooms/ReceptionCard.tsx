@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReceptionStayPhase, ReceptionStepState, RoomReceptionAlertSummary, RoomReceptionSummary } from "../../types/rooms-workspace";
 import { useLanguage } from "../../providers/language.context";
 import { translateStaffLabel } from "../../utils/staff-i18n-labels";
-import { updateReceptionCheckIn } from "../../services/reception.service";
+import { resolveReceptionRoomAlert } from "../../services/reception.service";
 import OperationalStatusPill from "./OperationalStatusPill";
 import RoomDomainCard, { OperationalStateBlock, PrimaryActionRow } from "./RoomDomainCard";
 
@@ -83,7 +83,7 @@ function ReceptionRequirementActions({ alerts }: { alerts: RoomReceptionAlertSum
   const { language } = useLanguage();
   const queryClient = useQueryClient();
   const deposit = useMutation({
-    mutationFn: (bookingId: number) => updateReceptionCheckIn(bookingId, "depositCollected", true),
+    mutationFn: (bookingId: number) => resolveReceptionRoomAlert(bookingId, "deposit_pending"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["rooms", "workspace"] });
       await queryClient.invalidateQueries({ queryKey: ["reception"] });

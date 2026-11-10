@@ -125,6 +125,16 @@ export async function updateReceptionCheckOut(bookingId: number, field: Receptio
   return sendJson(`/api/reception/stays/${bookingId}/check-out`, "PATCH", { field, completed }, signal);
 }
 
+/**
+ * Resolves a reception requirement raised from the Rooms workspace.  This is
+ * deliberately separate from editing the full check-in checklist: a staff
+ * member can record a passport or cash deposit received later without needing
+ * the Reception edit permission.
+ */
+export async function resolveReceptionRoomAlert(bookingId: number, type: "passport_missing" | "deposit_pending", signal?: AbortSignal): Promise<ReceptionStay> {
+  return sendJson(`/api/reception/stays/${bookingId}/alerts/${type}/resolve`, "POST", {}, signal);
+}
+
 export async function completeReceptionCheckIn(bookingId: number, payload: { passportRegistrationCompleted: boolean; depositCollected: boolean }, signal?: AbortSignal): Promise<ReceptionStay> {
   return sendJson(`/api/reception/stays/${bookingId}/check-in-completed`, "POST", payload, signal);
 }
