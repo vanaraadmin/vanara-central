@@ -815,6 +815,7 @@ function mapRoom(row: RoomWorkspaceRow, receptionAlerts: MappedReceptionAlertSum
     : [];
   const reception = mapReceptionSummary(row, visibleReceptionAlerts.map((alert) => ({
     id: alert.id,
+    bookingId: alert.bookingId,
     type: alert.type,
     label: alert.label,
     tone: alert.tone,
