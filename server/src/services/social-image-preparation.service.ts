@@ -165,6 +165,9 @@ export const SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS = 2;
 export const SOCIAL_IMAGE_PREPARE_TIMEOUT_MS = 90_000;
 export const SOCIAL_IMAGE_STALE_LEASE_MS = 15 * 60_000;
 export const SOCIAL_IMAGE_MAX_ATTEMPTS = 2;
+// If OpenAI has already completed the image, retrying only the final R2/D1
+// hand-off is safe: it cannot create a second AI image or incur another AI call.
+export const SOCIAL_IMAGE_FINALIZATION_MAX_ATTEMPTS = 3;
 
 const SOCIAL_PROCESSED_PREFIX = "social/processed";
 const SOCIAL_FILE_SEARCH_MAX_RESULTS = 6;
@@ -790,6 +793,62 @@ async function acquireImagePost(
     ).first<SocialPostQueueRow>();
   if (recovery) return recovery;
 
+  // A completed OpenAI response can occasionally reach R2 but lose the D1
+  // finalization checkpoint (or vice versa). Resume that exact response once,
+  // rather than marooning the post in FAILED or generating another image.
+  const finalizationRecoverySql = socialPostId === null
+    ? `
+      UPDATE social_post_queue
+      SET status = 'PREPARING_IMAGE',
+          image_phase = 'POLLING',
+          image_poll_lease_token = ?,
+          image_poll_lease_at = ?,
+          image_recovery_state = NULL,
+          attempt_count = attempt_count + 1,
+          updated_at = ?,
+          failure_code = NULL,
+          failure_message = NULL
+      WHERE social_post_id = (
+        SELECT social_post_id
+        FROM social_post_queue
+        WHERE status = 'FAILED'
+          AND image_recovery_state = 'RETRY_FINALIZATION'
+          AND image_openai_response_id IS NOT NULL
+          AND attempt_count < ${SOCIAL_IMAGE_FINALIZATION_MAX_ATTEMPTS}
+          AND scheduled_publish_at IS NOT NULL
+          AND scheduled_publish_at <= ?
+        ORDER BY scheduled_publish_at ASC, queued_at ASC, social_post_id ASC
+        LIMIT 1
+      )
+        AND status = 'FAILED'
+        AND image_recovery_state = 'RETRY_FINALIZATION'
+        AND image_openai_response_id IS NOT NULL
+        AND attempt_count < ${SOCIAL_IMAGE_FINALIZATION_MAX_ATTEMPTS}
+      RETURNING *
+    `
+    : `
+      UPDATE social_post_queue
+      SET status = 'PREPARING_IMAGE',
+          image_phase = 'POLLING',
+          image_poll_lease_token = ?,
+          image_poll_lease_at = ?,
+          image_recovery_state = NULL,
+          attempt_count = attempt_count + 1,
+          updated_at = ?,
+          failure_code = NULL,
+          failure_message = NULL
+      WHERE social_post_id = ?
+        AND status = 'FAILED'
+        AND image_recovery_state = 'RETRY_FINALIZATION'
+        AND image_openai_response_id IS NOT NULL
+        AND attempt_count < ${SOCIAL_IMAGE_FINALIZATION_MAX_ATTEMPTS}
+      RETURNING *
+    `;
+  const finalizationRecovery = socialPostId === null
+    ? await env.DB.prepare(finalizationRecoverySql).bind(leaseToken, now, now, dueBy).first<SocialPostQueueRow>()
+    : await env.DB.prepare(finalizationRecoverySql).bind(leaseToken, now, now, socialPostId).first<SocialPostQueueRow>();
+  if (finalizationRecovery) return finalizationRecovery;
+
   const bounds = socialBangkokDayBounds(now);
   const sql = socialPostId === null
     ? `
@@ -970,6 +1029,7 @@ async function markFailed(
         openai_elapsed_ms = CASE WHEN ? IS NULL THEN openai_elapsed_ms ELSE ? END,
         estimated_cost_usd = CASE WHEN ? IS NULL THEN estimated_cost_usd ELSE ? END,
         image_recovery_state = CASE
+          WHEN ? = 1 AND image_openai_response_id IS NOT NULL AND attempt_count < ? THEN 'RETRY_FINALIZATION'
           WHEN ? = 1 AND image_request_started_at IS NULL AND image_openai_response_id IS NULL AND openai_request_count = 0 THEN 'RETRY_SAFE'
           ELSE 'MANUAL_REVIEW'
         END
@@ -996,6 +1056,8 @@ async function markFailed(
     result?.elapsedMs ?? 0,
     result ? 1 : null,
     result?.estimatedCostUsd ?? 0,
+    code === "processed_image_persistence_failed" ? 1 : 0,
+    SOCIAL_IMAGE_FINALIZATION_MAX_ATTEMPTS,
     code === "processed_image_persistence_failed" ? 1 : 0,
     socialPostId,
   ).run();
@@ -1288,14 +1350,19 @@ export async function prepareSocialImage(
     }
 
     const processedKey = processedObjectKey(leased);
-    await env.R2_STORAGE.put(processedKey, base64ToBytes(openAiResult.imageBase64), {
-      httpMetadata: { contentType: "image/jpeg" },
-      customMetadata: {
-        socialPostId: String(leased.social_post_id),
-        originalObjectKey: leased.original_object_key,
-        purpose: "social-image-preparation",
-      },
-    });
+    try {
+      await env.R2_STORAGE.put(processedKey, base64ToBytes(openAiResult.imageBase64), {
+        httpMetadata: { contentType: "image/jpeg" },
+        customMetadata: {
+          socialPostId: String(leased.social_post_id),
+          originalObjectKey: leased.original_object_key,
+          purpose: "social-image-preparation",
+        },
+      });
+    } catch (error) {
+      const detail = error instanceof Error && error.message.trim() ? `: ${error.message.trim().slice(0, 160)}` : "";
+      throw new SocialImagePreparationError(`Processed social image could not be stored${detail}`, "processed_image_persistence_failed", 500);
+    }
 
     const updateResult = await env.DB.prepare(`
       UPDATE social_post_queue
@@ -1362,7 +1429,7 @@ export async function prepareSocialImage(
       const item = await markImageProviderFailure(env, leased.social_post_id, error, now);
       return { processed: false, item };
     }
-    if (error instanceof SocialImagePreparationError && error.code !== "processed_image_persistence_failed") {
+    if (error instanceof SocialImagePreparationError) {
       const item = await markFailed(env, leased.social_post_id, error.code, error.message, now, openAiResult);
       return { processed: false, item };
     }
