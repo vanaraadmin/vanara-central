@@ -108,6 +108,17 @@ const GROUP_ORDER: Record<AccommodationType, number> = {
   Other: 4,
 };
 
+// Beds24's offers endpoint is currently returning the direct-site rate, which
+// is intentionally 20% below the public Beds rate for non-refundable stays.
+// Central is an internal sales-reference surface, so it displays the public
+// Beds rate plus 10% rather than exposing the direct non-refundable price.
+const DIRECT_NON_REFUNDABLE_RATE_FACTOR = 0.8;
+const CENTRAL_PUBLISHED_RATE_FACTOR = 1.1;
+
+function centralPublishedRate(directRate: number): number {
+  return Math.round((directRate / DIRECT_NON_REFUNDABLE_RATE_FACTOR) * CENTRAL_PUBLISHED_RATE_FACTOR);
+}
+
 function parseDateOnly(value: string): { year: number; month: number; day: number; time: number } | null {
   const match = DATE_PATTERN.exec(value);
   if (!match) return null;
@@ -293,13 +304,17 @@ function selectPricingForRoomType(rows: OfferPriceRow[], stayDates: string[], ni
 
   const selected = completeCandidates[0];
   if (selected && selected.totalPrice !== null) {
+    const nightlyPrices = selected.nightlyPrices.map((night) => ({
+      ...night,
+      amount: centralPublishedRate(night.amount),
+    }));
     return {
       status: "AVAILABLE",
       offerId: selected.offerId,
       beds24OfferId: selected.beds24OfferId,
-      averageNightlyPrice: selected.totalPrice / nights,
-      totalPrice: selected.totalPrice,
-      nightlyPrices: selected.nightlyPrices,
+      averageNightlyPrice: nightlyPrices.reduce((sum, night) => sum + night.amount, 0) / nights,
+      totalPrice: nightlyPrices.reduce((sum, night) => sum + night.amount, 0),
+      nightlyPrices,
       missingDates: [],
     };
   }

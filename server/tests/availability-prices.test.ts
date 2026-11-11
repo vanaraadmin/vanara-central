@@ -319,11 +319,11 @@ test("pricing selects one complete offer, sums nights, and calculates average", 
 
   assert.equal(group.pricing.status, "AVAILABLE");
   assert.equal(group.pricing.beds24OfferId, 200);
-  assert.equal(group.pricing.totalPrice, 2500);
-  assert.equal(group.pricing.averageNightlyPrice, 1250);
+  assert.equal(group.pricing.totalPrice, 3438);
+  assert.equal(group.pricing.averageNightlyPrice, 1719);
   assert.deepEqual(group.pricing.nightlyPrices, [
-    { date: "2026-08-03", amount: 1000 },
-    { date: "2026-08-04", amount: 1500 },
+    { date: "2026-08-03", amount: 1375 },
+    { date: "2026-08-04", amount: 2063 },
   ]);
 });
 
@@ -383,7 +383,7 @@ test("pricing chooses lowest complete total and then lowest Beds24 offer id", as
     ],
   }), "2026-08-03", "2026-08-05"))[0]!;
   assert.equal(lowestTotal.pricing.beds24OfferId, 200);
-  assert.equal(lowestTotal.pricing.totalPrice, 1800);
+  assert.equal(lowestTotal.pricing.totalPrice, 2476);
 
   const tieBreak = (await availabilityGroups(db({
     availability: [available(1, "2026-08-03"), available(1, "2026-08-04")],
