@@ -13,6 +13,7 @@ import MaintenanceDetailPage from "../pages/MaintenanceDetailPage";
 import MaintenancePage from "../pages/MaintenancePage";
 import MessagesPage from "../pages/MessagesPage";
 import HousekeepingV2Page from "../pages/HousekeepingV2Page";
+import LaundryPage from "../pages/LaundryPage";
 import LoginPage from "../pages/LoginPage";
 import PasswordChangeRequiredPage from "../pages/PasswordChangeRequiredPage";
 import MovementsPage from "../pages/MovementsPage";
@@ -106,6 +107,7 @@ export default function AppRouter() {
           <Route path="movements" element={<MovementsPage />} />
           <Route path="housekeeping" element={<Navigate replace to="/housekeeping-v2" />} />
           <Route path="housekeeping-v2" element={<HousekeepingV2Page />} />
+          <Route path="laundry" element={<LaundryPage />} />
           <Route path="housekeeping/rooms/:unitId" element={<HousekeepingRoomRedirect />} />
           <Route path="housekeeping/checklist/:roomId" element={<HousekeepingRoomRedirect />} />
           <Route path="availability" element={<Navigate replace to="/availability-prices" />} />

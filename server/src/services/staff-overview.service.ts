@@ -11,7 +11,7 @@ export interface StaffOverviewBindings extends HousekeepingV2Bindings, Maintenan
   DB: D1Database;
 }
 
-export type StaffCardId = "reception" | "rooms" | "housekeeping" | "maintenance" | "procurement" | "messages" | "social" | "payroll" | "accounting" | "owner-dashboard";
+export type StaffCardId = "reception" | "rooms" | "housekeeping" | "laundry" | "maintenance" | "procurement" | "messages" | "social" | "payroll" | "accounting" | "owner-dashboard";
 
 export interface StaffOverviewMetric {
   label: string;
@@ -249,6 +249,17 @@ export async function getStaffOverview(env: StaffOverviewBindings, user: Current
       metrics: housekeeping.metrics,
       summaryLine1: housekeeping.summaryLine1,
       summaryLine2: housekeeping.summaryLine2,
+    }));
+    cards.push(withSummaryLines({
+      id: "laundry",
+      module: "housekeeping",
+      title: "Laundry",
+      description: "laundryDescription",
+      href: "/laundry",
+      cta: "Open Laundry",
+      metrics: [],
+      summaryLine1: "laundrySummaryLine",
+      summaryLine2: "laundrySummaryLine2",
     }));
   }
 

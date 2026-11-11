@@ -12,14 +12,15 @@ const workspaceNumbers = {
   rooms: "01",
   reception: "02",
   housekeeping: "03",
-  maintenance: "04",
-  procurement: "05",
-  chat: "06",
-  messages: "07",
-  social: "08",
-  payroll: "09",
-  accounting: "10",
-  ownerDashboard: "11",
+  laundry: "04",
+  maintenance: "05",
+  procurement: "06",
+  chat: "07",
+  messages: "08",
+  social: "09",
+  payroll: "10",
+  accounting: "11",
+  ownerDashboard: "12",
 } as const;
 
 type WorkspaceKey = keyof typeof workspaceNumbers;

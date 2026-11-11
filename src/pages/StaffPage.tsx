@@ -28,6 +28,7 @@ const STAFF_WORKSPACE_ORDER: StaffCardId[] = [
   "availability",
   "reception",
   "housekeeping",
+  "laundry",
   "maintenance",
   "procurement",
   "social",
@@ -44,6 +45,7 @@ const OWNER_WORKSPACE_ORDER: StaffCardId[] = [
   "accounting",
   "payroll",
   "housekeeping",
+  "laundry",
   "maintenance",
   "procurement",
   "social",
@@ -55,6 +57,7 @@ const workspaceIcons: Record<StaffCardId, string> = {
   messages: chatIcon,
   reception: airplaneLandingIcon,
   housekeeping: sprayBottleIcon,
+  laundry: sprayBottleIcon,
   maintenance: wrenchIcon,
   procurement: shoppingCartIcon,
   social: envelopeIcon,
@@ -78,6 +81,7 @@ const AVAILABILITY_WORKSPACE_CARD: StaffOverviewCard = {
 const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
   availability: "prices",
   housekeeping: "housekeeping",
+  laundry: "laundry",
   maintenance: "maintenance",
   messages: "messages",
   accounting: "accounting",
@@ -91,6 +95,7 @@ const workspaceTitleKeys: Partial<Record<StaffCardId, string>> = {
 const workspaceDescriptionKeys: Partial<Record<StaffCardId, string>> = {
   availability: "pricesDescription",
   housekeeping: "housekeepingDescription",
+  laundry: "laundryDescription",
   maintenance: "maintenanceDescription",
   messages: "messagesDescription",
   accounting: "accountingDescription",
@@ -209,8 +214,9 @@ function WorkspaceCard({
   const metrics = summaryItems(workspace.metrics, translate);
   const dashboardBalance = workspace.id === "owner-dashboard" ? workspace.metrics.find((metric) => metric.label === "Balance") : undefined;
   const visibleMetrics = workspace.id === "owner-dashboard" ? metrics.filter((metric) => metric.label !== "Balance") : metrics;
-  const fallbackSummaryLine1 = workspace.summaryLine1 && ["availabilitySummaryLine", "humanReview"].includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
-  const fallbackSummaryLine2 = workspace.summaryLine2 && ["readOnlySearch", "reviewBeforeSend"].includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
+  const directTranslationKeys = ["availabilitySummaryLine", "humanReview", "laundrySummaryLine", "laundrySummaryLine2", "readOnlySearch", "reviewBeforeSend"];
+  const fallbackSummaryLine1 = workspace.summaryLine1 && directTranslationKeys.includes(workspace.summaryLine1) ? translate(workspace.summaryLine1) : translateDynamicSummaryLine(workspace.summaryLine1, translate);
+  const fallbackSummaryLine2 = workspace.summaryLine2 && directTranslationKeys.includes(workspace.summaryLine2) ? translate(workspace.summaryLine2) : translateDynamicSummaryLine(workspace.summaryLine2, translate);
 
   return (
     <Link

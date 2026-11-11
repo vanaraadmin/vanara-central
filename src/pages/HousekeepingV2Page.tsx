@@ -8,7 +8,6 @@ import VanaraGlassRegion from "../components/vanara/VanaraGlassRegion";
 import VanaraGlassSheet from "../components/vanara/VanaraGlassSheet";
 import VanaraSectionHeader from "../components/vanara/VanaraSectionHeader";
 import VanaraSummaryGrid, { type VanaraSummaryItem } from "../components/vanara/VanaraSummaryGrid";
-import LaundryServiceSection from "../components/LaundryServiceSection";
 import WorkspaceShell from "../components/WorkspaceShell";
 import { useLanguage } from "../providers/language.context";
 import {
@@ -663,8 +662,6 @@ export default function HousekeepingV2Page() {
               <CompletedTasksSection tasks={housekeeping.data.completedTasksToday} />
             </div>
           )}
-
-          <LaundryServiceSection />
 
           {infoSheet && <InterventionSheet onClose={() => setInfoSheet(null)} type={infoSheet} />}
           {action.isError && <p className="housekeeping-v2-action-error">{translate("taskChangedRefreshing")}</p>}

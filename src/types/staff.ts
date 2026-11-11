@@ -1,6 +1,6 @@
 import type { ModuleKey } from "./auth";
 
-export type StaffCardId = "reception" | "rooms" | "availability" | "messages" | "housekeeping" | "maintenance" | "procurement" | "social" | "payroll" | "accounting" | "owner-dashboard";
+export type StaffCardId = "reception" | "rooms" | "availability" | "messages" | "housekeeping" | "laundry" | "maintenance" | "procurement" | "social" | "payroll" | "accounting" | "owner-dashboard";
 
 export interface StaffOverviewMetric {
   label: string;
