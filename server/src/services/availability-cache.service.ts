@@ -305,6 +305,11 @@ export function buildAvailabilityCacheRows(
     const firstUnit = roomTypeUnits[0];
     const room = roomsByBeds24Id.get(firstUnit.beds24_room_id);
     const entries = calendarEntriesByDate(room);
+    // Beds24 publishes a room-type count, not the concrete unit that is free.
+    // Preserve yesterday's allocated unit whenever it is still eligible: otherwise
+    // a two-night search can falsely find no single room even when one is free for
+    // the whole stay (for example after a checkout).
+    let previouslyAllocatedUnitIds = new Set<number>();
 
     for (const date of targetDates) {
       const entry = entries.get(date) ?? null;
@@ -312,15 +317,26 @@ export function buildAvailabilityCacheRows(
       const explicit = explicitAvailability(entry);
       const closed = isClosed(entry) ? 1 : 0;
       const booked = bookedByDate.get(date) ?? new Set<number>();
-      let availableSlots = count ?? (explicit === true ? roomTypeUnits.length : explicit === false ? 0 : null);
+      const availableSlots = count ?? (explicit === true ? roomTypeUnits.length : explicit === false ? 0 : null);
+      const eligibleUnits = closed === 1
+        ? []
+        : roomTypeUnits.filter((unit) => !booked.has(unit.unit_id));
+      const allocatedUnitIds = new Set<number>();
+
+      if (availableSlots !== null) {
+        const preferredUnits = eligibleUnits.filter((unit) => previouslyAllocatedUnitIds.has(unit.unit_id));
+        const otherEligibleUnits = eligibleUnits.filter((unit) => !previouslyAllocatedUnitIds.has(unit.unit_id));
+        for (const unit of [...preferredUnits, ...otherEligibleUnits].slice(0, Math.max(0, availableSlots))) {
+          allocatedUnitIds.add(unit.unit_id);
+        }
+      }
 
       for (const unit of roomTypeUnits) {
         let availability: 0 | 1 | null = null;
         if (closed === 1 || booked.has(unit.unit_id)) {
           availability = 0;
         } else if (availableSlots !== null) {
-          availability = availableSlots > 0 ? 1 : 0;
-          if (availableSlots > 0) availableSlots -= 1;
+          availability = allocatedUnitIds.has(unit.unit_id) ? 1 : 0;
         }
 
         records.push({
@@ -342,6 +358,8 @@ export function buildAvailabilityCacheRows(
           }),
         });
       }
+
+      previouslyAllocatedUnitIds = allocatedUnitIds;
     }
   }
 

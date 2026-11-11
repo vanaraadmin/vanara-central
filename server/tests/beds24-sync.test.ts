@@ -553,6 +553,56 @@ test("availability cache marks booked units unavailable before assigning remaini
   );
 });
 
+test("availability cache keeps a free unit allocated across consecutive dates when Beds24 slots allow it", () => {
+  const records = buildAvailabilityCacheRows(
+    [
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1001,
+        unit_name: "Bungalow 1",
+        position: 1,
+      },
+      {
+        property_id: 1,
+        property_name: "Local Property",
+        room_type_id: 10,
+        room_type_name: "Bungalow",
+        beds24_property_id: 100,
+        beds24_room_id: 200,
+        unit_id: 1002,
+        unit_name: "Bungalow 2",
+        position: 2,
+      },
+    ],
+    [{
+      propertyId: 100,
+      roomId: 200,
+      calendar: {
+        "2026-08-01": { numAvail: 1 },
+        "2026-08-02": { numAvail: 2 },
+      },
+    }],
+    [],
+    "2026-08-01",
+    "2026-08-02",
+  );
+
+  assert.deepEqual(
+    records.map((record) => ({ date: record.date, unitId: record.unitId, availability: record.availability })),
+    [
+      { date: "2026-08-01", unitId: 1001, availability: 1 },
+      { date: "2026-08-01", unitId: 1002, availability: 0 },
+      { date: "2026-08-02", unitId: 1001, availability: 1 },
+      { date: "2026-08-02", unitId: 1002, availability: 1 },
+    ],
+  );
+});
+
 test("availability cache uses unknown when Beds24 calendar data is missing", () => {
   const records = buildAvailabilityCacheRows(
     [
