@@ -1122,11 +1122,15 @@ async function checkpointImageResponse(
         image_last_polled_at = ?,
         image_poll_lease_at = ?,
         image_provider_terminal_at = CASE WHEN ? IN ('completed','failed','cancelled','incomplete') THEN ? ELSE image_provider_terminal_at END,
+        -- A response can arrive after the initial request checkpoint has been
+        -- interrupted.  Treat this as the same one OpenAI request rather than
+        -- rejecting the response and repeatedly retrying its finalization.
+        openai_request_count = CASE WHEN openai_request_count < 1 THEN 1 ELSE openai_request_count END,
         updated_at = ?
     WHERE social_post_id = ?
       AND status = 'PREPARING_IMAGE'
-      AND openai_request_count = 1
       AND image_client_request_id IS NOT NULL
+      AND (image_openai_response_id IS NULL OR image_openai_response_id = ?)
   `).bind(
     checkpoint.status,
     now,
@@ -1139,6 +1143,7 @@ async function checkpointImageResponse(
     now,
     now,
     socialPostId,
+    checkpoint.responseId,
   ).run();
   if (numeric(update.meta.changes) !== 1) {
     throw new SocialImagePreparationError("Social image response checkpoint could not be saved.", "processed_image_persistence_failed", 500);
