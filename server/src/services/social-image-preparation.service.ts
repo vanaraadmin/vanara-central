@@ -675,9 +675,10 @@ export function buildSocialImagePrepareRequest(
       },
       {
         type: "image_generation",
-        // Keep image-generation complexity independent from the low reasoning
-        // setting used by the coordinating model. Some supported models reject
-        // an inherited `low` complexity for this tool.
+        // Image generation accepts a fixed medium complexity. Do not send a
+        // response-level `reasoning.effort` below: for this model it is
+        // inherited by the image tool as its complexity and OpenAI rejects
+        // the resulting `low` value before it can create the image.
         complexity: "medium",
         output_format: "jpeg",
         quality: "high",
@@ -688,7 +689,6 @@ export function buildSocialImagePrepareRequest(
     ],
     tool_choice: "auto",
     max_tool_calls: SOCIAL_IMAGE_PREPARE_MAX_TOOL_CALLS,
-    reasoning: { effort: "low" },
     text: {
       verbosity: "low",
       format: { type: "json_object" },

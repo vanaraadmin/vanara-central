@@ -1416,7 +1416,7 @@ test("social image preparation processes one queued photo FIFO with one OpenAI r
   assert.equal(DEFAULT_SOCIAL_CAPTION_MODEL, "gpt-5.6-terra");
   assert.equal(requestBody.model, DEFAULT_SOCIAL_IMAGE_PREP_MODEL);
   assert.equal(requestBody.max_tool_calls, 2);
-  assert.equal((requestBody.reasoning as { effort?: string } | undefined)?.effort, "low");
+  assert.equal("reasoning" in requestBody, false);
   assert.match(JSON.stringify(requestBody.tools), /file_search/);
   assert.match(JSON.stringify(requestBody.tools), /image_generation/);
   assert.match(JSON.stringify(requestBody.tools), /complexity":"medium/);
@@ -2656,7 +2656,7 @@ test("social automation foundation is additive, staged, and isolates Meta publis
   assert.match(imageService, /0x9003/);
   assert.match(imageService, /0x0002/);
   assert.match(imageService, /const SOCIAL_FILE_SEARCH_MAX_RESULTS = 6/);
-  assert.match(imageService, /reasoning: \{ effort: "low" \}/);
+  assert.doesNotMatch(imageService, /reasoning: \{ effort: "low" \}/);
   assert.match(imageService, /type: "file_search"/);
   assert.match(imageService, /type: "image_generation"/);
   assert.match(imageService, /complexity: "medium"/);
