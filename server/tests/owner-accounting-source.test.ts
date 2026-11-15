@@ -65,7 +65,7 @@ test("owner financial dashboard remains business-facing and owner scoped", () =>
   assert.match(dashboardPage, /FinancialDashboard/);
   assert.match(dashboardPage, /WorkspaceShell/);
   assert.match(dashboardPage, /workspace="ownerDashboard"/);
-  assert.match(workspaceShell, /ownerDashboard:\s*"11"/);
+  assert.match(workspaceShell, /ownerDashboard:\s*"12"/);
   assert.doesNotMatch(workspaceShell, /workspaceBackground|backgroundKey|background_room/);
   assert.match(dashboardPage, /Owner finance/);
   assert.match(dashboardPage, /Income composition/);

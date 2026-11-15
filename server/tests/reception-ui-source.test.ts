@@ -198,8 +198,8 @@ test("check-in cards expose housekeeping-only cleaning labels", () => {
   assert.doesNotMatch(serverReceptionService, /status:\s*"Not Ready"|status:\s*"Maintenance"|status:\s*"Out Of Service"|operationalAvailability/);
 });
 
-test("check-in checklist is visible only for today's arrival", () => {
-  assert.match(receptionPage, /const showCheckInChecklist = stay\.arrival === today;/);
+test("check-in checklist remains visible for today's arrival and unresolved arrival documents", () => {
+  assert.match(receptionPage, /const showCheckInChecklist = stay\.arrival === today \|\| \(stay\.checkIn\.guestArrived && \(!stay\.checkIn\.depositCollected \|\| passportCount === 0\)\);/);
   assert.match(receptionPage, /{showCheckInChecklist && \(/);
 });
 
