@@ -223,6 +223,12 @@
   --event-accent-soft: rgba(139, 196, 147, 0.1);
 }
 
+.recent-bookings__event--unallocated {
+  --event-accent: rgba(245, 183, 82, 0.98);
+  --event-accent-soft: rgba(245, 183, 82, 0.18);
+  background: linear-gradient(90deg, rgba(245, 183, 82, 0.11), rgba(245, 183, 82, 0.015) 72%, transparent);
+}
+
 .recent-bookings__event--updated {
   --event-accent: rgba(139, 180, 202, 0.96);
   --event-accent-soft: rgba(139, 180, 202, 0.1);
@@ -331,6 +337,13 @@
   color: rgba(218, 255, 225, 0.96);
   background: rgba(139, 196, 147, 0.14);
   box-shadow: 0 0 12px rgba(139, 196, 147, 0.16);
+}
+
+.booking-pulse__status--unallocated {
+  border-color: rgba(245, 183, 82, 0.7);
+  color: rgba(255, 241, 204, 0.98);
+  background: rgba(196, 112, 27, 0.34);
+  box-shadow: 0 0 16px rgba(245, 183, 82, 0.22);
 }
 
 .booking-pulse__status--updated {

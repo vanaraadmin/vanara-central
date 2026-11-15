@@ -617,6 +617,8 @@ const en = {
   minutesAgo: "{{count}} min ago",
   eventNew: "New",
   eventModified: "Modified",
+  roomAssignmentNeeded: "UNALLOCATED · ASSIGN ROOM",
+  unallocatedBookingDetail: "Room assignment required in Beds24",
   occupiedUpper: "Occupied",
   vacantUpper: "Vacant",
   maintenanceUpper: "Maintenance",

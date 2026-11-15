@@ -179,6 +179,7 @@ function BookingEventRow({
   const timing = eventTime;
   const detailsId = safeDetailsId(event.eventId);
   const flag = countryCodeToFlag(event.countryCode);
+  const needsRoomAssignment = event.eventType === "NEW" && !event.assignmentComplete;
 
   return (
     <article
@@ -186,6 +187,7 @@ function BookingEventRow({
         "recent-bookings__event",
         "booking-pulse__item",
         `recent-bookings__event--${tone}`,
+        needsRoomAssignment ? "recent-bookings__event--unallocated" : "",
         `booking-pulse__item--${tone}`,
         expanded ? "recent-bookings__event--expanded booking-pulse__item--expanded" : "",
       ].filter(Boolean).join(" ")}
@@ -213,9 +215,16 @@ function BookingEventRow({
             <span className={`recent-bookings__event-kind booking-pulse__status booking-pulse__status--${tone}`}>
               {eventLabel(event.eventType, translate)}
             </span>
+            {needsRoomAssignment ? (
+              <span className="booking-pulse__status booking-pulse__status--unallocated">
+                {translate("roomAssignmentNeeded")}
+              </span>
+            ) : null}
           </span>
 
-          <span className="recent-bookings__event-detail booking-pulse__meta">{detail || translate("bookingDetails")}</span>
+          <span className="recent-bookings__event-detail booking-pulse__meta">
+            {needsRoomAssignment ? translate("unallocatedBookingDetail") : (detail || translate("bookingDetails"))}
+          </span>
         </span>
 
         <time className="recent-bookings__event-time booking-pulse__timing" dateTime={event.eventTimestamp}>

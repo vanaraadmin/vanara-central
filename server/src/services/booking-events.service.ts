@@ -550,7 +550,7 @@ export async function listRecentBookingEvents(
     .map(bookingPulseRowFor)
     .filter((row) => !options.eventType || effectivePulseTypeFor(row) === options.eventType)
     .sort(eventSortDescending)
-    .slice(0, limit);
+    .slice(0, readLimit);
 
   const groupMembers = new Map<number, BookingPulseGroupMemberRow[]>();
   await Promise.all(pulseRows.map(async (row) => {
@@ -558,5 +558,17 @@ export async function listRecentBookingEvents(
     groupMembers.set(groupKey, await loadBookingPulseGroupMembers(env, groupKey));
   }));
 
-  return pulseRows.map((row) => toBookingPulseItem(row, options, groupMembers.get(pulseGroupKeyFor(row)) ?? []));
+  const items = pulseRows.map((row) => toBookingPulseItem(row, options, groupMembers.get(pulseGroupKeyFor(row)) ?? []));
+
+  // An unallocated new booking needs a human room assignment in Beds24. Keep it
+  // at the top of the New filter so it cannot be buried by later routine events.
+  if (options.eventType === "NEW") {
+    items.sort((left, right) => {
+      const leftPriority = left.assignmentComplete ? 1 : 0;
+      const rightPriority = right.assignmentComplete ? 1 : 0;
+      return leftPriority - rightPriority || right.eventTimestamp.localeCompare(left.eventTimestamp);
+    });
+  }
+
+  return items.slice(0, limit);
 }

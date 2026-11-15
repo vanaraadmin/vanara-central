@@ -641,6 +641,37 @@ test("missing Booking Pulse unit assignment uses explicit pending fallback", asy
   assert.equal(events[0]?.assignmentComplete, false);
 });
 
+test("unallocated new bookings are prioritised ahead of later allocated bookings", async () => {
+  const db = new FakeBookingEventsDB();
+  db.rows = [
+    eventRow({
+      booking_event_id: 2,
+      beds24_booking_id: 9502,
+      unit_id: 8,
+      unit_name: "Bungalow 8",
+      occurred_at: "2026-08-02T10:30:00.000Z",
+    }),
+    eventRow({
+      booking_event_id: 1,
+      beds24_booking_id: 9501,
+      unit_id: null,
+      unit_name: null,
+      occurred_at: "2026-08-02T10:00:00.000Z",
+    }),
+  ];
+  db.groupMembers.set(9501, [groupMember({ beds24_booking_id: 9501, unit_id: null, unit_name: null })]);
+
+  const events = await listRecentBookingEvents(
+    { DB: db as unknown as D1Database },
+    5,
+    new Date("2026-08-02T11:00:00.000Z"),
+    { eventType: "NEW" },
+  );
+
+  assert.deepEqual(events.map((event) => event.bookingId), ["9501", "9502"]);
+  assert.equal(events[0]?.assignmentComplete, false);
+});
+
 test("recent booking event query returns newest first with a maximum limit", async () => {
   const db = new FakeBookingEventsDB();
   const events = await listRecentBookingEvents({ DB: db as unknown as D1Database }, 2, new Date("2026-07-31T11:00:00.000Z"));
