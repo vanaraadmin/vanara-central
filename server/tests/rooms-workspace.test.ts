@@ -1213,7 +1213,7 @@ test("unresolved Reception alerts are exposed and resolved alerts are excluded",
 
   assert.equal(room.reception.phase, "ARRIVAL_DUE");
   assert.deepEqual(room.reception.alerts, [
-    { id: 1, type: "passport_missing", label: "Passport Missing", tone: "warning" },
+    { id: 1, bookingId: 9201, type: "passport_missing", label: "Passport Missing", tone: "warning" },
   ]);
   assert.equal(room.alertSummary, "Passport missing · Guest arriving today");
 });

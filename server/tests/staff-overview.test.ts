@@ -467,8 +467,8 @@ const payrollAccess: Permission = { module_key: "payroll", can_access: 1, can_ed
 
 test("staff overview returns the complete operational workspace set for the Staff visual experience", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]), STAFF_OVERVIEW_TEST_DATE);
-  assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement"]);
-  assert.deepEqual(overview.cards.map((card) => card.href), ["/reception", "/rooms", "/housekeeping", "/maintenance", "/procurement"]);
+    assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "laundry", "maintenance", "procurement"]);
+    assert.deepEqual(overview.cards.map((card) => card.href), ["/reception", "/rooms", "/housekeeping", "/laundry", "/maintenance", "/procurement"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
 });
 
@@ -589,7 +589,7 @@ test("staff overview supports users with multiple permissions without owner data
     { module: "maintenance", canAccess: true, canEdit: false },
     { module: "procurement", canAccess: true, canEdit: false },
   ]));
-  assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement"]);
+    assert.deepEqual(overview.cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "laundry", "maintenance", "procurement"]);
   assert.equal(JSON.stringify(overview).includes("owner-dashboard"), false);
   assert.equal(JSON.stringify(overview).includes("Dashboard Owner"), false);
 });
@@ -666,7 +666,7 @@ test("staff overview preserves the owner Payroll card", async () => {
 
 test("staff overview does not return an empty operational home for active Staff users without explicit module grants", async () => {
   const overview = await getStaffOverview(env([]), currentUser([]));
-  assert.equal(overview.cards.length, 5);
+    assert.equal(overview.cards.length, 6);
   assert.equal(overview.cards.some((card) => card.id === "chat"), false);
 });
 
@@ -735,8 +735,8 @@ test("staff overview API enforces authentication and staff view", async () => {
   assert.equal(data.bookingEvents[0]?.eventType, "NEW");
   assert.equal(data.bookingEvents[0]?.guestName, "Mali Guest");
   assert.equal(data.bookingEvents[0]?.unitName, "Villa 10");
-  assert.equal(cards.length, 5);
-  assert.deepEqual(cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "maintenance", "procurement"]);
+    assert.equal(cards.length, 6);
+    assert.deepEqual(cards.map((card) => card.id), ["reception", "rooms", "housekeeping", "laundry", "maintenance", "procurement"]);
   const housekeeping = cards.find((card) => card.id === "housekeeping");
   assert.ok(housekeeping);
   assert.equal(housekeeping.href, "/housekeeping");

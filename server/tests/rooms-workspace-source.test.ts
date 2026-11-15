@@ -98,7 +98,7 @@ test("Rooms Workspace consumes one dedicated read model and cards do not load se
   assert.doesNotMatch(roomCompactRow, /services\//);
   assert.doesNotMatch(roomCompactSignals, /services\//);
   assert.doesNotMatch(guestCard, /services\//);
-  assert.doesNotMatch(receptionCard, /services\//);
+  assert.match(receptionCard, /updateReceptionCheckIn/);
   assert.doesNotMatch(housekeepingCard, /services\//);
   assert.doesNotMatch(maintenanceCard, /services\//);
   assert.doesNotMatch(roomDomainCard, /services\//);
@@ -243,7 +243,10 @@ test("Expanded Rooms Workspace uses one lifted glass sheet and removes Notes and
   assert.match(roomExpandedWorkspace, /variant="elevated"/);
   assert.match(roomExpandedWorkspace, /<RoomHero room=\{room\} \/>[\s\S]*<RoomOperationalSummaryCard summary=\{room\.operational\} \/>/);
   assert.match(roomExpandedWorkspace, /turnover \? \([\s\S]*<TurnoverCard[\s\S]*<HousekeepingCard[\s\S]*<MaintenanceCard/);
-  assert.doesNotMatch(roomExpandedWorkspace, /<ReceptionCard/);
+  assert.match(
+    roomExpandedWorkspace,
+    /<ReceptionCard roomId=\{room\.unitId\} roomName=\{room\.roomName\} reception=\{room\.reception\} \/>/,
+  );
   assert.doesNotMatch(roomExpandedWorkspace, /WorkspacePlaceholder|title="Notes"|title="History"|Notes|History/);
   assert.match(css, /\.room-expanded-sheet/);
   assert.match(css, /@keyframes room-sheet-lift-in/);
