@@ -548,6 +548,9 @@ function compactAlertSummary(row: RoomWorkspaceRow, reception: RoomReceptionSumm
 function mapReceptionAlerts(rows: ReceptionAlertRow[]): Map<number, MappedReceptionAlertSummary[]> {
   const alerts = new Map<number, MappedReceptionAlertSummary[]>();
   for (const row of rows) {
+    // Alerts without a provider booking cannot be opened or resolved from the
+    // Room workspace, so do not expose an unusable action to staff.
+    if (row.beds24_booking_id === null) continue;
     const current = alerts.get(row.unit_id) ?? [];
     current.push({
       id: row.alert_id,
