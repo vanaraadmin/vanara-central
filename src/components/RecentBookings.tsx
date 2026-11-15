@@ -212,14 +212,15 @@ function BookingEventRow({
               {event.guestName}
             </strong>
 
-            <span className={`recent-bookings__event-kind booking-pulse__status booking-pulse__status--${tone}`}>
-              {eventLabel(event.eventType, translate)}
-            </span>
             {needsRoomAssignment ? (
               <span className="booking-pulse__status booking-pulse__status--unallocated">
                 {translate("roomAssignmentNeeded")}
               </span>
-            ) : null}
+            ) : (
+              <span className={`recent-bookings__event-kind booking-pulse__status booking-pulse__status--${tone}`}>
+                {eventLabel(event.eventType, translate)}
+              </span>
+            )}
           </span>
 
           <span className="recent-bookings__event-detail booking-pulse__meta">

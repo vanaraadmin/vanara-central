@@ -617,7 +617,7 @@ const th = {
   minutesAgo: "{{count}} นาทีที่แล้ว",
   eventNew: "ใหม่",
   eventModified: "แก้ไขแล้ว",
-  roomAssignmentNeeded: "ยังไม่ได้จัดห้อง · ต้องจัดห้อง",
+  roomAssignmentNeeded: "ยังไม่จัดห้อง!",
   unallocatedBookingDetail: "ต้องจัดห้องใน Beds24",
   occupiedUpper: "มีแขก",
   vacantUpper: "ว่าง",
