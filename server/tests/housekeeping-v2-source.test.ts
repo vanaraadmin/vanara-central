@@ -109,7 +109,7 @@ test("summary keeps actionable queues and adds a closed-today operational histor
   assert.match(service, /"ON_DEMAND_CLEANING"/);
   assert.match(service, /cleaningInProgress: tasks\.filter\(\(task\) => taskCountsAsActiveNow\(task\)\)\.length/);
   assert.match(service, /completed_at IS NOT NULL AND date\(completed_at, '\+7 hours'\) = \?/);
-  assert.match(service, /"priority-turnover", "normal-cleaning", "water-refill"/);
+  assert.match(service, /"priority-turnover", "overdue-normal-cleaning", "normal-cleaning", "water-refill"/);
   assert.doesNotMatch(service, /"ready", "procurement"/);
 });
 
@@ -327,13 +327,14 @@ test("read model includes generated Standard Cleaning work and excludes Room-own
   assert.doesNotMatch(service, /taskType: "ON_DEMAND_CLEANING"/);
 });
 
-test("overdue in-house cleaning stays in Normal Cleaning without turnover wording", () => {
-  assert.match(service, /task\.operationalDate < context\.date/);
+test("overdue in-house cleaning uses a dedicated queue without turnover wording", () => {
+  assert.match(service, /function overdueNormalCleaningDays/);
+  assert.match(service, /task\.dueCycleDate \?\? task\.operationalDate/);
   assert.match(service, /return "Was due yesterday"/);
-  assert.match(service, /priority queue is exclusively for a real same-day checkout\/check-in/);
-  assert.match(service, /return "normal-cleaning"/);
-  assert.match(service, /taskBelongsToActiveStay/);
-  assert.match(page, /translate\("wasDueYesterday"\)/);
+  assert.match(service, /return "overdue-normal-cleaning"/);
+  assert.match(service, /taskMatchesBooking\(task, context\.activeStay\)/);
+  assert.match(page, /translate\("oneDayOverdue"\)/);
+  assert.match(page, /translate\("daysOverdue"/);
   assert.doesNotMatch(page, /breach|escalation level|overdue priority/i);
   assert.doesNotMatch(page, /\bSLA\b/);
 });
@@ -344,9 +345,11 @@ test("v2 page covers loading, error, refresh, empty sections and mobile-first ca
   assert.match(page, /onClick=\{\(\) => void housekeeping\.refetch\(\)\}/);
   assert.match(page, /translate\(copy\.emptyKey\)/);
   assert.match(page, /noPriorityTurnoverTasks/);
+  assert.match(page, /noOverdueNormalCleaningTasks/);
   assert.match(page, /noNormalCleaningTasks/);
   assert.match(page, /noWaterRefillTasks/);
   assert.match(service, /No priority work\./);
+  assert.match(service, /No overdue normal cleaning\./);
   assert.match(service, /No normal cleaning work\./);
   assert.match(service, /No water refills\./);
   assert.match(css, /\.housekeeping-v2-summary/);

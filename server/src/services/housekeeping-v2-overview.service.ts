@@ -11,7 +11,7 @@ export interface HousekeepingV2Bindings {
   DB: D1Database;
 }
 
-export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
+export type HousekeepingV2SectionId = "priority-turnover" | "overdue-normal-cleaning" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
 
@@ -33,6 +33,7 @@ export interface HousekeepingV2TaskCard {
   priority: HousekeepingTaskPriority;
   operationalDate: string;
   currentQueue: HousekeepingV2SectionId;
+  overdueDays: number | null;
   displayReason: string | null;
   assignee: string | null;
   assigneeId: string | null;
@@ -210,7 +211,7 @@ const CLEANING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD
 const ACTIVE_NOW_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "WATER_REFILL", "ON_DEMAND_CLEANING"]);
 const CLOSED_HOUSEKEEPING_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE", "ON_DEMAND_CLEANING"]);
 const ROOM_CYCLE_TASK_TYPES = new Set<HousekeepingTaskType>(["TURNOVER", "STANDARD_CLEANING", "LINEN_CHANGE"]);
-const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "normal-cleaning", "water-refill"];
+const SECTION_ORDER: HousekeepingV2SectionId[] = ["priority-turnover", "overdue-normal-cleaning", "normal-cleaning", "water-refill"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_STANDARD_INTERVAL_DAYS = 3;
 
@@ -550,7 +551,8 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
   const isWaitingRelease = releaseState === "waiting_for_reception";
   const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, maintenanceBlocked);
   const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, maintenanceBlocked);
-  const currentQueue = visibleQueueForTask(context, task, reasonCodes, isWaitingRelease, maintenanceBlocked);
+  const overdueDays = overdueNormalCleaningDays(context, task);
+  const currentQueue = visibleQueueForTask(context, task, overdueDays);
   const priority = taskType === "TURNOVER" ? (hasQualifyingIncomingToday(context) ? "HIGH" : "NORMAL") : task.priority;
 
   return {
@@ -564,6 +566,7 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
     priority,
     operationalDate: task.operationalDate,
     currentQueue,
+    overdueDays,
     displayReason: displayReasonFor(reasonCodes),
     assignee: task.assignedUserName ?? null,
     assigneeId: task.assignedUserId ?? null,
@@ -727,7 +730,7 @@ function reasonCodesFor(context: OperationalContext, task: HousekeepingTask, tas
   if (waitingRelease) codes.push("waiting_reception");
   if (maintenanceBlocked) codes.push("maintenance_block");
   if (taskType === "STANDARD_CLEANING" && task.dueCycleDate) {
-    if (task.operationalDate < context.date) codes.push("standard_cleaning_previous_day");
+    if (task.dueCycleDate < context.date) codes.push("standard_cleaning_previous_day");
     else if (task.dueCycleDate === context.date || task.operationalDate === context.date) codes.push("cleaning_due_today");
   }
   if (taskType === "WATER_REFILL" && task.operationalDate < context.date) codes.push("water_refill_overdue");
@@ -750,17 +753,22 @@ function sectionForCard(card: HousekeepingV2TaskCard): HousekeepingV2SectionId {
   return card.currentQueue;
 }
 
-function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask, reasonCodes: HousekeepingV2ReasonCode[], waitingRelease: boolean, maintenanceBlocked: boolean): HousekeepingV2SectionId {
+function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask, overdueDays: number | null): HousekeepingV2SectionId {
   if (task.taskType === "TURNOVER") {
     return hasQualifyingIncomingToday(context) ? "priority-turnover" : "normal-cleaning";
   }
   if (task.taskType === "WATER_REFILL") return "water-refill";
-  // The priority queue is exclusively for a real same-day checkout/check-in
-  // turnover. In-house cleaning remains Normal Cleaning even when overdue.
-  void reasonCodes;
-  void waitingRelease;
-  void maintenanceBlocked;
+  if (overdueDays !== null) return "overdue-normal-cleaning";
   return "normal-cleaning";
+}
+
+function overdueNormalCleaningDays(context: OperationalContext, task: HousekeepingTask): number | null {
+  if (task.taskType !== "STANDARD_CLEANING" || !context.activeStay || !taskMatchesBooking(task, context.activeStay)) return null;
+  const dueDate = task.dueCycleDate ?? task.operationalDate;
+  if (dueDate >= context.date) return null;
+  const dueAt = Date.parse(`${dueDate}T00:00:00.000Z`);
+  const currentAt = Date.parse(`${context.date}T00:00:00.000Z`);
+  return Math.max(1, Math.round((currentAt - dueAt) / 86_400_000));
 }
 
 function displayReasonFor(reasonCodes: HousekeepingV2ReasonCode[]): string | null {
@@ -835,6 +843,9 @@ function sortTasks(left: HousekeepingTask, right: HousekeepingTask): number {
 }
 
 function sortCards(left: HousekeepingV2TaskCard, right: HousekeepingV2TaskCard): number {
+  if (sectionForCard(left) === "overdue-normal-cleaning" && sectionForCard(right) === "overdue-normal-cleaning") {
+    return (right.overdueDays ?? 0) - (left.overdueDays ?? 0) || left.operationalDate.localeCompare(right.operationalDate) || left.unitName.localeCompare(right.unitName);
+  }
   if (sectionForCard(left) === "normal-cleaning" && sectionForCard(right) === "normal-cleaning") {
     return normalCleaningRank(left) - normalCleaningRank(right) || priorityRank(right.priority) - priorityRank(left.priority) || left.unitName.localeCompare(right.unitName);
   }
@@ -854,7 +865,6 @@ function normalCleaningRank(card: HousekeepingV2TaskCard): number {
 function priorityQueueRank(card: HousekeepingV2TaskCard): number {
   if (card.taskType === "TURNOVER" && !card.reasonCodes.includes("waiting_reception") && !card.assignee) return 1;
   if (card.taskType === "TURNOVER") return 2;
-  if (card.reasonCodes.includes("standard_cleaning_previous_day")) return 3;
   if (card.taskStatus === "CLAIMED" || card.taskStatus === "IN_PROGRESS") return 5;
   if (card.isBlocked) return 6;
   return 7;
@@ -890,6 +900,8 @@ function sectionTitle(id: HousekeepingV2SectionId): string {
   switch (id) {
     case "priority-turnover":
       return "Priority";
+    case "overdue-normal-cleaning":
+      return "Overdue Normal Cleaning";
     case "normal-cleaning":
       return "Normal";
     case "water-refill":
@@ -901,6 +913,8 @@ function sectionEmpty(id: HousekeepingV2SectionId): string {
   switch (id) {
     case "priority-turnover":
       return "No priority work.";
+    case "overdue-normal-cleaning":
+      return "No overdue normal cleaning.";
     case "normal-cleaning":
       return "No normal cleaning work.";
     case "water-refill":

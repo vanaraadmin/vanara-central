@@ -1081,7 +1081,7 @@ test("standard cleaning can be completed as Full Cleaning and updates cleaning p
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
 });
 
-test("previous-day standard cleaning stays Normal without duplication or lost assignment history", async () => {
+test("previous-day standard cleaning enters overdue normal cleaning without duplication or lost assignment history", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
     { ...booking(101, 900101, 1, "Bungalow Guest", 1, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
@@ -1102,17 +1102,19 @@ test("previous-day standard cleaning stays Normal without duplication or lost as
   db.events.push({ task_id: 51, event_type: "claim", idempotency_key: "claim:51" });
 
   const response = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
-  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; displayReason: string | null; assignee: string | null; reasonCodes: string[] }> }> } };
+  const body = await response.json() as { success: boolean; data: { summary: { toClean: number }; sections: Array<{ id: string; cards: Array<{ taskId: number; taskType: string; operationalDate: string; currentQueue: string; overdueDays: number | null; displayReason: string | null; assignee: string | null; reasonCodes: string[] }> }> } };
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
   const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
+  const overdue = body.data.sections.find((section) => section.id === "overdue-normal-cleaning")?.cards ?? [];
   const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
-  const standard = normal.find((card) => card.taskId === 51);
+  const standard = overdue.find((card) => card.taskId === 51);
   assert.ok(standard);
   assert.equal(standard.taskType, "STANDARD_CLEANING");
   assert.equal(standard.operationalDate, "2026-08-01");
-  assert.equal(standard.currentQueue, "normal-cleaning");
+  assert.equal(standard.currentQueue, "overdue-normal-cleaning");
+  assert.equal(standard.overdueDays, 1);
   assert.equal(standard.displayReason, "Was due yesterday");
   assert.equal(standard.assignee, "Ada");
   assert.equal(standard.reasonCodes.includes("standard_cleaning_previous_day"), true);
@@ -1120,7 +1122,8 @@ test("previous-day standard cleaning stays Normal without duplication or lost as
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
   assert.equal(db.events.some((event) => event.task_id === 51 && event.event_type === "claim"), true);
   assert.equal(priority.length, 0);
-  assert.equal(normal.length, 1);
+  assert.equal(overdue.length, 1);
+  assert.equal(normal.length, 0);
   assert.equal(body.data.summary.toClean, 1);
 
   const repeated = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
@@ -1178,6 +1181,7 @@ test("clean rooms with no active work are absent from Housekeeping queues", asyn
   assert.equal(body.data.tasks.length, 0);
   assert.deepEqual(body.data.sections.map((section) => [section.id, section.emptyLabel, section.cards.length]), [
     ["priority-turnover", "No priority work.", 0],
+    ["overdue-normal-cleaning", "No overdue normal cleaning.", 0],
     ["normal-cleaning", "No normal cleaning work.", 0],
     ["water-refill", "No water refills.", 0],
   ]);

@@ -1,6 +1,6 @@
 import type { HousekeepingTaskPriority, HousekeepingTaskStatus, HousekeepingTaskType } from "./housekeeping-tasks";
 
-export type HousekeepingV2SectionId = "priority-turnover" | "normal-cleaning" | "water-refill";
+export type HousekeepingV2SectionId = "priority-turnover" | "overdue-normal-cleaning" | "normal-cleaning" | "water-refill";
 export type HousekeepingV2StayStatus = "arriving" | "in_house" | "departing" | "vacant" | "ready";
 export type HousekeepingV2ReceptionReleaseState = "not_required" | "waiting_for_reception" | "released";
 export type HousekeepingWorkKind = "PRIORITY_TURNOVER" | "CHECKOUT_CLEANING" | "NORMAL_CLEANING" | "FULL_CLEANING" | "WATER_REFILL" | "ON_DEMAND_CLEANING";
@@ -24,6 +24,7 @@ export interface HousekeepingV2TaskCard {
   priority: HousekeepingTaskPriority;
   operationalDate: string;
   currentQueue: HousekeepingV2SectionId;
+  overdueDays: number | null;
   displayReason: string | null;
   assignee: string | null;
   assigneeId: string | null;

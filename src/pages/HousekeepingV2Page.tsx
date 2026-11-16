@@ -27,12 +27,14 @@ type HousekeepingViewId = HousekeepingV2SectionId | "completed-today";
 
 const homeSections: Array<{ id: HousekeepingV2SectionId; labelKey: string }> = [
   { id: "priority-turnover", labelKey: "priorityTurnover" },
+  { id: "overdue-normal-cleaning", labelKey: "overdueNormalCleaning" },
   { id: "normal-cleaning", labelKey: "normalCleaning" },
   { id: "water-refill", labelKey: "waterRefill" },
 ];
 
 const sectionCopy: Record<HousekeepingV2SectionId, { titleKey: string; emptyKey: string }> = {
   "priority-turnover": { titleKey: "priorityTurnover", emptyKey: "noPriorityTurnoverTasks" },
+  "overdue-normal-cleaning": { titleKey: "overdueNormalCleaning", emptyKey: "noOverdueNormalCleaningTasks" },
   "normal-cleaning": { titleKey: "normalCleaning", emptyKey: "noNormalCleaningTasks" },
   "water-refill": { titleKey: "waterRefill", emptyKey: "noWaterRefillTasks" },
 };
@@ -170,6 +172,7 @@ function reasonLabel(code: string, translate: Translate): string {
 }
 
 function localizedReason(card: HousekeepingV2TaskCard, translate: Translate): string | null {
+  if (card.overdueDays !== null) return card.overdueDays === 1 ? translate("oneDayOverdue") : translate("daysOverdue", { count: card.overdueDays });
   const reasonCode = card.reasonCodes[0];
   return reasonCode ? reasonLabel(reasonCode, translate) : card.displayReason ?? card.blockReason;
 }
@@ -250,7 +253,10 @@ function WaterDeliveryControl({
 
 function CardMeta({ card, translate }: { card: HousekeepingV2TaskCard; translate: Translate }) {
   if (card.taskType === "WATER_REFILL") return null;
-  const reasonLabels = card.reasonCodes.map((code) => reasonLabel(code, translate)).filter((label) => label !== card.displayReason);
+  const reasonLabels = card.reasonCodes
+    .filter((code) => !(card.overdueDays !== null && code === "standard_cleaning_previous_day"))
+    .map((code) => reasonLabel(code, translate))
+    .filter((label) => label !== card.displayReason);
   const details = [
     localizedReason(card, translate),
     card.assignee ? `${translate("assigned")} ${card.assignee}` : null,
