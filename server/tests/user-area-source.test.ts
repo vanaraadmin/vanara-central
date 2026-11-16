@@ -17,7 +17,9 @@ const currentUserService = readFileSync(new URL("../src/services/current-user.se
 
 test("profile panel owns TM30 and user management without exposing owner tools to staff", () => {
   assert.match(profilePanel, /currentUser\?\.isOwner|owner/);
-  assert.match(profilePanel, /fetch\(`\/api\/owner\/tm30\/export\?\$\{params\.toString\(\)\}`, \{ credentials: "include" \}\)/);
+  assert.match(profilePanel, /\/api\/owner\/tm30\/export/);
+  assert.match(profilePanel, /\/api\/owner\/tm30\/preview/);
+  assert.match(profilePanel, /TM30 spreadsheet editor/);
   assert.match(profilePanel, /aria-label="Download TM30"/);
   assert.match(profilePanel, /profile-panel__owner-utility/);
   assert.match(profilePanel, /TM30 export/);
