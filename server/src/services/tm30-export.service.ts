@@ -34,6 +34,24 @@ export interface Tm30WorkbookResult {
   rowCount: number;
 }
 
+export interface Tm30ExportPreviewRow extends Tm30PassportRow {
+  nationalityCode: string | null;
+  missingFields: Tm30MissingField["field"][];
+}
+
+export interface Tm30ExportEdit {
+  passportId: number;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  gender?: string;
+  passportNumber?: string;
+  nationality?: string;
+  birthDate?: string;
+  checkOutDate?: string;
+  phone?: string;
+}
+
 interface Tm30PassportSqlRow {
   id: number;
   booking_id: number;
@@ -113,6 +131,48 @@ function requiredMissingFields(row: Tm30PassportRow, nationalityMap: Map<string,
   if (!cleanText(row.passportNumber)) missing.push({ ...details, field: "passportNumber" });
   if (!tm30NationalityCodeFrom(row.nationality, nationalityMap)) missing.push({ ...details, field: "nationality" });
   return missing;
+}
+
+const EDITABLE_FIELDS = ["firstName", "middleName", "lastName", "gender", "passportNumber", "nationality", "birthDate", "checkOutDate", "phone"] as const;
+
+function editableText(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`TM30 ${label} must be text.`);
+  if (value.length > 160) throw new Error(`TM30 ${label} is too long.`);
+  return value.trim();
+}
+
+export function applyTm30ExportEdits(rows: Tm30PassportRow[], input: unknown): Tm30PassportRow[] {
+  if (!Array.isArray(input)) throw new Error("TM30 editor rows are required.");
+  if (input.length > rows.length) throw new Error("TM30 editor has unexpected rows.");
+  const byPassportId = new Map(rows.map((row) => [row.passportId, row]));
+  const seen = new Set<number>();
+  const edits = new Map<number, Partial<Tm30ExportEdit>>();
+
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("TM30 editor row is invalid.");
+    const record = item as Record<string, unknown>;
+    const passportId = record.passportId;
+    if (!Number.isInteger(passportId) || Number(passportId) <= 0 || !byPassportId.has(Number(passportId)) || seen.has(Number(passportId))) {
+      throw new Error("TM30 editor row does not belong to this export.");
+    }
+    seen.add(Number(passportId));
+    const edit: Partial<Tm30ExportEdit> = {};
+    for (const field of EDITABLE_FIELDS) {
+      if (record[field] !== undefined) edit[field] = editableText(record[field], field);
+    }
+    edits.set(Number(passportId), edit);
+  }
+
+  return rows.map((row) => ({ ...row, ...(edits.get(row.passportId) ?? {}) }));
+}
+
+export async function previewTm30Export(template: ArrayBuffer, rows: Tm30PassportRow[]): Promise<Tm30ExportPreviewRow[]> {
+  const nationalityMap = await buildTm30NationalityMap(template.slice(0));
+  return rows.map((row) => ({
+    ...row,
+    nationalityCode: tm30NationalityCodeFrom(row.nationality, nationalityMap),
+    missingFields: requiredMissingFields(row, nationalityMap).map((missing) => missing.field),
+  }));
 }
 
 function updateWorksheet(templateSheet: string, rows: Tm30PassportRow[], nationalityMap: Map<string, string>): string {

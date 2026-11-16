@@ -21,6 +21,37 @@ const maxPhotoBytes = 5 * 1024 * 1024;
 
 type PanelTab = "profile" | "password" | "updates" | "owner";
 
+type Tm30EditorField = "firstName" | "middleName" | "lastName" | "gender" | "passportNumber" | "nationality" | "birthDate" | "checkOutDate" | "phone";
+
+interface Tm30EditorRow {
+  passportId: number;
+  bookingId: number;
+  guestName: string;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  gender: string | null;
+  passportNumber: string | null;
+  nationality: string | null;
+  birthDate: string | null;
+  checkOutDate: string;
+  phone: string | null;
+  nationalityCode: string | null;
+  missingFields: Array<"firstName" | "gender" | "passportNumber" | "nationality">;
+}
+
+const tm30EditorColumns: Array<{ field: Tm30EditorField; label: string }> = [
+  { field: "firstName", label: "First name" },
+  { field: "middleName", label: "Middle name" },
+  { field: "lastName", label: "Last name" },
+  { field: "gender", label: "Sex" },
+  { field: "passportNumber", label: "Passport no." },
+  { field: "nationality", label: "Nationality" },
+  { field: "birthDate", label: "Birth date" },
+  { field: "checkOutDate", label: "Check-out" },
+  { field: "phone", label: "Phone" },
+];
+
 function initialsFor(user: CurrentUserView | ManagedUser): string {
   const source = user.displayName || user.fullName || user.username;
   const letters = source.split(/\s+/).map((part) => part.trim().slice(0, 1)).filter(Boolean).slice(0, 2).join("");
@@ -106,6 +137,9 @@ export default function ProfilePanel() {
   const [tm30Exporting, setTm30Exporting] = useState(false);
   const [tm30ExportRange, setTm30ExportRange] = useState({ from: "", to: "" });
   const [tm30ExportError, setTm30ExportError] = useState<string | null>(null);
+  const [tm30EditorRows, setTm30EditorRows] = useState<Tm30EditorRow[] | null>(null);
+  const [tm30Previewing, setTm30Previewing] = useState(false);
+  const [tm30EditorDirty, setTm30EditorDirty] = useState(false);
   const [pwaStatus, setPwaStatus] = useState<PwaUpdateStatus>("idle");
   const [pwaBuildInfo, setPwaBuildInfo] = useState<PwaBuildInfo | null>(null);
   const [pushStatus, setPushStatus] = useState<PushNotificationStatus>("idle");
@@ -313,8 +347,14 @@ export default function ProfilePanel() {
     setTm30Exporting(true);
     setTm30ExportError(null);
     try {
-      const params = new URLSearchParams({ from, to });
-      const response = await fetch(`/api/owner/tm30/export?${params.toString()}`, { credentials: "include" });
+      const response = tm30EditorRows
+        ? await fetch("/api/owner/tm30/export", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from, to, rows: tm30EditorRows.map(({ passportId, firstName, middleName, lastName, gender, passportNumber, nationality, birthDate, checkOutDate, phone }) => ({ passportId, firstName: firstName ?? "", middleName: middleName ?? "", lastName: lastName ?? "", gender: gender ?? "", passportNumber: passportNumber ?? "", nationality: nationality ?? "", birthDate: birthDate ?? "", checkOutDate, phone: phone ?? "" })) }),
+        })
+        : await fetch(`/api/owner/tm30/export?${new URLSearchParams({ from, to }).toString()}`, { credentials: "include" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string; missingFields?: unknown[] } | null;
         const count = payload?.missingFields?.length ?? 0;
@@ -337,6 +377,55 @@ export default function ProfilePanel() {
       setTm30ExportError(error instanceof Error ? error.message : "TM30 export could not be created.");
     } finally {
       setTm30Exporting(false);
+    }
+  }
+
+  async function previewTm30() {
+    const { from, to } = tm30ExportRange;
+    if (!from || !to || from > to) {
+      setTm30ExportError("Choose a valid passport registration period first.");
+      return;
+    }
+    setTm30Previewing(true);
+    setTm30ExportError(null);
+    try {
+      const response = await fetch(`/api/owner/tm30/preview?${new URLSearchParams({ from, to }).toString()}`, { credentials: "include" });
+      const payload = await response.json().catch(() => null) as { success?: boolean; data?: { rows?: Tm30EditorRow[] }; error?: string } | null;
+      if (!response.ok || !payload?.success || !payload.data?.rows) throw new Error(payload?.error ?? "TM30 preview could not be created.");
+      setTm30EditorRows(payload.data.rows);
+      setTm30EditorDirty(false);
+    } catch (error) {
+      setTm30ExportError(error instanceof Error ? error.message : "TM30 preview could not be created.");
+    } finally {
+      setTm30Previewing(false);
+    }
+  }
+
+  function editTm30Cell(passportId: number, field: Tm30EditorField, value: string) {
+    setTm30EditorRows((rows) => rows?.map((row) => row.passportId === passportId ? { ...row, [field]: value, ...(field === "nationality" ? { nationalityCode: null } : {}) } : row) ?? null);
+    setTm30EditorDirty(true);
+  }
+
+  async function validateTm30Editor() {
+    if (!tm30EditorRows) return;
+    const { from, to } = tm30ExportRange;
+    setTm30Previewing(true);
+    setTm30ExportError(null);
+    try {
+      const response = await fetch("/api/owner/tm30/preview", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to, rows: tm30EditorRows }),
+      });
+      const payload = await response.json().catch(() => null) as { success?: boolean; data?: { rows?: Tm30EditorRow[] }; error?: string } | null;
+      if (!response.ok || !payload?.success || !payload.data?.rows) throw new Error(payload?.error ?? "TM30 validation could not be completed.");
+      setTm30EditorRows(payload.data.rows);
+      setTm30EditorDirty(false);
+    } catch (error) {
+      setTm30ExportError(error instanceof Error ? error.message : "TM30 validation could not be completed.");
+    } finally {
+      setTm30Previewing(false);
     }
   }
 
@@ -471,12 +560,37 @@ export default function ProfilePanel() {
                       <span>Choose when each passport was registered, then download only that TM30 filing period.</span>
                     </div>
                     <div className="profile-panel__tm30-range">
-                      <label><span>Registered from</span><input aria-label="TM30 registered from" max={tm30ExportRange.to || undefined} onChange={(event) => setTm30ExportRange((range) => ({ ...range, from: event.target.value }))} type="date" value={tm30ExportRange.from} /></label>
-                      <label><span>Registered to</span><input aria-label="TM30 registered to" min={tm30ExportRange.from || undefined} onChange={(event) => setTm30ExportRange((range) => ({ ...range, to: event.target.value }))} type="date" value={tm30ExportRange.to} /></label>
+                      <label><span>Registered from</span><input aria-label="TM30 registered from" max={tm30ExportRange.to || undefined} onChange={(event) => { setTm30ExportRange((range) => ({ ...range, from: event.target.value })); setTm30EditorRows(null); setTm30EditorDirty(false); }} type="date" value={tm30ExportRange.from} /></label>
+                      <label><span>Registered to</span><input aria-label="TM30 registered to" min={tm30ExportRange.from || undefined} onChange={(event) => { setTm30ExportRange((range) => ({ ...range, to: event.target.value })); setTm30EditorRows(null); setTm30EditorDirty(false); }} type="date" value={tm30ExportRange.to} /></label>
                     </div>
-                    <button aria-label="Download TM30" className="profile-panel__download" disabled={tm30Exporting} onClick={() => void downloadTm30()} type="button"><DownloadIcon /><span>{tm30Exporting ? "Preparing TM30..." : translate("downloadTm30")}</span></button>
+                    <div className="profile-panel__tm30-actions">
+                      <button className="profile-panel__secondary" disabled={tm30Previewing || tm30Exporting} onClick={() => void previewTm30()} type="button">{tm30Previewing ? "Loading TM30..." : "Review / edit TM30"}</button>
+                      <button aria-label="Download TM30" className="profile-panel__download" disabled={tm30Exporting || tm30Previewing || Boolean(tm30EditorRows && (tm30EditorDirty || tm30EditorRows.some((row) => row.missingFields.length > 0)))} onClick={() => void downloadTm30()} type="button"><DownloadIcon /><span>{tm30Exporting ? "Preparing TM30..." : translate("downloadTm30")}</span></button>
+                    </div>
                   </div>
                   {tm30ExportError ? <p className="profile-panel__error" role="alert">{tm30ExportError}</p> : null}
+                  {tm30EditorRows ? (
+                    <section className="profile-panel__tm30-editor" aria-label="TM30 spreadsheet editor">
+                      <header>
+                        <div><strong>TM30 spreadsheet editor</strong><span>Edits apply only to this download. They do not overwrite the saved passport record.</span></div>
+                        <button className="profile-panel__secondary" disabled={tm30Previewing || !tm30EditorDirty} onClick={() => void validateTm30Editor()} type="button">{tm30Previewing ? "Checking..." : "Validate changes"}</button>
+                      </header>
+                      {tm30EditorRows.length === 0 ? <p className="profile-panel__empty">No TM30-ready passports were registered in this period.</p> : (
+                        <div className="profile-panel__tm30-grid-wrap">
+                          <table className="profile-panel__tm30-grid">
+                            <thead><tr><th>Guest</th>{tm30EditorColumns.map((column) => <th key={column.field}>{column.label}</th>)}<th>TM30 code</th></tr></thead>
+                            <tbody>{tm30EditorRows.map((row) => (
+                              <tr className={row.missingFields.length ? "is-invalid" : ""} key={row.passportId}>
+                                <th scope="row">{row.guestName}</th>
+                                {tm30EditorColumns.map((column) => <td key={column.field}><input aria-label={`${row.guestName} ${column.label}`} onChange={(event) => editTm30Cell(row.passportId, column.field, event.target.value)} value={row[column.field] ?? ""} /></td>)}
+                                <td className="profile-panel__tm30-code">{row.nationalityCode ?? (tm30EditorDirty ? "Validate" : "Needs correction")}{row.missingFields.length ? <small>{row.missingFields.join(", ")}</small> : null}</td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      )}
+                    </section>
+                  ) : null}
                   <header className="profile-panel__subheader profile-panel__subheader--users"><h3>Manage Users</h3><div><button type="button" onClick={() => startCreate(false)}>New staff</button><button type="button" onClick={() => startCreate(true)}>New owner</button></div></header>
                   <div className="profile-panel__user-list">
                     {(usersQuery.data ?? []).map((item) => (

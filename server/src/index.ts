@@ -53,7 +53,7 @@ import {
   sha256Hex as passportImageSha256,
   type PassportOcrAttemptHandle,
 } from "./services/passport-ocr-attempt.service.js";
-import { generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, type Tm30Bindings } from "./services/tm30-export.service.js";
+import { applyTm30ExportEdits, generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, previewTm30Export, type Tm30Bindings } from "./services/tm30-export.service.js";
 import { authenticateBeds24Webhook, Beds24WebhookError, logBeds24WebhookFailure, parseBeds24WebhookRequest, recordBeds24Webhook, validateBeds24WebhookMethod, WEBHOOK_SECRET_HEADER, type Beds24WebhookBindings } from "./services/beds24-webhook.service.js";
 import { buildWarapornKbRecoveryZip, getWarapornKbBackupManifest, listWarapornKbBackups, warapornKbBackupErrorStatus, type WarapornKbBackupBindings } from "./services/waraporn-kb-backup.service.js";
 import { assertLoginAllowed, loginClientIp, LoginRateLimitError, recordLoginFailure, recordLoginSuccess, type LoginRateLimitBindings } from "./services/login-rate-limit.service.js";
@@ -816,6 +816,54 @@ app.get("/api/owner/tm30/export", async (c) => {
     const range = normalizeTm30ExportRange(c.req.query("from"), c.req.query("to"));
     const template = await loadTm30Template(c);
     const rows = await listTm30PassportRows(c.env, range);
+    const exportResult = await generateTm30Workbook(template, rows);
+    if (exportResult.missingFields.length > 0) {
+      return c.json({ success: false, error: "TM30 export has missing required fields.", missingFields: exportResult.missingFields }, 422);
+    }
+    c.header("Cache-Control", "no-store");
+    c.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    c.header("Content-Disposition", `attachment; filename="TM30-registered-${range.from}-to-${range.to}.xlsx"`);
+    const body = exportResult.workbook.buffer.slice(exportResult.workbook.byteOffset, exportResult.workbook.byteOffset + exportResult.workbook.byteLength) as ArrayBuffer;
+    return c.body(body);
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.get("/api/owner/tm30/preview", async (c) => {
+  try {
+    await authenticated(c, "owner-dashboard", "access");
+    const range = normalizeTm30ExportRange(c.req.query("from"), c.req.query("to"));
+    const template = await loadTm30Template(c);
+    const rows = await listTm30PassportRows(c.env, range);
+    return c.json({ success: true, data: { rows: await previewTm30Export(template, rows) } });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/owner/tm30/preview", async (c) => {
+  try {
+    await authenticated(c, "owner-dashboard", "access");
+    const payload = await c.req.json().catch(() => null) as { from?: unknown; to?: unknown; rows?: unknown } | null;
+    const range = normalizeTm30ExportRange(typeof payload?.from === "string" ? payload.from : null, typeof payload?.to === "string" ? payload.to : null);
+    const template = await loadTm30Template(c);
+    const sourceRows = await listTm30PassportRows(c.env, range);
+    const rows = applyTm30ExportEdits(sourceRows, payload?.rows);
+    return c.json({ success: true, data: { rows: await previewTm30Export(template, rows) } });
+  } catch (error) {
+    return c.json({ success: false, error: errorMessage(error) }, protectedErrorStatus(error));
+  }
+});
+
+app.post("/api/owner/tm30/export", async (c) => {
+  try {
+    await authenticated(c, "owner-dashboard", "access");
+    const payload = await c.req.json().catch(() => null) as { from?: unknown; to?: unknown; rows?: unknown } | null;
+    const range = normalizeTm30ExportRange(typeof payload?.from === "string" ? payload.from : null, typeof payload?.to === "string" ? payload.to : null);
+    const template = await loadTm30Template(c);
+    const sourceRows = await listTm30PassportRows(c.env, range);
+    const rows = applyTm30ExportEdits(sourceRows, payload?.rows);
     const exportResult = await generateTm30Workbook(template, rows);
     if (exportResult.missingFields.length > 0) {
       return c.json({ success: false, error: "TM30 export has missing required fields.", missingFields: exportResult.missingFields }, 422);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, type Tm30PassportRow } from "../src/services/tm30-export.service.ts";
+import { applyTm30ExportEdits, generateTm30Workbook, listTm30PassportRows, normalizeTm30ExportRange, previewTm30Export, type Tm30PassportRow } from "../src/services/tm30-export.service.ts";
 import { buildTm30NationalityMap, tm30NationalityCodeFrom } from "../src/services/tm30-nationality.service.ts";
 import { readZipEntries, textEntry } from "../src/services/tm30-zip.service.ts";
 
@@ -15,7 +15,9 @@ test("TM30 Owner export keeps the official asset binding and downloads from the 
 
   assert.match(wrangler, /"assets"\s*:\s*\{\s*"binding"\s*:\s*"ASSETS"/);
   assert.match(profile, /new URLSearchParams\(\{ from, to \}\)/);
-  assert.match(profile, /\/api\/owner\/tm30\/export\?\$\{params\.toString\(\)\}/);
+  assert.match(profile, /\/api\/owner\/tm30\/preview/);
+  assert.match(profile, /method: "POST"/);
+  assert.match(profile, /TM30 spreadsheet editor/);
   assert.match(profile, /link\.download = fileName/);
   assert.match(server, /authenticated\(c, "owner-dashboard", "access"\)[\s\S]*loadTm30Template\(c\)/);
   assert.match(server, /c\.env\.ASSETS\.fetch/);
@@ -73,6 +75,7 @@ async function firstSheetCells(workbook: Uint8Array): Promise<Map<string, string
 }
 
 const baseRow: Tm30PassportRow = {
+  passportId: 1,
   bookingId: 9001,
   firstName: "MALI",
   middleName: null,
@@ -121,13 +124,39 @@ test("TM30 nationality conversion uses the official template mapping and reusabl
   assert.equal(tm30NationalityCodeFrom("THAI", map), "THA");
   assert.equal(tm30NationalityCodeFrom("THE KINGDOM OF THAILAND", map), "THA");
   assert.equal(tm30NationalityCodeFrom("United States of America", map), "USA");
-  assert.equal(tm30NationalityCodeFrom("D", map), "DEU");
   assert.equal(tm30NationalityCodeFrom("DEUTSCH", map), "DEU");
   assert.equal(tm30NationalityCodeFrom("CANADIAN/CANADIENNE", map), "CAN");
   assert.equal(tm30NationalityCodeFrom("FRANÇAISE", map), "FRA");
   assert.equal(tm30NationalityCodeFrom("SCHWEIZSUISSESVIZZERASVIZRASWITZERLAND", map), "CHE");
   assert.equal(tm30NationalityCodeFrom("RUSSIANFEDERATION", map), "RUS");
+  assert.equal(tm30NationalityCodeFrom("ITALIANA", map), "ITA");
+  assert.equal(tm30NationalityCodeFrom("JORDANIAN", map), "JOR");
+  assert.equal(tm30NationalityCodeFrom("HRVATSKO", map), "HRV");
+  assert.equal(tm30NationalityCodeFrom("NEDERLANDSE", map), "NLD");
+  assert.equal(tm30NationalityCodeFrom("POLSKIE/POLISH/POLONAISE", map), "POL");
+  assert.equal(tm30NationalityCodeFrom("REPUBLICOFKOREA", map), "KOR");
+  assert.equal(tm30NationalityCodeFrom("D", map), null);
   assert.equal(tm30NationalityCodeFrom("not a nationality", map), null);
+});
+
+test("TM30 preview identifies unsafe nationality values and allows an export-only correction", async () => {
+  const template = await officialTemplate();
+  const preview = await previewTm30Export(template, [{ ...baseRow, passportId: 44, nationality: "D" }]);
+  assert.equal(preview[0]?.nationalityCode, null);
+  assert.deepEqual(preview[0]?.missingFields, ["nationality"]);
+
+  const edited = applyTm30ExportEdits([{ ...baseRow, passportId: 44, nationality: "D" }], [{ passportId: 44, nationality: "CHINESE" }]);
+  assert.equal(edited[0]?.nationality, "CHINESE");
+  const corrected = await previewTm30Export(template, edited);
+  assert.equal(corrected[0]?.nationalityCode, "CHN");
+  assert.deepEqual(corrected[0]?.missingFields, []);
+});
+
+test("TM30 editor rejects passport rows outside the selected filing period", () => {
+  assert.throws(
+    () => applyTm30ExportEdits([{ ...baseRow, passportId: 44 }], [{ passportId: 999, nationality: "THAI" }]),
+    /does not belong to this export/,
+  );
 });
 
 test("TM30 export allows missing optional fields without marking required fields missing", async () => {

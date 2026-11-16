@@ -716,6 +716,135 @@ input.profile-panel__file-input {
   height: 18px;
 }
 
+.profile-panel__tm30-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+.profile-panel__tm30-actions .profile-panel__download {
+  min-height: 38px;
+  margin-top: 0;
+  padding-inline: 12px;
+}
+
+.profile-panel__tm30-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(244, 237, 223, 0.16);
+  border-radius: 16px;
+  background: rgba(10, 33, 26, 0.44);
+}
+
+.profile-panel__tm30-editor > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-panel__tm30-editor > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.profile-panel__tm30-editor strong {
+  color: rgba(244, 237, 223, 0.95);
+  font-size: 0.84rem;
+}
+
+.profile-panel__tm30-editor span {
+  color: rgba(244, 237, 223, 0.62);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.profile-panel__tm30-grid-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(244, 237, 223, 0.14);
+  border-radius: 11px;
+  background: rgba(244, 237, 223, 0.05);
+}
+
+.profile-panel__tm30-grid {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.profile-panel__tm30-grid th,
+.profile-panel__tm30-grid td {
+  border-right: 1px solid rgba(244, 237, 223, 0.11);
+  border-bottom: 1px solid rgba(244, 237, 223, 0.11);
+  padding: 0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.profile-panel__tm30-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px;
+  color: rgba(244, 237, 223, 0.78);
+  background: #173429;
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.profile-panel__tm30-grid tbody th {
+  min-width: 112px;
+  padding: 8px;
+  color: rgba(244, 237, 223, 0.88);
+  font-weight: 750;
+  background: rgba(244, 237, 223, 0.04);
+}
+
+.profile-panel__tm30-grid input {
+  width: 116px;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  padding: 7px;
+  color: #f4eddf;
+  background: transparent;
+  font: inherit;
+}
+
+.profile-panel__tm30-grid input:focus {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #d4a947;
+  outline-offset: -2px;
+  background: rgba(212, 169, 71, 0.1);
+}
+
+.profile-panel__tm30-grid .profile-panel__tm30-code {
+  min-width: 106px;
+  padding: 8px;
+  color: #e1bd63;
+  font-weight: 850;
+}
+
+.profile-panel__tm30-code small {
+  display: block;
+  margin-top: 3px;
+  color: #ffaaa0;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+.profile-panel__tm30-grid tr.is-invalid td,
+.profile-panel__tm30-grid tr.is-invalid th {
+  background: rgba(148, 52, 44, 0.16);
+}
+
 .profile-panel__subheader {
   min-width: 0;
   display: flex;
