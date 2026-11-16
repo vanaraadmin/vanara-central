@@ -327,13 +327,13 @@ test("read model includes generated Standard Cleaning work and excludes Room-own
   assert.doesNotMatch(service, /taskType: "ON_DEMAND_CLEANING"/);
 });
 
-test("priority escalation is derived from original operational date without enterprise wording", () => {
+test("overdue in-house cleaning stays in Normal Cleaning without turnover wording", () => {
   assert.match(service, /task\.operationalDate < context\.date/);
-  assert.match(service, /return "priority-turnover"/);
   assert.match(service, /return "Was due yesterday"/);
+  assert.match(service, /priority queue is exclusively for a real same-day checkout\/check-in/);
+  assert.match(service, /return "normal-cleaning"/);
   assert.match(service, /taskBelongsToActiveStay/);
   assert.match(page, /translate\("wasDueYesterday"\)/);
-  assert.doesNotMatch(service, /escalation_level|SLA|breach/);
   assert.doesNotMatch(page, /breach|escalation level|overdue priority/i);
   assert.doesNotMatch(page, /\bSLA\b/);
 });

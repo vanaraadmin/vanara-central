@@ -755,9 +755,11 @@ function visibleQueueForTask(context: OperationalContext, task: HousekeepingTask
     return hasQualifyingIncomingToday(context) ? "priority-turnover" : "normal-cleaning";
   }
   if (task.taskType === "WATER_REFILL") return "water-refill";
-  if (reasonCodes.includes("standard_cleaning_previous_day")) return "priority-turnover";
+  // The priority queue is exclusively for a real same-day checkout/check-in
+  // turnover. In-house cleaning remains Normal Cleaning even when overdue.
+  void reasonCodes;
+  void waitingRelease;
   void maintenanceBlocked;
-  if (task.priority === "URGENT" || waitingRelease || task.status === "BLOCKED") return "priority-turnover";
   return "normal-cleaning";
 }
 
