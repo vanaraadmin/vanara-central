@@ -1081,7 +1081,7 @@ test("standard cleaning can be completed as Full Cleaning and updates cleaning p
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
 });
 
-test("previous-day standard cleaning moves to Priority without duplication or lost assignment history", async () => {
+test("previous-day standard cleaning stays Normal without duplication or lost assignment history", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
     { ...booking(101, 900101, 1, "Bungalow Guest", 1, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05" },
@@ -1108,19 +1108,19 @@ test("previous-day standard cleaning moves to Priority without duplication or lo
   assert.equal(body.success, true);
   const priority = body.data.sections.find((section) => section.id === "priority-turnover")?.cards ?? [];
   const normal = body.data.sections.find((section) => section.id === "normal-cleaning")?.cards ?? [];
-  const standard = priority.find((card) => card.taskId === 51);
+  const standard = normal.find((card) => card.taskId === 51);
   assert.ok(standard);
   assert.equal(standard.taskType, "STANDARD_CLEANING");
   assert.equal(standard.operationalDate, "2026-08-01");
-  assert.equal(standard.currentQueue, "priority-turnover");
+  assert.equal(standard.currentQueue, "normal-cleaning");
   assert.equal(standard.displayReason, "Was due yesterday");
   assert.equal(standard.assignee, "Ada");
   assert.equal(standard.reasonCodes.includes("standard_cleaning_previous_day"), true);
-  assert.equal(normal.some((card) => card.taskId === 51), false);
+  assert.equal(priority.some((card) => card.taskId === 51), false);
   assert.equal(db.tasks.filter((task) => task.task_type === "STANDARD_CLEANING" && task.unit_id === 1).length, 1);
   assert.equal(db.events.some((event) => event.task_id === 51 && event.event_type === "claim"), true);
-  assert.equal(priority.length, 1);
-  assert.equal(normal.length, 0);
+  assert.equal(priority.length, 0);
+  assert.equal(normal.length, 1);
   assert.equal(body.data.summary.toClean, 1);
 
   const repeated = await request("/api/housekeeping/v2/tasks?date=2026-08-02", db);
