@@ -1033,7 +1033,7 @@ async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<
         OR b.arrival_date >= ?
       )
     ORDER BY b.arrival_date, b.departure_date, b.beds24_booking_id
-  `).bind(date, date, date, date).all<BookingRow>();
+  `).bind(date, date, date, date, date).all<BookingRow>();
   return rows.results ?? [];
 }
 
