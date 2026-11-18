@@ -136,7 +136,9 @@ class FakeHousekeepingV2DB {
       const rows = this.bookings
         .filter((row) => params.length === 0 || !sql.includes("WHERE b.unit_id = ?") || row.unit_id === params[0])
         .filter((row) => !sql.includes("room_operational_availability") || (this.operationalAvailability.get(row.unit_id) ?? "OPERATING") === "OPERATING")
-        .filter((row) => !sql.includes("maintenance_tickets") || !this.maintenanceTickets.some((ticket) => ticket.room_id === row.unit_id && !["Resolved", "Closed"].includes(ticket.status) && ticket.out_of_service === 1));
+        .filter((row) => !sql.includes("maintenance_tickets")
+          || sql.includes("b.departure_date = ?\n        OR NOT EXISTS") && row.departure_date === String(params[0])
+          || !this.maintenanceTickets.some((ticket) => ticket.room_id === row.unit_id && !["Resolved", "Closed"].includes(ticket.status) && ticket.out_of_service === 1));
       return {
         results: rows as T[],
       };
@@ -1288,19 +1290,21 @@ test("non-operating manual room readiness tasks remain out of Housekeeping queue
   assert.equal("blockedRooms" in body.data.summary, false);
 });
 
-test("out-of-service maintenance ticket removes an operating room task from Housekeeping queues", async () => {
+test("out-of-service maintenance ticket keeps a recorded turnover visible for the departing stay", async () => {
   const db = new FakeHousekeepingV2DB();
-  db.bookings = [];
+  db.bookings = [
+    { ...booking(123, 930123, 1, "Departing Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", room_released: 1 },
+  ];
   db.tasks.push(storedTask({
     task_id: 123,
-    task_type: "STANDARD_CLEANING",
+    task_type: "TURNOVER",
     unit_id: 1,
-    booking_id: null,
-    stay_id: null,
+    booking_id: 123,
+    stay_id: 930123,
     operational_date: "2026-08-02",
     due_cycle_date: "2026-08-02",
-    source: "manual",
-    on_demand_source: "ROOM_READY_OVERRIDE",
+    source: "reception_release",
+    on_demand_source: null,
   }));
   db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
 
@@ -1309,21 +1313,21 @@ test("out-of-service maintenance ticket removes an operating room task from Hous
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
-  assert.equal(body.data.tasks.some((card) => card.taskId === 123), false);
-  assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 123), false);
+  assert.equal(body.data.tasks.some((card) => card.taskId === 123), true);
+  assert.equal(body.data.sections.flatMap((section) => section.cards).some((card) => card.taskId === 123), true);
   assert.equal("blockedRooms" in body.data.summary, false);
   assert.deepEqual(body.data.summary, {
-    toClean: 0,
+    toClean: 1,
     cleaningInProgress: 0,
     completedCleaningToday: 0,
     waterDue: 0,
   });
 });
 
-test("out-of-service maintenance rooms generate no automatic cleaning or water work", async () => {
+test("out-of-service maintenance rooms still generate their departure turnover but no occupied-stay work", async () => {
   const db = new FakeHousekeepingV2DB();
   db.bookings = [
-    { ...booking(301, 930301, 1, "Maintenance Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-05", guest_arrived: 1 },
+    { ...booking(301, 930301, 1, "Maintenance Guest", 2, 0), arrival_date: "2026-08-01", departure_date: "2026-08-02", guest_arrived: 1 },
   ];
   db.maintenanceTickets.push({ room_id: 1, title: "Replace Air Conditioning", priority: "High", out_of_service: 1, status: "Open" });
 
@@ -1332,8 +1336,9 @@ test("out-of-service maintenance rooms generate no automatic cleaning or water w
 
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.success, true);
-  assert.equal(db.tasks.some((task) => task.unit_id === 1), false);
-  assert.equal(body.data.tasks.some((card) => card.unitId === 1), false);
+  assert.equal(db.tasks.some((task) => task.unit_id === 1 && task.task_type === "TURNOVER"), true);
+  assert.equal(db.tasks.some((task) => task.unit_id === 1 && task.task_type === "WATER_REFILL"), false);
+  assert.equal(body.data.tasks.some((card) => card.unitId === 1 && card.taskType === "TURNOVER"), true);
 });
 
 test("other-area blocking maintenance never affects Housekeeping room work", async () => {

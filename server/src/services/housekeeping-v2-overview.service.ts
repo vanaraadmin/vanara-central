@@ -499,7 +499,6 @@ function hasTask(tasks: HousekeepingTask[], taskType: HousekeepingTaskType, unit
 function cardsForContext(context: OperationalContext, user: CurrentUser): HousekeepingV2TaskCard[] {
   if (context.operationalAvailabilityStatus === "NOT_OPERATING") return [];
   const maintenanceBlocked = Boolean(context.maintenance && context.maintenance.critical > 0);
-  if (maintenanceBlocked) return [];
 
   const cards: HousekeepingV2TaskCard[] = [];
   const queueTasks = context.tasks.filter((task) => taskBelongsToHousekeepingQueue(task));
@@ -547,10 +546,14 @@ function taskCountsAsActiveNow(task: HousekeepingTask): boolean {
 
 function cardFromContext(context: OperationalContext, task: HousekeepingTask, maintenanceBlocked: boolean, user: CurrentUser): HousekeepingV2TaskCard {
   const taskType = task.taskType;
+  // A room can be out of service while its departing stay still needs to be
+  // cleaned and recorded. Maintenance may make a room unsellable, but must
+  // never erase its check-out cleaning obligation or history.
+  const taskMaintenanceBlocked = maintenanceBlocked && taskType !== "TURNOVER";
   const releaseState = releaseStateFor(context, task);
   const isWaitingRelease = releaseState === "waiting_for_reception";
-  const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, maintenanceBlocked);
-  const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, maintenanceBlocked);
+  const capabilities = overviewTaskCapabilities(task, user, isWaitingRelease, taskMaintenanceBlocked);
+  const reasonCodes = reasonCodesFor(context, task, taskType, isWaitingRelease, taskMaintenanceBlocked);
   const overdueDays = overdueNormalCleaningDays(context, task);
   const currentQueue = visibleQueueForTask(context, task, overdueDays);
   const priority = taskType === "TURNOVER" ? (hasQualifyingIncomingToday(context) ? "HIGH" : "NORMAL") : task.priority;
@@ -570,8 +573,8 @@ function cardFromContext(context: OperationalContext, task: HousekeepingTask, ma
     displayReason: displayReasonFor(reasonCodes),
     assignee: task.assignedUserName ?? null,
     assigneeId: task.assignedUserId ?? null,
-    isBlocked: isWaitingRelease || maintenanceBlocked || task.status === "BLOCKED",
-    blockReason: blockReasonFor(context, task, isWaitingRelease, maintenanceBlocked),
+    isBlocked: isWaitingRelease || taskMaintenanceBlocked || task.status === "BLOCKED",
+    blockReason: blockReasonFor(context, task, isWaitingRelease, taskMaintenanceBlocked),
     waterQuantity: taskType === "WATER_REFILL" ? context.waterQuantity : null,
     reasonCodes,
     capabilities: {
@@ -1009,12 +1012,19 @@ async function loadBookings(env: HousekeepingV2Bindings, date: string): Promise<
     WHERE b.unit_id IS NOT NULL
       AND u.active = 1
       AND COALESCE(roa.status, 'OPERATING') = 'OPERATING'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM maintenance_tickets mt
-        WHERE mt.room_id = b.unit_id
-          AND mt.status NOT IN ('Resolved', 'Closed')
-          AND (mt.out_of_service = 1 OR json_extract(mt.metadata_json, '$.outOfService') = 1)
+      -- An out-of-service room is not sellable, but a confirmed departure
+      -- still requires a turnover task so Housekeeping can clean it and the
+      -- app retains a complete audit trail. Maintenance continues to exclude
+      -- occupied and future-stay work for that room.
+      AND (
+        b.departure_date = ?
+        OR NOT EXISTS (
+          SELECT 1
+          FROM maintenance_tickets mt
+          WHERE mt.room_id = b.unit_id
+            AND mt.status NOT IN ('Resolved', 'Closed')
+            AND (mt.out_of_service = 1 OR json_extract(mt.metadata_json, '$.outOfService') = 1)
+        )
       )
       AND ${operationalBookingStatusSql("b.status")}
       AND (
